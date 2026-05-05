@@ -117,7 +117,9 @@ export const login: RequestHandler = async (req, res, next) => {
 	const { email, password } = parsedBody.data;
 
 	try {
-		console.log("[AUTH][LOGIN] Looking up user/admin/doctor/trainer", { email });
+		console.log("[AUTH][LOGIN] Looking up user/admin/doctor/trainer", {
+			email,
+		});
 
 		const [user, admin, doctor, trainer] = await Promise.all([
 			User.findOne({ email }).select("+passwordHash"),

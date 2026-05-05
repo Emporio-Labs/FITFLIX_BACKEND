@@ -86,7 +86,10 @@ export const authenticateBasicCredentials: RequestHandler = async (
 				continue;
 			}
 
-			const valid = await verifyPassword(password, candidate.account.passwordHash);
+			const valid = await verifyPassword(
+				password,
+				candidate.account.passwordHash,
+			);
 			if (!valid) {
 				continue;
 			}

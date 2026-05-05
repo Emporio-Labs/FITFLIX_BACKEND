@@ -275,6 +275,7 @@ export const refundCreditsBySource = async (
 		userId: string;
 		sourceType: CreditTransactionSource;
 		sourceId: string;
+		session?: mongoose.ClientSession;
 	} & CreditContext,
 ) => {
 	const userObjectId = toObjectId(
@@ -289,13 +290,19 @@ export const refundCreditsBySource = async (
 	);
 	const actorId = toOptionalObjectId(input.actorId);
 
-	const history = await CreditTransaction.find({
+	const historyQuery = CreditTransaction.find({
 		user: userObjectId,
 		sourceType: input.sourceType,
 		sourceId: sourceObjectId,
 	})
 		.select("membership amount type")
 		.sort({ createdAt: 1 });
+
+	if (input.session) {
+		historyQuery.session(input.session);
+	}
+
+	const history = await historyQuery;
 
 	if (history.length === 0) {
 		return { refunded: 0, alreadyRefunded: true };
@@ -336,10 +343,14 @@ export const refundCreditsBySource = async (
 	}
 
 	for (const pendingRefund of pendingRefunds) {
-		await Membership.findByIdAndUpdate(pendingRefund.membershipId, {
-			$inc: { creditsRemaining: pendingRefund.amount },
-		});
+		await Membership.findByIdAndUpdate(
+			pendingRefund.membershipId,
+			{ $inc: { creditsRemaining: pendingRefund.amount } },
+			{ ...(input.session ? { session: input.session } : {}) },
+		);
 	}
+
+	const insertOptions = input.session ? { session: input.session } : undefined;
 
 	await CreditTransaction.insertMany(
 		pendingRefunds.map((pendingRefund) => ({
@@ -354,6 +365,7 @@ export const refundCreditsBySource = async (
 			...(input.actorRole ? { actorRole: input.actorRole } : {}),
 			...(input.metadata ? { metadata: input.metadata } : {}),
 		})),
+		insertOptions,
 	);
 
 	return {

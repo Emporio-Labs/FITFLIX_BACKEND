@@ -140,11 +140,9 @@ export const updateSlotById: RequestHandler = async (req, res, next) => {
 		const effectiveDate =
 			parsedBody.data.date !== undefined
 				? parsedBody.data.date
-				: existingSlot.date ?? undefined;
+				: (existingSlot.date ?? undefined);
 		const effectiveIsDaily =
-			parsedBody.data.isDaily ??
-			existingSlot.isDaily ??
-			!effectiveDate;
+			parsedBody.data.isDaily ?? existingSlot.isDaily ?? !effectiveDate;
 		const effectiveCapacity =
 			parsedBody.data.capacity ?? existingSlot.capacity ?? 1;
 		const effectiveRemainingCapacity =

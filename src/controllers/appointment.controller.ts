@@ -187,7 +187,10 @@ const reserveSlotCapacity = async (slotId: string) => {
 	return reservedSlot;
 };
 
-const releaseSlotCapacity = async (slotId: string): Promise<void> => {
+const releaseSlotCapacity = async (
+	slotId: string,
+	session?: mongoose.ClientSession,
+): Promise<void> => {
 	await Slot.findOneAndUpdate(
 		{
 			_id: slotId,
@@ -203,7 +206,7 @@ const releaseSlotCapacity = async (slotId: string): Promise<void> => {
 			$inc: { remainingCapacity: 1 },
 			$set: { isBooked: false },
 		},
-		{ returnDocument: "after" },
+		{ returnDocument: "after", ...(session ? { session } : {}) },
 	);
 };
 
@@ -424,6 +427,13 @@ export const updateAppointmentById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	const requester = getRequiredAuthenticatedUser(req);
+
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
 	const parsedBody = updateAppointmentBodySchema.safeParse(req.body);
 
 	if (!parsedBody.success) {
@@ -447,20 +457,197 @@ export const updateAppointmentById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	let newReservedSlotId: string | null = null;
+
 	try {
+		// Fetch the existing appointment
+		const existingAppointment = await Appointment.findById(id);
+
+		if (!existingAppointment) {
+			res.status(404).json({ message: "Appointment not found" });
+			return;
+		}
+
+		// Authorization check: users can only update their own appointments
+		if (
+			requester.role === "user" &&
+			existingAppointment.user.toString() !== requester.id
+		) {
+			res.status(403).json({ message: "Forbidden" });
+			return;
+		}
+
+		const wasCancelled = isCancelledAppointmentStatus(
+			existingAppointment.status,
+		);
+		const shouldReschedule = Boolean(slotId || appointmentDate);
+		let rebookCreditCost: number | null = null;
+
+		// If slot or appointment date is being changed, handle the reschedule logic
+		if (shouldReschedule) {
+			const newSlotId = slotId || existingAppointment.slot.toString();
+			const newDate = appointmentDate || existingAppointment.appointmentDate;
+
+			// If no service is provided and existing appointment has a service, use it for validation
+			let serviceIdForValidation = serviceId;
+			if (!serviceIdForValidation && existingAppointment.service) {
+				serviceIdForValidation = existingAppointment.service.toString();
+			}
+
+			// Fetch the service to validate the new slot (if a service is available)
+			let service = null;
+			if (serviceIdForValidation) {
+				service = await Service.findById(serviceIdForValidation).select(
+					"_id creditCost slots",
+				);
+
+				if (!service) {
+					res.status(404).json({ message: "Service not found" });
+					return;
+				}
+			}
+
+			// Fetch the new slot
+			const requestedSlot = await Slot.findById(newSlotId).select(
+				"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate",
+			);
+
+			if (!requestedSlot) {
+				res
+					.status(409)
+					.json({ message: "Slot is full or no longer available" });
+				return;
+			}
+
+			// Validate slot is linked to service if a service is available
+			if (service && !isSlotLinkedToService(service.slots, requestedSlot)) {
+				res
+					.status(409)
+					.json({ message: "Slot is full or no longer available" });
+				return;
+			}
+
+			// Resolve concrete slot for the new appointment date
+			const concreteSlot = await resolveConcreteSlotForAppointment(
+				requestedSlot,
+				newDate,
+			);
+
+			if (!concreteSlot) {
+				res
+					.status(409)
+					.json({ message: "Slot is full or no longer available" });
+				return;
+			}
+
+			const shouldReserveSlot =
+				wasCancelled || newSlotId !== existingAppointment.slot.toString();
+
+			if (shouldReserveSlot) {
+				// Reserve the new slot
+				const reservedSlot = await reserveSlotCapacity(
+					concreteSlot._id.toString(),
+				);
+
+				if (!reservedSlot) {
+					res
+						.status(409)
+						.json({ message: "Slot is full or no longer available" });
+					return;
+				}
+
+				newReservedSlotId = reservedSlot._id.toString();
+			}
+
+			// Release the old slot when switching to a different slot
+			if (newSlotId !== existingAppointment.slot.toString()) {
+				await releaseSlotCapacity(existingAppointment.slot.toString());
+			}
+
+			if (wasCancelled) {
+				const baseCreditCost = service
+					? Number(service.creditCost ?? 1)
+					: Number(existingAppointment.creditCostSnapshot ?? 1);
+				rebookCreditCost = Math.max(1, baseCreditCost);
+
+				if (!existingAppointment.creditsBypassed) {
+					try {
+						await consumeCredits({
+							userId: existingAppointment.user.toString(),
+							amount: rebookCreditCost,
+							sourceType: CreditTransactionSource.Appointment,
+							sourceId: existingAppointment._id.toString(),
+							actorId: requester.id,
+							actorRole: requester.role,
+							reason: `Appointment ${existingAppointment._id.toString()} rescheduled`,
+						});
+					} catch (error) {
+						if (newReservedSlotId) {
+							await releaseSlotCapacity(newReservedSlotId).catch(() => null);
+							newReservedSlotId = null;
+						}
+
+						if (error instanceof CreditServiceError) {
+							const creditError = mapCreditServiceError(error);
+							res
+								.status(creditError.status)
+								.json({ message: creditError.message });
+							return;
+						}
+
+						throw error;
+					}
+				}
+			}
+		}
+
+		// Update the appointment
+		const updatePayload: Record<string, unknown> = {};
+
+		if (appointmentDate) {
+			updatePayload.appointmentDate = appointmentDate;
+		}
+
+		if (slotId && newReservedSlotId) {
+			updatePayload.slot = newReservedSlotId;
+		} else if (slotId) {
+			updatePayload.slot = slotId;
+		}
+
+		if (doctorId) {
+			updatePayload.doctor = doctorId;
+		}
+
+		if (serviceId) {
+			updatePayload.service = serviceId;
+		}
+
+		if (reportId) {
+			updatePayload.report = reportId;
+		}
+
+		if (wasCancelled && shouldReschedule) {
+			updatePayload.status = BookingStatus.Booked;
+			if (rebookCreditCost !== null) {
+				updatePayload.creditCostSnapshot = rebookCreditCost;
+			}
+		}
+
 		const updatedAppointment = await Appointment.findByIdAndUpdate(
 			id,
+			updatePayload,
 			{
-				...(appointmentDate ? { appointmentDate } : {}),
-				...(slotId ? { slot: slotId } : {}),
-				...(doctorId ? { doctor: doctorId } : {}),
-				...(serviceId ? { service: serviceId } : {}),
-				...(reportId ? { report: reportId } : {}),
+				returnDocument: "after",
+				runValidators: true,
 			},
-			{ returnDocument: "after", runValidators: true },
 		);
 
 		if (!updatedAppointment) {
+			// Rollback: release the newly reserved slot if update failed
+			if (newReservedSlotId) {
+				await releaseSlotCapacity(newReservedSlotId).catch(() => null);
+			}
+
 			res.status(404).json({ message: "Appointment not found" });
 			return;
 		}
@@ -470,6 +657,11 @@ export const updateAppointmentById: RequestHandler = async (req, res, next) => {
 			appointment: updatedAppointment,
 		});
 	} catch (error) {
+		// Rollback: release the newly reserved slot on error
+		if (newReservedSlotId) {
+			await releaseSlotCapacity(newReservedSlotId).catch(() => null);
+		}
+
 		next(error);
 	}
 };
@@ -490,42 +682,67 @@ export const deleteAppointmentById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const existingAppointment = await Appointment.findById(id);
+		const session = await mongoose.startSession();
+		try {
+			const response = await session.withTransaction(async () => {
+				const existingAppointment =
+					await Appointment.findById(id).session(session);
 
-		if (!existingAppointment) {
-			res.status(404).json({ message: "Appointment not found" });
-			return;
-		}
+				if (!existingAppointment) {
+					return {
+						status: 404,
+						body: { message: "Appointment not found" },
+					};
+				}
 
-		if (!isCancelledAppointmentStatus(existingAppointment.status)) {
-			const transitionedAppointment = await Appointment.findOneAndUpdate(
-				{ _id: id, status: nonCancelledAppointmentStatusFilter },
-				{ status: BookingStatus.Cancelled },
-				{ returnDocument: "after", runValidators: true },
-			);
+				if (!isCancelledAppointmentStatus(existingAppointment.status)) {
+					const transitionedAppointment = await Appointment.findOneAndUpdate(
+						{ _id: id, status: nonCancelledAppointmentStatusFilter },
+						{ status: BookingStatus.Cancelled },
+						{ returnDocument: "after", runValidators: true, session },
+					);
 
-			if (transitionedAppointment) {
-				await releaseSlotCapacity(transitionedAppointment.slot.toString());
+					if (transitionedAppointment) {
+						await releaseSlotCapacity(
+							transitionedAppointment.slot.toString(),
+							session,
+						);
 
-				await refundCreditsBySource({
-					userId: transitionedAppointment.user.toString(),
-					sourceType: CreditTransactionSource.Appointment,
-					sourceId: transitionedAppointment._id.toString(),
-					actorId: requester.id,
-					actorRole: requester.role,
-					reason: `Appointment ${transitionedAppointment._id.toString()} deleted`,
+						await refundCreditsBySource({
+							userId: transitionedAppointment.user.toString(),
+							sourceType: CreditTransactionSource.Appointment,
+							sourceId: transitionedAppointment._id.toString(),
+							actorId: requester.id,
+							actorRole: requester.role,
+							reason: `Appointment ${transitionedAppointment._id.toString()} deleted`,
+							session,
+						});
+					}
+				}
+
+				const deletedAppointment = await Appointment.findByIdAndDelete(id, {
+					session,
 				});
+
+				if (!deletedAppointment) {
+					return {
+						status: 404,
+						body: { message: "Appointment not found" },
+					};
+				}
+
+				return { status: 200, body: { message: "Appointment deleted" } };
+			});
+
+			if (!response) {
+				res.status(500).json({ message: "Appointment delete failed" });
+				return;
 			}
+
+			res.status(response.status).json(response.body);
+		} finally {
+			session.endSession();
 		}
-
-		const deletedAppointment = await Appointment.findByIdAndDelete(id);
-
-		if (!deletedAppointment) {
-			res.status(404).json({ message: "Appointment not found" });
-			return;
-		}
-
-		res.status(200).json({ message: "Appointment deleted" });
 	} catch (error) {
 		next(error);
 	}
@@ -573,61 +790,93 @@ export const changeAppointmentStatus: RequestHandler = async (
 		}
 
 		if (isCancelledAppointmentStatus(parsedBody.data.status)) {
-			const transitionedAppointment = await Appointment.findOneAndUpdate(
-				{
-					_id: id,
-					status: nonCancelledAppointmentStatusFilter,
-					...(requesterDoctorId ? { doctor: requesterDoctorId } : {}),
-				},
-				{ status: BookingStatus.Cancelled },
-				{ returnDocument: "after", runValidators: true },
-			);
+			const session = await mongoose.startSession();
+			try {
+				const response = await session.withTransaction(async () => {
+					const transitionedAppointment = await Appointment.findOneAndUpdate(
+						{
+							_id: id,
+							status: nonCancelledAppointmentStatusFilter,
+							...(requesterDoctorId ? { doctor: requesterDoctorId } : {}),
+						},
+						{ status: BookingStatus.Cancelled },
+						{ returnDocument: "after", runValidators: true, session },
+					);
 
-			if (!transitionedAppointment) {
-				const existingAppointment = await Appointment.findById(id);
+					if (!transitionedAppointment) {
+						const existingAppointment =
+							await Appointment.findById(id).session(session);
 
-				if (!existingAppointment) {
-					res.status(404).json({ message: "Appointment not found" });
-					return;
-				}
+						if (!existingAppointment) {
+							return {
+								status: 404,
+								body: { message: "Appointment not found" },
+							};
+						}
 
-				if (
-					requesterDoctorId &&
-					existingAppointment.doctor.toString() !== requesterDoctorId
-				) {
-					res.status(403).json({ message: "Forbidden" });
-					return;
-				}
+						if (
+							requesterDoctorId &&
+							existingAppointment.doctor.toString() !== requesterDoctorId
+						) {
+							return {
+								status: 403,
+								body: { message: "Forbidden" },
+							};
+						}
 
-				res.status(200).json({
-					message: "Appointment status changed",
-					appointment: existingAppointment,
-					credits: { refunded: 0 },
+						return {
+							status: 200,
+							body: {
+								message: "Appointment status changed",
+								appointment: existingAppointment,
+								credits: { refunded: 0 },
+							},
+						};
+					}
+
+					await releaseSlotCapacity(
+						transitionedAppointment.slot.toString(),
+						session,
+					);
+
+					const refundResult = await refundCreditsBySource({
+						userId: transitionedAppointment.user.toString(),
+						sourceType: CreditTransactionSource.Appointment,
+						sourceId: transitionedAppointment._id.toString(),
+						actorId: requester.id,
+						actorRole: requester.role,
+						reason: `Appointment ${transitionedAppointment._id.toString()} cancelled`,
+						session,
+					});
+
+					return {
+						status: 200,
+						body: {
+							message: "Appointment status changed",
+							appointment: transitionedAppointment,
+							credits: { refunded: refundResult.refunded },
+						},
+					};
 				});
+
+				if (!response) {
+					res.status(500).json({ message: "Appointment cancellation failed" });
+					return;
+				}
+
+				res.status(response.status).json(response.body);
 				return;
+			} finally {
+				session.endSession();
 			}
-
-			await releaseSlotCapacity(transitionedAppointment.slot.toString());
-
-			const refundResult = await refundCreditsBySource({
-				userId: transitionedAppointment.user.toString(),
-				sourceType: CreditTransactionSource.Appointment,
-				sourceId: transitionedAppointment._id.toString(),
-				actorId: requester.id,
-				actorRole: requester.role,
-				reason: `Appointment ${transitionedAppointment._id.toString()} cancelled`,
-			});
-
-			res.status(200).json({
-				message: "Appointment status changed",
-				appointment: transitionedAppointment,
-				credits: { refunded: refundResult.refunded },
-			});
-			return;
 		}
 
 		const appointment = await Appointment.findOneAndUpdate(
-			{ _id: id, ...(requesterDoctorId ? { doctor: requesterDoctorId } : {}) },
+			{
+				_id: id,
+				status: nonCancelledAppointmentStatusFilter,
+				...(requesterDoctorId ? { doctor: requesterDoctorId } : {}),
+			},
 			{ status: parsedBody.data.status },
 			{ returnDocument: "after", runValidators: true },
 		);
@@ -637,6 +886,22 @@ export const changeAppointmentStatus: RequestHandler = async (
 
 			if (!existingAppointment) {
 				res.status(404).json({ message: "Appointment not found" });
+				return;
+			}
+
+			if (
+				requesterDoctorId &&
+				existingAppointment.doctor.toString() !== requesterDoctorId
+			) {
+				res.status(403).json({ message: "Forbidden" });
+				return;
+			}
+
+			if (isCancelledAppointmentStatus(existingAppointment.status)) {
+				res.status(409).json({
+					message:
+						"Cancelled appointments cannot be reactivated. Reschedule to rebook.",
+				});
 				return;
 			}
 

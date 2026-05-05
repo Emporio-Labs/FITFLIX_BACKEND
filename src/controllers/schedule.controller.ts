@@ -4,8 +4,8 @@ import Schedule from "../models/Schedule";
 import User from "../models/User";
 import {
 	createScheduleBodySchema,
-	updateScheduleBodySchema,
 	rescheduleBodySchema,
+	updateScheduleBodySchema,
 } from "../validators/schedule.validator";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
@@ -30,13 +30,13 @@ const getRequiredAuthenticatedUser = (req: Parameters<RequestHandler>[0]) => {
 const isWithinSevenDays = (date: Date): boolean => {
 	const today = new Date();
 	today.setHours(0, 0, 0, 0);
-	
+
 	const target = new Date(date);
 	target.setHours(0, 0, 0, 0);
-	
+
 	const timeDiff = target.getTime() - today.getTime();
 	const daysDiff = timeDiff / (1000 * 3600 * 24);
-	
+
 	return daysDiff >= 0 && daysDiff <= 7;
 };
 
@@ -88,15 +88,10 @@ export const createSchedule: RequestHandler = async (req, res, next) => {
 
 	// Users can only create their own schedule
 	// Doctors, Trainers, and Admins can create for any user
-	if (
-		requester.role === "user" &&
-		userId !== requester.id
-	) {
-		res
-			.status(403)
-			.json({
-				message: "Users can only create schedules for themselves",
-			});
+	if (requester.role === "user" && userId !== requester.id) {
+		res.status(403).json({
+			message: "Users can only create schedules for themselves",
+		});
 		return;
 	}
 
@@ -163,8 +158,7 @@ export const getScheduleByUserId: RequestHandler = async (req, res, next) => {
 	// Doctors, Trainers, and Admins can view any schedule
 	if (requester.role === "user" && userId !== requester.id) {
 		res.status(403).json({
-			message:
-				"Users can only view their own schedule",
+			message: "Users can only view their own schedule",
 		});
 		return;
 	}
@@ -218,8 +212,7 @@ export const updateSchedule: RequestHandler = async (req, res, next) => {
 	// Doctors, Trainers, and Admins can edit any schedule
 	if (requester.role === "user" && userId !== requester.id) {
 		res.status(403).json({
-			message:
-				"Users can only edit their own schedule",
+			message: "Users can only edit their own schedule",
 		});
 		return;
 	}
@@ -253,8 +246,8 @@ export const updateSchedule: RequestHandler = async (req, res, next) => {
 		}
 
 		if (todoIds !== undefined) {
-			schedule.todos = todoIds.map((todoId) =>
-				new mongoose.Types.ObjectId(todoId),
+			schedule.todos = todoIds.map(
+				(todoId) => new mongoose.Types.ObjectId(todoId),
 			);
 		}
 
@@ -303,8 +296,7 @@ export const rescheduleSchedule: RequestHandler = async (req, res, next) => {
 	// Doctors, Trainers, and Admins can reschedule any schedule
 	if (requester.role === "user" && userId !== requester.id) {
 		res.status(403).json({
-			message:
-				"Users can only reschedule their own schedule",
+			message: "Users can only reschedule their own schedule",
 		});
 		return;
 	}
@@ -361,11 +353,9 @@ export const deleteSchedule: RequestHandler = async (req, res, next) => {
 
 	// Only admins can delete schedules
 	if (requester.role !== "admin") {
-		res
-			.status(403)
-			.json({
-				message: "Only admins can delete schedules",
-			});
+		res.status(403).json({
+			message: "Only admins can delete schedules",
+		});
 		return;
 	}
 

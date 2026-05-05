@@ -172,7 +172,10 @@ const reserveSlotCapacity = async (slotId: string) => {
 	return reservedSlot;
 };
 
-const releaseSlotCapacity = async (slotId: string): Promise<void> => {
+const releaseSlotCapacity = async (
+	slotId: string,
+	session?: mongoose.ClientSession,
+): Promise<void> => {
 	await Slot.findOneAndUpdate(
 		{
 			_id: slotId,
@@ -188,7 +191,7 @@ const releaseSlotCapacity = async (slotId: string): Promise<void> => {
 			$inc: { remainingCapacity: 1 },
 			$set: { isBooked: false },
 		},
-		{ returnDocument: "after" },
+		{ returnDocument: "after", ...(session ? { session } : {}) },
 	);
 };
 
@@ -398,6 +401,13 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	const requester = getRequiredAuthenticatedUser(req);
+
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
 	const parsedBody = updateBookingBodySchema.safeParse(req.body);
 
 	if (!parsedBody.success) {
@@ -419,22 +429,170 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	let newReservedSlotId: string | null = null;
+
 	try {
-		const updatedBooking = await Booking.findByIdAndUpdate(
-			id,
-			{
-				...(bookingDate ? { bookingDate } : {}),
-				...(slotId ? { slot: slotId } : {}),
-				...(serviceId ? { service: serviceId } : {}),
-				...(reportId ? { report: reportId } : {}),
-			},
-			{
-				returnDocument: "after",
-				runValidators: true,
-			},
-		);
+		// Fetch the existing booking
+		const existingBooking = await Booking.findById(id);
+
+		if (!existingBooking) {
+			res.status(404).json({ message: "Booking not found" });
+			return;
+		}
+
+		// Authorization check: users can only update their own bookings
+		if (
+			requester.role === "user" &&
+			existingBooking.user.toString() !== requester.id
+		) {
+			res.status(403).json({ message: "Forbidden" });
+			return;
+		}
+
+		const wasCancelled = isCancelledBookingStatus(existingBooking.status);
+		const shouldReschedule = Boolean(slotId || bookingDate);
+		let rebookCreditCost: number | null = null;
+
+		// If slot or booking date is being changed, handle the reschedule logic
+		if (shouldReschedule) {
+			const newSlotId = slotId || existingBooking.slot.toString();
+			const newDate = bookingDate || existingBooking.bookingDate;
+
+			// Fetch the service to validate the new slot
+			const service = await Service.findById(
+				serviceId || existingBooking.service.toString(),
+			).select("_id creditCost slots");
+
+			if (!service) {
+				res.status(404).json({ message: "Service not found" });
+				return;
+			}
+
+			// Fetch the new slot
+			const requestedSlot = await Slot.findById(newSlotId).select(
+				"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate",
+			);
+
+			if (
+				!requestedSlot ||
+				!isSlotLinkedToService(service.slots, requestedSlot)
+			) {
+				res
+					.status(409)
+					.json({ message: "Slot is full or no longer available" });
+				return;
+			}
+
+			// Resolve concrete slot for the new booking date
+			const concreteSlot = await resolveConcreteSlotForBooking(
+				requestedSlot,
+				newDate,
+			);
+
+			if (!concreteSlot) {
+				res
+					.status(409)
+					.json({ message: "Slot is full or no longer available" });
+				return;
+			}
+
+			const shouldReserveSlot =
+				wasCancelled || newSlotId !== existingBooking.slot.toString();
+
+			if (shouldReserveSlot) {
+				// Reserve the new slot
+				const reservedSlot = await reserveSlotCapacity(
+					concreteSlot._id.toString(),
+				);
+
+				if (!reservedSlot) {
+					res
+						.status(409)
+						.json({ message: "Slot is full or no longer available" });
+					return;
+				}
+
+				newReservedSlotId = reservedSlot._id.toString();
+			}
+
+			// Release the old slot when switching to a different slot
+			if (newSlotId !== existingBooking.slot.toString()) {
+				await releaseSlotCapacity(existingBooking.slot.toString());
+			}
+
+			if (wasCancelled) {
+				rebookCreditCost = Math.max(1, Number(service.creditCost ?? 1));
+
+				if (!existingBooking.creditsBypassed) {
+					try {
+						await consumeCredits({
+							userId: existingBooking.user.toString(),
+							amount: rebookCreditCost,
+							sourceType: CreditTransactionSource.Booking,
+							sourceId: existingBooking._id.toString(),
+							actorId: requester.id,
+							actorRole: requester.role,
+							reason: `Booking ${existingBooking._id.toString()} rescheduled`,
+						});
+					} catch (error) {
+						if (newReservedSlotId) {
+							await releaseSlotCapacity(newReservedSlotId).catch(() => null);
+							newReservedSlotId = null;
+						}
+
+						if (error instanceof CreditServiceError) {
+							const creditError = mapCreditServiceError(error);
+							res
+								.status(creditError.status)
+								.json({ message: creditError.message });
+							return;
+						}
+
+						throw error;
+					}
+				}
+			}
+		}
+
+		// Update the booking
+		const updatePayload: Record<string, unknown> = {};
+
+		if (bookingDate) {
+			updatePayload.bookingDate = bookingDate;
+		}
+
+		if (slotId && newReservedSlotId) {
+			updatePayload.slot = newReservedSlotId;
+		} else if (slotId) {
+			updatePayload.slot = slotId;
+		}
+
+		if (serviceId) {
+			updatePayload.service = serviceId;
+		}
+
+		if (reportId) {
+			updatePayload.report = reportId;
+		}
+
+		if (wasCancelled && shouldReschedule) {
+			updatePayload.status = BookingStatus.Booked;
+			if (rebookCreditCost !== null) {
+				updatePayload.creditCostSnapshot = rebookCreditCost;
+			}
+		}
+
+		const updatedBooking = await Booking.findByIdAndUpdate(id, updatePayload, {
+			returnDocument: "after",
+			runValidators: true,
+		});
 
 		if (!updatedBooking) {
+			// Rollback: release the newly reserved slot if update failed
+			if (newReservedSlotId) {
+				await releaseSlotCapacity(newReservedSlotId).catch(() => null);
+			}
+
 			res.status(404).json({ message: "Booking not found" });
 			return;
 		}
@@ -443,6 +601,11 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 			.status(200)
 			.json({ message: "Booking updated", booking: updatedBooking });
 	} catch (error) {
+		// Rollback: release the newly reserved slot on error
+		if (newReservedSlotId) {
+			await releaseSlotCapacity(newReservedSlotId).catch(() => null);
+		}
+
 		next(error);
 	}
 };
@@ -463,42 +626,71 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const existingBooking = await Booking.findById(id);
+		const session = await mongoose.startSession();
+		try {
+			let response: { status: number; body: Record<string, unknown> } | null =
+				null;
 
-		if (!existingBooking) {
-			res.status(404).json({ message: "Booking not found" });
-			return;
-		}
+			await session.withTransaction(async () => {
+				const existingBooking = await Booking.findById(id).session(session);
 
-		if (!isCancelledBookingStatus(existingBooking.status)) {
-			const transitionedBooking = await Booking.findOneAndUpdate(
-				{ _id: id, status: nonCancelledBookingStatusFilter },
-				{ status: BookingStatus.Cancelled },
-				{ returnDocument: "after", runValidators: true },
-			);
+				if (!existingBooking) {
+					response = {
+						status: 404,
+						body: { message: "Booking not found" },
+					};
+					return;
+				}
 
-			if (transitionedBooking) {
-				await releaseSlotCapacity(transitionedBooking.slot.toString());
+				if (!isCancelledBookingStatus(existingBooking.status)) {
+					const transitionedBooking = await Booking.findOneAndUpdate(
+						{ _id: id, status: nonCancelledBookingStatusFilter },
+						{ status: BookingStatus.Cancelled },
+						{ returnDocument: "after", runValidators: true, session },
+					);
 
-				await refundCreditsBySource({
-					userId: transitionedBooking.user.toString(),
-					sourceType: CreditTransactionSource.Booking,
-					sourceId: transitionedBooking._id.toString(),
-					actorId: requester.id,
-					actorRole: requester.role,
-					reason: `Booking ${transitionedBooking._id.toString()} deleted`,
+					if (transitionedBooking) {
+						await releaseSlotCapacity(
+							transitionedBooking.slot.toString(),
+							session,
+						);
+
+						await refundCreditsBySource({
+							userId: transitionedBooking.user.toString(),
+							sourceType: CreditTransactionSource.Booking,
+							sourceId: transitionedBooking._id.toString(),
+							actorId: requester.id,
+							actorRole: requester.role,
+							reason: `Booking ${transitionedBooking._id.toString()} deleted`,
+							session,
+						});
+					}
+				}
+
+				const deletedBooking = await Booking.findByIdAndDelete(id, {
+					session,
 				});
+
+				if (!deletedBooking) {
+					response = {
+						status: 404,
+						body: { message: "Booking not found" },
+					};
+					return;
+				}
+
+				response = { status: 200, body: { message: "Booking deleted" } };
+			});
+
+			if (response) {
+				res.status(response.status).json(response.body);
+				return;
 			}
+
+			res.status(500).json({ message: "Booking delete failed" });
+		} finally {
+			session.endSession();
 		}
-
-		const deletedBooking = await Booking.findByIdAndDelete(id);
-
-		if (!deletedBooking) {
-			res.status(404).json({ message: "Booking not found" });
-			return;
-		}
-
-		res.status(200).json({ message: "Booking deleted" });
 	} catch (error) {
 		next(error);
 	}
@@ -531,54 +723,98 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 
 	try {
 		if (isCancelledBookingStatus(parsedBody.data.status)) {
-			const transitionedBooking = await Booking.findOneAndUpdate(
-				{ _id: id, status: nonCancelledBookingStatusFilter },
-				{ status: BookingStatus.Cancelled },
-				{ returnDocument: "after", runValidators: true },
-			);
+			const session = await mongoose.startSession();
+			try {
+				let response: { status: number; body: Record<string, unknown> } | null =
+					null;
 
-			if (!transitionedBooking) {
-				const existingBooking = await Booking.findById(id);
+				await session.withTransaction(async () => {
+					const transitionedBooking = await Booking.findOneAndUpdate(
+						{ _id: id, status: nonCancelledBookingStatusFilter },
+						{ status: BookingStatus.Cancelled },
+						{ returnDocument: "after", runValidators: true, session },
+					);
 
-				if (!existingBooking) {
-					res.status(404).json({ message: "Booking not found" });
+					if (!transitionedBooking) {
+						const existingBooking = await Booking.findById(id).session(session);
+
+						if (!existingBooking) {
+							response = {
+								status: 404,
+								body: { message: "Booking not found" },
+							};
+							return;
+						}
+
+						response = {
+							status: 200,
+							body: {
+								message: "Booking status changed",
+								booking: existingBooking,
+								credits: { refunded: 0 },
+							},
+						};
+						return;
+					}
+
+					await releaseSlotCapacity(
+						transitionedBooking.slot.toString(),
+						session,
+					);
+
+					const refundResult = await refundCreditsBySource({
+						userId: transitionedBooking.user.toString(),
+						sourceType: CreditTransactionSource.Booking,
+						sourceId: transitionedBooking._id.toString(),
+						actorId: requester.id,
+						actorRole: requester.role,
+						reason: `Booking ${transitionedBooking._id.toString()} cancelled`,
+						session,
+					});
+
+					response = {
+						status: 200,
+						body: {
+							message: "Booking status changed",
+							booking: transitionedBooking,
+							credits: { refunded: refundResult.refunded },
+						},
+					};
+				});
+
+				if (response) {
+					res.status(response.status).json(response.body);
 					return;
 				}
 
-				res.status(200).json({
-					message: "Booking status changed",
-					booking: existingBooking,
-					credits: { refunded: 0 },
-				});
+				res.status(500).json({ message: "Booking cancellation failed" });
 				return;
+			} finally {
+				session.endSession();
 			}
-
-			await releaseSlotCapacity(transitionedBooking.slot.toString());
-
-			const refundResult = await refundCreditsBySource({
-				userId: transitionedBooking.user.toString(),
-				sourceType: CreditTransactionSource.Booking,
-				sourceId: transitionedBooking._id.toString(),
-				actorId: requester.id,
-				actorRole: requester.role,
-				reason: `Booking ${transitionedBooking._id.toString()} cancelled`,
-			});
-
-			res.status(200).json({
-				message: "Booking status changed",
-				booking: transitionedBooking,
-				credits: { refunded: refundResult.refunded },
-			});
-			return;
 		}
 
-		const booking = await Booking.findByIdAndUpdate(
-			id,
+		const booking = await Booking.findOneAndUpdate(
+			{ _id: id, status: nonCancelledBookingStatusFilter },
 			{ status: parsedBody.data.status },
 			{ returnDocument: "after", runValidators: true },
 		);
 
 		if (!booking) {
+			const existingBooking = await Booking.findById(id);
+			if (!existingBooking) {
+				res.status(404).json({ message: "Booking not found" });
+				return;
+			}
+
+			if (isCancelledBookingStatus(existingBooking.status)) {
+				res.status(409).json({
+					message:
+						"Cancelled bookings cannot be reactivated. Reschedule to rebook.",
+				});
+				return;
+			}
+
 			res.status(404).json({ message: "Booking not found" });
 			return;
 		}

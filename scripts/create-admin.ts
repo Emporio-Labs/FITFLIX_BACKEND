@@ -12,7 +12,7 @@ function printUsage() {
 		'Usage: bun run create:admin -- --adminName "Admin Name" --email admin@example.com --phone 9999999999 --passwordHash yourpassword',
 	);
 	console.log(
-		'Also supported: --name and --password as aliases for --adminName and --passwordHash.',
+		"Also supported: --name and --password as aliases for --adminName and --passwordHash.",
 	);
 }
 

@@ -4,8 +4,8 @@ import { TodoStatus } from "../models/Enums";
 export const createScheduleBodySchema = z.object({
 	userId: z.string().min(1),
 	scheduledDate: z.coerce.date(),
-	status: z
-		.coerce.number()
+	status: z.coerce
+		.number()
 		.refine((value) => value in TodoStatus, {
 			message: "Invalid schedule status",
 		})
@@ -17,8 +17,8 @@ export const createScheduleBodySchema = z.object({
 export const updateScheduleBodySchema = z
 	.object({
 		scheduledDate: z.coerce.date().optional(),
-		status: z
-			.coerce.number()
+		status: z.coerce
+			.number()
 			.refine((value) => value in TodoStatus, {
 				message: "Invalid schedule status",
 			})

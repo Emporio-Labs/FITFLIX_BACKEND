@@ -21,7 +21,10 @@ const slotSchema = new mongoose.Schema(
 
 slotSchema.index(
 	{ parentTemplate: 1, date: 1, startTime: 1, endTime: 1 },
-	{ unique: true, partialFilterExpression: { parentTemplate: { $exists: true, $ne: null } } },
+	{
+		unique: true,
+		partialFilterExpression: { parentTemplate: { $exists: true, $ne: null } },
+	},
 );
 
 export default (mongoose.models.Slot as mongoose.Model<any>) ||

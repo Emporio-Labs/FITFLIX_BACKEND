@@ -10,28 +10,30 @@ const slotBodySchema = z.object({
 	isBooked: z.coerce.boolean().optional(),
 });
 
-export const createSlotBodySchema = slotBodySchema.superRefine((payload, ctx) => {
-	const isDaily = payload.isDaily ?? !payload.date;
+export const createSlotBodySchema = slotBodySchema.superRefine(
+	(payload, ctx) => {
+		const isDaily = payload.isDaily ?? !payload.date;
 
-	if (!isDaily && !payload.date) {
-		ctx.addIssue({
-			code: z.ZodIssueCode.custom,
-			path: ["date"],
-			message: "date is required when isDaily is false",
-		});
-	}
+		if (!isDaily && !payload.date) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["date"],
+				message: "date is required when isDaily is false",
+			});
+		}
 
-	const capacity = payload.capacity ?? 1;
-	const remainingCapacity = payload.remainingCapacity ?? capacity;
+		const capacity = payload.capacity ?? 1;
+		const remainingCapacity = payload.remainingCapacity ?? capacity;
 
-	if (remainingCapacity > capacity) {
-		ctx.addIssue({
-			code: z.ZodIssueCode.custom,
-			path: ["remainingCapacity"],
-			message: "remainingCapacity cannot exceed capacity",
-		});
-	}
-});
+		if (remainingCapacity > capacity) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["remainingCapacity"],
+				message: "remainingCapacity cannot exceed capacity",
+			});
+		}
+	},
+);
 
 export const updateSlotBodySchema = slotBodySchema
 	.partial()

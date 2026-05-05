@@ -1531,14 +1531,14 @@ GET /bookings/:id
 
 ---
 
-#### 5. Update Booking
+#### 5. Update Booking (Reschedule)
 ```
 PATCH /bookings/:id
 ```
 
-**Authorization:** Admin only
+**Authorization:** Admin (any user) or User (self only)
 
-**Request Body (all fields optional):**
+**Request Body (all fields optional; at least one required):**
 ```json
 {
   "bookingDate": "2026-03-26T10:00:00Z",
@@ -1547,6 +1547,38 @@ PATCH /bookings/:id
   "reportId": "507f1f77bcf86cd799439041"
 }
 ```
+
+**Reschedule Logic (when `slotId` or `bookingDate` changes):**
+- New slot is validated against the service slot list
+- New slot capacity is reserved (decremented by 1)
+- Old slot capacity is released (incremented by 1)
+- If slot is a daily template, a dated concrete slot inventory record is resolved/created for the new `bookingDate`
+- If the booking was previously cancelled, reschedule rebooks it: status is set to `Booked` and credits are consumed again (unless credits were bypassed)
+- If any validation fails (slot full, slot not linked to service), old slot remains unchanged
+- On error, any newly reserved slot capacity is automatically released (rollback)
+
+**Response (200 OK):**
+```json
+{
+  "message": "Booking updated",
+  "booking": {
+    "_id": "507f1f77bcf86cd799439050",
+    "bookingDate": "2026-03-26T10:00:00Z",
+    "status": 0,
+    "user": "507f1f77bcf86cd799439011",
+    "slot": "507f1f77bcf86cd799439021",
+    "service": "507f1f77bcf86cd799439031",
+    "report": "507f1f77bcf86cd799439041",
+    "createdAt": "2026-03-20T10:00:00Z",
+    "updatedAt": "2026-03-21T11:00:00Z"
+  }
+}
+```
+
+**Error Responses:**
+- `403` — Forbidden (user trying to update another user's booking)
+- `404` — Booking or service not found
+- `409` — Slot is full or no longer available, or slot not linked to service
 
 ---
 
@@ -1581,6 +1613,7 @@ PATCH /bookings/:id/status
 - When status transitions to `Cancelled`, credits previously consumed for that booking are refunded once.
 - When status transitions to `Cancelled`, one slot capacity is released back to the same dated slot inventory record.
 - Cancellation compensation is idempotent for repeated cancel requests. Subsequent cancel requests return `refunded: 0`.
+- Cancelled bookings cannot be reactivated via this endpoint. Use reschedule to rebook (returns `409`).
 
 **Response (200 OK) Example:**
 ```json
@@ -1705,14 +1738,14 @@ GET /appointments/:id
 
 ---
 
-#### 5. Update Appointment
+#### 5. Update Appointment (Reschedule)
 ```
 PATCH /appointments/:id
 ```
 
-**Authorization:** Admin only
+**Authorization:** Admin (any appointment) or User (self only)
 
-**Request Body (all fields optional):**
+**Request Body (all fields optional; at least one required):**
 ```json
 {
   "appointmentDate": "2026-03-26T10:00:00Z",
@@ -1722,6 +1755,39 @@ PATCH /appointments/:id
   "reportId": "507f1f77bcf86cd799439041"
 }
 ```
+
+**Reschedule Logic (when `slotId` or `appointmentDate` changes):**
+- New slot is validated against the service slot list (if a service is linked)
+- New slot capacity is reserved (decremented by 1)
+- Old slot capacity is released (incremented by 1)
+- If slot is a daily template, a dated concrete slot inventory record is resolved/created for the new `appointmentDate`
+- If the appointment was previously cancelled, reschedule rebooks it: status is set to `Booked` and credits are consumed again (unless credits were bypassed)
+- If any validation fails (slot full, slot not linked to service), old slot remains unchanged
+- On error, any newly reserved slot capacity is automatically released (rollback)
+
+**Response (200 OK):**
+```json
+{
+  "message": "Appointment updated",
+  "appointment": {
+    "_id": "507f1f77bcf86cd799439150",
+    "appointmentDate": "2026-03-26T10:00:00Z",
+    "status": 0,
+    "user": "507f1f77bcf86cd799439011",
+    "slot": "507f1f77bcf86cd799439021",
+    "doctor": "507f1f77bcf86cd799439013",
+    "service": "507f1f77bcf86cd799439031",
+    "report": "507f1f77bcf86cd799439041",
+    "createdAt": "2026-03-20T10:00:00Z",
+    "updatedAt": "2026-03-21T11:00:00Z"
+  }
+}
+```
+
+**Error Responses:**
+- `403` — Forbidden (user trying to update another user's appointment)
+- `404` — Appointment, service, or doctor not found
+- `409` — Slot is full or no longer available, or slot not linked to service
 
 ---
 
@@ -1756,6 +1822,7 @@ PATCH /appointments/:id/status
 - When status transitions to `Cancelled`, credits previously consumed for that appointment are refunded once.
 - When status transitions to `Cancelled`, one slot capacity is released back to the same dated slot inventory record.
 - Cancellation compensation is idempotent for repeated cancel requests. Subsequent cancel requests return `refunded: 0`.
+- Cancelled appointments cannot be reactivated via this endpoint. Use reschedule to rebook (returns `409`).
 
 **Response (200 OK) Example:**
 ```json

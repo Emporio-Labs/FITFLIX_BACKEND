@@ -119,7 +119,9 @@ export const updateServiceById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		res.status(200).json({ message: "Service updated", service: updatedService });
+		res
+			.status(200)
+			.json({ message: "Service updated", service: updatedService });
 	} catch (error) {
 		next(error);
 	}

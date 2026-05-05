@@ -19,7 +19,11 @@ appointmentRouter.post("/", authorize(["admin"]), createAppointment);
 appointmentRouter.get("/", authorize(["admin"]), getAllAppointments);
 appointmentRouter.get("/me", authorize(["doctor"]), getMyAppointments);
 appointmentRouter.get("/:id", authorize(["admin"]), getAppointmentById);
-appointmentRouter.patch("/:id", authorize(["admin"]), updateAppointmentById);
+appointmentRouter.patch(
+	"/:id",
+	authorize(["admin", "user"]),
+	updateAppointmentById,
+);
 appointmentRouter.delete("/:id", authorize(["admin"]), deleteAppointmentById);
 appointmentRouter.patch(
 	"/:id/status",
