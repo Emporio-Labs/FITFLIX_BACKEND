@@ -8,6 +8,7 @@ import {
 	isHashedPassword,
 	verifyPassword,
 } from "../utils/password";
+import { getJwtConfig, signAuthToken } from "../utils/jwt";
 import {
 	loginBodySchema,
 	signupBodySchema,
@@ -147,6 +148,14 @@ export const login: RequestHandler = async (req, res, next) => {
 
 		req.user = matchedAccount;
 
+		const jwtConfig = getJwtConfig();
+		if (!jwtConfig) {
+			res.status(503).json({ message: "JWT authentication is not configured" });
+			return;
+		}
+
+		const token = signAuthToken(matchedAccount, jwtConfig);
+
 		console.log("[AUTH][LOGIN] Login successful", {
 			email,
 			userId: req.user.id,
@@ -155,6 +164,9 @@ export const login: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({
 			message: "Login successful",
+			token,
+			tokenType: "Bearer",
+			expiresIn: jwtConfig.expiresIn,
 			user: req.user,
 		});
 	} catch (error) {

@@ -312,6 +312,8 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 
 		const appointment = await Appointment.create({
 			appointmentDate,
+			startTime: concreteSlot.startTime,
+			endTime: concreteSlot.endTime,
 			user: userId,
 			slot: concreteReservedSlotId,
 			doctor: doctorId,
@@ -482,6 +484,8 @@ export const updateAppointmentById: RequestHandler = async (req, res, next) => {
 		);
 		const shouldReschedule = Boolean(slotId || appointmentDate);
 		let rebookCreditCost: number | null = null;
+		let rescheduleConcreteSlot: { startTime: string; endTime: string } | null =
+			null;
 
 		// If slot or appointment date is being changed, handle the reschedule logic
 		if (shouldReschedule) {
@@ -539,6 +543,11 @@ export const updateAppointmentById: RequestHandler = async (req, res, next) => {
 					.json({ message: "Slot is full or no longer available" });
 				return;
 			}
+
+			rescheduleConcreteSlot = {
+				startTime: concreteSlot.startTime,
+				endTime: concreteSlot.endTime,
+			};
 
 			const shouldReserveSlot =
 				wasCancelled || newSlotId !== existingAppointment.slot.toString();
@@ -624,6 +633,11 @@ export const updateAppointmentById: RequestHandler = async (req, res, next) => {
 
 		if (reportId) {
 			updatePayload.report = reportId;
+		}
+
+		if (rescheduleConcreteSlot) {
+			updatePayload.startTime = rescheduleConcreteSlot.startTime;
+			updatePayload.endTime = rescheduleConcreteSlot.endTime;
 		}
 
 		if (wasCancelled && shouldReschedule) {

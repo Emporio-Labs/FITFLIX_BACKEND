@@ -6,12 +6,12 @@ import {
 	getServiceById,
 	updateServiceById,
 } from "../controllers/service.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const serviceRouter = Router();
 
-serviceRouter.use(authenticateBasicCredentials);
+serviceRouter.use(authenticateToken);
 serviceRouter.get(
 	"/",
 	authorize(["admin", "doctor", "trainer", "user"]),

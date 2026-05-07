@@ -6,12 +6,12 @@ import {
 	getUserCreditHistoryById,
 	topUpUserCreditsById,
 } from "../controllers/credit.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const creditRouter = Router();
 
-creditRouter.use(authenticateBasicCredentials);
+creditRouter.use(authenticateToken);
 
 creditRouter.get("/me/balance", authorize(["user"]), getMyCreditBalance);
 creditRouter.get("/me/history", authorize(["user"]), getMyCreditHistory);

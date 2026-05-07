@@ -2,6 +2,9 @@ import type { Request, Response } from "express";
 import { Router } from "express";
 import mongoose from "mongoose";
 import { HpodReport } from "../models/Hpodreport.model";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
+import { authorize } from "../middleware/rbac.middleware";
+import { verifyWebhookSecret } from "../middleware/webhook-auth.middleware";
 import {
 	fetchEmailById,
 	getMessageIdsFromHistory,
@@ -28,7 +31,7 @@ const findUserByEmail = async (
 	return user ? user._id : null;
 };
 
-router.post("/email", async (req: Request, res: Response) => {
+router.post("/email", verifyWebhookSecret, async (req: Request, res: Response) => {
 	try {
 		const message = req.body?.message;
 		if (!message?.data) {
@@ -126,6 +129,9 @@ router.post("/email", async (req: Request, res: Response) => {
 		return res.status(500).json({ error: "Internal server error" });
 	}
 });
+
+router.use(authenticateToken);
+router.use(authorize(["admin"]));
 
 // GET /webhook/reports — list all reports (for app to consume)
 router.get("/reports", async (_req: Request, res: Response) => {

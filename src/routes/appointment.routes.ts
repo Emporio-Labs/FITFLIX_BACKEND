@@ -8,12 +8,12 @@ import {
 	getMyAppointments,
 	updateAppointmentById,
 } from "../controllers/appointment.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const appointmentRouter = Router();
 
-appointmentRouter.use(authenticateBasicCredentials);
+appointmentRouter.use(authenticateToken);
 
 appointmentRouter.post("/", authorize(["admin"]), createAppointment);
 appointmentRouter.get("/", authorize(["admin"]), getAllAppointments);

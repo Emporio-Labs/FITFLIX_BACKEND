@@ -4,14 +4,19 @@ import {
 	deleteTrainerById,
 	getAllTrainers,
 	getTrainerById,
+	getPublicTrainerById,
+	getPublicTrainers,
 	updateTrainerById,
 } from "../controllers/trainer.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const trainerRouter = Router();
 
-trainerRouter.use(authenticateBasicCredentials);
+trainerRouter.get("/public", getPublicTrainers);
+trainerRouter.get("/public/:id", getPublicTrainerById);
+
+trainerRouter.use(authenticateToken);
 trainerRouter.post("/", authorize(["admin"]), createTrainer);
 trainerRouter.get("/", authorize(["admin"]), getAllTrainers);
 trainerRouter.get("/:id", authorize(["trainer", "doctor"]), getTrainerById);

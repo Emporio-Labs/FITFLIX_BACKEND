@@ -25,9 +25,38 @@ config();
 
 const app = express();
 
+const isProduction = process.env.NODE_ENV === "production";
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
+	.split(",")
+	.map((origin) => origin.trim())
+	.filter((origin) => origin.length > 0);
+const allowAnyOrigin = allowedOrigins.length === 0 && !isProduction;
+
+const isOriginAllowed = (origin: string | undefined): boolean => {
+	if (!origin) {
+		return false;
+	}
+
+	if (allowAnyOrigin) {
+		return true;
+	}
+
+	return allowedOrigins.includes(origin);
+};
+
 app.use((req, res, next) => {
-	// TODO: Temporary MVP setting. Lock this down to specific frontend origins before production hardening.
-	res.setHeader("Access-Control-Allow-Origin", "*");
+	const origin = req.header("origin");
+
+	if (origin && isOriginAllowed(origin)) {
+		res.setHeader(
+			"Access-Control-Allow-Origin",
+			allowAnyOrigin ? "*" : origin,
+		);
+
+		if (!allowAnyOrigin) {
+			res.setHeader("Vary", "Origin");
+		}
+	}
 
 	res.setHeader(
 		"Access-Control-Allow-Methods",
@@ -35,11 +64,33 @@ app.use((req, res, next) => {
 	);
 	res.setHeader(
 		"Access-Control-Allow-Headers",
-		"Content-Type, Authorization, X-Captcha-Token",
+		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret",
 	);
 	res.setHeader("Access-Control-Allow-Credentials", "false");
+	res.setHeader("X-Content-Type-Options", "nosniff");
+	res.setHeader("X-Frame-Options", "DENY");
+	res.setHeader("Referrer-Policy", "no-referrer");
+	res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+	res.setHeader("Cross-Origin-Resource-Policy", "same-site");
+	res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+	res.setHeader(
+		"Content-Security-Policy",
+		"default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+	);
+
+	if (isProduction) {
+		res.setHeader(
+			"Strict-Transport-Security",
+			"max-age=31536000; includeSubDomains",
+		);
+	}
 
 	if (req.method === "OPTIONS") {
+		if (origin && !isOriginAllowed(origin)) {
+			res.status(403).json({ message: "CORS origin denied" });
+			return;
+		}
+
 		res.sendStatus(204);
 		return;
 	}

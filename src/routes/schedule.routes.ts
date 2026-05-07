@@ -7,13 +7,13 @@ import {
 	rescheduleSchedule,
 	updateSchedule,
 } from "../controllers/schedule.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const scheduleRouter = express.Router();
 
 // All routes require authentication
-scheduleRouter.use(authenticateBasicCredentials);
+scheduleRouter.use(authenticateToken);
 
 // User can view their own schedule
 scheduleRouter.get("/my-schedule", getMySchedule);

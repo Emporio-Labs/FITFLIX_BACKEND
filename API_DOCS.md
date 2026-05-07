@@ -2,7 +2,7 @@
 
 **Base URL:** `http://localhost:3000`  
 **API Version:** 1.0.0  
-**Last Updated:** April 11, 2026
+**Last Updated:** May 5, 2026
 
 ---
 
@@ -1474,11 +1474,15 @@ POST /bookings
   "booking": {
     "_id": "507f1f77bcf86cd799439050",
     "bookingDate": "2026-03-25T10:00:00Z",
+    "startTime": "10:00",
+    "endTime": "11:00",
     "status": 0,
     "user": "507f1f77bcf86cd799439011",
     "slot": "507f1f77bcf86cd799439020",
     "service": "507f1f77bcf86cd799439030",
     "report": "507f1f77bcf86cd799439040",
+    "creditCostSnapshot": 2,
+    "creditsBypassed": false,
     "createdAt": "2026-03-20T10:00:00Z",
     "updatedAt": "2026-03-20T10:00:00Z"
   },
@@ -1564,11 +1568,15 @@ PATCH /bookings/:id
   "booking": {
     "_id": "507f1f77bcf86cd799439050",
     "bookingDate": "2026-03-26T10:00:00Z",
+    "startTime": "10:00",
+    "endTime": "11:00",
     "status": 0,
     "user": "507f1f77bcf86cd799439011",
     "slot": "507f1f77bcf86cd799439021",
     "service": "507f1f77bcf86cd799439031",
     "report": "507f1f77bcf86cd799439041",
+    "creditCostSnapshot": 2,
+    "creditsBypassed": false,
     "createdAt": "2026-03-20T10:00:00Z",
     "updatedAt": "2026-03-21T11:00:00Z"
   }
@@ -1682,12 +1690,16 @@ POST /appointments
   "appointment": {
     "_id": "507f1f77bcf86cd799439150",
     "appointmentDate": "2026-03-25T10:00:00Z",
+    "startTime": "10:00",
+    "endTime": "11:00",
     "status": 0,
     "user": "507f1f77bcf86cd799439011",
     "slot": "507f1f77bcf86cd799439020",
     "doctor": "507f1f77bcf86cd799439012",
     "service": "507f1f77bcf86cd799439030",
-    "report": "507f1f77bcf86cd799439040"
+    "report": "507f1f77bcf86cd799439040",
+    "creditCostSnapshot": 2,
+    "creditsBypassed": false
   },
   "credits": {
     "consumed": 2,
@@ -1772,12 +1784,16 @@ PATCH /appointments/:id
   "appointment": {
     "_id": "507f1f77bcf86cd799439150",
     "appointmentDate": "2026-03-26T10:00:00Z",
+    "startTime": "10:00",
+    "endTime": "11:00",
     "status": 0,
     "user": "507f1f77bcf86cd799439011",
     "slot": "507f1f77bcf86cd799439021",
     "doctor": "507f1f77bcf86cd799439013",
     "service": "507f1f77bcf86cd799439031",
     "report": "507f1f77bcf86cd799439041",
+    "creditCostSnapshot": 2,
+    "creditsBypassed": false,
     "createdAt": "2026-03-20T10:00:00Z",
     "updatedAt": "2026-03-21T11:00:00Z"
   }

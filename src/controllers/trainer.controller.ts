@@ -18,6 +18,18 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	return idParam;
 };
 
+const toPublicTrainerResponse = (trainer: {
+	_id: mongoose.Types.ObjectId;
+	trainerName: string;
+	description: string;
+	specialities: string[];
+}) => ({
+	_id: trainer._id,
+	name: trainer.trainerName,
+	description: trainer.description,
+	specialities: trainer.specialities,
+});
+
 export const createTrainer: RequestHandler = async (req, res, next) => {
 	const parsedBody = createTrainerBodySchema.safeParse(req.body);
 
@@ -51,6 +63,19 @@ export const getAllTrainers: RequestHandler = async (_req, res, next) => {
 	}
 };
 
+export const getPublicTrainers: RequestHandler = async (_req, res, next) => {
+	try {
+		const trainers = await Trainer.find().select(
+			"trainerName description specialities",
+		);
+		res
+			.status(200)
+			.json({ trainers: trainers.map(toPublicTrainerResponse) });
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const getTrainerById: RequestHandler = async (req, res, next) => {
 	const id = getIdParam(req.params.id);
 
@@ -68,6 +93,30 @@ export const getTrainerById: RequestHandler = async (req, res, next) => {
 		}
 
 		res.status(200).json({ trainer });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getPublicTrainerById: RequestHandler = async (req, res, next) => {
+	const id = getIdParam(req.params.id);
+
+	if (!id) {
+		res.status(400).json({ message: "Invalid trainer id" });
+		return;
+	}
+
+	try {
+		const trainer = await Trainer.findById(id).select(
+			"trainerName description specialities",
+		);
+
+		if (!trainer) {
+			res.status(404).json({ message: "Trainer not found" });
+			return;
+		}
+
+		res.status(200).json({ trainer: toPublicTrainerResponse(trainer) });
 	} catch (error) {
 		next(error);
 	}

@@ -287,6 +287,8 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 
 		const booking = await Booking.create({
 			bookingDate,
+			startTime: concreteSlot.startTime,
+			endTime: concreteSlot.endTime,
 			user: targetUserId,
 			slot: concreteReservedSlotId,
 			service: serviceId,
@@ -449,9 +451,20 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		if (isCancelledBookingStatus(existingBooking.status)) {
+			res.status(409).json({
+				message:
+					"Cancelled bookings are immutable and cannot be updated or rescheduled",
+			});
+			return;
+		}
+
 		const wasCancelled = isCancelledBookingStatus(existingBooking.status);
 		const shouldReschedule = Boolean(slotId || bookingDate);
 		let rebookCreditCost: number | null = null;
+
+		let rescheduleConcreteSlot: { startTime: string; endTime: string } | null =
+			null;
 
 		// If slot or booking date is being changed, handle the reschedule logic
 		if (shouldReschedule) {
@@ -495,6 +508,11 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 					.json({ message: "Slot is full or no longer available" });
 				return;
 			}
+
+			rescheduleConcreteSlot = {
+				startTime: concreteSlot.startTime,
+				endTime: concreteSlot.endTime,
+			};
 
 			const shouldReserveSlot =
 				wasCancelled || newSlotId !== existingBooking.slot.toString();
@@ -575,6 +593,11 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 			updatePayload.report = reportId;
 		}
 
+		if (rescheduleConcreteSlot) {
+			updatePayload.startTime = rescheduleConcreteSlot.startTime;
+			updatePayload.endTime = rescheduleConcreteSlot.endTime;
+		}
+
 		if (wasCancelled && shouldReschedule) {
 			updatePayload.status = BookingStatus.Booked;
 			if (rebookCreditCost !== null) {
@@ -582,15 +605,33 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 			}
 		}
 
-		const updatedBooking = await Booking.findByIdAndUpdate(id, updatePayload, {
+		const updatedBooking = await Booking.findOneAndUpdate(
+			{ _id: id, status: nonCancelledBookingStatusFilter },
+			updatePayload,
+			{
 			returnDocument: "after",
 			runValidators: true,
-		});
+			},
+		);
 
 		if (!updatedBooking) {
 			// Rollback: release the newly reserved slot if update failed
 			if (newReservedSlotId) {
 				await releaseSlotCapacity(newReservedSlotId).catch(() => null);
+			}
+
+			const latestBooking = await Booking.findById(id);
+			if (!latestBooking) {
+				res.status(404).json({ message: "Booking not found" });
+				return;
+			}
+
+			if (isCancelledBookingStatus(latestBooking.status)) {
+				res.status(409).json({
+					message:
+						"Cancelled bookings are immutable and cannot be updated or rescheduled",
+				});
+				return;
 			}
 
 			res.status(404).json({ message: "Booking not found" });
@@ -810,7 +851,7 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 			if (isCancelledBookingStatus(existingBooking.status)) {
 				res.status(409).json({
 					message:
-						"Cancelled bookings cannot be reactivated. Reschedule to rebook.",
+						"Cancelled bookings are immutable and cannot be updated or reactivated",
 				});
 				return;
 			}

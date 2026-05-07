@@ -7,12 +7,12 @@ import {
 	getMyMemberships,
 	updateMembershipById,
 } from "../controllers/membership.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const membershipRouter = Router();
 
-membershipRouter.use(authenticateBasicCredentials);
+membershipRouter.use(authenticateToken);
 
 membershipRouter.post("/", authorize(["admin"]), createMembership);
 membershipRouter.get("/", authorize(["admin"]), getAllMemberships);

@@ -4,6 +4,8 @@ import { BookingStatus } from "./Enums";
 const bookingSchema = new mongoose.Schema(
 	{
 		bookingDate: { type: Date, required: true },
+		startTime: { type: String, required: true },
+		endTime: { type: String, required: true },
 		status: {
 			type: String,
 			enum: Object.values(BookingStatus),

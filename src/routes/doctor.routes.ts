@@ -4,14 +4,19 @@ import {
 	deleteDoctorById,
 	getAllDoctors,
 	getDoctorById,
+	getPublicDoctorById,
+	getPublicDoctors,
 	updateDoctorById,
 } from "../controllers/doctor.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const doctorRouter = Router();
 
-doctorRouter.use(authenticateBasicCredentials);
+doctorRouter.get("/public", getPublicDoctors);
+doctorRouter.get("/public/:id", getPublicDoctorById);
+
+doctorRouter.use(authenticateToken);
 doctorRouter.post("/", authorize(["admin"]), createDoctor);
 doctorRouter.get("/", authorize(["admin"]), getAllDoctors);
 doctorRouter.get("/:id", authorize(["doctor", "trainer"]), getDoctorById);

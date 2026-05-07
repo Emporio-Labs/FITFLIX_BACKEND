@@ -42,6 +42,20 @@ const toTherapyResponse = (service: {
 	updatedAt: service.updatedAt,
 });
 
+const toPublicTherapyResponse = (service: {
+	_id: mongoose.Types.ObjectId;
+	serviceName: string;
+	serviceTime: number;
+	description: string;
+	tags: string[];
+}) => ({
+	_id: service._id,
+	therapyName: service.serviceName,
+	therapyTime: service.serviceTime,
+	description: service.description,
+	tags: service.tags,
+});
+
 export const createTherapy: RequestHandler = async (req, res, next) => {
 	const parsedBody = createTherapyBodySchema.safeParse(req.body);
 
@@ -87,6 +101,20 @@ export const getAllTherapies: RequestHandler = async (_req, res, next) => {
 	}
 };
 
+export const getPublicTherapies: RequestHandler = async (_req, res, next) => {
+	try {
+		const therapies = await Service.find({
+			serviceType: ServiceType.Therapy,
+		}).select("serviceName serviceTime description tags");
+
+		res.status(200).json({
+			therapies: therapies.map(toPublicTherapyResponse),
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const getTherapyById: RequestHandler = async (req, res, next) => {
 	const id = getIdParam(req.params.id);
 
@@ -107,6 +135,31 @@ export const getTherapyById: RequestHandler = async (req, res, next) => {
 		}
 
 		res.status(200).json({ therapy: toTherapyResponse(therapy) });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getPublicTherapyById: RequestHandler = async (req, res, next) => {
+	const id = getIdParam(req.params.id);
+
+	if (!id) {
+		res.status(400).json({ message: "Invalid therapy id" });
+		return;
+	}
+
+	try {
+		const therapy = await Service.findOne({
+			_id: id,
+			serviceType: ServiceType.Therapy,
+		}).select("serviceName serviceTime description tags");
+
+		if (!therapy) {
+			res.status(404).json({ message: "Therapy not found" });
+			return;
+		}
+
+		res.status(200).json({ therapy: toPublicTherapyResponse(therapy) });
 	} catch (error) {
 		next(error);
 	}

@@ -3,15 +3,20 @@ import {
 	createTherapy,
 	deleteTherapyById,
 	getAllTherapies,
+	getPublicTherapies,
+	getPublicTherapyById,
 	getTherapyById,
 	updateTherapyById,
 } from "../controllers/therapy.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const therapyRouter = Router();
 
-therapyRouter.use(authenticateBasicCredentials);
+therapyRouter.get("/public", getPublicTherapies);
+therapyRouter.get("/public/:id", getPublicTherapyById);
+
+therapyRouter.use(authenticateToken);
 therapyRouter.get(
 	"/",
 	authorize(["admin", "doctor", "trainer", "user"]),

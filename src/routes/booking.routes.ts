@@ -8,12 +8,12 @@ import {
 	getMyBookings,
 	updateBookingById,
 } from "../controllers/booking.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const bookingRouter = Router();
 
-bookingRouter.use(authenticateBasicCredentials);
+bookingRouter.use(authenticateToken);
 
 bookingRouter.post("/", authorize(["admin", "user"]), createBooking);
 bookingRouter.get("/", authorize(["admin"]), getAllBookings);

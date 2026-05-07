@@ -11,12 +11,12 @@ import {
 	updateMyPassword,
 	updateUserById,
 } from "../controllers/user.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const userRouter = Router();
 
-userRouter.use(authenticateBasicCredentials);
+userRouter.use(authenticateToken);
 userRouter.post("/", authorize(["admin"]), createUser);
 userRouter.get("/", authorize(["admin", "doctor"]), getAllUsers);
 userRouter.get("/me", authorize(["user"]), getMyUser);

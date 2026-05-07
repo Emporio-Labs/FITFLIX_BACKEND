@@ -18,6 +18,18 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	return idParam;
 };
 
+const toPublicDoctorResponse = (doctor: {
+	_id: mongoose.Types.ObjectId;
+	doctorName: string;
+	description: string;
+	specialities: string[];
+}) => ({
+	_id: doctor._id,
+	name: doctor.doctorName,
+	description: doctor.description,
+	specialities: doctor.specialities,
+});
+
 export const createDoctor: RequestHandler = async (req, res, next) => {
 	const parsedBody = createDoctorBodySchema.safeParse(req.body);
 
@@ -51,6 +63,19 @@ export const getAllDoctors: RequestHandler = async (_req, res, next) => {
 	}
 };
 
+export const getPublicDoctors: RequestHandler = async (_req, res, next) => {
+	try {
+		const doctors = await Doctor.find().select(
+			"doctorName description specialities",
+		);
+		res
+			.status(200)
+			.json({ doctors: doctors.map(toPublicDoctorResponse) });
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const getDoctorById: RequestHandler = async (req, res, next) => {
 	const id = getIdParam(req.params.id);
 
@@ -68,6 +93,30 @@ export const getDoctorById: RequestHandler = async (req, res, next) => {
 		}
 
 		res.status(200).json({ doctor });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getPublicDoctorById: RequestHandler = async (req, res, next) => {
+	const id = getIdParam(req.params.id);
+
+	if (!id) {
+		res.status(400).json({ message: "Invalid doctor id" });
+		return;
+	}
+
+	try {
+		const doctor = await Doctor.findById(id).select(
+			"doctorName description specialities",
+		);
+
+		if (!doctor) {
+			res.status(404).json({ message: "Doctor not found" });
+			return;
+		}
+
+		res.status(200).json({ doctor: toPublicDoctorResponse(doctor) });
 	} catch (error) {
 		next(error);
 	}

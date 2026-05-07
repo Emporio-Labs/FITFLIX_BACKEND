@@ -6,19 +6,24 @@ import {
 	getSlotById,
 	updateSlotById,
 } from "../controllers/slot.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const slotRouter = Router();
 
-slotRouter.get("/", getAllSlots);
-slotRouter.get("/:id", getSlotById);
-
-slotRouter.use(authenticateBasicCredentials);
-slotRouter.use(authorize(["admin"]));
-
-slotRouter.post("/", createSlot);
-slotRouter.patch("/:id", updateSlotById);
-slotRouter.delete("/:id", deleteSlotById);
+slotRouter.use(authenticateToken);
+slotRouter.get(
+	"/",
+	authorize(["admin", "doctor", "trainer", "user"]),
+	getAllSlots,
+);
+slotRouter.get(
+	"/:id",
+	authorize(["admin", "doctor", "trainer", "user"]),
+	getSlotById,
+);
+slotRouter.post("/", authorize(["admin"]), createSlot);
+slotRouter.patch("/:id", authorize(["admin"]), updateSlotById);
+slotRouter.delete("/:id", authorize(["admin"]), deleteSlotById);
 
 export default slotRouter;

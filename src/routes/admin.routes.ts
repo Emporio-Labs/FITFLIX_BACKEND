@@ -6,12 +6,12 @@ import {
 	getAllAdmins,
 	updateAdminById,
 } from "../controllers/admin.controller";
-import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const adminRouter = Router();
 
-adminRouter.use(authenticateBasicCredentials);
+adminRouter.use(authenticateToken);
 adminRouter.post("/", authorize(["admin"]), createAdmin);
 adminRouter.get("/", authorize(["admin"]), getAllAdmins);
 adminRouter.get("/:id", authorize(["admin"]), getAdminById);

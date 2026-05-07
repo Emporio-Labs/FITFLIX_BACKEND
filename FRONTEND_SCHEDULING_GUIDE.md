@@ -50,10 +50,12 @@ Meaning for UI:
 ### 2.4 Credit snapshots on records
 
 On create, backend stores on booking/appointment:
+- `startTime` — slot start time snapshot (e.g. `"10:00"`)
+- `endTime` — slot end time snapshot (e.g. `"11:00"`)
 - `creditCostSnapshot`
 - `creditsBypassed`
 
-Frontend should display these snapshot values in details/history UI so later service price changes do not alter past record display.
+Frontend should display these snapshot values in details/history UI so later slot or service changes do not alter past record display.
 
 ## 3) Role-based UX Matrix
 
@@ -299,7 +301,9 @@ type BookableItem = {
   slots: string[];
 };
 
-type BookingOrAppointmentCreditMeta = {
+type BookingOrAppointmentRecord = {
+  startTime: string;
+  endTime: string;
   creditCostSnapshot: number;
   creditsBypassed: boolean;
 };
