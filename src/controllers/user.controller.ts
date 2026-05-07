@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import HpodMetric from "../models/HpodMetric";
 import { HpodReport } from "../models/Hpodreport.model";
 import User from "../models/User";
 import { buildApiErrorEnvelope } from "../utils/api-error";
@@ -492,6 +493,26 @@ export const getMyUserReports: RequestHandler = async (req, res, next) => {
 		});
 
 		res.status(200).json({ reports: normalizedReports });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getMyUserHpodMetrics: RequestHandler = async (req, res, next) => {
+	if (!req.user || req.user.role !== "user") {
+		res.status(403).json({
+			error: "Only users can access this endpoint",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	try {
+		const history = await HpodMetric.find({ userId: req.user.id })
+			.sort({ recordedAt: -1 })
+			.select("-gmailMessageId -userId -__v");
+
+		res.status(200).json({ history });
 	} catch (error) {
 		next(error);
 	}

@@ -512,7 +512,69 @@ GET /users/me/reports
 
 ---
 
-#### 6. Get My Report PDF
+#### 6. Get My HPOD Metrics History
+```
+GET /users/me/hpod-metrics
+```
+
+**Authorization:** User only
+
+**Response (200 OK):**
+```json
+{
+  "history": [
+    {
+      "_id": "507f1f77bcf86cd799439120",
+      "reportId": "507f1f77bcf86cd799439111",
+      "reportDate": "2026-04-10",
+      "recordedAt": "2026-04-10T08:00:00.000Z",
+      "receivedAt": "2026-04-10T08:05:00.000Z",
+      "patientName": "John Doe",
+      "patientEmail": "john@example.com",
+      "patientPhone": "+1234567890",
+      "age": "28",
+      "gender": "Male",
+      "vitals": {
+        "weight_kg": 76.2,
+        "height_cm": 178.0,
+        "bmi": 24.1,
+        "bmi_category": "Normal",
+        "spo2_percent": 98,
+        "body_temperature_f": 98.6,
+        "pulse": 72,
+        "blood_pressure": "118/76"
+      },
+      "bodyComposition": {
+        "body_fat_mass_kg": 14.5,
+        "body_fat_percent": 19.0,
+        "total_body_water_L": 41.2,
+        "protein_kg": 10.6,
+        "minerals_kg": 3.6,
+        "skeletal_muscle_mass_kg": 31.8,
+        "visceral_fat_cm2": 82,
+        "basal_metabolic_rate_cal": 1650,
+        "intracellular_water_L": 24.8,
+        "extracellular_water_L": 16.4
+      },
+      "ecg": {
+        "pr_interval": "160 ms",
+        "qrs_interval": "90 ms",
+        "qtc_interval": "420 ms",
+        "heart_rate": "72 bpm"
+      },
+      "idealBodyWeight_kg": 72.5,
+      "weightToLose_kg": 4.0,
+      "testsNotTaken": [],
+      "healthInsight": "Overall metrics are within normal range with a slight opportunity to improve body composition.",
+      "concerns": []
+    }
+  ]
+}
+```
+
+---
+
+#### 7. Get My Report PDF
 ```
 GET /users/me/reports/:id/pdf
 ```
@@ -532,7 +594,7 @@ GET /users/me/reports/:id/pdf
 
 ---
 
-#### 7. Update My Password
+#### 8. Update My Password
 ```
 PATCH /users/me/password
 ```
@@ -565,7 +627,7 @@ PATCH /users/me/password
 
 ---
 
-#### 8. Onboard User (self or admin)
+#### 9. Onboard User (self or admin)
 ```
 PATCH /users/:id/onboard
 ```

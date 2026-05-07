@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { Router } from "express";
 import mongoose from "mongoose";
+import HpodMetric from "../models/HpodMetric";
 import { HpodReport } from "../models/Hpodreport.model";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
@@ -9,7 +10,7 @@ import {
 	fetchEmailById,
 	getMessageIdsFromHistory,
 } from "../utils/email.service";
-import { generateHpodSummary } from "../utils/llm.service";
+import { generateHpodSummary, type HpodSummary } from "../utils/llm.service";
 
 const router = Router();
 
@@ -30,6 +31,75 @@ const findUserByEmail = async (
 		.findOne({ email }, { projection: { _id: 1 } });
 	return user ? user._id : null;
 };
+
+const resolveRecordedAt = (
+	reportDate: string | null,
+	fallback: Date,
+): Date => {
+	if (!reportDate) return fallback;
+	const parsed = new Date(reportDate);
+	return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+};
+
+const buildHpodMetricPayload = (
+	summary: HpodSummary,
+	options: {
+		userId: mongoose.Types.ObjectId;
+		reportId: mongoose.Types.ObjectId;
+		gmailMessageId: string;
+		receivedAt: Date;
+	},
+) => ({
+	userId: options.userId,
+	reportId: options.reportId,
+	gmailMessageId: options.gmailMessageId,
+	reportDate: summary.reportDate ?? null,
+	recordedAt: resolveRecordedAt(summary.reportDate ?? null, options.receivedAt),
+	receivedAt: options.receivedAt,
+	patientName: summary.patientName ?? null,
+	patientEmail: summary.patientEmail ?? null,
+	patientPhone: summary.patientPhone ?? null,
+	age: summary.age ?? null,
+	gender: summary.gender ?? null,
+	vitals: {
+		weight_kg: summary.vitals.weight_kg ?? null,
+		height_cm: summary.vitals.height_cm ?? null,
+		bmi: summary.vitals.bmi ?? null,
+		bmi_category: summary.vitals.bmi_category ?? null,
+		spo2_percent: summary.vitals.spo2_percent ?? null,
+		body_temperature_f: summary.vitals.body_temperature_f ?? null,
+		pulse: summary.vitals.pulse ?? null,
+		blood_pressure: summary.vitals.blood_pressure ?? null,
+	},
+	bodyComposition: {
+		body_fat_mass_kg: summary.bodyComposition.body_fat_mass_kg ?? null,
+		body_fat_percent: summary.bodyComposition.body_fat_percent ?? null,
+		total_body_water_L: summary.bodyComposition.total_body_water_L ?? null,
+		protein_kg: summary.bodyComposition.protein_kg ?? null,
+		minerals_kg: summary.bodyComposition.minerals_kg ?? null,
+		skeletal_muscle_mass_kg:
+			summary.bodyComposition.skeletal_muscle_mass_kg ?? null,
+		visceral_fat_cm2: summary.bodyComposition.visceral_fat_cm2 ?? null,
+		basal_metabolic_rate_cal:
+			summary.bodyComposition.basal_metabolic_rate_cal ?? null,
+		intracellular_water_L:
+			summary.bodyComposition.intracellular_water_L ?? null,
+		extracellular_water_L:
+			summary.bodyComposition.extracellular_water_L ?? null,
+	},
+	ecg: {
+		pr_interval: summary.ecg.pr_interval ?? null,
+		qrs_interval: summary.ecg.qrs_interval ?? null,
+		qtc_interval: summary.ecg.qtc_interval ?? null,
+		heart_rate: summary.ecg.heart_rate ?? null,
+	},
+	idealBodyWeight_kg: summary.idealBodyWeight_kg ?? null,
+	weightToLose_kg: summary.weightToLose_kg ?? null,
+	testsNotTaken: summary.testsNotTaken ?? [],
+	healthInsight: summary.healthInsight ?? "",
+	concerns: summary.concerns ?? [],
+	source: "hpod",
+});
 
 router.post("/email", verifyWebhookSecret, async (req: Request, res: Response) => {
 	try {
@@ -76,7 +146,7 @@ router.post("/email", verifyWebhookSecret, async (req: Request, res: Response) =
 			}
 
 			// call GPT to extract structured summary from PDF text
-			let aiSummary: Record<string, any> | null = null;
+			let aiSummary: HpodSummary | null = null;
 			let summaryGeneratedAt: Date | null = null;
 
 			if (email.pdfText) {
@@ -99,7 +169,7 @@ router.post("/email", verifyWebhookSecret, async (req: Request, res: Response) =
 			}
 
 			// save to MongoDB
-			await HpodReport.findOneAndUpdate(
+			const report = await HpodReport.findOneAndUpdate(
 				{ gmailMessageId: email.gmailMessageId },
 				{
 					$setOnInsert: {
@@ -117,6 +187,22 @@ router.post("/email", verifyWebhookSecret, async (req: Request, res: Response) =
 				},
 				{ upsert: true, returnDocument: "after" },
 			);
+
+			if (report && aiSummary && userId) {
+				const receivedAt = report.receivedAt ?? new Date();
+				const metricPayload = buildHpodMetricPayload(aiSummary, {
+					userId,
+					reportId: report._id,
+					gmailMessageId: email.gmailMessageId,
+					receivedAt,
+				});
+
+				await HpodMetric.findOneAndUpdate(
+					{ gmailMessageId: email.gmailMessageId },
+					{ $setOnInsert: metricPayload },
+					{ upsert: true },
+				);
+			}
 
 			console.log(
 				`Saved HPOD report - patient: ${userEmail}, userId: ${userId}`,

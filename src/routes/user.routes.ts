@@ -3,6 +3,7 @@ import {
 	createUser,
 	deleteUserById,
 	getAllUsers,
+	getMyUserHpodMetrics,
 	getMyUser,
 	getMyUserReportPdf,
 	getMyUserReports,
@@ -21,6 +22,7 @@ userRouter.post("/", authorize(["admin"]), createUser);
 userRouter.get("/", authorize(["admin", "doctor"]), getAllUsers);
 userRouter.get("/me", authorize(["user"]), getMyUser);
 userRouter.get("/me/reports", authorize(["user"]), getMyUserReports);
+userRouter.get("/me/hpod-metrics", authorize(["user"]), getMyUserHpodMetrics);
 userRouter.get("/me/reports/:id/pdf", authorize(["user"]), getMyUserReportPdf);
 userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
 userRouter.get("/:id", authorize(["admin", "doctor"]), getUserById);
