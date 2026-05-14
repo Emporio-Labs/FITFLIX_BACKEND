@@ -459,9 +459,7 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const wasCancelled = isCancelledBookingStatus(existingBooking.status);
 		const shouldReschedule = Boolean(slotId || bookingDate);
-		let rebookCreditCost: number | null = null;
 
 		let rescheduleConcreteSlot: { startTime: string; endTime: string } | null =
 			null;
@@ -515,7 +513,7 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 			};
 
 			const shouldReserveSlot =
-				wasCancelled || newSlotId !== existingBooking.slot.toString();
+				newSlotId !== existingBooking.slot.toString();
 
 			if (shouldReserveSlot) {
 				// Reserve the new slot
@@ -536,39 +534,6 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 			// Release the old slot when switching to a different slot
 			if (newSlotId !== existingBooking.slot.toString()) {
 				await releaseSlotCapacity(existingBooking.slot.toString());
-			}
-
-			if (wasCancelled) {
-				rebookCreditCost = Math.max(1, Number(service.creditCost ?? 1));
-
-				if (!existingBooking.creditsBypassed) {
-					try {
-						await consumeCredits({
-							userId: existingBooking.user.toString(),
-							amount: rebookCreditCost,
-							sourceType: CreditTransactionSource.Booking,
-							sourceId: existingBooking._id.toString(),
-							actorId: requester.id,
-							actorRole: requester.role,
-							reason: `Booking ${existingBooking._id.toString()} rescheduled`,
-						});
-					} catch (error) {
-						if (newReservedSlotId) {
-							await releaseSlotCapacity(newReservedSlotId).catch(() => null);
-							newReservedSlotId = null;
-						}
-
-						if (error instanceof CreditServiceError) {
-							const creditError = mapCreditServiceError(error);
-							res
-								.status(creditError.status)
-								.json({ message: creditError.message });
-							return;
-						}
-
-						throw error;
-					}
-				}
 			}
 		}
 
@@ -596,13 +561,6 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 		if (rescheduleConcreteSlot) {
 			updatePayload.startTime = rescheduleConcreteSlot.startTime;
 			updatePayload.endTime = rescheduleConcreteSlot.endTime;
-		}
-
-		if (wasCancelled && shouldReschedule) {
-			updatePayload.status = BookingStatus.Booked;
-			if (rebookCreditCost !== null) {
-				updatePayload.creditCostSnapshot = rebookCreditCost;
-			}
 		}
 
 		const updatedBooking = await Booking.findOneAndUpdate(

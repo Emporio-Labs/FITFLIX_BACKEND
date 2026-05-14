@@ -6,6 +6,7 @@ import authRouter from "./routes/auth.routes";
 import bookingRouter from "./routes/booking.routes";
 import creditRouter from "./routes/credit.routes";
 import doctorRouter from "./routes/doctor.routes";
+import exerciseRouter from "./routes/exercise.routes";
 import leadRouter from "./routes/lead.routes";
 import membershipRouter from "./routes/membership.routes";
 import scheduleRouter from "./routes/schedule.routes";
@@ -15,6 +16,7 @@ import therapyRouter from "./routes/therapy.routes";
 import trainerRouter from "./routes/trainer.routes";
 import userRouter from "./routes/user.routes";
 import webhookRouter from "./routes/webhook.route";
+import workoutRouter from "./routes/workout.routes";
 import {
 	buildApiErrorEnvelope,
 	isApiErrorEnvelope,
@@ -198,8 +200,10 @@ app.use("/bookings", bookingRouter);
 app.use("/credits", creditRouter);
 app.use("/appointments", appointmentRouter);
 app.use("/schedules", scheduleRouter);
+app.use("/exercises", exerciseRouter);
 app.use("/leads", leadRouter);
 app.use("/webhook", webhookRouter);
+app.use("/workouts", workoutRouter);
 
 app.get("/health", (_req, res) => {
 	res.status(200).json({ ok: true });

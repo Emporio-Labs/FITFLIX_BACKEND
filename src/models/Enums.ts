@@ -48,3 +48,24 @@ export enum CreditTransactionSource {
 	Appointment = "Appointment",
 	Admin = "Admin",
 }
+
+export enum MuscleGroup {
+	Chest = "Chest",
+	Back = "Back",
+	Legs = "Legs",
+	Shoulders = "Shoulders",
+	Arms = "Arms",
+	Core = "Core",
+}
+
+export enum ExerciseDifficulty {
+	Beginner = "Beginner",
+	Intermediate = "Intermediate",
+	Advanced = "Advanced",
+}
+
+export enum WorkoutSessionStatus {
+	Active = "Active",
+	Completed = "Completed",
+	Abandoned = "Abandoned",
+}
