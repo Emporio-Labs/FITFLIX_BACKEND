@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { Gender } from "./Enums";
+import { Gender, OnboardingStep } from "./Enums";
 
 const userSchema = new mongoose.Schema(
 	{
@@ -14,6 +14,25 @@ const userSchema = new mongoose.Schema(
 		address: { type: String, default: undefined },
 		passwordHash: { type: String, required: true, select: false },
 		onboarded: { type: Boolean, default: false },
+		onboardingStatus: {
+			currentStep: {
+				type: String,
+				enum: Object.values(OnboardingStep),
+				default: OnboardingStep.HEALTH_MARKERS,
+			},
+			completedSteps: [
+				{ type: String, enum: Object.values(OnboardingStep) },
+			],
+			healthMarkersCompleted: { type: Boolean, default: false },
+			healthGoalsCompleted: { type: Boolean, default: false },
+			consentCompleted: { type: Boolean, default: false },
+			reportsUploaded: { type: Boolean, default: false },
+			sportsScientistBooked: { type: Boolean, default: false },
+			nutritionistBooked: { type: Boolean, default: false },
+			onboardingCompleted: { type: Boolean, default: false },
+			startedAt: { type: Date, default: undefined },
+			completedAt: { type: Date, default: undefined },
+		},
 	},
 	{ timestamps: true },
 );

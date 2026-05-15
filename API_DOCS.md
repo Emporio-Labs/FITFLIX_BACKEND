@@ -26,8 +26,9 @@
 16. [Schedule Routes](#schedule-routes)
 17. [Exercise Routes](#exercise-routes)
 18. [Workout Routes](#workout-routes)
-19. [Enums & Status Codes](#enums--status-codes)
-20. [Error Handling](#error-handling)
+19. [Onboarding Routes](#onboarding-routes)
+20. [Enums & Status Codes](#enums--status-codes)
+21. [Error Handling](#error-handling)
 
 ---
 
@@ -80,9 +81,10 @@ The system supports 4 role types:
 | `/schedules` | User schedules/todos | ✅ All authenticated | 6 endpoints |
 | `/exercises` | Exercise library | ✅ Admin + User | 5 endpoints |
 | `/workouts` | Workout sessions, exercises, set logging, stats | ✅ User | 15 endpoints |
+| `/onboarding` | Onboarding workflow — health markers, goals, consent, reports, appointments | ✅ User only | 7 endpoints |
 | `/health` | Health check | ❌ No | 1 endpoint |
 
-**Total Endpoints:** 102
+**Total Endpoints:** 109
 
 ---
 
@@ -444,6 +446,19 @@ GET /users/:id
     "gender": "Male",
     "healthGoals": ["Build muscle", "Improve stamina"],
     "onboarded": false,
+    "onboardingStatus": {
+      "currentStep": "HEALTH_GOALS",
+      "completedSteps": ["HEALTH_MARKERS"],
+      "healthMarkersCompleted": true,
+      "healthGoalsCompleted": false,
+      "consentCompleted": false,
+      "reportsUploaded": false,
+      "sportsScientistBooked": false,
+      "nutritionistBooked": false,
+      "onboardingCompleted": false,
+      "startedAt": "2026-05-15T09:00:00Z",
+      "completedAt": null
+    },
     "createdAt": "2026-03-21T10:00:00Z",
     "updatedAt": "2026-03-21T10:00:00Z"
   }
@@ -2981,6 +2996,350 @@ GET /workouts/me/history
 
 ---
 
+## Onboarding Routes
+
+### Base Path: `/onboarding`
+
+**Global Requirements:**
+- ✅ JWT Authentication required for all endpoints
+- ✅ User role only — admins and doctors cannot call these endpoints
+- Backend is the **single source of truth** for onboarding progression
+- Steps must be completed in strict order — skipping returns `403`
+
+**Step Order (enforced by backend):**
+```
+1. HEALTH_MARKERS
+2. HEALTH_GOALS
+3. CONSENT
+4. REPORT_UPLOAD
+5. SPORTS_SCIENTIST_BOOKING
+6. NUTRITIONIST_BOOKING
+7. COMPLETED
+```
+
+**Onboarding Error Codes:**
+
+| Code | HTTP Status | Meaning |
+|------|------------|---------|
+| `STEP_NOT_ALLOWED` | 403 | Attempted a step out of order |
+| `ALREADY_COMPLETED` | 409 | Onboarding already finished |
+| `MISSING_STEPS` | 400 | Not all steps done at `/complete` |
+
+---
+
+#### 1. Get Onboarding Status
+```
+GET /onboarding/status
+```
+
+**Authorization:** User only
+
+**Response (200 OK):**
+```json
+{
+  "currentStep": "HEALTH_GOALS",
+  "completedSteps": ["HEALTH_MARKERS"],
+  "onboardingCompleted": false,
+  "allowedNextStep": "HEALTH_GOALS"
+}
+```
+
+**Notes:**
+- `allowedNextStep` mirrors `currentStep` when onboarding is in progress.
+- `allowedNextStep` is `null` when `onboardingCompleted` is `true`.
+
+---
+
+#### 2. Submit Health Markers
+```
+POST /onboarding/health-markers
+```
+
+**Authorization:** User only  
+**Required step:** `HEALTH_MARKERS`
+
+**Request Body:**
+```json
+{
+  "weight": 76.5,
+  "height": 178,
+  "allergies": ["Peanuts", "Shellfish"],
+  "medications": ["Metformin"],
+  "diseaseHistory": ["Type 2 Diabetes"],
+  "sleepHours": 7,
+  "activityLevel": "Moderate"
+}
+```
+
+**Validation Notes:**
+- `weight` and `height` are required and must be positive numbers (kg and cm respectively).
+- BMI is **automatically calculated** by the backend: `weight / (height/100)²`.
+- `activityLevel` must be one of: `Sedentary`, `Light`, `Moderate`, `Active`, `VeryActive`.
+- `sleepHours` must be between `0` and `24`.
+- Array fields default to `[]` if omitted.
+
+**Response (201 Created):**
+```json
+{
+  "message": "Health markers submitted",
+  "healthMarkers": {
+    "_id": "507f1f77bcf86cd799439201",
+    "userId": "507f1f77bcf86cd799439011",
+    "weight": 76.5,
+    "height": 178,
+    "bmi": 24.1,
+    "allergies": ["Peanuts", "Shellfish"],
+    "medications": ["Metformin"],
+    "diseaseHistory": ["Type 2 Diabetes"],
+    "sleepHours": 7,
+    "activityLevel": "Moderate",
+    "createdAt": "2026-05-15T09:00:00Z",
+    "updatedAt": "2026-05-15T09:00:00Z"
+  }
+}
+```
+
+**Error Responses:**
+- `400` — Missing required fields or invalid values
+- `403` — `STEP_NOT_ALLOWED` — current step is not `HEALTH_MARKERS`
+- `409` — `ALREADY_COMPLETED` — onboarding already finished
+
+---
+
+#### 3. Submit Health Goals
+```
+POST /onboarding/health-goals
+```
+
+**Authorization:** User only  
+**Required step:** `HEALTH_GOALS` (after Health Markers)
+
+**Request Body:**
+```json
+{
+  "goals": ["Lose weight", "Build muscle", "Improve stamina"],
+  "targetWeight": 70,
+  "timeline": "6 months",
+  "workoutExperience": "Intermediate",
+  "foodPreferences": ["Vegetarian", "High protein"]
+}
+```
+
+**Validation Notes:**
+- `goals` is required and must contain at least one item.
+- `workoutExperience` must be one of: `None`, `Beginner`, `Intermediate`, `Advanced`.
+- `targetWeight` must be a positive number.
+- Array fields default to `[]` if omitted.
+
+**Response (201 Created):**
+```json
+{
+  "message": "Health goals submitted",
+  "healthGoals": {
+    "_id": "507f1f77bcf86cd799439202",
+    "userId": "507f1f77bcf86cd799439011",
+    "goals": ["Lose weight", "Build muscle", "Improve stamina"],
+    "targetWeight": 70,
+    "timeline": "6 months",
+    "workoutExperience": "Intermediate",
+    "foodPreferences": ["Vegetarian", "High protein"],
+    "createdAt": "2026-05-15T09:05:00Z",
+    "updatedAt": "2026-05-15T09:05:00Z"
+  }
+}
+```
+
+**Error Responses:**
+- `400` — Validation failed or `goals` array is empty
+- `403` — `STEP_NOT_ALLOWED` — Health Markers not completed yet
+
+---
+
+#### 4. Submit Consent
+```
+POST /onboarding/consent
+```
+
+**Authorization:** User only  
+**Required step:** `CONSENT` (after Health Goals)
+
+**Request Body:**
+```json
+{
+  "accepted": true,
+  "signatureUrl": "https://cdn.example.com/signatures/john-doe.png"
+}
+```
+
+**Validation Notes:**
+- `accepted` must be exactly `true` — `false` is rejected with validation error.
+- `signatureUrl` is optional.
+- `acceptedAt` timestamp and client IP are captured automatically by the backend.
+
+**Response (201 Created):**
+```json
+{
+  "message": "Consent submitted",
+  "consentForm": {
+    "_id": "507f1f77bcf86cd799439203",
+    "userId": "507f1f77bcf86cd799439011",
+    "accepted": true,
+    "acceptedAt": "2026-05-15T09:10:00Z",
+    "signatureUrl": "https://cdn.example.com/signatures/john-doe.png",
+    "ipAddress": "203.0.113.45",
+    "createdAt": "2026-05-15T09:10:00Z",
+    "updatedAt": "2026-05-15T09:10:00Z"
+  }
+}
+```
+
+**Error Responses:**
+- `400` — `accepted` is not `true`
+- `403` — `STEP_NOT_ALLOWED` — Health Goals not completed yet
+
+---
+
+#### 5. Upload Medical Report
+```
+POST /onboarding/reports
+```
+
+**Authorization:** User only  
+**Required step:** `REPORT_UPLOAD` (after Consent)
+
+**Request Body:**
+```json
+{
+  "reportName": "Blood Panel April 2026",
+  "reportType": "Blood Test",
+  "reportUrl": "https://cdn.example.com/reports/blood-panel.pdf"
+}
+```
+
+**Validation Notes:**
+- `reportName` and `reportType` are required.
+- `reportUrl` is optional (S3 upload integration planned for a future release).
+- Users may call this endpoint **multiple times** to upload additional reports — each call creates a new `MedicalReport` document.
+- The onboarding step `REPORT_UPLOAD` is marked complete only on the **first** successful report upload.
+
+**Response (201 Created):**
+```json
+{
+  "message": "Report uploaded",
+  "report": {
+    "_id": "507f1f77bcf86cd799439204",
+    "userId": "507f1f77bcf86cd799439011",
+    "reportName": "Blood Panel April 2026",
+    "reportType": "Blood Test",
+    "reportUrl": "https://cdn.example.com/reports/blood-panel.pdf",
+    "uploadedAt": "2026-05-15T09:15:00Z",
+    "createdAt": "2026-05-15T09:15:00Z",
+    "updatedAt": "2026-05-15T09:15:00Z"
+  }
+}
+```
+
+**Error Responses:**
+- `400` — Missing required fields
+- `403` — `STEP_NOT_ALLOWED` — Consent not completed yet
+
+---
+
+#### 6. Book Expert Appointment
+```
+POST /onboarding/appointments
+```
+
+**Authorization:** User only  
+**Required step:** `SPORTS_SCIENTIST_BOOKING` (for sports scientist) or `NUTRITIONIST_BOOKING` (for nutritionist)
+
+**Request Body:**
+```json
+{
+  "expertType": "sports_scientist",
+  "appointmentDate": "2026-06-01T10:00:00Z",
+  "meetingLink": "https://cal.com/fitflix/sports-scientist",
+  "calComBookingId": "booking_abc123"
+}
+```
+
+**Validation Notes:**
+- `expertType` must be one of: `sports_scientist`, `nutritionist`.
+- Sports scientist **must be booked before** nutritionist — attempting nutritionist first returns `403 STEP_NOT_ALLOWED`.
+- `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.com integration).
+- Submitting the same `expertType` again **upserts** the existing appointment (no duplicates).
+
+**Response (201 Created) — Sports Scientist:**
+```json
+{
+  "message": "Sports scientist appointment booked",
+  "appointment": {
+    "_id": "507f1f77bcf86cd799439205",
+    "userId": "507f1f77bcf86cd799439011",
+    "expertType": "sports_scientist",
+    "bookingStatus": "Pending",
+    "appointmentDate": "2026-06-01T10:00:00Z",
+    "meetingLink": "https://cal.com/fitflix/sports-scientist",
+    "calComBookingId": "booking_abc123",
+    "createdAt": "2026-05-15T09:20:00Z",
+    "updatedAt": "2026-05-15T09:20:00Z"
+  }
+}
+```
+
+**Response (201 Created) — Nutritionist:**
+```json
+{
+  "message": "Nutritionist appointment booked",
+  "appointment": {
+    "_id": "507f1f77bcf86cd799439206",
+    "userId": "507f1f77bcf86cd799439011",
+    "expertType": "nutritionist",
+    "bookingStatus": "Pending",
+    "appointmentDate": "2026-06-03T11:00:00Z",
+    "meetingLink": null,
+    "calComBookingId": null,
+    "createdAt": "2026-05-15T09:25:00Z",
+    "updatedAt": "2026-05-15T09:25:00Z"
+  }
+}
+```
+
+**Error Responses:**
+- `400` — Invalid `expertType`
+- `403` — `STEP_NOT_ALLOWED` — Attempted nutritionist before sports scientist, or reports not uploaded yet
+
+---
+
+#### 7. Complete Onboarding
+```
+POST /onboarding/complete
+```
+
+**Authorization:** User only  
+**Required:** All 6 steps must be completed
+
+**Request Body:** None required
+
+**Behavior:**
+- Validates that all 6 onboarding steps are completed.
+- Sets `onboardingStatus.onboardingCompleted = true` and records `completedAt`.
+- Sets `user.onboarded = true` for backward compatibility with existing APIs.
+
+**Response (200 OK):**
+```json
+{
+  "message": "Onboarding completed",
+  "completedAt": "2026-05-15T09:30:00Z"
+}
+```
+
+**Error Responses:**
+- `400` — `MISSING_STEPS` — One or more steps are not yet complete (message lists which flags are missing)
+- `409` — `ALREADY_COMPLETED` — Onboarding was already completed
+
+---
+
 ## Enums & Status Codes
 
 ### Booking/Appointment Status
@@ -3072,6 +3431,57 @@ GET /workouts/me/history
   "Active": "Active",
   "Completed": "Completed",
   "Abandoned": "Abandoned"
+}
+```
+
+### Onboarding Step
+```javascript
+{
+  "HEALTH_MARKERS": "HEALTH_MARKERS",
+  "HEALTH_GOALS": "HEALTH_GOALS",
+  "CONSENT": "CONSENT",
+  "REPORT_UPLOAD": "REPORT_UPLOAD",
+  "SPORTS_SCIENTIST_BOOKING": "SPORTS_SCIENTIST_BOOKING",
+  "NUTRITIONIST_BOOKING": "NUTRITIONIST_BOOKING",
+  "COMPLETED": "COMPLETED"
+}
+```
+
+### Expert Type
+```javascript
+{
+  "sports_scientist": "sports_scientist",
+  "nutritionist": "nutritionist"
+}
+```
+
+### Appointment Booking Status (Expert Appointments)
+```javascript
+{
+  "Pending": "Pending",
+  "Confirmed": "Confirmed",
+  "Cancelled": "Cancelled"
+}
+```
+
+### Activity Level (Health Markers)
+```javascript
+{
+  "Sedentary": "Sedentary",
+  "Light": "Light",
+  "Moderate": "Moderate",
+  "Active": "Active",
+  "VeryActive": "VeryActive"
+}
+```
+
+### Workout Experience (Health Goals)
+```javascript
+{
+  "None": "None",
+  "Beginner": "Beginner",
+  "Intermediate": "Intermediate",
+  "Advanced": "Advanced"
 }
 ```
 
@@ -3207,12 +3617,29 @@ GET /health
 7. **Check stats:** `GET /workouts/me/stats`
 8. **View history:** `GET /workouts/me/history`
 
-### Workflow 5: Admin Manual Credit Top-Up
+### Workflow 5: New User Completes Onboarding
+
+1. **User signs up:** `POST /auth/signup` → receive `userId`, `onboarded: false`
+2. **User logs in:** `POST /auth/login` → receive JWT token
+3. **Check current step:** `GET /onboarding/status` → `{ currentStep: "HEALTH_MARKERS", ... }`
+4. **Submit health markers:** `POST /onboarding/health-markers` with weight, height, etc. → BMI auto-calculated; step advances to `HEALTH_GOALS`
+5. **Submit health goals:** `POST /onboarding/health-goals` with goals array → step advances to `CONSENT`
+6. **Submit consent:** `POST /onboarding/consent` with `{ "accepted": true }` → IP captured; step advances to `REPORT_UPLOAD`
+7. **Upload report(s):** `POST /onboarding/reports` → step advances to `SPORTS_SCIENTIST_BOOKING` (can call multiple times for more reports)
+8. **Book sports scientist:** `POST /onboarding/appointments` with `{ "expertType": "sports_scientist" }` → step advances to `NUTRITIONIST_BOOKING`
+9. **Book nutritionist:** `POST /onboarding/appointments` with `{ "expertType": "nutritionist" }` → all steps done
+10. **Complete onboarding:** `POST /onboarding/complete` → `user.onboarded` set to `true`; admin can now see full `onboardingStatus` via `GET /users/:id`
+
+---
+
+### Workflow 6: Admin Manual Credit Top-Up
 
 1. **Admin logs in:** `POST /auth/login`
 2. **Admin checks user credit position:** `GET /credits/users/:userId/balance`
 3. **Admin adds credits:** `POST /credits/users/:userId/topup`
 4. **Admin verifies ledger entry:** `GET /credits/users/:userId/history`
+
+---
 
 ---
 

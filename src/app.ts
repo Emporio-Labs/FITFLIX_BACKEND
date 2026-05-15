@@ -9,6 +9,7 @@ import doctorRouter from "./routes/doctor.routes";
 import exerciseRouter from "./routes/exercise.routes";
 import leadRouter from "./routes/lead.routes";
 import membershipRouter from "./routes/membership.routes";
+import onboardingRouter from "./routes/onboarding.routes";
 import scheduleRouter from "./routes/schedule.routes";
 import serviceRouter from "./routes/service.routes";
 import slotRouter from "./routes/slot.routes";
@@ -202,6 +203,7 @@ app.use("/appointments", appointmentRouter);
 app.use("/schedules", scheduleRouter);
 app.use("/exercises", exerciseRouter);
 app.use("/leads", leadRouter);
+app.use("/onboarding", onboardingRouter);
 app.use("/webhook", webhookRouter);
 app.use("/workouts", workoutRouter);
 
