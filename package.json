@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "bun run index.ts",
 		"start": "bun run index.ts",
+		"build:vercel": "bun build api/index.ts --target=node --format=cjs --outfile=api/index.bundle.cjs && echo module.exports = handler; >> api/index.bundle.cjs",
 		"create:admin": "bun run scripts/create-admin.ts",
 		"migrate:credits": "bun run scripts/migrate-credits.ts",
 		"seed:exercises": "bun run scripts/seed-exercises.ts"
