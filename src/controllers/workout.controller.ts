@@ -213,10 +213,42 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			status: WorkoutSessionStatus.Active,
 			startedAt: new Date(),
 			notes: parsed.data.notes || null,
+			planId: parsed.data.planId ? new mongoose.Types.ObjectId(parsed.data.planId) : null,
 		});
 
-		if (parsed.data.exercises.length > 0) {
-			const exerciseIds = parsed.data.exercises.map((e) => e.exerciseId);
+		let exercisesToAdd = parsed.data.exercises;
+
+		if (parsed.data.planId) {
+			const plan = await mongoose.model("WorkoutPlan").findById(parsed.data.planId);
+			if (!plan) {
+				res.status(404).json({ error: "Plan not found" });
+				return;
+			}
+
+			const isAssigned = (plan as any).assignedUsers.some(
+				(id: any) => id.toString() === userId.toString(),
+			);
+			const isCreator = (plan as any).createdBy.toString() === userId.toString();
+
+			if (!isAssigned && !isCreator) {
+				res.status(403).json({ error: "Not authorized to use this plan" });
+				return;
+			}
+
+			if ((plan as any).days && (plan as any).days.length > 0) {
+				const firstDay = (plan as any).days[0];
+				exercisesToAdd = firstDay.exercises.map((planEx: any) => ({
+					exerciseId: planEx.exerciseId.toString(),
+					targetSets: planEx.targetSets,
+					targetReps: planEx.targetReps,
+					targetWeightKg: planEx.targetWeightKg,
+					restSeconds: planEx.restSeconds,
+				}));
+			}
+		}
+
+		if (exercisesToAdd.length > 0) {
+			const exerciseIds = exercisesToAdd.map((e) => e.exerciseId);
 			const validExercises = await Exercise.find({
 				_id: { $in: exerciseIds },
 				$or: [{ isSystem: true }, { createdBy: userId }],
@@ -225,7 +257,7 @@ export const createSession: RequestHandler = async (req, res, next) => {
 				validExercises.map((e) => e._id.toString()),
 			);
 
-			const workoutExercises = parsed.data.exercises
+			const workoutExercises = exercisesToAdd
 				.filter((e) => validIds.has(e.exerciseId))
 				.map((e, index) => ({
 					sessionId: session._id,

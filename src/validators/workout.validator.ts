@@ -13,6 +13,7 @@ export const createSessionBodySchema = z.object({
 	date: z.coerce.date().optional(),
 	notes: z.string().max(1000).optional(),
 	exercises: z.array(exerciseInSessionSchema).optional().default([]),
+	planId: z.string().optional().nullable(),
 });
 
 export const updateSessionBodySchema = z
