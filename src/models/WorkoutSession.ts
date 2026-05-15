@@ -17,6 +17,11 @@ const workoutSessionSchema = new mongoose.Schema(
 		startedAt: { type: Date, default: Date.now },
 		completedAt: { type: Date, default: null },
 		notes: { type: String, default: null },
+		planId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "WorkoutPlan",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );

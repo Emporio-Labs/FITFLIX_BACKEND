@@ -16,6 +16,7 @@ import therapyRouter from "./routes/therapy.routes";
 import trainerRouter from "./routes/trainer.routes";
 import userRouter from "./routes/user.routes";
 import webhookRouter from "./routes/webhook.route";
+import workoutPlanRouter from "./routes/workout-plan.routes";
 import workoutRouter from "./routes/workout.routes";
 import {
 	buildApiErrorEnvelope,
@@ -203,6 +204,7 @@ app.use("/schedules", scheduleRouter);
 app.use("/exercises", exerciseRouter);
 app.use("/leads", leadRouter);
 app.use("/webhook", webhookRouter);
+app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
 
 app.get("/health", (_req, res) => {

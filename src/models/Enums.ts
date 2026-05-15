@@ -69,3 +69,26 @@ export enum WorkoutSessionStatus {
 	Completed = "Completed",
 	Abandoned = "Abandoned",
 }
+
+export enum PlanStatus {
+	Draft = "Draft",
+	Active = "Active",
+	Archived = "Archived",
+}
+
+export enum SplitType {
+	FullBody = "FullBody",
+	UpperLower = "UpperLower",
+	PushPullLegs = "PushPullLegs",
+	BroSplit = "BroSplit",
+	Custom = "Custom",
+}
+
+export enum PlanGoal {
+	MuscleGain = "MuscleGain",
+	FatLoss = "FatLoss",
+	Strength = "Strength",
+	Endurance = "Endurance",
+	Flexibility = "Flexibility",
+	GeneralFitness = "GeneralFitness",
+}
