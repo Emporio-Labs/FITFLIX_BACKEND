@@ -30,7 +30,12 @@ export const authenticateToken: RequestHandler = (req, res, next) => {
 		return;
 	}
 
-	const user = verifyAuthToken(token, config);
+	let user: ReturnType<typeof verifyAuthToken> = null;
+	try {
+		user = verifyAuthToken(token, config);
+	} catch (_error) {
+		user = null;
+	}
 	if (!user) {
 		res.status(401).json({ message: "Invalid or expired token" });
 		return;

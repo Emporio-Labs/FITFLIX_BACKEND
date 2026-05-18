@@ -1,4 +1,22 @@
 import mongoose from "mongoose";
+import { ConsentType } from "./Enums";
+
+const consentEntrySchema = new mongoose.Schema(
+	{
+		type: {
+			type: String,
+			enum: Object.values(ConsentType),
+			required: true,
+		},
+		accepted: { type: Boolean, required: true },
+		acceptedAt: { type: Date, required: true },
+		signatureName: { type: String, default: undefined },
+		dateSigned: { type: Date, default: undefined },
+		pdfUrl: { type: String, default: undefined },
+		signatureUrl: { type: String, default: undefined },
+	},
+	{ _id: false },
+);
 
 const consentFormSchema = new mongoose.Schema(
 	{
@@ -8,10 +26,9 @@ const consentFormSchema = new mongoose.Schema(
 			required: true,
 			unique: true,
 		},
-		accepted: { type: Boolean, required: true },
-		acceptedAt: { type: Date, required: true },
-		signatureUrl: { type: String, default: undefined },
+		consents: { type: [consentEntrySchema], default: [] },
 		ipAddress: { type: String, default: undefined },
+		deviceInfo: { type: String, default: undefined },
 	},
 	{ timestamps: true },
 );

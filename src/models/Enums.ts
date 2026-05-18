@@ -70,6 +70,29 @@ export enum WorkoutSessionStatus {
 	Abandoned = "Abandoned",
 }
 
+export enum PlanGoal {
+	WeightLoss = "WeightLoss",
+	MuscleGain = "MuscleGain",
+	Strength = "Strength",
+	Endurance = "Endurance",
+	Mobility = "Mobility",
+	GeneralFitness = "GeneralFitness",
+}
+
+export enum SplitType {
+	FullBody = "FullBody",
+	UpperLower = "UpperLower",
+	PushPullLegs = "PushPullLegs",
+	BroSplit = "BroSplit",
+	Custom = "Custom",
+}
+
+export enum PlanStatus {
+	Draft = "Draft",
+	Published = "Published",
+	Archived = "Archived",
+}
+
 export enum OnboardingStep {
 	HEALTH_MARKERS = "HEALTH_MARKERS",
 	HEALTH_GOALS = "HEALTH_GOALS",
@@ -89,4 +112,27 @@ export enum AppointmentBookingStatus {
 	Pending = "Pending",
 	Confirmed = "Confirmed",
 	Cancelled = "Cancelled",
+}
+
+export enum ConsentType {
+	WELLNESS_SERVICES = "WELLNESS_SERVICES",
+	GYM_FITNESS = "GYM_FITNESS",
+}
+
+export enum AppointmentMode {
+	IN_PERSON = "IN_PERSON",
+	ONLINE = "ONLINE",
+}
+
+export enum NutritionistBookingStatus {
+	PENDING = "PENDING",
+	ACCEPTED = "ACCEPTED",
+	REJECTED = "REJECTED",
+	COMPLETED = "COMPLETED",
+}
+
+export enum NutritionistApprovalStatus {
+	PENDING = "PENDING",
+	APPROVED = "APPROVED",
+	REJECTED = "REJECTED",
 }

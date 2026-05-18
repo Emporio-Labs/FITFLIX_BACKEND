@@ -2,7 +2,7 @@
 
 **Base URL:** `http://localhost:3000`  
 **API Version:** 1.0.0  
-**Last Updated:** May 15, 2026
+**Last Updated:** May 16, 2026
 
 ---
 
@@ -34,22 +34,28 @@
 
 ## Authentication
 
-### Basic Authentication
+### JWT Authentication
 
-All protected endpoints use **HTTP Basic Authentication** with the following format:
+All protected endpoints use **JWT Bearer authentication** with the following format:
 
 ```
-Authorization: Basic <base64(email:password)>
+Authorization: Bearer <accessToken>
 ```
 
 **Example:**
 ```bash
-# Credentials: user@example.com:mypassword
-# Base64 encoded: dXNlckBleGFtcGxlLmNvbTpteXBhc3N3b3Jk
-
-curl -H "Authorization: Basic dXNlckBleGFtcGxlLmNvbTpteXBhc3N3b3Jk" \
+curl -H "Authorization: Bearer <jwt>" \
   http://localhost:3000/doctors
 ```
+
+Tokens are issued by `POST /auth/login` and can be refreshed via `POST /auth/refresh` when refresh tokens are enabled.
+
+### Migration Notes (Basic Auth → JWT)
+
+- Protected routes no longer accept `Authorization: Basic ...` headers.
+- Use `POST /auth/login` to obtain an `accessToken`, then send `Authorization: Bearer <accessToken>`.
+- If `JWT_REFRESH_SECRET` is configured, use `POST /auth/refresh` to rotate access tokens.
+- Prefer `POST /onboarding/sports-scientist` and `POST /onboarding/nutritionist` over the legacy `/onboarding/appointments` endpoint.
 
 ### User Roles
 
@@ -65,9 +71,9 @@ The system supports 4 role types:
 
 | Route | Purpose | Auth | Endpoints |
 |-------|---------|------|-----------|
-| `/auth` | User authentication | ❌ No | 2 endpoints |
+| `/auth` | User authentication | ❌ No | 3 endpoints |
 | `/admins` | Admin management | ✅ Admin only | 5 endpoints |
-| `/users` | Member management | ✅ Admin + Doctor (read), Admin/User self (updates), User self-service profile/report/password | 10 endpoints |
+| `/users` | Member management | ✅ Admin + Doctor (read, onboarding profile), Admin/User self (updates), User self-service profile/report/password | 11 endpoints |
 | `/doctors` | Doctor management | ✅ Admin + Role-based | 5 endpoints |
 | `/trainers` | Trainer management | ✅ Admin + Role-based | 5 endpoints |
 | `/slots` | Time slot management | ✅ Public read, Admin write | 5 endpoints |
@@ -81,10 +87,10 @@ The system supports 4 role types:
 | `/schedules` | User schedules/todos | ✅ All authenticated | 6 endpoints |
 | `/exercises` | Exercise library | ✅ Admin + User | 5 endpoints |
 | `/workouts` | Workout sessions, exercises, set logging, stats | ✅ User | 15 endpoints |
-| `/onboarding` | Onboarding workflow — health markers, goals, consent, reports, appointments | ✅ User only | 7 endpoints |
+| `/onboarding` | Onboarding workflow — health markers, goals, dual-consent, reports, appointments | ✅ User only | 9 endpoints |
 | `/health` | Health check | ❌ No | 1 endpoint |
 
-**Total Endpoints:** 109
+**Total Endpoints:** 113
 
 ---
 
@@ -152,10 +158,26 @@ POST /auth/login
 ```json
 {
   "message": "Login successful",
+  "accessToken": "<jwt>",
+  "refreshToken": "<jwt or null>",
+  "tokenType": "Bearer",
+  "expiresIn": "12h",
   "user": {
     "id": "507f1f77bcf86cd799439011",
     "email": "john@example.com",
-    "role": "user"
+    "role": "user",
+    "onboarded": false,
+    "onboardingStatus": {
+      "currentStep": "HEALTH_MARKERS",
+      "completedSteps": [],
+      "healthMarkersCompleted": false,
+      "healthGoalsCompleted": false,
+      "consentCompleted": false,
+      "reportsUploaded": false,
+      "sportsScientistBooked": false,
+      "nutritionistBooked": false,
+      "onboardingCompleted": false
+    }
   }
 }
 ```
@@ -164,6 +186,10 @@ POST /auth/login
 ```json
 {
   "message": "Login successful",
+  "accessToken": "<jwt>",
+  "refreshToken": "<jwt or null>",
+  "tokenType": "Bearer",
+  "expiresIn": "12h",
   "user": {
     "id": "507f1f77bcf86cd799439099",
     "email": "admin@hybridhuman.com",
@@ -176,6 +202,10 @@ POST /auth/login
 ```json
 {
   "message": "Login successful",
+  "accessToken": "<jwt>",
+  "refreshToken": "<jwt or null>",
+  "tokenType": "Bearer",
+  "expiresIn": "12h",
   "user": {
     "id": "507f1f77bcf86cd799439055",
     "email": "dr.jane@hybridhuman.com",
@@ -188,6 +218,10 @@ POST /auth/login
 ```json
 {
   "message": "Login successful",
+  "accessToken": "<jwt>",
+  "refreshToken": "<jwt or null>",
+  "tokenType": "Bearer",
+  "expiresIn": "12h",
   "user": {
     "id": "507f1f77bcf86cd799439077",
     "email": "coach.mike@hybridhuman.com",
@@ -196,9 +230,50 @@ POST /auth/login
 }
 ```
 
+**Notes:**
+- `refreshToken` is only issued when `JWT_REFRESH_SECRET` is configured.
+- User logins include `onboarded` and `onboardingStatus` for onboarding-aware clients.
+
 **Error Responses:**
 - `400` — Invalid login payload
 - `401` — Invalid email or password
+
+---
+
+#### 3. Refresh Access Token
+```
+POST /auth/refresh
+```
+
+**Authentication:** ❌ None  
+**Authorization:** N/A
+
+**Request Body:**
+```json
+{
+  "refreshToken": "<jwt>"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "Token refreshed",
+  "accessToken": "<jwt>",
+  "tokenType": "Bearer",
+  "expiresIn": "12h"
+}
+```
+
+**Notes:**
+- Refresh tokens are issued only when `JWT_REFRESH_SECRET` is configured.
+- If refresh is not configured, this endpoint returns `503`.
+- Use a distinct refresh secret so refresh tokens cannot be used as access tokens.
+
+**Error Responses:**
+- `400` — Missing or invalid refresh token
+- `401` — Invalid or expired refresh token
+- `503` — Refresh not configured
 
 ---
 
@@ -207,7 +282,7 @@ POST /auth/login
 ### Base Path: `/admins`
 
 **Global Requirements:**
-- ✅ Basic Authentication required
+- ✅ JWT Bearer token required
 - ✅ Admin role required for create/update/delete
 - ✅ Admin or Doctor role allowed for read (list and get by id)
 
@@ -340,8 +415,9 @@ DELETE /admins/:id
 ### Base Path: `/users`
 
 **Global Requirements:**
-- ✅ Basic Authentication required
+- ✅ JWT Bearer token required
 - ✅ Admin can create and delete users
+- ✅ Admin or Doctor can view full onboarding profile (`GET /users/:id/onboarding-profile`)
 - ✅ Admin or user-self can update profile (`PATCH /users/:id`)
 - ✅ Users can access self-service endpoints (`/me`, `/me/reports`, `/me/password`)
 
@@ -464,6 +540,91 @@ GET /users/:id
   }
 }
 ```
+
+---
+
+#### 3b. Get User Onboarding Profile
+```
+GET /users/:id/onboarding-profile
+```
+
+**URL Params:**
+- `id` (string, required) — User MongoDB ObjectId
+
+**Authorization:** Admin or Doctor
+
+Returns the full onboarding data submitted by a user, aggregated from all onboarding collections. Used by the FrontDesk dashboard to display member onboarding details.
+
+**Response (200 OK):**
+```json
+{
+  "user": {
+    "_id": "507f1f77bcf86cd799439011",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "age": 28,
+    "gender": "Male",
+    "onboarded": true,
+    "onboardingStatus": { "..." }
+  },
+  "healthMarkers": {
+    "weight": 75,
+    "height": 178,
+    "bmi": 23.7,
+    "allergies": ["Peanuts"],
+    "medications": [],
+    "diseaseHistory": [],
+    "sleepHours": 7,
+    "activityLevel": "Moderate"
+  },
+  "healthGoals": {
+    "goals": ["Build muscle", "Improve stamina"],
+    "targetWeight": 80,
+    "timeline": "6 months",
+    "workoutExperience": "Intermediate",
+    "foodPreferences": ["Vegetarian"]
+  },
+  "consents": [
+    {
+      "type": "WELLNESS_SERVICES",
+      "accepted": true,
+      "acceptedAt": "2026-05-16T09:10:00Z",
+      "signatureName": "Rahul"
+    },
+    {
+      "type": "GYM_FITNESS",
+      "accepted": true,
+      "acceptedAt": "2026-05-16T09:10:00Z",
+      "signatureName": "Rahul"
+    }
+  ],
+  "reports": [
+    {
+      "reportName": "Blood Panel April 2026",
+      "reportType": "Blood Test",
+      "reportUrl": null,
+      "uploadedAt": "2026-05-16T10:00:00Z"
+    }
+  ],
+  "appointments": [
+    {
+      "expertType": "sports_scientist",
+      "bookingStatus": "Confirmed",
+      "appointmentDate": "2026-05-20T10:00:00Z",
+      "meetingLink": "https://meet.example.com/abc"
+    }
+  ]
+}
+```
+
+**Notes:**
+- `healthMarkers`, `healthGoals` are `null` if the user has not completed that step.
+- `consents` is an empty array if no consent submitted, or contains legacy data for older records.
+- `reports` and `appointments` are always arrays (may be empty).
+
+**Error Responses:**
+- `400` — Invalid user ID format
+- `404` — User not found
 
 ---
 
@@ -755,7 +916,7 @@ DELETE /users/:id
 ### Base Path: `/doctors`
 
 **Global Requirements:**
-- ✅ Basic Authentication required for all endpoints
+- ✅ JWT Bearer token required for all endpoints
 
 | Endpoint | POST | GET | PATCH | DELETE |
 |----------|------|-----|-------|--------|
@@ -885,7 +1046,7 @@ DELETE /doctors/:id
 ### Base Path: `/trainers`
 
 **Global Requirements:**
-- ✅ Basic Authentication required for all endpoints
+- ✅ JWT Bearer token required for all endpoints
 - Similar structure to Doctor routes
 
 | Endpoint | POST | GET | PATCH | DELETE |
@@ -958,7 +1119,7 @@ DELETE /trainers/:id
 
 **Global Requirements:**
 - ✅ Public read access for `GET /slots` and `GET /slots/:id`
-- ✅ Basic Authentication + Admin role required for `POST`, `PATCH`, and `DELETE`
+- ✅ JWT Bearer token + Admin role required for `POST`, `PATCH`, and `DELETE`
 
 #### 1. Create Slot
 ```
@@ -1069,7 +1230,7 @@ DELETE /slots/:id
 ### Base Path: `/memberships`
 
 **Global Requirements:**
-- ✅ Basic Authentication required
+- ✅ JWT Bearer token required
 - ✅ Role-based: `admin` for admin endpoints; users can only view their memberships
 
 **Membership Status Values:** `Active`, `Paused`, `Cancelled`, `Expired`
@@ -1198,7 +1359,7 @@ DELETE /memberships/:id
 ### Base Path: `/services`
 
 **Global Requirements:**
-- ✅ Basic Authentication required
+- ✅ JWT Bearer token required
 - ✅ Admin creates/updates/deletes; all roles can read
 
 **Implementation Notes:**
@@ -1268,7 +1429,7 @@ DELETE /services/:id
 ### Base Path: `/therapies`
 
 **Global Requirements:**
-- ✅ Basic Authentication required
+- ✅ JWT Bearer token required
 - ✅ Admin creates/updates/deletes; all roles can read
 
 #### 1. Create Therapy
@@ -1335,7 +1496,7 @@ DELETE /therapies/:id
 
 **Global Requirements:**
 - ✅ `POST /leads/public-capture` is public (no auth)
-- ✅ All other lead endpoints require Basic Authentication
+- ✅ All other lead endpoints require JWT Bearer authentication
 - ✅ Admin can list/delete/convert; Admin/Doctor/Trainer can create/read/update
 - **Lead Status Values:** `New`, `Contacted`, `Qualified`, `Warm`, `Hot`, `Cold`, `Converted`, `Lost`
 
@@ -1516,7 +1677,7 @@ POST /leads/:id/convert
 ### Base Path: `/bookings`
 
 **Global Requirements:**
-- ✅ Basic Authentication required for all endpoints
+- ✅ JWT Bearer token required for all endpoints
 
 #### 1. Create Booking
 ```
@@ -1732,7 +1893,7 @@ PATCH /bookings/:id/status
 ### Base Path: `/appointments`
 
 **Global Requirements:**
-- ✅ Basic Authentication required for all endpoints
+- ✅ JWT Bearer token required for all endpoints
 
 #### 1. Create Appointment
 ```
@@ -1944,7 +2105,7 @@ PATCH /appointments/:id/status
 ### Base Path: `/credits`
 
 **Global Requirements:**
-- ✅ Basic Authentication required
+- ✅ JWT Bearer token required
 - ✅ Users can access only their own credit endpoints (`/me/*`)
 - ✅ Admin can access any user credit endpoints (`/users/:userId/*`)
 
@@ -2079,7 +2240,7 @@ POST /credits/users/:userId/topup
 ### Base Path: `/schedules`
 
 **Global Requirements:**
-- ✅ Basic Authentication required for all endpoints
+- ✅ JWT Bearer token required for all endpoints
 
 #### 1. Get My Schedule
 ```
@@ -3155,7 +3316,7 @@ POST /onboarding/health-goals
 
 ---
 
-#### 4. Submit Consent
+#### 4. Submit Consent (Dual-Consent)
 ```
 POST /onboarding/consent
 ```
@@ -3163,7 +3324,33 @@ POST /onboarding/consent
 **Authorization:** User only  
 **Required step:** `CONSENT` (after Health Goals)
 
-**Request Body:**
+**Consent Types (enum `ConsentType`):**
+| Value | Description |
+|-------|-------------|
+| `WELLNESS_SERVICES` | Wellness Services Consent form |
+| `GYM_FITNESS` | Gym & Fitness Facility Consent form |
+
+**Request Body (new dual-consent format):**
+```json
+{
+  "consents": [
+    {
+      "type": "WELLNESS_SERVICES",
+      "accepted": true,
+      "signatureName": "Rahul",
+      "dateSigned": "2026-05-16"
+    },
+    {
+      "type": "GYM_FITNESS",
+      "accepted": true,
+      "signatureName": "Rahul",
+      "dateSigned": "2026-05-16"
+    }
+  ]
+}
+```
+
+**Request Body (legacy format — still accepted for backward compatibility):**
 ```json
 {
   "accepted": true,
@@ -3172,9 +3359,12 @@ POST /onboarding/consent
 ```
 
 **Validation Notes:**
-- `accepted` must be exactly `true` — `false` is rejected with validation error.
-- `signatureUrl` is optional.
+- Both `WELLNESS_SERVICES` and `GYM_FITNESS` consent entries are required.
+- `accepted` must be exactly `true` for each entry — `false` is rejected.
+- `signatureName` is optional (typed name of the signer).
+- `dateSigned` is optional (ISO date string).
 - `acceptedAt` timestamp and client IP are captured automatically by the backend.
+- Legacy payload (`{ accepted: true }`) is mapped to both consent types internally.
 
 **Response (201 Created):**
 ```json
@@ -3183,18 +3373,36 @@ POST /onboarding/consent
   "consentForm": {
     "_id": "507f1f77bcf86cd799439203",
     "userId": "507f1f77bcf86cd799439011",
-    "accepted": true,
-    "acceptedAt": "2026-05-15T09:10:00Z",
-    "signatureUrl": "https://cdn.example.com/signatures/john-doe.png",
+    "consents": [
+      {
+        "type": "WELLNESS_SERVICES",
+        "accepted": true,
+        "acceptedAt": "2026-05-16T09:10:00Z",
+        "signatureName": "Rahul",
+        "dateSigned": "2026-05-16T00:00:00Z"
+      },
+      {
+        "type": "GYM_FITNESS",
+        "accepted": true,
+        "acceptedAt": "2026-05-16T09:10:00Z",
+        "signatureName": "Rahul",
+        "dateSigned": "2026-05-16T00:00:00Z"
+      }
+    ],
     "ipAddress": "203.0.113.45",
-    "createdAt": "2026-05-15T09:10:00Z",
-    "updatedAt": "2026-05-15T09:10:00Z"
+    "createdAt": "2026-05-16T09:10:00Z",
+    "updatedAt": "2026-05-16T09:10:00Z"
   }
 }
 ```
 
+**Future-safe fields (not yet implemented):**
+- `pdfUrl` — URL to signed PDF document
+- `signatureUrl` — URL to captured signature image
+- `deviceInfo` — device information at time of signing
+
 **Error Responses:**
-- `400` — `accepted` is not `true`
+- `400` — Missing consent entries, only one type provided, or `accepted` is not `true`
 - `403` — `STEP_NOT_ALLOWED` — Health Goals not completed yet
 
 ---
@@ -3245,7 +3453,91 @@ POST /onboarding/reports
 
 ---
 
-#### 6. Book Expert Appointment
+#### 6. Book Sports Scientist
+```
+POST /onboarding/sports-scientist
+```
+
+**Authorization:** User only  
+**Required step:** `SPORTS_SCIENTIST_BOOKING`
+
+**Request Body:**
+```json
+{
+  "appointmentDate": "2026-06-01T10:00:00Z",
+  "meetingLink": "https://cal.com/fitflix/sports-scientist",
+  "calComBookingId": "booking_abc123"
+}
+```
+
+**Validation Notes:**
+- `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.com integration).
+- Submitting again **upserts** the existing appointment (no duplicates).
+
+**Response (201 Created):**
+```json
+{
+  "message": "Sports scientist appointment booked",
+  "appointment": {
+    "_id": "507f1f77bcf86cd799439205",
+    "userId": "507f1f77bcf86cd799439011",
+    "expertType": "sports_scientist",
+    "bookingStatus": "Pending",
+    "appointmentDate": "2026-06-01T10:00:00Z",
+    "meetingLink": "https://cal.com/fitflix/sports-scientist",
+    "calComBookingId": "booking_abc123",
+    "createdAt": "2026-05-15T09:20:00Z",
+    "updatedAt": "2026-05-15T09:20:00Z"
+  }
+}
+```
+
+**Error Responses:**
+- `403` — `STEP_NOT_ALLOWED` — Reports not uploaded yet
+
+---
+
+#### 7. Book Nutritionist
+```
+POST /onboarding/nutritionist
+```
+
+**Authorization:** User only  
+**Required step:** `NUTRITIONIST_BOOKING` (sports scientist must be completed first)
+
+**Request Body:**
+```json
+{
+  "appointmentDate": "2026-06-03T11:00:00Z",
+  "meetingLink": null,
+  "calComBookingId": null
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "message": "Nutritionist appointment booked",
+  "appointment": {
+    "_id": "507f1f77bcf86cd799439206",
+    "userId": "507f1f77bcf86cd799439011",
+    "expertType": "nutritionist",
+    "bookingStatus": "Pending",
+    "appointmentDate": "2026-06-03T11:00:00Z",
+    "meetingLink": null,
+    "calComBookingId": null,
+    "createdAt": "2026-05-15T09:25:00Z",
+    "updatedAt": "2026-05-15T09:25:00Z"
+  }
+}
+```
+
+**Error Responses:**
+- `403` — `STEP_NOT_ALLOWED` — Sports scientist not booked yet
+
+---
+
+#### 8. Book Expert Appointment (Legacy)
 ```
 POST /onboarding/appointments
 ```
@@ -3269,49 +3561,63 @@ POST /onboarding/appointments
 - `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.com integration).
 - Submitting the same `expertType` again **upserts** the existing appointment (no duplicates).
 
-**Response (201 Created) — Sports Scientist:**
-```json
-{
-  "message": "Sports scientist appointment booked",
-  "appointment": {
-    "_id": "507f1f77bcf86cd799439205",
-    "userId": "507f1f77bcf86cd799439011",
-    "expertType": "sports_scientist",
-    "bookingStatus": "Pending",
-    "appointmentDate": "2026-06-01T10:00:00Z",
-    "meetingLink": "https://cal.com/fitflix/sports-scientist",
-    "calComBookingId": "booking_abc123",
-    "createdAt": "2026-05-15T09:20:00Z",
-    "updatedAt": "2026-05-15T09:20:00Z"
-  }
-}
-```
-
-**Response (201 Created) — Nutritionist:**
-```json
-{
-  "message": "Nutritionist appointment booked",
-  "appointment": {
-    "_id": "507f1f77bcf86cd799439206",
-    "userId": "507f1f77bcf86cd799439011",
-    "expertType": "nutritionist",
-    "bookingStatus": "Pending",
-    "appointmentDate": "2026-06-03T11:00:00Z",
-    "meetingLink": null,
-    "calComBookingId": null,
-    "createdAt": "2026-05-15T09:25:00Z",
-    "updatedAt": "2026-05-15T09:25:00Z"
-  }
-}
-```
-
 **Error Responses:**
 - `400` — Invalid `expertType`
 - `403` — `STEP_NOT_ALLOWED` — Attempted nutritionist before sports scientist, or reports not uploaded yet
 
 ---
 
-#### 7. Complete Onboarding
+#### 9. Cancel Nutritionist Appointment (Admin)
+```
+DELETE /onboarding/appointments/nutritionist/:userId
+```
+
+**Authorization:** Admin only
+
+**URL Parameters:**
+| Param | Type | Description |
+|-------|------|-------------|
+| `userId` | ObjectId | The user whose nutritionist appointment should be cancelled |
+
+**Behavior:**
+- Deletes the user's nutritionist `ExpertAppointment` record.
+- Rewinds onboarding state:
+  - `onboardingStatus.nutritionistBooked = false`
+  - Removes `NUTRITIONIST_BOOKING` and `COMPLETED` from `completedSteps`
+  - Sets `currentStep = NUTRITIONIST_BOOKING`
+  - Sets `onboardingStatus.onboardingCompleted = false` and `user.onboarded = false`
+  - Clears `onboardingStatus.completedAt`
+- Used by the FrontDesk Admin → Nutritionist → Booked tab → Delete action.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Nutritionist appointment cancelled successfully",
+  "onboardingStatus": {
+    "currentStep": "NUTRITIONIST_BOOKING",
+    "completedSteps": [
+      "HEALTH_MARKERS",
+      "HEALTH_GOALS",
+      "CONSENT",
+      "REPORT_UPLOAD",
+      "SPORTS_SCIENTIST_BOOKING"
+    ],
+    "onboardingCompleted": false,
+    "allowedNextStep": "NUTRITIONIST_BOOKING"
+  }
+}
+```
+
+**Error Responses:**
+- `400` — `BAD_REQUEST` — Invalid `userId`
+- `403` — `FORBIDDEN` — Caller is not an admin
+- `404` — `NOT_FOUND` — User not found, or no nutritionist appointment exists for this user
+- `500` — `INTERNAL_ERROR` — Unexpected server failure
+
+---
+
+#### 10. Complete Onboarding
 ```
 POST /onboarding/complete
 ```
@@ -3463,6 +3769,19 @@ POST /onboarding/complete
   "Cancelled": "Cancelled"
 }
 ```
+
+### Consent Type
+```javascript
+{
+  "WELLNESS_SERVICES": "WELLNESS_SERVICES",
+  "GYM_FITNESS": "GYM_FITNESS"
+}
+```
+
+**Notes:**
+- Both consent types must be accepted during the onboarding `CONSENT` step.
+- The consent step only advances when both `WELLNESS_SERVICES` and `GYM_FITNESS` entries are submitted with `accepted: true`.
+- Legacy single-consent payload (`{ accepted: true }`) is still accepted and maps to both types internally.
 
 ### Activity Level (Health Markers)
 ```javascript
@@ -3624,10 +3943,10 @@ GET /health
 3. **Check current step:** `GET /onboarding/status` → `{ currentStep: "HEALTH_MARKERS", ... }`
 4. **Submit health markers:** `POST /onboarding/health-markers` with weight, height, etc. → BMI auto-calculated; step advances to `HEALTH_GOALS`
 5. **Submit health goals:** `POST /onboarding/health-goals` with goals array → step advances to `CONSENT`
-6. **Submit consent:** `POST /onboarding/consent` with `{ "accepted": true }` → IP captured; step advances to `REPORT_UPLOAD`
+6. **Submit consent (dual):** `POST /onboarding/consent` with `{ "consents": [{ "type": "WELLNESS_SERVICES", "accepted": true, ... }, { "type": "GYM_FITNESS", "accepted": true, ... }] }` → both consents stored; IP captured; step advances to `REPORT_UPLOAD`. Legacy `{ "accepted": true }` format still accepted.
 7. **Upload report(s):** `POST /onboarding/reports` → step advances to `SPORTS_SCIENTIST_BOOKING` (can call multiple times for more reports)
-8. **Book sports scientist:** `POST /onboarding/appointments` with `{ "expertType": "sports_scientist" }` → step advances to `NUTRITIONIST_BOOKING`
-9. **Book nutritionist:** `POST /onboarding/appointments` with `{ "expertType": "nutritionist" }` → all steps done
+8. **Book sports scientist:** `POST /onboarding/sports-scientist` → step advances to `NUTRITIONIST_BOOKING`
+9. **Book nutritionist:** `POST /onboarding/nutritionist` → all steps done
 10. **Complete onboarding:** `POST /onboarding/complete` → `user.onboarded` set to `true`; admin can now see full `onboardingStatus` via `GET /users/:id`
 
 ---
@@ -3660,7 +3979,7 @@ GET /health
 For questions or issues with the API:
 1. Check this documentation
 2. Review the endpoint authorization requirements
-3. Verify Basic Auth headers are properly formatted
+3. Verify Authorization: Bearer headers are properly formatted
 4. Check that resource IDs are valid MongoDB ObjectIds
 
-**Last Updated:** May 15, 2026
+**Last Updated:** May 16, 2026

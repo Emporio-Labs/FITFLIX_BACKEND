@@ -1,5 +1,5 @@
 import z from "zod";
-import { ExpertType } from "../models/Enums";
+import { ConsentType, ExpertType } from "../models/Enums";
 import { ActivityLevel } from "../models/HealthMarkers";
 import { WorkoutExperience } from "../models/HealthGoals";
 
@@ -118,7 +118,53 @@ export const healthGoalsBodySchema = z.object({
 	foodPreferences: stringArray,
 });
 
-export const consentBodySchema = z.object({
+const consentTypeValues = Object.values(ConsentType) as [string, ...string[]];
+
+const consentEntryValidation = z.object({
+	type: z.enum(consentTypeValues, {
+		message: `Consent type must be one of: ${consentTypeValues.join(", ")}`,
+	}),
+	accepted: z.literal(true, {
+		message: "Consent must be accepted",
+	}),
+	signatureName: optionalString,
+	dateSigned: z.preprocess(
+		(v) => {
+			if (v === undefined || v === null) return undefined;
+			if (v instanceof Date) return v;
+			if (typeof v === "string" || typeof v === "number") {
+				const parsed = new Date(v);
+				if (!Number.isNaN(parsed.getTime())) return parsed;
+			}
+			return v;
+		},
+		z.date().optional(),
+	),
+});
+
+export const consentBodySchema = z
+	.object({
+		consents: z
+			.array(consentEntryValidation)
+			.min(2, "Both consent forms are required")
+			.max(2, "Only two consent forms are allowed"),
+	})
+	.refine(
+		(data) => {
+			const types = data.consents.map((c) => c.type);
+			return (
+				types.includes(ConsentType.WELLNESS_SERVICES) &&
+				types.includes(ConsentType.GYM_FITNESS)
+			);
+		},
+		{
+			message:
+				"Both WELLNESS_SERVICES and GYM_FITNESS consents are required",
+		},
+	);
+
+/** @deprecated Use consentBodySchema with consents array instead */
+export const legacyConsentBodySchema = z.object({
 	accepted: z.literal(true, {
 		message: "Consent must be accepted",
 	}),
@@ -160,5 +206,6 @@ export const appointmentBodySchema = z.object({
 export type HealthMarkersBody = z.infer<typeof healthMarkersBodySchema>;
 export type HealthGoalsBody = z.infer<typeof healthGoalsBodySchema>;
 export type ConsentBody = z.infer<typeof consentBodySchema>;
+export type LegacyConsentBody = z.infer<typeof legacyConsentBodySchema>;
 export type ReportBody = z.infer<typeof reportBodySchema>;
 export type AppointmentBody = z.infer<typeof appointmentBodySchema>;
