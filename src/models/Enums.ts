@@ -90,3 +90,52 @@ export enum AppointmentBookingStatus {
 	Confirmed = "Confirmed",
 	Cancelled = "Cancelled",
 }
+
+export enum NutritionGoal {
+	WeightLoss = "WeightLoss",
+	MuscleGain = "MuscleGain",
+	Maintenance = "Maintenance",
+	Endurance = "Endurance",
+	Medical = "Medical",
+	Custom = "Custom",
+}
+
+export enum NutritionPlanStatus {
+	Draft = "Draft",
+	Active = "Active",
+	Paused = "Paused",
+	Completed = "Completed",
+	Archived = "Archived",
+}
+
+export enum MealType {
+	Breakfast = "Breakfast",
+	Lunch = "Lunch",
+	Dinner = "Dinner",
+	Snack = "Snack",
+	PreWorkout = "PreWorkout",
+	PostWorkout = "PostWorkout",
+}
+
+export enum NutritionFoodSource {
+	System = "System",
+	Custom = "Custom",
+}
+
+export enum MealLogStatus {
+	Logged = "Logged",
+	Skipped = "Skipped",
+	Partial = "Partial",
+}
+
+export enum MealLogSource {
+	Manual = "Manual",
+	AI = "AI",
+	Wearable = "Wearable",
+	Scan = "Scan",
+}
+
+export enum ProgressRecordedBy {
+	User = "User",
+	Nutritionist = "Nutritionist",
+}

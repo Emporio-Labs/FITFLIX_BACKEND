@@ -27,8 +27,9 @@
 17. [Exercise Routes](#exercise-routes)
 18. [Workout Routes](#workout-routes)
 19. [Onboarding Routes](#onboarding-routes)
-20. [Enums & Status Codes](#enums--status-codes)
-21. [Error Handling](#error-handling)
+20. [Nutrition Routes](#nutrition-routes)
+21. [Enums & Status Codes](#enums--status-codes)
+22. [Error Handling](#error-handling)
 
 ---
 
@@ -53,10 +54,11 @@ curl -H "Authorization: Basic dXNlckBleGFtcGxlLmNvbTpteXBhc3N3b3Jk" \
 
 ### User Roles
 
-The system supports 4 role types:
+The system supports 5 role types:
 - **`user`** — Patient/end-user (non-medical)
 - **`doctor`** — Healthcare provider
 - **`trainer`** — Fitness/wellness trainer
+- **`nutritionist`** — Nutrition specialist (authors/assigns nutrition plans)
 - **`admin`** — Front desk/system administrator
 
 ---
@@ -82,9 +84,10 @@ The system supports 4 role types:
 | `/exercises` | Exercise library | ✅ Admin + User | 5 endpoints |
 | `/workouts` | Workout sessions, exercises, set logging, stats | ✅ User | 15 endpoints |
 | `/onboarding` | Onboarding workflow — health markers, goals, consent, reports, appointments | ✅ User only | 7 endpoints |
+| `/nutrition` | Nutrition module — food catalog, templates, assigned plans, meal logs, hydration, adherence, progress, plan PDF | ✅ Nutritionist/Admin (authoring), User (self-service) | 35 endpoints |
 | `/health` | Health check | ❌ No | 1 endpoint |
 
-**Total Endpoints:** 109
+**Total Endpoints:** 144
 
 ---
 
@@ -3340,6 +3343,701 @@ POST /onboarding/complete
 
 ---
 
+## Nutrition Routes
+
+### Base Path: `/nutrition`
+
+**Global Requirements:**
+- ✅ Authentication required for all endpoints (`Authorization: Bearer <token>`)
+- ✅ Role-based access:
+  - **Nutritionist / Admin** — author the food catalog, templates, plans, and review adherence/progress
+  - **User** — view assigned plans, log meals, track hydration/progress, view own adherence
+  - **Admin** — seed system foods and rebuild adherence rollups
+
+**Architecture Notes:**
+- `NutritionTemplate` (reusable, nutritionist-owned) is separate from `UserNutritionPlan` (a per-user **deep snapshot** of a template; editing a plan never mutates its source template, and templates never propagate to assigned plans).
+- `MealPlan` (prescribed meals embedded in a plan) is separate from `NutritionMealLog` (actual consumption).
+- Food macros are snapshotted onto template/plan/log items, so editing or deactivating a catalog food never alters historical plans or logs.
+- Adherence is a **materialized daily rollup** recomputed on every meal-log mutation (single mutation path); `POST /nutrition/admin/adherence/rebuild` is the idempotent repair tool.
+- All time-series dates are normalized to UTC-midnight server-side.
+- **PDF generation is a deferred interface seam.** PDFs are never the source of truth — they render from structured data. The default renderer returns `400 BAD_REQUEST` ("PDF generation is not yet enabled") until a real renderer is wired in.
+
+---
+
+### Food Catalog
+
+#### 1. Search Foods
+```
+GET /nutrition/foods?query=oats&page=1&limit=20
+```
+
+**Authorization:** Nutritionist, Admin, User
+
+**Query Params:**
+- `query` (optional, string) — text search over name/brand
+- `source` (optional) — `System` | `Custom`
+- `page` (optional, number, default `1`)
+- `limit` (optional, number, `1`–`100`, default `20`)
+
+**Visibility:**
+- `user` sees only `System` foods.
+- `nutritionist` sees `System` foods plus their own `Custom` foods.
+
+**Response (200 OK):**
+```json
+{
+  "items": [
+    {
+      "_id": "507f1f77bcf86cd799439301",
+      "name": "Rolled Oats",
+      "brand": null,
+      "source": "System",
+      "basePer": 100,
+      "servingLabel": "100 g",
+      "caloriesKcal": 389,
+      "proteinG": 16.9,
+      "carbsG": 66.3,
+      "fatG": 6.9,
+      "fiberG": 10.6,
+      "sugarG": 0,
+      "isActive": true
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 20
+}
+```
+
+---
+
+#### 2. Create Custom Food
+```
+POST /nutrition/foods
+```
+
+**Authorization:** Nutritionist, Admin
+
+**Request Body:**
+```json
+{
+  "name": "Homemade Granola",
+  "brand": null,
+  "basePer": 100,
+  "servingLabel": "100 g",
+  "caloriesKcal": 471,
+  "proteinG": 10.1,
+  "carbsG": 64.0,
+  "fatG": 20.3,
+  "fiberG": 7.0,
+  "sugarG": 24.0,
+  "barcode": null
+}
+```
+
+**Notes:**
+- Macros are canonical **per `basePer` grams** (defaults to `100`).
+- `source` is set to `Custom` and `createdBy` to the authenticated nutritionist.
+
+**Response (201 Created):**
+```json
+{ "message": "Food created", "food": { /* food object */ } }
+```
+
+---
+
+#### 3. Update Food
+```
+PATCH /nutrition/foods/:id
+```
+
+**Authorization:** Nutritionist (own custom foods only), Admin (any)
+
+**Request Body:** Any subset of the create payload.
+
+**Error Responses:**
+- `403` `FORBIDDEN` — Not the owner of the custom food
+- `404` `NOT_FOUND` — Food not found
+
+---
+
+#### 4. Deactivate Food
+```
+DELETE /nutrition/foods/:id
+```
+
+**Authorization:** Nutritionist (own custom foods only), Admin (any)
+
+**Behavior:** Soft delete (`isActive = false`); foods are never hard-deleted so historical snapshots remain valid.
+
+**Response (200 OK):**
+```json
+{ "message": "Food deactivated" }
+```
+
+---
+
+#### 5. Create System Food (Admin)
+```
+POST /nutrition/admin/foods
+```
+
+**Authorization:** Admin only
+
+**Request Body:** Same as Create Custom Food. `source` is set to `System`.
+
+**Response (201 Created):**
+```json
+{ "message": "System food created", "food": { /* food object */ } }
+```
+
+---
+
+### Nutrition Templates
+
+#### 6. Create Template
+```
+POST /nutrition/templates
+```
+
+**Authorization:** Nutritionist, Admin
+
+**Request Body:**
+```json
+{
+  "name": "12-Week Lean Bulk",
+  "description": "High-protein progressive plan",
+  "goal": "MuscleGain",
+  "status": "Draft",
+  "tags": ["bulk", "high-protein"],
+  "targetCaloriesKcal": 2800,
+  "targetMacros": { "proteinG": 180, "carbsG": 320, "fatG": 80 },
+  "durationDays": 7,
+  "days": [
+    {
+      "dayNumber": 1,
+      "meals": [
+        {
+          "mealType": "Breakfast",
+          "name": "Oats & Whey",
+          "timeOfDay": "08:00",
+          "notes": "",
+          "items": [
+            { "foodId": "507f1f77bcf86cd799439301", "quantityG": 80 }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Notes:**
+- Each item's `foodId` is resolved and a **macro snapshot** is embedded at write time.
+- `goal`: see `NutritionGoal` enum. `status`: see `NutritionPlanStatus` enum. `mealType`: see `MealType` enum.
+
+**Response (201 Created):**
+```json
+{ "message": "Template created", "template": { /* template object */ } }
+```
+
+---
+
+#### 7. List My Templates
+```
+GET /nutrition/templates?status=Draft&goal=MuscleGain&tag=bulk
+```
+
+**Authorization:** Nutritionist, Admin
+
+**Response (200 OK):** `{ "templates": [ /* ... */ ] }`
+
+---
+
+#### 8. Get Template by ID
+```
+GET /nutrition/templates/:id
+```
+
+**Authorization:** Nutritionist (own), Admin (any)
+
+**Response (200 OK):** `{ "template": { /* ... */ } }`
+
+---
+
+#### 9. Update Template
+```
+PATCH /nutrition/templates/:id
+```
+
+**Authorization:** Nutritionist (own), Admin (any)
+
+**Request Body:** Any subset of the create payload. If `days` is provided, item macros are re-snapshotted.
+
+---
+
+#### 10. Delete Template
+```
+DELETE /nutrition/templates/:id
+```
+
+**Authorization:** Nutritionist (own), Admin (any)
+
+**Response (200 OK):** `{ "message": "Template deleted" }`
+
+---
+
+#### 11. Assign Template to User
+```
+POST /nutrition/templates/:id/assign
+```
+
+**Authorization:** Nutritionist (own template), Admin (any)
+
+**Request Body:**
+```json
+{
+  "userId": "507f1f77bcf86cd799439011",
+  "startDate": "2026-05-20",
+  "endDate": "2026-08-12"
+}
+```
+
+**Behavior:** Creates a `UserNutritionPlan` as a **deep, detached copy** of the template (`sourceTemplateId` retained for provenance only).
+
+**Response (201 Created):**
+```json
+{ "message": "Template assigned", "plan": { /* plan object */ } }
+```
+
+---
+
+### Assigned Plans (Nutritionist/Admin)
+
+#### 12. Create Ad-hoc Plan
+```
+POST /nutrition/plans
+```
+
+**Authorization:** Nutritionist, Admin
+
+**Request Body:**
+```json
+{
+  "userId": "507f1f77bcf86cd799439011",
+  "name": "Custom Cut",
+  "goal": "WeightLoss",
+  "startDate": "2026-05-20",
+  "endDate": "2026-06-20",
+  "targetCaloriesKcal": 1900,
+  "targetMacros": { "proteinG": 160, "carbsG": 150, "fatG": 60 },
+  "durationDays": 7,
+  "days": [ /* same shape as template days */ ]
+}
+```
+
+**Response (201 Created):** `{ "message": "Plan created", "plan": { /* ... */ } }`
+
+---
+
+#### 13. List Plans I Manage
+```
+GET /nutrition/plans?status=Active
+```
+
+**Authorization:** Nutritionist (plans they assigned), Admin
+
+**Response (200 OK):** `{ "plans": [ /* ... */ ] }`
+
+---
+
+#### 14. Get Plan by ID
+```
+GET /nutrition/plans/:id
+```
+
+**Authorization:** Owning user, assigning nutritionist, or admin
+
+**Response (200 OK):** `{ "plan": { /* ... */ } }`
+
+---
+
+#### 15. Update Plan
+```
+PATCH /nutrition/plans/:id
+```
+
+**Authorization:** Assigning nutritionist or admin (users cannot edit plan content)
+
+**Request Body:** Any subset of the ad-hoc plan payload. Editing a plan never affects its source template.
+
+---
+
+#### 16. Change Plan Status
+```
+PATCH /nutrition/plans/:id/status
+```
+
+**Authorization:** Assigning nutritionist or admin
+
+**Request Body:**
+```json
+{ "status": "Completed" }
+```
+
+`status`: `Draft` | `Active` | `Paused` | `Completed` | `Archived`
+
+---
+
+#### 17. Generate Plan PDF
+```
+POST /nutrition/plans/:id/pdf
+```
+
+**Authorization:** Assigning nutritionist or admin
+
+**Current Behavior (deferred seam):** Returns `400 BAD_REQUEST` — `"PDF generation is not yet enabled"`. When a renderer is wired in, persists only PDF metadata (`hasPdf`, `pdfUrl`, `pdfGeneratedAt`, `pdfStorageKey`) and returns:
+```json
+{ "message": "Plan PDF generated", "pdfUrl": "...", "pdfGeneratedAt": "..." }
+```
+
+---
+
+#### 18. Get Plan Adherence Summary
+```
+GET /nutrition/plans/:id/adherence?from=2026-05-20&to=2026-05-27
+```
+
+**Authorization:** Owning user, assigning nutritionist, or admin
+
+**Response (200 OK):**
+```json
+{
+  "summary": {
+    "_id": "507f1f77bcf86cd799439401",
+    "days": 7,
+    "avgMealAdherencePct": 82,
+    "avgCalorieAdherencePct": 91,
+    "totalConsumedKcal": 13200,
+    "totalPlannedKcal": 14000
+  }
+}
+```
+
+---
+
+#### 19. List Plan Progress
+```
+GET /nutrition/plans/:id/progress
+```
+
+**Authorization:** Owning user, assigning nutritionist, or admin
+
+**Response (200 OK):** `{ "entries": [ /* progress entries */ ] }`
+
+---
+
+#### 20. Add Plan Progress (on behalf of user)
+```
+POST /nutrition/plans/:id/progress
+```
+
+**Authorization:** Assigning nutritionist or admin
+
+**Request Body:**
+```json
+{
+  "recordedAt": "2026-05-27",
+  "weightKg": 78.4,
+  "bodyFatPct": 18.2,
+  "measurements": { "waistCm": 84 },
+  "photoUrls": [],
+  "note": "Week 1 check-in"
+}
+```
+
+**Behavior:** Records progress for the plan's user with `recordedBy = Nutritionist`.
+
+---
+
+### User Self-Service
+
+#### 21. List My Plans
+```
+GET /nutrition/my/plans?status=Active
+```
+
+**Authorization:** User only
+
+**Response (200 OK):** `{ "plans": [ /* ... */ ] }`
+
+---
+
+#### 22. Get My Plan by ID
+```
+GET /nutrition/my/plans/:id
+```
+
+**Authorization:** User only (own plan)
+
+---
+
+#### 23. Get My Plan PDF
+```
+GET /nutrition/my/plans/:id/pdf
+```
+
+**Authorization:** User only (own plan)
+
+**Response (200 OK):**
+```json
+{ "pdfUrl": "local://nutrition/plans/...", "pdfGeneratedAt": "2026-05-20T10:00:00Z" }
+```
+
+**Error Responses:**
+- `404` `NOT_FOUND` — No PDF has been generated for this plan
+
+---
+
+#### 24. Mark Prescribed Meal Completed
+```
+POST /nutrition/my/plans/:id/meals/complete
+```
+
+**Authorization:** User only (own plan)
+
+**Request Body:**
+```json
+{ "dayNumber": 1, "mealIndex": 0, "date": "2026-05-20" }
+```
+
+**Behavior:** Creates/updates a meal log linked to the prescribed meal (`status = Logged`) and recomputes that day's adherence rollup.
+
+**Response (200 OK):** `{ "message": "Meal marked completed", "log": { /* ... */ } }`
+
+---
+
+#### 25. Log a Consumed Meal
+```
+POST /nutrition/my/meal-logs
+```
+
+**Authorization:** User only
+
+**Request Body:**
+```json
+{
+  "planId": "507f1f77bcf86cd799439401",
+  "logDate": "2026-05-20",
+  "status": "Logged",
+  "source": "Manual",
+  "plannedMealRef": { "dayNumber": 1, "mealIndex": 0 },
+  "notes": "Skipped the banana",
+  "photoUrls": [],
+  "items": [
+    { "foodId": "507f1f77bcf86cd799439301", "quantityG": 80 }
+  ]
+}
+```
+
+**Notes:**
+- `planId`, `plannedMealRef`, `logDate`, `status`, `source`, `notes`, `photoUrls` are optional.
+- Item macros are snapshotted; meal `totals` are computed.
+- `status`: `Logged` | `Skipped` | `Partial`. `source`: `Manual` | `AI` | `Wearable` | `Scan`.
+- If `planId` is provided, the plan must be assigned to the authenticated user; adherence is recomputed.
+
+**Response (201 Created):** `{ "message": "Meal logged", "log": { /* ... */ } }`
+
+---
+
+#### 26. List My Meal Logs
+```
+GET /nutrition/my/meal-logs?planId=...&from=2026-05-01&to=2026-05-31&page=1&limit=50
+```
+
+**Authorization:** User only
+
+**Response (200 OK):**
+```json
+{ "items": [ /* ... */ ], "total": 12, "page": 1, "limit": 50 }
+```
+
+---
+
+#### 27. Update My Meal Log
+```
+PATCH /nutrition/my/meal-logs/:id
+```
+
+**Authorization:** User only (own log)
+
+**Request Body (all optional):**
+```json
+{ "status": "Partial", "notes": "Half portion", "items": [ { "foodId": "...", "quantityG": 40 } ] }
+```
+
+**Behavior:** If `items` change, macros/totals are recomputed; the plan day's adherence is recomputed.
+
+---
+
+#### 28. Delete My Meal Log
+```
+DELETE /nutrition/my/meal-logs/:id
+```
+
+**Authorization:** User only (own log)
+
+**Behavior:** Deletes the log and recomputes the plan day's adherence rollup.
+
+**Response (200 OK):** `{ "message": "Meal log deleted" }`
+
+---
+
+#### 29. Add Hydration Intake
+```
+POST /nutrition/my/hydration
+```
+
+**Authorization:** User only
+
+**Request Body:**
+```json
+{ "amountMl": 250, "source": "Manual", "date": "2026-05-20" }
+```
+
+**Behavior:** Idempotent `$inc` upsert into the one-per-day hydration document; refreshes active-plan adherence rollups for the day.
+
+**Response (201 Created):** `{ "message": "Hydration logged", "hydration": { /* ... */ } }`
+
+---
+
+#### 30. Set Hydration Goal
+```
+PATCH /nutrition/my/hydration/goal
+```
+
+**Authorization:** User only
+
+**Request Body:**
+```json
+{ "goalMl": 3000, "date": "2026-05-20" }
+```
+
+**Response (200 OK):** `{ "message": "Hydration goal set", "hydration": { /* ... */ } }`
+
+---
+
+#### 31. Get My Hydration
+```
+GET /nutrition/my/hydration?date=2026-05-20
+```
+
+**Authorization:** User only
+
+**Response (200 OK):**
+```json
+{
+  "hydration": {
+    "userId": "507f1f77bcf86cd799439011",
+    "logDate": "2026-05-20T00:00:00.000Z",
+    "goalMl": 3000,
+    "totalMl": 1750,
+    "entries": [ { "amountMl": 250, "at": "2026-05-20T08:00:00Z", "source": "Manual" } ]
+  }
+}
+```
+
+---
+
+#### 32. Add My Progress Entry
+```
+POST /nutrition/my/progress
+```
+
+**Authorization:** User only
+
+**Request Body:**
+```json
+{
+  "planId": "507f1f77bcf86cd799439401",
+  "recordedAt": "2026-05-20",
+  "weightKg": 79.1,
+  "bodyFatPct": 18.8,
+  "measurements": { "chestCm": 102, "waistCm": 85, "hipCm": 98, "armCm": 36, "thighCm": 58 },
+  "photoUrls": [],
+  "note": "Morning weigh-in"
+}
+```
+
+**Behavior:** Appended with `recordedBy = User` (append-only time-series; `planId` optional).
+
+**Response (201 Created):** `{ "message": "Progress recorded", "entry": { /* ... */ } }`
+
+---
+
+#### 33. List My Progress
+```
+GET /nutrition/my/progress?planId=...&from=2026-05-01&to=2026-05-31
+```
+
+**Authorization:** User only
+
+**Response (200 OK):** `{ "entries": [ /* progress entries, newest first */ ] }`
+
+---
+
+#### 34. Get My Adherence Range
+```
+GET /nutrition/my/adherence?planId=507f1f77bcf86cd799439401&from=2026-05-20&to=2026-05-27
+```
+
+**Authorization:** User only (must own the plan)
+
+**Response (200 OK):**
+```json
+{
+  "days": [
+    {
+      "date": "2026-05-20T00:00:00.000Z",
+      "plannedMeals": 4,
+      "loggedMeals": 4,
+      "completedMeals": 3,
+      "plannedCaloriesKcal": 2000,
+      "consumedCaloriesKcal": 1850,
+      "mealAdherencePct": 75,
+      "calorieAdherencePct": 93,
+      "hydrationMl": 1750,
+      "hydrationGoalMl": 3000
+    }
+  ]
+}
+```
+
+---
+
+### Admin Maintenance
+
+#### 35. Rebuild Plan Adherence
+```
+POST /nutrition/admin/adherence/rebuild
+```
+
+**Authorization:** Admin only
+
+**Request Body:**
+```json
+{ "planId": "507f1f77bcf86cd799439401" }
+```
+
+**Behavior:** Idempotent repair — recomputes every rollup day that has logs for the plan.
+
+**Response (200 OK):**
+```json
+{ "message": "Adherence rebuilt", "rebuiltDays": 14 }
+```
+
+---
+
 ## Enums & Status Codes
 
 ### Booking/Appointment Status
@@ -3482,6 +4180,76 @@ POST /onboarding/complete
   "Beginner": "Beginner",
   "Intermediate": "Intermediate",
   "Advanced": "Advanced"
+}
+```
+
+### Nutrition Goal
+```javascript
+{
+  "WeightLoss": "WeightLoss",
+  "MuscleGain": "MuscleGain",
+  "Maintenance": "Maintenance",
+  "Endurance": "Endurance",
+  "Medical": "Medical",
+  "Custom": "Custom"
+}
+```
+
+### Nutrition Plan Status
+```javascript
+{
+  "Draft": "Draft",
+  "Active": "Active",
+  "Paused": "Paused",
+  "Completed": "Completed",
+  "Archived": "Archived"
+}
+```
+
+### Meal Type
+```javascript
+{
+  "Breakfast": "Breakfast",
+  "Lunch": "Lunch",
+  "Dinner": "Dinner",
+  "Snack": "Snack",
+  "PreWorkout": "PreWorkout",
+  "PostWorkout": "PostWorkout"
+}
+```
+
+### Nutrition Food Source
+```javascript
+{
+  "System": "System",
+  "Custom": "Custom"
+}
+```
+
+### Meal Log Status
+```javascript
+{
+  "Logged": "Logged",
+  "Skipped": "Skipped",
+  "Partial": "Partial"
+}
+```
+
+### Meal Log Source
+```javascript
+{
+  "Manual": "Manual",
+  "AI": "AI",
+  "Wearable": "Wearable",
+  "Scan": "Scan"
+}
+```
+
+### Progress Recorded By
+```javascript
+{
+  "User": "User",
+  "Nutritionist": "Nutritionist"
 }
 ```
 

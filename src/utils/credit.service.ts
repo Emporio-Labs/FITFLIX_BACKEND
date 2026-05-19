@@ -7,7 +7,7 @@ import {
 } from "../models/Enums";
 import Membership from "../models/Membership";
 
-type ActorRole = "admin" | "user" | "doctor" | "trainer";
+type ActorRole = "admin" | "user" | "doctor" | "trainer" | "nutritionist";
 
 const toObjectId = (
 	value: string,

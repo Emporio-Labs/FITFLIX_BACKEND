@@ -1,4 +1,9 @@
-export type AppUserRole = "user" | "admin" | "doctor" | "trainer";
+export type AppUserRole =
+	| "user"
+	| "admin"
+	| "doctor"
+	| "trainer"
+	| "nutritionist";
 
 export type AuthenticatedUser = {
 	id: string;
