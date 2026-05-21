@@ -3,8 +3,11 @@ import mongoose from "mongoose";
 import Appointment from "../models/Appointment";
 import Doctor from "../models/Doctor";
 import { BookingStatus, CreditTransactionSource } from "../models/Enums";
+import { HpodReport } from "../models/Hpodreport.model";
 import Service from "../models/Service";
 import Slot from "../models/Slots";
+
+void HpodReport;
 import type { AuthenticatedUser } from "../types/auth";
 import {
 	consumeCredits,
@@ -348,7 +351,12 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 
 export const getAllAppointments: RequestHandler = async (_req, res, next) => {
 	try {
-		const appointments = await Appointment.find();
+		const appointments = await Appointment.find()
+			.populate("user", "username email phone")
+			.populate("doctor", "doctorName email specialities")
+			.populate("service", "serviceName serviceType creditCost")
+			.populate("slot", "date startTime endTime")
+			.populate("report", "subject hasPdf");
 		res.status(200).json({ appointments });
 	} catch (error) {
 		next(error);
@@ -364,7 +372,12 @@ export const getAppointmentById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const appointment = await Appointment.findById(id);
+		const appointment = await Appointment.findById(id)
+			.populate("user", "username email phone")
+			.populate("doctor", "doctorName email specialities")
+			.populate("service", "serviceName serviceType creditCost")
+			.populate("slot", "date startTime endTime")
+			.populate("report", "subject hasPdf");
 
 		if (!appointment) {
 			res.status(404).json({ message: "Appointment not found" });
@@ -391,7 +404,12 @@ export const getMyAppointments: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const appointments = await Appointment.find({ doctor: requester.id });
+		const appointments = await Appointment.find({ doctor: requester.id })
+			.populate("user", "username email phone")
+			.populate("doctor", "doctorName email specialities")
+			.populate("service", "serviceName serviceType creditCost")
+			.populate("slot", "date startTime endTime")
+			.populate("report", "subject hasPdf");
 		res.status(200).json({ appointments });
 	} catch (error) {
 		next(error);

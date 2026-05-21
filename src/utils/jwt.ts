@@ -39,6 +39,20 @@ export const getJwtConfig = (): JwtConfig | null => {
 	};
 };
 
+export const getJwtRefreshConfig = (): JwtConfig | null => {
+	const secret = process.env.JWT_REFRESH_SECRET?.trim();
+	if (!secret) {
+		return null;
+	}
+
+	return {
+		secret,
+		issuer: normalizeOptional(process.env.JWT_ISSUER),
+		audience: normalizeOptional(process.env.JWT_AUDIENCE),
+		expiresIn: parseExpiresIn(process.env.JWT_REFRESH_EXPIRES_IN ?? "30d"),
+	};
+};
+
 const buildSignOptions = (config: JwtConfig): SignOptions => {
 	const options: SignOptions = { expiresIn: config.expiresIn };
 
@@ -80,6 +94,11 @@ export const signAuthToken = (
 	return jwt.sign(payload, config.secret, buildSignOptions(config));
 };
 
+export const signRefreshToken = (
+	user: AuthenticatedUser,
+	config: JwtConfig,
+): string => signAuthToken(user, config);
+
 export const verifyAuthToken = (
 	token: string,
 	config: JwtConfig,
@@ -113,3 +132,8 @@ export const verifyAuthToken = (
 		role,
 	};
 };
+
+export const verifyRefreshToken = (
+	token: string,
+	config: JwtConfig,
+): AuthenticatedUser | null => verifyAuthToken(token, config);

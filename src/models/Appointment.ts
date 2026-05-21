@@ -26,7 +26,7 @@ const appointmentSchema = new mongoose.Schema(
 		},
 		report: {
 			type: mongoose.Schema.Types.ObjectId,
-			ref: "Report",
+			ref: "HpodReport",
 			default: null,
 			required: false,
 		},

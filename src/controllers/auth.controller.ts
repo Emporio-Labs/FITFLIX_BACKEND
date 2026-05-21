@@ -8,9 +8,16 @@ import {
 	isHashedPassword,
 	verifyPassword,
 } from "../utils/password";
-import { getJwtConfig, signAuthToken } from "../utils/jwt";
+import {
+	getJwtConfig,
+	getJwtRefreshConfig,
+	signAuthToken,
+	signRefreshToken,
+	verifyRefreshToken,
+} from "../utils/jwt";
 import {
 	loginBodySchema,
+	refreshTokenBodySchema,
 	signupBodySchema,
 } from "../validators/auth.validator";
 
@@ -21,6 +28,16 @@ type AuthDocument = {
 	email: string;
 	passwordHash: string;
 	save: () => Promise<unknown>;
+	onboarded?: boolean;
+	onboardingStatus?: unknown;
+};
+
+type LoginUserPayload = {
+	id: string;
+	email: string;
+	role: AppRole;
+	onboarded?: boolean;
+	onboardingStatus?: unknown;
 };
 
 const matchAccount = async (
@@ -47,6 +64,27 @@ const matchAccount = async (
 		email: account.email,
 		role,
 	} as const;
+};
+
+const buildLoginUserPayload = (
+	matchedAccount: { id: string; email: string; role: AppRole },
+	userAccount: AuthDocument | null,
+): LoginUserPayload => {
+	if (matchedAccount.role !== "user") {
+		return {
+			id: matchedAccount.id,
+			email: matchedAccount.email,
+			role: matchedAccount.role,
+		};
+	}
+
+	return {
+		id: matchedAccount.id,
+		email: matchedAccount.email,
+		role: matchedAccount.role,
+		onboarded: Boolean(userAccount?.onboarded),
+		onboardingStatus: userAccount?.onboardingStatus ?? null,
+	};
 };
 
 export const signup: RequestHandler = async (req, res, next) => {
@@ -154,7 +192,13 @@ export const login: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const token = signAuthToken(matchedAccount, jwtConfig);
+		const accessToken = signAuthToken(matchedAccount, jwtConfig);
+		const refreshConfig = getJwtRefreshConfig();
+		const refreshToken = refreshConfig
+			? signRefreshToken(matchedAccount, refreshConfig)
+			: null;
+
+		const userPayload = buildLoginUserPayload(matchedAccount, user);
 
 		console.log("[AUTH][LOGIN] Login successful", {
 			email,
@@ -164,13 +208,63 @@ export const login: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({
 			message: "Login successful",
-			token,
+			accessToken,
+			refreshToken,
 			tokenType: "Bearer",
 			expiresIn: jwtConfig.expiresIn,
-			user: req.user,
+			user: userPayload,
 		});
 	} catch (error) {
 		console.error("[AUTH][LOGIN] Unexpected error", error);
+		next(error);
+	}
+};
+
+export const refreshAccessToken: RequestHandler = async (req, res, next) => {
+	const parsedBody = refreshTokenBodySchema.safeParse(req.body);
+
+	if (!parsedBody.success) {
+		res.status(400).json({
+			message: "Invalid refresh token payload",
+			errors: parsedBody.error.issues,
+		});
+		return;
+	}
+
+	const refreshConfig = getJwtRefreshConfig();
+	if (!refreshConfig) {
+		res.status(503).json({ message: "JWT refresh is not configured" });
+		return;
+	}
+
+	let user: ReturnType<typeof verifyRefreshToken> = null;
+	try {
+		user = verifyRefreshToken(parsedBody.data.refreshToken, refreshConfig);
+	} catch (_error) {
+		res.status(401).json({ message: "Invalid or expired refresh token" });
+		return;
+	}
+
+	if (!user) {
+		res.status(401).json({ message: "Invalid or expired refresh token" });
+		return;
+	}
+
+	const jwtConfig = getJwtConfig();
+	if (!jwtConfig) {
+		res.status(503).json({ message: "JWT authentication is not configured" });
+		return;
+	}
+
+	try {
+		const accessToken = signAuthToken(user, jwtConfig);
+		res.status(200).json({
+			message: "Token refreshed",
+			accessToken,
+			tokenType: "Bearer",
+			expiresIn: jwtConfig.expiresIn,
+		});
+	} catch (error) {
 		next(error);
 	}
 };
