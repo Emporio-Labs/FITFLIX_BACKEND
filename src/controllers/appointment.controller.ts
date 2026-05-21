@@ -7,7 +7,6 @@ import Service from "../models/Service";
 import Slot from "../models/Slots";
 import type { AuthenticatedUser } from "../types/auth";
 import {
-	CreditServiceError,
 	consumeCredits,
 	refundCreditsBySource,
 } from "../utils/credit.service";
@@ -56,22 +55,6 @@ const isCancelledAppointmentStatus = (status: unknown): boolean =>
 
 const nonCancelledAppointmentStatusFilter = {
 	$nin: [BookingStatus.Cancelled, String(BookingStatus.Cancelled), "Cancelled"],
-};
-
-const mapCreditServiceError = (
-	error: CreditServiceError,
-): { status: number; message: string } => {
-	switch (error.code) {
-		case "NO_ACTIVE_MEMBERSHIP":
-			return {
-				status: 403,
-				message: "No active membership with available credits",
-			};
-		case "INSUFFICIENT_CREDITS":
-			return { status: 402, message: "Insufficient credits" };
-		default:
-			return { status: 400, message: error.message };
-	}
 };
 
 const normalizeToUtcDate = (value: Date): Date =>
@@ -340,12 +323,6 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 				if (reservedSlotId) {
 					await releaseSlotCapacity(reservedSlotId).catch(() => null);
 					reservedSlotId = null;
-				}
-
-				if (error instanceof CreditServiceError) {
-					const creditError = mapCreditServiceError(error);
-					res.status(creditError.status).json({ message: creditError.message });
-					return;
 				}
 
 				throw error;

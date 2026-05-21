@@ -1,5 +1,9 @@
 import type { Request, Response } from "express";
 import app from "../src/app";
+import {
+	isErrorVerboseEnabled,
+	resolveErrorResponse,
+} from "../src/utils/api-error";
 import connectDB from "../src/utils/db";
 
 let dbReadyPromise: Promise<void> | null = null;
@@ -23,6 +27,10 @@ export default async function handler(req: Request, res: Response) {
 		return app(req, res);
 	} catch (error) {
 		console.error("Request initialization failed:", error);
-		res.status(500).json({ message: "Server initialization failed" });
+		const { status, body } = resolveErrorResponse(error, {
+			fallbackMessage: "Server initialization failed",
+			verbose: isErrorVerboseEnabled(),
+		});
+		res.status(status).json(body);
 	}
 }
