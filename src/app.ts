@@ -31,11 +31,15 @@ config();
 const app = express();
 
 const isProduction = process.env.NODE_ENV === "production";
-const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
+const isCorsDebugEnabled = process.env.CORS_DEBUG === "true";
+const rawAllowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
 	.split(",")
 	.map((origin) => origin.trim())
 	.filter((origin) => origin.length > 0);
-const allowAnyOrigin = allowedOrigins.length === 0 && !isProduction;
+const hasWildcardOrigin = rawAllowedOrigins.includes("*");
+const allowedOrigins = rawAllowedOrigins.filter((origin) => origin !== "*");
+const allowAnyOrigin =
+	!isProduction && (allowedOrigins.length === 0 || hasWildcardOrigin);
 
 const isOriginAllowed = (origin: string | undefined): boolean => {
 	if (!origin) {
@@ -51,8 +55,15 @@ const isOriginAllowed = (origin: string | undefined): boolean => {
 
 app.use((req, res, next) => {
 	const origin = req.header("origin");
+	const originAllowed = origin ? isOriginAllowed(origin) : false;
 
-	if (origin && isOriginAllowed(origin)) {
+	if (isCorsDebugEnabled) {
+		console.log(
+			`[CORS] origin=${origin ?? "(none)"} allowed=${originAllowed} allowAny=${allowAnyOrigin} allowList=${allowedOrigins.join(";") || "(empty)"}`,
+		);
+	}
+
+	if (origin && originAllowed) {
 		res.setHeader(
 			"Access-Control-Allow-Origin",
 			allowAnyOrigin ? "*" : origin,
