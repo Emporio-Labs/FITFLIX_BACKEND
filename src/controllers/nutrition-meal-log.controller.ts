@@ -64,6 +64,7 @@ export const completePlanMeal: RequestHandler = async (req, res, next) => {
 			parsed.data.mealIndex,
 			req.user!.id,
 			parsed.data.date,
+			parsed.data.completedOptionId ?? null,
 		);
 		res.status(200).json({ message: "Meal marked completed", log });
 	} catch (error) {

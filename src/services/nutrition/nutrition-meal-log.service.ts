@@ -9,7 +9,11 @@ import {
 	normalizeToUtcDate,
 	toObjectId,
 } from "./nutrition-errors";
-import { sumMacros } from "./nutrition-macro.util";
+import {
+	getEffectiveMealItems,
+	getOptionItems,
+	sumMacros,
+} from "./nutrition-macro.util";
 import { resolveItemsToSnapshots } from "./nutrition-snapshot.util";
 
 export type LogMealInput = {
@@ -17,7 +21,12 @@ export type LogMealInput = {
 	logDate?: Date;
 	status?: MealLogStatus;
 	source?: MealLogSource;
-	plannedMealRef?: { dayNumber: number; mealIndex: number } | null;
+	plannedMealRef?: {
+		dayNumber: number;
+		mealIndex: number;
+		selectedOptionId?: string | null;
+		completedOptionId?: string | null;
+	} | null;
 	notes?: string;
 	photoUrls?: string[];
 	items: MealItemInput[];
@@ -91,6 +100,7 @@ export const markMealCompleted = async (
 	mealIndex: number,
 	userId: string,
 	date?: Date,
+	completedOptionId?: string | null,
 ) => {
 	const planObjectId = toObjectId(planId, "NOT_FOUND", "Plan not found");
 	const plan = await assertPlanOwnedByUser(planObjectId, userId);
@@ -106,7 +116,13 @@ export const markMealCompleted = async (
 		);
 	}
 
-	const items = (meal.items ?? []).map((item) => ({
+	// Prefer the explicitly chosen option; fall back to the default
+	// option / items[] for legacy plans or non-option meals.
+	const optionItems = completedOptionId
+		? getOptionItems(meal, completedOptionId)
+		: null;
+	const sourceItems = optionItems ?? getEffectiveMealItems(meal);
+	const items = sourceItems.map((item) => ({
 		foodId: item.foodId,
 		foodName: item.foodName,
 		quantityG: item.quantityG,
@@ -118,6 +134,15 @@ export const markMealCompleted = async (
 		sugarG: item.sugarG ?? null,
 	}));
 	const totals = sumMacros(items);
+
+	const plannedMealRef: Record<string, unknown> = {
+		dayNumber,
+		mealIndex,
+	};
+	if (completedOptionId) {
+		plannedMealRef.selectedOptionId = completedOptionId;
+		plannedMealRef.completedOptionId = completedOptionId;
+	}
 
 	const log = await NutritionMealLog.findOneAndUpdate(
 		{
@@ -132,7 +157,7 @@ export const markMealCompleted = async (
 			planId: planObjectId,
 			logDate,
 			dayNumber,
-			plannedMealRef: { dayNumber, mealIndex },
+			plannedMealRef,
 			status: MealLogStatus.Logged,
 			source: MealLogSource.Manual,
 			items,

@@ -29,6 +29,16 @@ const plannedMealRefSchema = new mongoose.Schema(
 	{
 		dayNumber: { type: Number, required: true },
 		mealIndex: { type: Number, required: true },
+		// Stable IDs from mealOptionSchema._id. Null for legacy plans or
+		// meals without options[]; falls back to the default option.
+		selectedOptionId: {
+			type: mongoose.Schema.Types.ObjectId,
+			default: null,
+		},
+		completedOptionId: {
+			type: mongoose.Schema.Types.ObjectId,
+			default: null,
+		},
 	},
 	{ _id: false },
 );

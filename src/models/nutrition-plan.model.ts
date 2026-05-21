@@ -1,6 +1,10 @@
 import mongoose from "mongoose";
 import { NutritionGoal, NutritionPlanStatus } from "./Enums";
-import { macroTargetSchema, planDaySchema } from "./nutrition-shared.schema";
+import {
+	lifestyleRecommendationSchema,
+	macroTargetSchema,
+	planDaySchema,
+} from "./nutrition-shared.schema";
 
 // A user-bound plan. Deep-snapshotted from a template at assign time and
 // then INDEPENDENTLY EDITABLE — there is intentionally no propagation from
@@ -39,6 +43,10 @@ const userNutritionPlanSchema = new mongoose.Schema(
 		targetMacros: { type: macroTargetSchema, default: () => ({}) },
 		durationDays: { type: Number, default: 7 },
 		days: { type: [planDaySchema], default: [] },
+		lifestyleRecommendations: {
+			type: [lifestyleRecommendationSchema],
+			default: [],
+		},
 		hasPdf: { type: Boolean, default: false },
 		pdfUrl: { type: String, default: null },
 		pdfGeneratedAt: { type: Date, default: null },

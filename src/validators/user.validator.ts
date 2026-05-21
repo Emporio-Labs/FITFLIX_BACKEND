@@ -183,3 +183,18 @@ export const updateMyPasswordBodySchema = z
 export type CreateUserBody = z.infer<typeof createUserBodySchema>;
 export type UpdateUserBody = z.infer<typeof updateUserBodySchema>;
 export type UpdateMyPasswordBody = z.infer<typeof updateMyPasswordBodySchema>;
+
+export const listUsersQuerySchema = z.object({
+	search: z.string().trim().optional(),
+	status: z
+		.enum(["all", "pending", "booked"])
+		.optional()
+		.default("all")
+		.transform((v) => (v === "all" ? undefined : v)),
+	page: z.coerce.number().int().min(1).default(1),
+	limit: z.coerce.number().int().min(1).max(100).default(20),
+	sort: z.enum(["username", "email", "phone", "createdAt"]).default("createdAt"),
+	order: z.enum(["asc", "desc"]).default("desc"),
+});
+
+export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;

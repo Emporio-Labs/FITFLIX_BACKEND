@@ -4,6 +4,53 @@ import type {
 	ScalableFood,
 } from "../../types/nutrition";
 
+type MealFoodItem = {
+	foodId: unknown;
+	foodName: string;
+	quantityG: number;
+	caloriesKcal: number;
+	proteinG: number;
+	carbsG: number;
+	fatG: number;
+	fiberG?: number | null;
+	sugarG?: number | null;
+};
+
+type MealWithOptions = {
+	items?: MealFoodItem[];
+	// Loose typing so this accepts both Mongoose subdocuments (which carry
+	// a strongly-typed _id) and plain object snapshots.
+	// biome-ignore lint/suspicious/noExplicitAny: structural compatibility
+	options?: any[];
+};
+
+// Single chokepoint for planned-macro item resolution.
+// When options[] is present and non-empty, uses the default option (isDefault=true,
+// fallback = first). Otherwise falls back to items[] for full backward compat.
+export const getEffectiveMealItems = (meal: MealWithOptions): MealFoodItem[] => {
+	const options = meal.options ?? [];
+	if (options.length > 0) {
+		const defaultOpt = options.find((o) => o.isDefault) ?? options[0];
+		return defaultOpt?.foods ?? [];
+	}
+	return meal.items ?? [];
+};
+
+// Locate a specific option by its stable _id. Returns null when the
+// option isn't found (e.g. legacy plans saved before _id was enabled on
+// mealOptionSchema, or a stale ID from the client). Callers should fall
+// back to getEffectiveMealItems() in that case.
+export const getOptionItems = (
+	meal: MealWithOptions,
+	optionId: string | { toString(): string } | null | undefined,
+): MealFoodItem[] | null => {
+	if (!optionId) return null;
+	const target = optionId.toString();
+	const options = meal.options ?? [];
+	const match = options.find((o) => o._id?.toString?.() === target);
+	return match?.foods ?? null;
+};
+
 const round = (value: number): number => Math.round(value * 100) / 100;
 
 // Single source of macro math. Catalog macros are per `basePer` grams;

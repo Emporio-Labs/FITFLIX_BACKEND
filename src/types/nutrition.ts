@@ -36,12 +36,21 @@ export type MealItemInput = {
 	quantityG: number;
 };
 
+export type MealOptionInput = {
+	title: string;
+	isDefault?: boolean;
+	reasoning?: string;
+	foods: MealItemInput[];
+};
+
 export type MealInput = {
 	mealType: string;
 	name: string;
 	timeOfDay?: string | null;
+	suggestedTime?: string | null;
 	notes?: string;
 	items: MealItemInput[];
+	options?: MealOptionInput[];
 };
 
 export type DayInput = {

@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import {
 	getAdherenceRange,
 	getPlanAdherenceSummary,
+	getWeeklyAdherence,
 	rebuildAdherence,
 } from "../services/nutrition/nutrition-adherence.service";
 import { getPlan } from "../services/nutrition/nutrition-assignment.service";
@@ -62,6 +63,62 @@ export const getPlanAdherence: RequestHandler = async (req, res, next) => {
 			parsed.data.to,
 		);
 		res.status(200).json({ summary });
+	} catch (error) {
+		handleNutritionError(error, res, next);
+	}
+};
+
+export const getMyWeeklyAdherence: RequestHandler = async (req, res, next) => {
+	const parsed = adherenceRangeQuerySchema.safeParse(req.query);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
+	try {
+		await getPlan(parsed.data.planId, req.user!);
+		const result = await getWeeklyAdherence(
+			req.user!.id,
+			parsed.data.planId,
+			parsed.data.from,
+			parsed.data.to,
+		);
+		res.status(200).json(result);
+	} catch (error) {
+		handleNutritionError(error, res, next);
+	}
+};
+
+export const getPlanWeeklyAdherence: RequestHandler = async (req, res, next) => {
+	const parsed = planAdherenceQuerySchema.safeParse(req.query);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
+	try {
+		const planId = requireIdParam(req.params.id, "Plan not found");
+		const plan = await getPlan(planId, req.user!);
+		const rawUserId = plan.userId as unknown;
+		const planOwnerId =
+			rawUserId && typeof rawUserId === "object" && "_id" in rawUserId
+				? String((rawUserId as { _id: unknown })._id)
+				: String(rawUserId);
+		const result = await getWeeklyAdherence(
+			planOwnerId,
+			planId,
+			parsed.data.from,
+			parsed.data.to,
+		);
+		res.status(200).json(result);
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}

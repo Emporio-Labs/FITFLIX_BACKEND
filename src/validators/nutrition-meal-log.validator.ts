@@ -19,6 +19,8 @@ export const logMealBodySchema = z.object({
 		.object({
 			dayNumber: z.coerce.number().int().min(1).max(366),
 			mealIndex: z.coerce.number().int().min(0).max(50),
+			selectedOptionId: objectIdString.nullable().optional(),
+			completedOptionId: objectIdString.nullable().optional(),
 		})
 		.nullable()
 		.optional(),
@@ -31,6 +33,7 @@ export const markMealCompletedBodySchema = z.object({
 	dayNumber: z.coerce.number().int().min(1).max(366),
 	mealIndex: z.coerce.number().int().min(0).max(50),
 	date: optionalDate,
+	completedOptionId: objectIdString.nullable().optional(),
 });
 
 export const updateMealLogBodySchema = z.object({

@@ -3,7 +3,9 @@ import { NutritionGoal, NutritionPlanStatus } from "../models/Enums";
 import {
 	daySchema,
 	daysArraySchema,
+	lifestyleRecommendationSchema,
 	macroTargetSchema,
+	objectIdString,
 	optionalDate,
 	requiredDate,
 } from "./nutrition-shared.validator";
@@ -43,6 +45,7 @@ export const createAdHocPlanBodySchema = z.object({
 	targetMacros: macroTargetSchema,
 	durationDays: z.coerce.number().int().min(1).max(366).optional(),
 	days: daysArraySchema,
+	lifestyleRecommendations: z.array(lifestyleRecommendationSchema).default([]),
 });
 
 export const updatePlanBodySchema = z.object({
@@ -59,6 +62,12 @@ export const updatePlanBodySchema = z.object({
 	targetMacros: macroTargetSchema,
 	durationDays: z.coerce.number().int().min(1).max(366).optional(),
 	days: z.array(daySchema).optional(),
+	lifestyleRecommendations: z.array(lifestyleRecommendationSchema).optional(),
+});
+
+export const duplicatePlanBodySchema = z.object({
+	targetUserId: objectIdString.optional(),
+	name: z.string().trim().min(1).optional(),
 });
 
 export const planStatusBodySchema = z.object({
@@ -76,3 +85,4 @@ export type CreateAdHocPlanBody = z.infer<typeof createAdHocPlanBodySchema>;
 export type UpdatePlanBody = z.infer<typeof updatePlanBodySchema>;
 export type PlanStatusBody = z.infer<typeof planStatusBodySchema>;
 export type PlanListQuery = z.infer<typeof planListQuerySchema>;
+export type DuplicatePlanBody = z.infer<typeof duplicatePlanBodySchema>;

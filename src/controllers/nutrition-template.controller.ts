@@ -12,10 +12,16 @@ import {
 	listTemplates,
 	updateTemplate,
 } from "../services/nutrition/nutrition-template.service";
+import {
+	filterTemplateFoods,
+	recommendTemplatesForUser,
+} from "../services/nutrition/nutrition-template-recommend.service";
 import type { DayInput } from "../types/nutrition";
 import {
 	createTemplateBodySchema,
+	templateFilterBodySchema,
 	templateListQuerySchema,
+	templateRecommendQuerySchema,
 	updateTemplateBodySchema,
 } from "../validators/nutrition-template.validator";
 
@@ -133,6 +139,55 @@ export const deleteNutritionTemplate: RequestHandler = async (
 		const id = requireIdParam(req.params.id, "Template not found");
 		await deleteTemplate(id, req.user!);
 		res.status(200).json({ message: "Template deleted" });
+	} catch (error) {
+		handleNutritionError(error, res, next);
+	}
+};
+
+export const recommendTemplatesHandler: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
+	const parsed = templateRecommendQuerySchema.safeParse(req.query);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
+	try {
+		const result = await recommendTemplatesForUser(
+			parsed.data.userId,
+			req.user!,
+		);
+		res.status(200).json(result);
+	} catch (error) {
+		handleNutritionError(error, res, next);
+	}
+};
+
+export const filterTemplateHandler: RequestHandler = async (req, res, next) => {
+	const parsed = templateFilterBodySchema.safeParse(req.body);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
+	try {
+		const templateId = requireIdParam(req.params.id, "Template not found");
+		const result = await filterTemplateFoods(templateId, req.user!, {
+			userId: parsed.data.userId,
+			profile: parsed.data.profile,
+		});
+		res.status(200).json(result);
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}

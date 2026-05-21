@@ -1,6 +1,10 @@
 import mongoose from "mongoose";
 import { NutritionGoal, NutritionPlanStatus } from "./Enums";
-import { macroTargetSchema, planDaySchema } from "./nutrition-shared.schema";
+import {
+	lifestyleRecommendationSchema,
+	macroTargetSchema,
+	planDaySchema,
+} from "./nutrition-shared.schema";
 
 // Reusable, nutritionist-owned blueprint. NOT bound to any user. When
 // assigned it is deep-copied into a UserNutritionPlan with no propagation.
@@ -28,6 +32,10 @@ const nutritionTemplateSchema = new mongoose.Schema(
 		targetMacros: { type: macroTargetSchema, default: () => ({}) },
 		durationDays: { type: Number, default: 7 },
 		days: { type: [planDaySchema], default: [] },
+		lifestyleRecommendations: {
+			type: [lifestyleRecommendationSchema],
+			default: [],
+		},
 	},
 	{ timestamps: true },
 );

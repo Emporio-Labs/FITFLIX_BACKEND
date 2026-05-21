@@ -4,6 +4,12 @@ import type { DayInput, NutritionActor } from "../../types/nutrition";
 import { NutritionServiceError, toObjectId } from "./nutrition-errors";
 import { resolveDaysToSnapshots } from "./nutrition-snapshot.util";
 
+export type LifestyleRecommendationInput = {
+	title: string;
+	description?: string;
+	category?: string;
+};
+
 export type TemplateInput = {
 	name: string;
 	description?: string;
@@ -20,6 +26,7 @@ export type TemplateInput = {
 	};
 	durationDays?: number;
 	days?: DayInput[];
+	lifestyleRecommendations?: LifestyleRecommendationInput[];
 };
 
 export type TemplateListFilters = {
@@ -51,6 +58,7 @@ export const createTemplate = async (
 		targetMacros: input.targetMacros ?? {},
 		durationDays: input.durationDays ?? 7,
 		days,
+		lifestyleRecommendations: input.lifestyleRecommendations ?? [],
 	});
 };
 

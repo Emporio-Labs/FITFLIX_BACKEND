@@ -2,13 +2,16 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import HpodMetric from "../models/HpodMetric";
 import { HpodReport } from "../models/Hpodreport.model";
+import ExpertAppointment from "../models/ExpertAppointment";
 import User from "../models/User";
+import { AppointmentBookingStatus, ExpertType } from "../models/Enums";
 import { buildApiErrorEnvelope } from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
 import {
 	createUserBodySchema,
 	updateMyPasswordBodySchema,
 	updateUserBodySchema,
+	listUsersQuerySchema,
 } from "../validators/user.validator";
 
 const canOnboard = (
@@ -30,7 +33,7 @@ const canUpdateUser = (
 };
 
 const getValidationDetails = (
-	issues: Array<{ path: Array<string | number>; message: string }>,
+	issues: Array<{ path: PropertyKey[]; message: string }>,
 ) => {
 	const details: Record<string, string> = {};
 
@@ -161,10 +164,160 @@ export const createUser: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllUsers: RequestHandler = async (_req, res, next) => {
+export const getAllUsers: RequestHandler = async (req, res, next) => {
+	const parsed = listUsersQuerySchema.safeParse(req.query);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
 	try {
-		const users = await User.find();
-		res.status(200).json({ users });
+		const { search, status, page, limit, sort, order } = parsed.data;
+
+		const filter: Record<string, unknown> = {};
+		if (search) {
+			const searchRegex = new RegExp(search, "i");
+			filter.$or = [
+				{ username: { $regex: searchRegex } },
+				{ email: { $regex: searchRegex } },
+				{ phone: { $regex: searchRegex } },
+			];
+		}
+
+		const sortOrder = order === "asc" ? 1 : -1;
+		const sortField = sort;
+
+		const aggregatePipeline: mongoose.PipelineStage[] = [
+			{ $match: filter },
+			{
+				$lookup: {
+					from: "expertappointments",
+					let: { uid: "$_id" },
+					pipeline: [
+						{
+							$match: {
+								$expr: {
+									$and: [
+										{ $eq: ["$userId", "$$uid"] },
+										{ $eq: ["$expertType", ExpertType.Nutritionist] },
+									],
+								},
+							},
+						},
+						{ $sort: { createdAt: -1 } },
+						{ $limit: 1 },
+					],
+					as: "latestNutritionistAppointment",
+				},
+			},
+			{
+				$addFields: {
+					bookingStatus: {
+						$arrayElemAt: [
+							"$latestNutritionistAppointment.bookingStatus",
+							0,
+						],
+					},
+				},
+			},
+		];
+
+		if (status) {
+			const appointmentStatus =
+				status === "booked"
+					? AppointmentBookingStatus.Confirmed
+					: AppointmentBookingStatus.Pending;
+			aggregatePipeline.push({ $match: { bookingStatus: appointmentStatus } });
+		}
+
+		aggregatePipeline.push(
+			// ── HealthMarkers lookup (one-to-one, userId unique index) ──────────
+			{
+				$lookup: {
+					from: "healthmarkers",
+					let: { uid: "$_id" },
+					pipeline: [
+						{ $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
+						{
+							$project: {
+								_id: 0,
+								weight: 1,
+								height: 1,
+								gender: 1,
+								activityLevel: 1,
+							},
+						},
+					],
+					as: "_healthMarkersDocs",
+				},
+			},
+			// ── HealthGoals lookup (one-to-one, userId unique index) ─────────────
+			{
+				$lookup: {
+					from: "healthgoals",
+					let: { uid: "$_id" },
+					pipeline: [
+						{ $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
+						{ $project: { _id: 0, goals: 1 } },
+					],
+					as: "_healthGoalsDocs",
+				},
+			},
+		);
+
+		// Sort → paginate → project (order matters: filter/lookup before sort+paginate)
+		aggregatePipeline.push(
+			{ $sort: { [sortField]: sortOrder } },
+			{ $skip: (page - 1) * limit },
+			{ $limit: limit },
+			{
+				$project: {
+					_id: 1,
+					username: 1,
+					email: 1,
+					phone: 1,
+					age: 1,
+					gender: 1,
+					onboardingStep: "$onboardingStatus.currentStep",
+					bookingStatus: 1,
+					// Shape healthMarkers: first element of lookup result, or empty object
+					healthMarkers: {
+						$cond: [
+							{ $gt: [{ $size: "$_healthMarkersDocs" }, 0] },
+							{ $arrayElemAt: ["$_healthMarkersDocs", 0] },
+							{},
+						],
+					},
+					// Shape healthGoals: goals[] from first element, or empty array
+					healthGoals: {
+						$cond: [
+							{ $gt: [{ $size: "$_healthGoalsDocs" }, 0] },
+							{ $arrayElemAt: ["$_healthGoalsDocs.goals", 0] },
+							{ $ifNull: ["$healthGoals", []] },
+						],
+					},
+				},
+			},
+		);
+
+		const [users, total] = await Promise.all([
+			User.aggregate(aggregatePipeline).exec(),
+			User.countDocuments(filter),
+		]);
+
+		res.status(200).json({
+			users,
+			pagination: {
+				page,
+				limit,
+				total,
+				totalPages: Math.ceil(total / limit),
+			},
+		});
 	} catch (error) {
 		next(error);
 	}

@@ -19,6 +19,10 @@ export const createFoodBodySchema = z.object({
 	fiberG: z.coerce.number().min(0).max(10000).nullable().optional(),
 	sugarG: z.coerce.number().min(0).max(10000).nullable().optional(),
 	barcode: optionalNutritionString.nullable(),
+	isVeg: z.boolean().optional(),
+	allergens: z.array(z.string().trim().min(1)).optional(),
+	mealTypes: z.array(z.string().trim().min(1)).optional(),
+	tags: z.array(z.string().trim().min(1)).optional(),
 });
 
 export const updateFoodBodySchema = createFoodBodySchema.partial();

@@ -26,6 +26,7 @@ const nutritionAdherenceDailySchema = new mongoose.Schema(
 		consumedMacros: { type: macroTotalsSchema, default: () => ({}) },
 		mealAdherencePct: { type: Number, default: 0 },
 		calorieAdherencePct: { type: Number, default: 0 },
+		proteinAdherencePct: { type: Number, default: 0 },
 		hydrationMl: { type: Number, default: 0 },
 		hydrationGoalMl: { type: Number, default: 0 },
 		computedAt: { type: Date, default: Date.now },

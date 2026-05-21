@@ -91,6 +91,31 @@ export enum AppointmentBookingStatus {
 	Cancelled = "Cancelled",
 }
 
+export enum PlanGoal {
+	Strength = "Strength",
+	Hypertrophy = "Hypertrophy",
+	Endurance = "Endurance",
+	WeightLoss = "WeightLoss",
+	Maintenance = "Maintenance",
+	Custom = "Custom",
+}
+
+export enum PlanStatus {
+	Draft = "Draft",
+	Active = "Active",
+	Paused = "Paused",
+	Completed = "Completed",
+	Archived = "Archived",
+}
+
+export enum SplitType {
+	FullBody = "FullBody",
+	UpperLower = "UpperLower",
+	PushPull = "PushPull",
+	PushPullLegs = "PushPullLegs",
+	Custom = "Custom",
+}
+
 export enum NutritionGoal {
 	WeightLoss = "WeightLoss",
 	MuscleGain = "MuscleGain",
@@ -102,6 +127,7 @@ export enum NutritionGoal {
 
 export enum NutritionPlanStatus {
 	Draft = "Draft",
+	Scheduled = "Scheduled",
 	Active = "Active",
 	Paused = "Paused",
 	Completed = "Completed",
@@ -115,6 +141,17 @@ export enum MealType {
 	Snack = "Snack",
 	PreWorkout = "PreWorkout",
 	PostWorkout = "PostWorkout",
+	EarlyMorning = "EarlyMorning",
+	DuringWorkout = "DuringWorkout",
+	EveningSnack = "EveningSnack",
+	Bedtime = "Bedtime",
+}
+
+export enum DietaryPreference {
+	Veg = "Veg",
+	NonVeg = "NonVeg",
+	Vegan = "Vegan",
+	Eggetarian = "Eggetarian",
 }
 
 export enum NutritionFoodSource {
@@ -126,6 +163,7 @@ export enum MealLogStatus {
 	Logged = "Logged",
 	Skipped = "Skipped",
 	Partial = "Partial",
+	Pending = "Pending",
 }
 
 export enum MealLogSource {

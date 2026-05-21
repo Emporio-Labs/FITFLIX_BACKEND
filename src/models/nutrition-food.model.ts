@@ -28,6 +28,10 @@ const nutritionFoodSchema = new mongoose.Schema(
 		micros: { type: Map, of: Number, default: {} },
 		barcode: { type: String, default: null },
 		isActive: { type: Boolean, default: true },
+		isVeg: { type: Boolean, default: undefined },
+		allergens: { type: [String], default: [] },
+		mealTypes: { type: [String], default: [] },
+		tags: { type: [String], default: [] },
 	},
 	{ timestamps: true },
 );
@@ -35,6 +39,10 @@ const nutritionFoodSchema = new mongoose.Schema(
 nutritionFoodSchema.index({ name: "text", brand: "text" });
 nutritionFoodSchema.index({ source: 1, createdBy: 1 });
 nutritionFoodSchema.index({ barcode: 1 }, { sparse: true });
+nutritionFoodSchema.index({ isVeg: 1, isActive: 1 });
+nutritionFoodSchema.index({ allergens: 1 });
+nutritionFoodSchema.index({ mealTypes: 1 });
+nutritionFoodSchema.index({ tags: 1 });
 
 export type NutritionFoodDocument = mongoose.InferSchemaType<
 	typeof nutritionFoodSchema

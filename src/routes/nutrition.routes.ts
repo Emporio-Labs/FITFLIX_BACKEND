@@ -8,7 +8,9 @@ import {
 } from "../controllers/nutrition-food.controller";
 import {
 	getMyAdherence,
+	getMyWeeklyAdherence,
 	getPlanAdherence,
+	getPlanWeeklyAdherence,
 	rebuildPlanAdherence,
 } from "../controllers/nutrition-adherence.controller";
 import {
@@ -33,6 +35,7 @@ import {
 	assignTemplate,
 	changePlanStatus,
 	createPlan,
+	duplicatePlanHandler,
 	generatePlanPdfHandler,
 	getMyPlanById,
 	getPlanById,
@@ -42,12 +45,26 @@ import {
 	patchPlan,
 } from "../controllers/nutrition-plan.controller";
 import {
+	stats as dashboardStats,
+	members as dashboardMembers,
+	userDashboard,
+} from "../controllers/nutrition-dashboard.controller";
+import {
 	createNutritionTemplate,
 	deleteNutritionTemplate,
+	filterTemplateHandler,
 	getNutritionTemplate,
 	listNutritionTemplates,
+	recommendTemplatesHandler,
 	updateNutritionTemplate,
 } from "../controllers/nutrition-template.controller";
+import {
+	createProfileHandler,
+	deleteProfileHandler,
+	getMyProfileHandler,
+	getProfileByUserHandler,
+	updateProfileHandler,
+} from "../controllers/nutrition-profile.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
@@ -58,6 +75,14 @@ nutritionRouter.use(authenticateToken);
 const STAFF = authorize(["nutritionist", "admin"]);
 const USER = authorize(["user"]);
 const ADMIN = authorize(["admin"]);
+
+// ---- Nutrition Profile ----
+// /my/profile before /profiles/:userId to avoid param collision.
+nutritionRouter.get("/my/profile", USER, getMyProfileHandler);
+nutritionRouter.post("/profiles", STAFF, createProfileHandler);
+nutritionRouter.get("/profiles/:userId", STAFF, getProfileByUserHandler);
+nutritionRouter.patch("/profiles/:userId", STAFF, updateProfileHandler);
+nutritionRouter.delete("/profiles/:userId", STAFF, deleteProfileHandler);
 
 // ---- Admin ----
 nutritionRouter.post("/admin/foods", ADMIN, createSystemFood);
@@ -81,10 +106,23 @@ nutritionRouter.delete("/foods/:id", STAFF, removeFood);
 // ---- Templates (nutritionist-owned) ----
 nutritionRouter.post("/templates", STAFF, createNutritionTemplate);
 nutritionRouter.get("/templates", STAFF, listNutritionTemplates);
+// recommend/filter must be declared BEFORE /templates/:id to avoid capture.
+nutritionRouter.get("/templates/recommend", STAFF, recommendTemplatesHandler);
+nutritionRouter.post("/templates/:id/filter", STAFF, filterTemplateHandler);
 nutritionRouter.get("/templates/:id", STAFF, getNutritionTemplate);
 nutritionRouter.patch("/templates/:id", STAFF, updateNutritionTemplate);
 nutritionRouter.delete("/templates/:id", STAFF, deleteNutritionTemplate);
 nutritionRouter.post("/templates/:id/assign", STAFF, assignTemplate);
+
+// ---- Dashboard (nutritionist / admin) ----
+nutritionRouter.get("/dashboard/stats", STAFF, dashboardStats);
+nutritionRouter.get("/dashboard/members", STAFF, dashboardMembers);
+nutritionRouter.get("/users/:userId/dashboard", STAFF, userDashboard);
+
+// ---- Member roster (canonical) ----
+// Powers the Bookings tab / operational member table on the new
+// frontend. Same handler as /dashboard/members (kept as alias).
+nutritionRouter.get("/members", STAFF, dashboardMembers);
 
 // ---- User-assigned plans (managed by nutritionist) ----
 // User-scoped reads first so /my/* never collides with /plans/:id.
@@ -113,6 +151,8 @@ nutritionRouter.post("/my/progress", USER, addMyProgress);
 nutritionRouter.get("/my/progress", USER, listMyProgress);
 
 // ---- Adherence ----
+// /my/adherence/weekly before /my/adherence to avoid partial match.
+nutritionRouter.get("/my/adherence/weekly", USER, getMyWeeklyAdherence);
 nutritionRouter.get("/my/adherence", USER, getMyAdherence);
 
 nutritionRouter.post("/plans", STAFF, createPlan);
@@ -121,6 +161,8 @@ nutritionRouter.get("/plans/:id", STAFF, getPlanById);
 nutritionRouter.patch("/plans/:id", STAFF, patchPlan);
 nutritionRouter.patch("/plans/:id/status", STAFF, changePlanStatus);
 nutritionRouter.post("/plans/:id/pdf", STAFF, generatePlanPdfHandler);
+nutritionRouter.post("/plans/:id/duplicate", STAFF, duplicatePlanHandler);
+nutritionRouter.get("/plans/:id/adherence/weekly", STAFF, getPlanWeeklyAdherence);
 nutritionRouter.get("/plans/:id/adherence", STAFF, getPlanAdherence);
 nutritionRouter.get("/plans/:id/progress", STAFF, listPlanProgress);
 nutritionRouter.post("/plans/:id/progress", STAFF, addPlanProgressEntry);

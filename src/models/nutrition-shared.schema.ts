@@ -47,6 +47,28 @@ export const mealFoodItemSchema = new mongoose.Schema(
 	{ _id: false },
 );
 
+// One selectable option within a meal. The default option (isDefault=true,
+// fallback = first) drives macro math when options are present. Each option
+// gets a stable _id so meal logs can reference selectedOptionId /
+// completedOptionId instead of array indexes.
+export const mealOptionSchema = new mongoose.Schema({
+	title: { type: String, required: true },
+	isDefault: { type: Boolean, default: false },
+	foods: { type: [mealFoodItemSchema], default: [] },
+	macros: { type: macroTotalsSchema, default: () => ({}) },
+	reasoning: { type: String, default: "" },
+});
+
+// Lifestyle recommendation attached at the plan/template level.
+export const lifestyleRecommendationSchema = new mongoose.Schema(
+	{
+		title: { type: String, required: true },
+		description: { type: String, default: "" },
+		category: { type: String, default: "" },
+	},
+	{ _id: false },
+);
+
 export const templateMealSchema = new mongoose.Schema(
 	{
 		mealType: {
@@ -58,6 +80,9 @@ export const templateMealSchema = new mongoose.Schema(
 		timeOfDay: { type: String, default: null },
 		notes: { type: String, default: "" },
 		items: { type: [mealFoodItemSchema], default: [] },
+		// Optional multi-option support. When present the default option's
+		// foods drive planned-macro math; items[] stays for backward compat.
+		options: { type: [mealOptionSchema], default: [] },
 	},
 	{ _id: false },
 );

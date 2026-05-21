@@ -3,7 +3,7 @@ import NutritionAdherenceDaily from "../../models/nutrition-adherence.model";
 import NutritionMealLog from "../../models/nutrition-meal-log.model";
 import UserNutritionPlan from "../../models/nutrition-plan.model";
 import { NutritionServiceError, normalizeToUtcDate } from "./nutrition-errors";
-import { sumMacros } from "./nutrition-macro.util";
+import { getEffectiveMealItems, sumMacros } from "./nutrition-macro.util";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -84,7 +84,7 @@ export const recomputeDay = async (
 	const plannedMealsArr = planDay?.meals ?? [];
 
 	const plannedMeals = plannedMealsArr.length;
-	const plannedItems = plannedMealsArr.flatMap((m) => m.items ?? []);
+	const plannedItems = plannedMealsArr.flatMap((m) => getEffectiveMealItems(m));
 	const plannedMacros = sumMacros(plannedItems);
 	const plannedCaloriesKcal = plannedMacros.caloriesKcal;
 
@@ -121,6 +121,10 @@ export const recomputeDay = async (
 		plannedCaloriesKcal,
 		consumedCaloriesKcal,
 	);
+	const proteinAdherencePct = closenessPct(
+		plannedMacros.proteinG,
+		consumedMacros.proteinG,
+	);
 
 	const hydration = await getHydrationForDay(userObjectId, day);
 
@@ -139,6 +143,7 @@ export const recomputeDay = async (
 			consumedMacros,
 			mealAdherencePct,
 			calorieAdherencePct,
+			proteinAdherencePct,
 			hydrationMl: hydration.totalMl,
 			hydrationGoalMl: hydration.goalMl,
 			computedAt: new Date(),
@@ -210,6 +215,68 @@ export const getPlanAdherenceSummary = async (
 			totalPlannedKcal: 0,
 		}
 	);
+};
+
+// Aggregates daily rollups into 7-day buckets for weekly summaries.
+export const getWeeklyAdherence = async (
+	userId: string,
+	planId: string,
+	from: Date,
+	to: Date,
+) => {
+	const days = await getAdherenceRange(userId, planId, from, to);
+	const fromMs = normalizeToUtcDate(from).getTime();
+
+	type WeekBucket = {
+		weekIndex: number;
+		startDate: Date;
+		endDate: Date;
+		days: number;
+		avgMealPct: number;
+		avgCaloriePct: number;
+		avgProteinPct: number;
+		avgWaterPct: number;
+	};
+
+	const buckets = new Map<number, { entries: typeof days }>();
+
+	for (const day of days) {
+		const diffMs = day.date.getTime() - fromMs;
+		const weekIndex = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
+		if (!buckets.has(weekIndex)) {
+			buckets.set(weekIndex, { entries: [] });
+		}
+		buckets.get(weekIndex)!.entries.push(day);
+	}
+
+	const avg = (arr: number[]) =>
+		arr.length === 0 ? 0 : Math.round(arr.reduce((s, v) => s + v, 0) / arr.length);
+
+	const weeks: WeekBucket[] = [];
+	for (const [weekIndex, { entries }] of Array.from(buckets.entries()).sort(
+		([a], [b]) => a - b,
+	)) {
+		const weekStartMs = fromMs + weekIndex * 7 * 24 * 60 * 60 * 1000;
+		const weekEndMs = weekStartMs + 6 * 24 * 60 * 60 * 1000;
+		weeks.push({
+			weekIndex,
+			startDate: new Date(weekStartMs),
+			endDate: new Date(weekEndMs),
+			days: entries.length,
+			avgMealPct: avg(entries.map((e) => e.mealAdherencePct)),
+			avgCaloriePct: avg(entries.map((e) => e.calorieAdherencePct)),
+			avgProteinPct: avg(entries.map((e) => (e as { proteinAdherencePct?: number }).proteinAdherencePct ?? 0)),
+			avgWaterPct: avg(
+				entries.map((e) =>
+					e.hydrationGoalMl > 0
+						? Math.min(100, Math.round((e.hydrationMl / e.hydrationGoalMl) * 100))
+						: 0,
+				),
+			),
+		});
+	}
+
+	return { weeks };
 };
 
 // Idempotent repair tool — rebuilds every rollup day that has logs for a
