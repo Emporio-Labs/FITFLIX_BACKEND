@@ -3,6 +3,7 @@ import type { NutritionGoal, NutritionPlanStatus } from "../models/Enums";
 import {
 	assignTemplateToUser,
 	createAdHocPlan,
+	deletePlan,
 	duplicatePlan,
 	getPlan,
 	listNutritionistPlans,
@@ -268,6 +269,16 @@ export const duplicatePlanHandler: RequestHandler = async (req, res, next) => {
 		const planId = requireIdParam(req.params.id, "Plan not found");
 		const plan = await duplicatePlan(planId, req.user!, parsed.data);
 		res.status(201).json({ message: "Plan duplicated", plan: withMember(plan) });
+	} catch (error) {
+		handleNutritionError(error, res, next);
+	}
+};
+
+export const deletePlanHandler: RequestHandler = async (req, res, next) => {
+	try {
+		const planId = requireIdParam(req.params.id, "Plan not found");
+		await deletePlan(planId, req.user!);
+		res.status(200).json({ message: "Plan removed" });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}

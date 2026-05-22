@@ -330,6 +330,11 @@ export const updatePlan = async (
 	return plan;
 };
 
+export const deletePlan = async (planId: string, actor: NutritionActor) => {
+	const plan = await loadManagedPlan(planId, actor);
+	await plan.deleteOne();
+};
+
 export const setPlanStatus = async (
 	planId: string,
 	status: NutritionPlanStatus,

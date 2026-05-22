@@ -343,9 +343,19 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllBookings: RequestHandler = async (_req, res, next) => {
+export const getAllBookings: RequestHandler = async (req, res, next) => {
 	try {
-		const bookings = await Booking.find();
+		const userIdRaw = req.query.userId;
+		const filter: Record<string, unknown> = {};
+		if (typeof userIdRaw === "string" && userIdRaw.length > 0) {
+			const userId = getIdParam(userIdRaw);
+			if (!userId) {
+				res.status(400).json({ error: "Invalid userId", code: "BAD_REQUEST" });
+				return;
+			}
+			filter.user = userId;
+		}
+		const bookings = await Booking.find(filter);
 		res.status(200).json({ bookings });
 	} catch (error) {
 		next(error);

@@ -369,9 +369,19 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllAppointments: RequestHandler = async (_req, res, next) => {
+export const getAllAppointments: RequestHandler = async (req, res, next) => {
 	try {
-		const appointments = await Appointment.find();
+		const userIdRaw = req.query.userId;
+		const filter: Record<string, unknown> = {};
+		if (typeof userIdRaw === "string" && userIdRaw.length > 0) {
+			const userId = getIdParam(userIdRaw);
+			if (!userId) {
+				res.status(400).json({ error: "Invalid userId", code: "BAD_REQUEST" });
+				return;
+			}
+			filter.user = userId;
+		}
+		const appointments = await Appointment.find(filter);
 		res.status(200).json({ appointments });
 	} catch (error) {
 		next(error);

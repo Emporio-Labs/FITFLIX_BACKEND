@@ -35,6 +35,7 @@ import {
 	assignTemplate,
 	changePlanStatus,
 	createPlan,
+	deletePlanHandler,
 	duplicatePlanHandler,
 	generatePlanPdfHandler,
 	getMyPlanById,
@@ -52,10 +53,8 @@ import {
 import {
 	createNutritionTemplate,
 	deleteNutritionTemplate,
-	filterTemplateHandler,
 	getNutritionTemplate,
 	listNutritionTemplates,
-	recommendTemplatesHandler,
 	updateNutritionTemplate,
 } from "../controllers/nutrition-template.controller";
 import {
@@ -103,12 +102,9 @@ nutritionRouter.post("/foods", STAFF, createCustomFood);
 nutritionRouter.patch("/foods/:id", STAFF, patchFood);
 nutritionRouter.delete("/foods/:id", STAFF, removeFood);
 
-// ---- Templates (nutritionist-owned) ----
+// ---- Diet plans (reusable templates backing the Diet Plans tab) ----
 nutritionRouter.post("/templates", STAFF, createNutritionTemplate);
 nutritionRouter.get("/templates", STAFF, listNutritionTemplates);
-// recommend/filter must be declared BEFORE /templates/:id to avoid capture.
-nutritionRouter.get("/templates/recommend", STAFF, recommendTemplatesHandler);
-nutritionRouter.post("/templates/:id/filter", STAFF, filterTemplateHandler);
 nutritionRouter.get("/templates/:id", STAFF, getNutritionTemplate);
 nutritionRouter.patch("/templates/:id", STAFF, updateNutritionTemplate);
 nutritionRouter.delete("/templates/:id", STAFF, deleteNutritionTemplate);
@@ -159,6 +155,7 @@ nutritionRouter.post("/plans", STAFF, createPlan);
 nutritionRouter.get("/plans", STAFF, listManagedPlans);
 nutritionRouter.get("/plans/:id", STAFF, getPlanById);
 nutritionRouter.patch("/plans/:id", STAFF, patchPlan);
+nutritionRouter.delete("/plans/:id", STAFF, deletePlanHandler);
 nutritionRouter.patch("/plans/:id/status", STAFF, changePlanStatus);
 nutritionRouter.post("/plans/:id/pdf", STAFF, generatePlanPdfHandler);
 nutritionRouter.post("/plans/:id/duplicate", STAFF, duplicatePlanHandler);

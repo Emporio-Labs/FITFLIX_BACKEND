@@ -103,9 +103,19 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllMemberships: RequestHandler = async (_req, res, next) => {
+export const getAllMemberships: RequestHandler = async (req, res, next) => {
 	try {
-		const memberships = await Membership.find();
+		const userIdRaw = req.query.userId;
+		const filter: Record<string, unknown> = {};
+		if (typeof userIdRaw === "string" && userIdRaw.length > 0) {
+			const userId = getIdParam(userIdRaw);
+			if (!userId) {
+				res.status(400).json({ error: "Invalid userId", code: "BAD_REQUEST" });
+				return;
+			}
+			filter.user = userId;
+		}
+		const memberships = await Membership.find(filter);
 		res.status(200).json({ memberships });
 	} catch (error) {
 		next(error);
