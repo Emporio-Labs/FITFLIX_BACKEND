@@ -33,6 +33,9 @@ export const createPlan: RequestHandler = async (req, res, next) => {
 
 		const plan = await WorkoutPlan.create({
 			...parsed.data,
+			goal: parsed.data.goal as import("../models/Enums").PlanGoal,
+			status: parsed.data.status as import("../models/Enums").PlanStatus,
+			difficulty: parsed.data.difficulty as import("../models/Enums").ExerciseDifficulty,
 			createdBy: req.user!.id,
 		});
 

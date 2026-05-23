@@ -350,7 +350,7 @@ export const refundCreditsBySource = async (
 		);
 	}
 
-	const insertOptions = input.session ? { session: input.session } : undefined;
+	const insertOptions = input.session ? { session: input.session } : {};
 
 	await CreditTransaction.insertMany(
 		pendingRefunds.map((pendingRefund) => ({

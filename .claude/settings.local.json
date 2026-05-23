@@ -10,7 +10,10 @@
       "Bash(rm \"C:/Users/Yeshwanth/Yugaas/github_clones/frontdesk-fitflix/components/nutrition/template-form.tsx\")",
       "Bash(rm -rf \"/c/Users/Yeshwanth/Yugaas/github_clones/frontdesk-fitflix/.next/types/app/admin/nutrition/templates\")",
       "PowerShell(Set-Location \"C:\\\\Users\\\\Yeshwanth\\\\Yugaas\\\\github_clones\\\\frontdesk-fitflix\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -notmatch \"bookings/page|leads/page\" } | Select-Object -First 40)",
-      "Bash(bun -e \"import\\('dotenv/config'\\); const m = await import\\('mongoose'\\); const { default: User } = await import\\('./src/models/User.ts'\\); await m.default.connect\\(process.env.MONGODB_URL\\); const users = await User.find\\({}\\).select\\('_id username onboarded onboardingStatus'\\).lean\\(\\); console.log\\(JSON.stringify\\(users.map\\(u => \\({ id: String\\(u._id\\), username: u.username, onboarded: u.onboarded, currentStep: u.onboardingStatus?.currentStep, hasStatus: !!u.onboardingStatus }\\)\\), null, 2\\)\\); await m.default.disconnect\\(\\);\")"
+      "Bash(bun -e \"import\\('dotenv/config'\\); const m = await import\\('mongoose'\\); const { default: User } = await import\\('./src/models/User.ts'\\); await m.default.connect\\(process.env.MONGODB_URL\\); const users = await User.find\\({}\\).select\\('_id username onboarded onboardingStatus'\\).lean\\(\\); console.log\\(JSON.stringify\\(users.map\\(u => \\({ id: String\\(u._id\\), username: u.username, onboarded: u.onboarded, currentStep: u.onboardingStatus?.currentStep, hasStatus: !!u.onboardingStatus }\\)\\), null, 2\\)\\); await m.default.disconnect\\(\\);\")",
+      "Bash(git merge *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

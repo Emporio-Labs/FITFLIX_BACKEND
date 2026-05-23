@@ -707,7 +707,8 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 			});
 
 			if (response) {
-				res.status(response.status).json(response.body);
+				const { status, body } = response as { status: number; body: Record<string, unknown> };
+				res.status(status).json(body);
 				return;
 			}
 
@@ -807,8 +808,8 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 				});
 
 				if (response) {
-					res.status(response.status).json(response.body);
-					return;
+				const { status, body } = response as { status: number; body: Record<string, unknown> };
+				res.status(status).json(body);
 				}
 
 				res.status(500).json({ message: "Booking cancellation failed" });

@@ -1140,7 +1140,7 @@ export const getUserNutritionDashboard = async (
 			activityLevel: healthMarkers?.activityLevel as string | undefined,
 			// ── Fields required by My Nutrition profile header cards ──
 			age: typeof user.age === "number" ? user.age : null,
-			gender: user.gender,
+			gender: (user.gender as string) || undefined,
 			healthGoals: Array.isArray(healthGoals?.goals) && healthGoals.goals.length > 0
 				? healthGoals.goals
 				: Array.isArray((user as any).healthGoals) && (user as any).healthGoals.length > 0

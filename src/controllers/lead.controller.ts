@@ -73,6 +73,7 @@ export const createLead: RequestHandler = async (req, res, next) => {
 	try {
 		const lead = await Lead.create({
 			...leadData,
+			status: leadData.status as import("../models/Enums").LeadStatus | undefined,
 			...(followUpDateValue ? { followUpDate: followUpDateValue } : {}),
 			...(ownerId ? { owner: ownerId } : {}),
 		});
@@ -413,7 +414,7 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			username: username ?? lead.leadName,
 			phone,
 			email: lead.email,
-			age,
+			age: typeof age === "string" ? Number(age) : age,
 			gender,
 			healthGoals,
 			passwordHash,

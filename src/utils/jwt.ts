@@ -55,7 +55,7 @@ export const getJwtRefreshConfig = (): JwtConfig | null => {
 };
 
 const buildSignOptions = (config: JwtConfig): SignOptions => {
-	const options: SignOptions = { expiresIn: config.expiresIn };
+	const options: SignOptions = { expiresIn: config.expiresIn as unknown as number };
 
 	if (config.issuer) {
 		options.issuer = config.issuer;

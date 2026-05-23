@@ -117,6 +117,8 @@ export const createExercise: RequestHandler = async (req, res, next) => {
 
 		const exercise = await Exercise.create({
 			...parsed.data,
+			muscleGroup: parsed.data.muscleGroup as import("../models/Enums").MuscleGroup,
+			difficulty: parsed.data.difficulty as import("../models/Enums").ExerciseDifficulty,
 			isSystem: false,
 			createdBy: new mongoose.Types.ObjectId(req.user!.id),
 		});
