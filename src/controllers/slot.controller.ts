@@ -5,6 +5,17 @@ import {
 	createSlotBodySchema,
 	updateSlotBodySchema,
 } from "../validators/slot.validator";
+import { availableSlotsQuerySchema } from "../validators/nutritionist-booking.validator";
+
+const normalizeToUtcDayStart = (value: Date): Date =>
+	new Date(
+		Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
+	);
+
+const normalizeToUtcDayEnd = (value: Date): Date => {
+	const start = normalizeToUtcDayStart(value);
+	return new Date(start.getTime() + 24 * 60 * 60 * 1000);
+};
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -75,6 +86,90 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 			isBooked: derivedState.isBooked,
 		});
 		res.status(201).json({ message: "Slot created", slot });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getAvailableSlots: RequestHandler = async (req, res, next) => {
+	const parsed = availableSlotsQuerySchema.safeParse(req.query);
+
+	if (!parsed.success) {
+		const firstIssue = parsed.error.issues[0];
+		res.status(400).json({
+			error: "Invalid query parameter: date is required (YYYY-MM-DD)",
+			code: "VALIDATION_ERROR",
+			details: firstIssue
+				? { [String(firstIssue.path[0] ?? "date")]: firstIssue.message }
+				: { date: "Invalid date" },
+		});
+		return;
+	}
+
+	try {
+		const dayStart = normalizeToUtcDayStart(parsed.data.date);
+		const dayEnd = normalizeToUtcDayEnd(parsed.data.date);
+
+		const concreteSlots = await Slot.find({
+			date: { $gte: dayStart, $lt: dayEnd },
+			remainingCapacity: { $gt: 0 },
+			isBooked: false,
+		})
+			.select(
+				"_id date startTime endTime capacity remainingCapacity parentTemplate",
+			)
+			.sort({ startTime: 1 });
+
+		const allConcreteForDay = await Slot.find({
+			date: { $gte: dayStart, $lt: dayEnd },
+			parentTemplate: { $exists: true, $ne: null },
+		}).select("parentTemplate startTime endTime");
+
+		const templatesWithConcrete = new Set(
+			allConcreteForDay.map(
+				(s) =>
+					`${s.parentTemplate?.toString() ?? ""}::${s.startTime}::${s.endTime}`,
+			),
+		);
+
+		const dailyTemplates = await Slot.find({
+			isDaily: true,
+			parentTemplate: null,
+			capacity: { $gt: 0 },
+		})
+			.select("_id startTime endTime capacity")
+			.sort({ startTime: 1 });
+
+		const templateRows = dailyTemplates
+			.filter(
+				(t) =>
+					!templatesWithConcrete.has(
+						`${t._id.toString()}::${t.startTime}::${t.endTime}`,
+					),
+			)
+			.map((t) => ({
+				slotId: t._id,
+				date: dayStart,
+				startTime: t.startTime,
+				endTime: t.endTime,
+				capacity: t.capacity,
+				remainingCapacity: t.capacity,
+			}));
+
+		const concreteRows = concreteSlots.map((s) => ({
+			slotId: s._id,
+			date: s.date,
+			startTime: s.startTime,
+			endTime: s.endTime,
+			capacity: s.capacity,
+			remainingCapacity: s.remainingCapacity,
+		}));
+
+		const slots = [...concreteRows, ...templateRows].sort((a, b) =>
+			a.startTime.localeCompare(b.startTime),
+		);
+
+		res.status(200).json({ date: dayStart, slots });
 	} catch (error) {
 		next(error);
 	}

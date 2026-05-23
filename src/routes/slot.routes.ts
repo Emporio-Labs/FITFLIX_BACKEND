@@ -3,6 +3,7 @@ import {
 	createSlot,
 	deleteSlotById,
 	getAllSlots,
+	getAvailableSlots,
 	getSlotById,
 	updateSlotById,
 } from "../controllers/slot.controller";
@@ -16,6 +17,11 @@ slotRouter.get(
 	"/",
 	authorize(["admin", "doctor", "trainer", "user"]),
 	getAllSlots,
+);
+slotRouter.get(
+	"/available",
+	authorize(["admin", "doctor", "trainer", "user"]),
+	getAvailableSlots,
 );
 slotRouter.get(
 	"/:id",

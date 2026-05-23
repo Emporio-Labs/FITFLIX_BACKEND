@@ -1,6 +1,6 @@
 import type { Request, RequestHandler } from "express";
 import mongoose from "mongoose";
-import { ExpertType, OnboardingStep } from "../models/Enums";
+import { ConsentType, ExpertType, OnboardingStep } from "../models/Enums";
 import ConsentForm from "../models/ConsentForm";
 import ExpertAppointment from "../models/ExpertAppointment";
 import HealthGoals from "../models/HealthGoals";
@@ -10,6 +10,7 @@ import type { AuthenticatedUser } from "../types/auth";
 import {
 	OnboardingServiceError,
 	advanceStep,
+	cancelExpertAppointment,
 	completeOnboarding,
 	getOnboardingStatus,
 	validateStepAllowed,
@@ -19,6 +20,7 @@ import {
 	consentBodySchema,
 	healthGoalsBodySchema,
 	healthMarkersBodySchema,
+	legacyConsentBodySchema,
 	reportBodySchema,
 } from "../validators/onboarding.validator";
 
@@ -87,11 +89,11 @@ export const getStatus = async (
 	}
 };
 
-	export const submitHealthMarkers = async (
-		req: RequestWithUser,
-		res: Parameters<RequestHandler>[1],
-		next: Parameters<RequestHandler>[2],
-	) => {
+export const submitHealthMarkers = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -192,13 +194,17 @@ export const submitConsent = async (
 		return;
 	}
 
-	const parsedBody = consentBodySchema.safeParse(req.body);
+	// Try new dual-consent payload first, then fall back to legacy single-consent
+	const parsedNew = consentBodySchema.safeParse(req.body);
+	const parsedLegacy = parsedNew.success
+		? null
+		: legacyConsentBodySchema.safeParse(req.body);
 
-	if (!parsedBody.success) {
+	if (!parsedNew.success && (!parsedLegacy || !parsedLegacy.success)) {
 		res.status(400).json({
 			error: "Validation failed",
 			code: "VALIDATION_ERROR",
-			details: getValidationDetails(parsedBody.error.issues),
+			details: getValidationDetails(parsedNew.error.issues),
 		});
 		return;
 	}
@@ -211,13 +217,52 @@ export const submitConsent = async (
 			req.ip ??
 			undefined;
 
+		const now = new Date();
+
+		// Build consents array from either new or legacy payload
+		let consentsData: Array<{
+			type: string;
+			accepted: boolean;
+			acceptedAt: Date;
+			signatureName?: string;
+			dateSigned?: Date;
+			signatureUrl?: string;
+		}>;
+
+		if (parsedNew.success) {
+			consentsData = parsedNew.data.consents.map((c) => ({
+				type: c.type,
+				accepted: c.accepted,
+				acceptedAt: now,
+				signatureName: c.signatureName,
+				dateSigned: c.dateSigned,
+			}));
+		} else {
+			// Legacy payload: map to both consent types
+			// parsedLegacy is guaranteed non-null and successful here
+			// because we already returned 400 if both parsedNew and parsedLegacy failed
+			const legacyData = (parsedLegacy as { success: true; data: { accepted: true; signatureUrl?: string } }).data;
+			consentsData = [
+				{
+					type: ConsentType.WELLNESS_SERVICES,
+					accepted: legacyData.accepted,
+					acceptedAt: now,
+					signatureUrl: legacyData.signatureUrl,
+				},
+				{
+					type: ConsentType.GYM_FITNESS,
+					accepted: legacyData.accepted,
+					acceptedAt: now,
+					signatureUrl: legacyData.signatureUrl,
+				},
+			];
+		}
+
 		const consentForm = await ConsentForm.findOneAndUpdate(
 			{ userId: req.user.id },
 			{
 				userId: req.user.id,
-				accepted: parsedBody.data.accepted,
-				acceptedAt: new Date(),
-				signatureUrl: parsedBody.data.signatureUrl,
+				consents: consentsData,
 				ipAddress,
 			},
 			{ upsert: true, returnDocument: "after", runValidators: true },
@@ -287,10 +332,11 @@ export const submitReport = async (
 	}
 };
 
-export const submitAppointment = async (
+const submitAppointmentInternal = async (
 	req: RequestWithUser,
 	res: Parameters<RequestHandler>[1],
 	next: Parameters<RequestHandler>[2],
+	expertTypeOverride?: ExpertType,
 ) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
@@ -300,7 +346,10 @@ export const submitAppointment = async (
 		return;
 	}
 
-	const parsedBody = appointmentBodySchema.safeParse(req.body);
+	const payload = expertTypeOverride
+		? { ...req.body, expertType: expertTypeOverride }
+		: req.body;
+	const parsedBody = appointmentBodySchema.safeParse(payload);
 
 	if (!parsedBody.success) {
 		res.status(400).json({
@@ -347,6 +396,75 @@ export const submitAppointment = async (
 		res.status(201).json({
 			message: `${expertType === ExpertType.SportsScientist ? "Sports scientist" : "Nutritionist"} appointment booked`,
 			appointment,
+		});
+	} catch (error) {
+		handleServiceError(error, res, next);
+	}
+};
+
+export const submitAppointment: RequestHandler = (req, res, next) =>
+	submitAppointmentInternal(req as RequestWithUser, res, next);
+
+export const submitSportsScientistAppointment: RequestHandler = (
+	req,
+	res,
+	next,
+) =>
+	submitAppointmentInternal(
+		req as RequestWithUser,
+		res,
+		next,
+		ExpertType.SportsScientist,
+	);
+
+export const submitNutritionistAppointment: RequestHandler = (
+	req,
+	res,
+	next,
+) =>
+	submitAppointmentInternal(
+		req as RequestWithUser,
+		res,
+		next,
+		ExpertType.Nutritionist,
+	);
+
+export const deleteNutritionistAppointment = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
+	if (!req.user || req.user.role !== "admin") {
+		res.status(403).json({
+			error: "Only admins can cancel nutritionist appointments",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	const { userId } = req.params;
+
+	if (
+		typeof userId !== "string" ||
+		!mongoose.Types.ObjectId.isValid(userId)
+	) {
+		res.status(400).json({
+			error: "Invalid user ID",
+			code: "BAD_REQUEST",
+		});
+		return;
+	}
+
+	try {
+		const onboardingStatus = await cancelExpertAppointment(
+			userId,
+			ExpertType.Nutritionist,
+		);
+
+		res.status(200).json({
+			success: true,
+			message: "Nutritionist appointment cancelled successfully",
+			onboardingStatus,
 		});
 	} catch (error) {
 		handleServiceError(error, res, next);

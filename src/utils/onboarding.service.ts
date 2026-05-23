@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
-import { OnboardingStep } from "../models/Enums";
+import { ExpertType, OnboardingStep } from "../models/Enums";
+import ExpertAppointment from "../models/ExpertAppointment";
 import User from "../models/User";
 
 export type OnboardingServiceErrorCode =
@@ -147,6 +148,59 @@ export const advanceStep = async (
 	}
 
 	await User.findByIdAndUpdate(userObjectId, update);
+};
+
+export const cancelExpertAppointment = async (
+	userId: string,
+	expertType: ExpertType,
+): Promise<OnboardingStatusResponse> => {
+	const userObjectId = toObjectId(userId, "NOT_FOUND", "Invalid user ID");
+
+	const user = await User.findById(userObjectId).select("onboardingStatus");
+
+	if (!user) {
+		throw new OnboardingServiceError("NOT_FOUND", "User not found");
+	}
+
+	const deleted = await ExpertAppointment.findOneAndDelete({
+		userId: userObjectId,
+		expertType,
+	});
+
+	if (!deleted) {
+		throw new OnboardingServiceError(
+			"NOT_FOUND",
+			`${expertType === ExpertType.SportsScientist ? "Sports scientist" : "Nutritionist"} appointment not found for this user`,
+		);
+	}
+
+	const stepToRewind =
+		expertType === ExpertType.SportsScientist
+			? OnboardingStep.SPORTS_SCIENTIST_BOOKING
+			: OnboardingStep.NUTRITIONIST_BOOKING;
+	const flagField = STEP_FLAG_MAP[stepToRewind];
+
+	const setFields: Record<string, unknown> = {
+		"onboardingStatus.currentStep": stepToRewind,
+		"onboardingStatus.onboardingCompleted": false,
+		onboarded: false,
+	};
+
+	if (flagField) {
+		setFields[`onboardingStatus.${flagField}`] = false;
+	}
+
+	await User.findByIdAndUpdate(userObjectId, {
+		$set: setFields,
+		$unset: { "onboardingStatus.completedAt": "" },
+		$pull: {
+			"onboardingStatus.completedSteps": {
+				$in: [stepToRewind, OnboardingStep.COMPLETED],
+			},
+		},
+	});
+
+	return getOnboardingStatus(userId);
 };
 
 export const completeOnboarding = async (userId: string): Promise<Date> => {

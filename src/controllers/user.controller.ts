@@ -5,6 +5,10 @@ import { HpodReport } from "../models/Hpodreport.model";
 import ExpertAppointment from "../models/ExpertAppointment";
 import User from "../models/User";
 import { AppointmentBookingStatus, ExpertType } from "../models/Enums";
+import HealthMarkers from "../models/HealthMarkers";
+import HealthGoals from "../models/HealthGoals";
+import ConsentForm from "../models/ConsentForm";
+import MedicalReport from "../models/MedicalReport";
 import { buildApiErrorEnvelope } from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
 import {
@@ -373,6 +377,56 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 		}
 
 		res.status(200).json({ user });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
+	const id = getIdParam(req.params.id);
+
+	if (!id) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: { id: "Invalid user id" },
+		});
+		return;
+	}
+
+	try {
+		const user = await User.findById(id).select(
+			"username email age gender onboarded onboardingStatus",
+		);
+
+		if (!user) {
+			res.status(404).json({
+				error: "User not found",
+				code: "NOT_FOUND",
+			});
+			return;
+		}
+
+		const [healthMarkers, healthGoals, consent, reports, appointments] =
+			await Promise.all([
+				HealthMarkers.findOne({ userId: id }),
+				HealthGoals.findOne({ userId: id }),
+				ConsentForm.findOne({ userId: id }),
+				MedicalReport.find({ userId: id }).sort({ uploadedAt: -1 }),
+				ExpertAppointment.find({ userId: id }).populate(
+					"userId",
+					"username email phone",
+				),
+			]);
+
+		res.status(200).json({
+			user,
+			healthMarkers: healthMarkers ?? null,
+			healthGoals: healthGoals ?? null,
+			consents: consent?.consents ?? [],
+			reports,
+			appointments,
+		});
 	} catch (error) {
 		next(error);
 	}

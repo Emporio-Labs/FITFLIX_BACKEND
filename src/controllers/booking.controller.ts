@@ -2,8 +2,11 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Booking from "../models/Bookings";
 import { BookingStatus, CreditTransactionSource } from "../models/Enums";
+import { HpodReport } from "../models/Hpodreport.model";
 import Service from "../models/Service";
 import Slot from "../models/Slots";
+
+void HpodReport;
 import {
 	CreditServiceError,
 	consumeCredits,
@@ -355,7 +358,11 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			}
 			filter.user = userId;
 		}
-		const bookings = await Booking.find(filter);
+		const bookings = await Booking.find(filter)
+			.populate("user", "username email phone")
+			.populate("service", "serviceName serviceType creditCost")
+			.populate("slot", "date startTime endTime")
+			.populate("report", "subject hasPdf");
 		res.status(200).json({ bookings });
 	} catch (error) {
 		next(error);
@@ -371,7 +378,11 @@ export const getBookingById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const booking = await Booking.findById(id);
+		const booking = await Booking.findById(id)
+			.populate("user", "username email phone")
+			.populate("service", "serviceName serviceType creditCost")
+			.populate("slot", "date startTime endTime")
+			.populate("report", "subject hasPdf");
 
 		if (!booking) {
 			res.status(404).json({ message: "Booking not found" });
@@ -398,7 +409,11 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const bookings = await Booking.find({ user: requester.id });
+		const bookings = await Booking.find({ user: requester.id })
+			.populate("user", "username email phone")
+			.populate("service", "serviceName serviceType creditCost")
+			.populate("slot", "date startTime endTime")
+			.populate("report", "subject hasPdf");
 		res.status(200).json({ bookings });
 	} catch (error) {
 		next(error);

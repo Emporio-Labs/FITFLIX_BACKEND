@@ -177,3 +177,26 @@ export enum ProgressRecordedBy {
 	User = "User",
 	Nutritionist = "Nutritionist",
 }
+
+export enum ConsentType {
+	WELLNESS_SERVICES = "WELLNESS_SERVICES",
+	GYM_FITNESS = "GYM_FITNESS",
+}
+
+export enum AppointmentMode {
+	IN_PERSON = "IN_PERSON",
+	ONLINE = "ONLINE",
+}
+
+export enum NutritionistBookingStatus {
+	PENDING = "PENDING",
+	ACCEPTED = "ACCEPTED",
+	REJECTED = "REJECTED",
+	COMPLETED = "COMPLETED",
+}
+
+export enum NutritionistApprovalStatus {
+	PENDING = "PENDING",
+	APPROVED = "APPROVED",
+	REJECTED = "REJECTED",
+}
