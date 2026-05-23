@@ -1,4 +1,4 @@
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 import mongoose from "mongoose";
 import { ExpertType, OnboardingStep } from "../models/Enums";
 import ConsentForm from "../models/ConsentForm";
@@ -6,6 +6,7 @@ import ExpertAppointment from "../models/ExpertAppointment";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import MedicalReport from "../models/MedicalReport";
+import type { AuthenticatedUser } from "../types/auth";
 import {
 	OnboardingServiceError,
 	advanceStep,
@@ -39,6 +40,8 @@ const getValidationDetails = (
 	return details;
 };
 
+type RequestWithUser = Request & { user?: AuthenticatedUser };
+
 const handleServiceError = (
 	error: unknown,
 	res: Parameters<RequestHandler>[1],
@@ -63,7 +66,11 @@ const handleServiceError = (
 	next(error);
 };
 
-export const getStatus: RequestHandler = async (req, res, next) => {
+export const getStatus = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -80,7 +87,11 @@ export const getStatus: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const submitHealthMarkers: RequestHandler = async (req, res, next) => {
+	export const submitHealthMarkers = async (
+		req: RequestWithUser,
+		res: Parameters<RequestHandler>[1],
+		next: Parameters<RequestHandler>[2],
+	) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -124,7 +135,11 @@ export const submitHealthMarkers: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const submitHealthGoals: RequestHandler = async (req, res, next) => {
+export const submitHealthGoals = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -164,7 +179,11 @@ export const submitHealthGoals: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const submitConsent: RequestHandler = async (req, res, next) => {
+export const submitConsent = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -215,7 +234,11 @@ export const submitConsent: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const submitReport: RequestHandler = async (req, res, next) => {
+export const submitReport = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -264,7 +287,11 @@ export const submitReport: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const submitAppointment: RequestHandler = async (req, res, next) => {
+export const submitAppointment = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -326,7 +353,11 @@ export const submitAppointment: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const submitComplete: RequestHandler = async (req, res, next) => {
+export const submitComplete = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
