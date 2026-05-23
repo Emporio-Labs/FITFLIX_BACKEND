@@ -303,6 +303,21 @@ export const getDashboardMembers = async (options: {
 				as: "_healthGoalsDocs",
 			},
 		},
+		// ── Membership lookup (startDate only) ─────────────────────────────────
+		{
+			$lookup: {
+				from: "memberships",
+				localField: "_id",
+				foreignField: "user",
+				pipeline: [
+					{ $match: { status: "Active" } },
+					{ $sort: { startDate: -1 } },
+					{ $limit: 1 },
+					{ $project: { _id: 0, startDate: 1 } },
+				],
+				as: "_membershipDocs",
+			},
+		},
 	];
 
 	if (status) {
@@ -339,6 +354,15 @@ export const getDashboardMembers = async (options: {
 				activeNutritionPlan: 1,
 				assignedNutritionist: 1,
 				assignedPlans: 1,
+				createdAt: 1,
+				membershipStartDate: { $arrayElemAt: ["$_membershipDocs.startDate", 0] },
+				onboardingCompletedAt: "$onboardingStatus.completedAt",
+				joinedAt: {
+					$ifNull: [
+						{ $arrayElemAt: ["$_membershipDocs.startDate", 0] },
+						{ $ifNull: ["$onboardingStatus.completedAt", "$createdAt"] },
+					],
+				},
 				// Health marker fields required by My Nutrition profile cards
 				healthMarkers: {
 					$cond: [
