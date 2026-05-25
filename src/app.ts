@@ -22,6 +22,13 @@ import webhookRouter from "./routes/webhook.route";
 import workoutPlanRouter from "./routes/workout-plan.routes";
 import workoutRouter from "./routes/workout.routes";
 import {
+	expertAppointmentRouter,
+	adminExpertAppointmentRouter,
+} from "./routes/expert-appointment.routes";
+import calcomWebhookRouter from "./routes/calcom-webhook.routes";
+import notificationRouter from "./routes/notification.routes";
+import internalRouter from "./routes/internal.routes";
+import {
 	buildApiErrorEnvelope,
 	isApiErrorEnvelope,
 	mapStatusToErrorCode,
@@ -103,6 +110,9 @@ app.use((req, res, next) => {
 
 	next();
 });
+
+// Cal.com webhook MUST be mounted before express.json() — it captures raw body for HMAC
+app.use("/webhooks/cal", calcomWebhookRouter);
 
 app.use(express.json());
 app.use((_req, res, next) => {
@@ -230,6 +240,10 @@ app.use("/nutritionist", nutritionistRouter);
 app.use("/webhook", webhookRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
+app.use("/expert-appointments", expertAppointmentRouter);
+app.use("/admin/expert-appointments", adminExpertAppointmentRouter);
+app.use("/notifications", notificationRouter);
+app.use("/internal", internalRouter);
 
 app.get("/health", (_req, res) => {
 	res.status(200).json({ ok: true });
