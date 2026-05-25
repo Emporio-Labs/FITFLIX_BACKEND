@@ -1,19 +1,21 @@
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 import mongoose from "mongoose";
-import { ConsentType, ExpertType, OnboardingStep } from "../models/Enums";
 import ConsentForm from "../models/ConsentForm";
+import { ConsentType, ExpertType, OnboardingStep } from "../models/Enums";
 import ExpertAppointment from "../models/ExpertAppointment";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import MedicalReport from "../models/MedicalReport";
+import type { AuthenticatedUser } from "../types/auth";
 import {
-	OnboardingServiceError,
 	advanceStep,
 	cancelExpertAppointment,
 	completeOnboarding,
 	getOnboardingStatus,
+	OnboardingServiceError,
 	validateStepAllowed,
 } from "../utils/onboarding.service";
+import { generateSignedUrl, uploadToS3 } from "../utils/s3.service";
 import {
 	appointmentBodySchema,
 	consentBodySchema,
@@ -30,15 +32,18 @@ const getValidationDetails = (
 
 	for (const issue of issues) {
 		const field =
-			issue.path.length > 0
-				? issue.path.map(String).join(".")
-				: "body";
+			issue.path.length > 0 ? issue.path.map(String).join(".") : "body";
 		if (!details[field]) {
 			details[field] = issue.message;
 		}
 	}
 
 	return details;
+};
+
+type RequestWithUser = Request & {
+	user?: AuthenticatedUser;
+	file?: Express.Multer.File;
 };
 
 const handleServiceError = (
@@ -107,7 +112,8 @@ export const submitHealthMarkers: RequestHandler = async (req, res, next) => {
 
 		const { weight, height, ...rest } = parsedBody.data;
 		const heightInMeters = height / 100;
-		const bmi = Math.round((weight / (heightInMeters * heightInMeters)) * 10) / 10;
+		const bmi =
+			Math.round((weight / (heightInMeters * heightInMeters)) * 10) / 10;
 
 		const healthMarkers = await HealthMarkers.findOneAndUpdate(
 			{ userId: req.user.id },
@@ -222,7 +228,12 @@ export const submitConsent: RequestHandler = async (req, res, next) => {
 			// Legacy payload: map to both consent types
 			// parsedLegacy is guaranteed non-null and successful here
 			// because we already returned 400 if both parsedNew and parsedLegacy failed
-			const legacyData = (parsedLegacy as { success: true; data: { accepted: true; signatureUrl?: string } }).data;
+			const legacyData = (
+				parsedLegacy as {
+					success: true;
+					data: { accepted: true; signatureUrl?: string };
+				}
+			).data;
 			consentsData = [
 				{
 					type: ConsentType.WELLNESS_SERVICES,
@@ -260,7 +271,11 @@ export const submitConsent: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const submitReport: RequestHandler = async (req, res, next) => {
+export const submitReport = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -290,9 +305,37 @@ export const submitReport: RequestHandler = async (req, res, next) => {
 			await validateStepAllowed(req.user.id, OnboardingStep.REPORT_UPLOAD);
 		}
 
+		let s3Key: string | undefined;
+		let mimeType: string | undefined;
+		let fileSize: number | undefined;
+
+		if (req.file) {
+			const ext = req.file.originalname.split(".").pop() ?? "bin";
+			const key = `medical-reports/${req.user.id}/${Date.now()}-${new mongoose.Types.ObjectId().toString()}.${ext}`;
+			const result = await uploadToS3(key, req.file.buffer, req.file.mimetype);
+			s3Key = result.s3Key;
+			mimeType = req.file.mimetype;
+			fileSize = req.file.size;
+		}
+
+		// Strip direct S3 bucket URL if passed in body
+		let reportUrl = parsedBody.data.reportUrl;
+		if (
+			reportUrl &&
+			(reportUrl.includes(".amazonaws.com") ||
+				reportUrl.includes("fitflix-storage"))
+		) {
+			reportUrl = undefined;
+		}
+
 		const report = new MedicalReport({
 			userId: req.user.id,
-			...parsedBody.data,
+			reportName: parsedBody.data.reportName,
+			reportType: parsedBody.data.reportType,
+			reportUrl,
+			s3Key,
+			mimeType,
+			fileSize,
 		});
 		await report.save();
 
@@ -300,9 +343,15 @@ export const submitReport: RequestHandler = async (req, res, next) => {
 			await advanceStep(req.user.id, OnboardingStep.REPORT_UPLOAD);
 		}
 
+		// Generate a short-lived presigned URL for the response payload
+		const reportObj = report.toObject();
+		if (s3Key) {
+			reportObj.reportUrl = await generateSignedUrl(s3Key, 900, mimeType);
+		}
+
 		res.status(201).json({
 			message: "Report uploaded",
-			report,
+			report: reportObj,
 		});
 	} catch (error) {
 		handleServiceError(error, res, next);
@@ -388,11 +437,8 @@ export const submitSportsScientistAppointment: RequestHandler = (
 	next,
 ) => submitAppointmentInternal(req, res, next, ExpertType.SportsScientist);
 
-export const submitNutritionistAppointment: RequestHandler = (
-	req,
-	res,
-	next,
-) => submitAppointmentInternal(req, res, next, ExpertType.Nutritionist);
+export const submitNutritionistAppointment: RequestHandler = (req, res, next) =>
+	submitAppointmentInternal(req, res, next, ExpertType.Nutritionist);
 
 export const deleteNutritionistAppointment: RequestHandler = async (
 	req,
@@ -409,10 +455,7 @@ export const deleteNutritionistAppointment: RequestHandler = async (
 
 	const { userId } = req.params;
 
-	if (
-		typeof userId !== "string" ||
-		!mongoose.Types.ObjectId.isValid(userId)
-	) {
+	if (typeof userId !== "string" || !mongoose.Types.ObjectId.isValid(userId)) {
 		res.status(400).json({
 			error: "Invalid user ID",
 			code: "BAD_REQUEST",

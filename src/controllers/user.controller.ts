@@ -1,15 +1,16 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import ConsentForm from "../models/ConsentForm";
+import ExpertAppointment from "../models/ExpertAppointment";
+import HealthGoals from "../models/HealthGoals";
+import HealthMarkers from "../models/HealthMarkers";
 import HpodMetric from "../models/HpodMetric";
 import { HpodReport } from "../models/Hpodreport.model";
-import User from "../models/User";
-import HealthMarkers from "../models/HealthMarkers";
-import HealthGoals from "../models/HealthGoals";
-import ConsentForm from "../models/ConsentForm";
 import MedicalReport from "../models/MedicalReport";
-import ExpertAppointment from "../models/ExpertAppointment";
+import User from "../models/User";
 import { buildApiErrorEnvelope } from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
+import { generateSignedUrl } from "../utils/s3.service";
 import {
 	createUserBodySchema,
 	updateMyPasswordBodySchema,
@@ -296,12 +297,30 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 				),
 			]);
 
+		const reportsWithUrls = await Promise.all(
+			reports.map(async (report) => {
+				const r = report.toObject();
+				// Strip direct bucket domain if it was stored previously
+				if (
+					r.reportUrl &&
+					(r.reportUrl.includes(".amazonaws.com") ||
+						r.reportUrl.includes("fitflix-storage"))
+				) {
+					r.reportUrl = undefined;
+				}
+				if (r.s3Key) {
+					r.reportUrl = await generateSignedUrl(r.s3Key, 900, r.mimeType);
+				}
+				return r;
+			}),
+		);
+
 		res.status(200).json({
 			user,
 			healthMarkers: healthMarkers ?? null,
 			healthGoals: healthGoals ?? null,
 			consents: consent?.consents ?? [],
-			reports,
+			reports: reportsWithUrls,
 			appointments,
 		});
 	} catch (error) {
@@ -652,6 +671,42 @@ export const getMyUserReportPdf: RequestHandler = async (req, res, next) => {
 				},
 			}),
 		);
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getReportSignedUrl: RequestHandler = async (req, res, next) => {
+	const userId = getIdParam(req.params.id);
+	const reportId = getIdParam(req.params.reportId);
+
+	if (!userId || !reportId) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: { id: "Invalid user id or report id" },
+		});
+		return;
+	}
+
+	try {
+		const report = await MedicalReport.findOne({ _id: reportId, userId });
+
+		if (!report) {
+			res.status(404).json({ error: "Report not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		if (!report.s3Key) {
+			res.status(404).json({
+				error: "No file is attached to this report",
+				code: "NOT_FOUND",
+			});
+			return;
+		}
+
+		const url = await generateSignedUrl(report.s3Key, 900, report.mimeType);
+		res.status(200).json({ url, expiresIn: 900 });
 	} catch (error) {
 		next(error);
 	}
