@@ -628,6 +628,38 @@ Returns the full onboarding data submitted by a user, aggregated from all onboar
 
 ---
 
+#### 3c. Get Medical Report Signed URL
+```
+GET /users/:id/reports/:reportId/url
+```
+
+**URL Params:**
+- `id` (string, required) — User MongoDB ObjectId
+- `reportId` (string, required) — Medical Report MongoDB ObjectId
+
+**Authorization:** Admin or Doctor
+
+Generates a secure, temporary pre-signed URL to view the user's uploaded medical report inline.
+
+**Security Features:**
+- Overrides response headers to enforce **inline Content-Disposition** (`response-content-disposition=inline`) and correct MIME type.
+- Expires strictly after **15 minutes** (900 seconds) to mitigate access leakage risks.
+
+**Response (200 OK):**
+```json
+{
+  "url": "https://fitflix-storage.s3.ap-south-1.amazonaws.com/medical-reports/507f1f77bcf86cd799439011/1779698949706-507f1f77bcf86cd799439204.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Date=20260525T084909Z&X-Amz-Expires=900&X-Amz-Signature=...&response-content-disposition=inline&response-content-type=application%2Fpdf",
+  "expiresIn": 900
+}
+```
+
+**Error Responses:**
+- `400` — Invalid user ID or report ID format
+- `403` — `FORBIDDEN` — Caller is not an admin or doctor
+- `404` — Report not found, or no S3 file attached to the report
+
+---
+
 #### 4. Get My User
 ```
 GET /users/me
@@ -656,35 +688,78 @@ GET /users/me
 
 ---
 
-#### 5. Get My Reports
+#### 5. Get My Reports (Unified Feed)
 ```
 GET /users/me/reports
 ```
 
 **Authorization:** User only
 
+Returns a combined, chronological feed of both HPOD optimization reports and user-uploaded medical/DNA documents.
+
 **Response (200 OK):**
 ```json
 {
   "reports": [
     {
+      "id": "6a140d05b2b1391ed1952b3b",
+      "title": "My DNA Genotype Profile",
+      "type": "DNA",
+      "summary": "Uploaded DNA report",
+      "suggestions": [],
+      "recommendations": [],
+      "insights": [],
+      "generated_date": "2026-05-25T08:49:09.885Z",
+      "pdf_url": "https://fitflix-storage.s3.ap-south-1.amazonaws.com/medical-reports/...&response-content-disposition=inline&response-content-type=application%2Fpdf..."
+    },
+    {
       "id": "report-001",
       "title": "April Personalized Optimization Report",
+      "type": "HPOD",
       "summary": "Your recovery markers improved, but sleep consistency needs attention.",
       "suggestions": [
         "Maintain 7.5-8 hours sleep window for 14 days.",
         "Shift caffeine cutoff to 2 PM."
       ],
       "recommendations": [
-        "Maintain 7.5-8 hours sleep window for 14 days.",
-        "Shift caffeine cutoff to 2 PM."
+        "Maintain 7.5-8 hours sleep window for 14 days."
       ],
       "insights": [
-        "Maintain 7.5-8 hours sleep window for 14 days.",
         "Shift caffeine cutoff to 2 PM."
       ],
       "generated_date": "2026-04-10T08:00:00.000Z",
       "pdf_url": "http://localhost:3000/users/me/reports/report-001/pdf"
+    }
+  ]
+}
+```
+
+---
+
+#### 5a. Get My Medical & DNA Reports
+```
+GET /users/me/medical-reports
+```
+
+**Authorization:** User only
+
+Exclusively returns the list of medical and DNA reports uploaded by the user, dynamically generating secure pre-signed S3 download/rendering URLs (15-minute expiry).
+
+**Response (200 OK):**
+```json
+{
+  "reports": [
+    {
+      "_id": "6a140d05b2b1391ed1952b3b",
+      "userId": "6a140d05b2b1391ed1952b1f",
+      "reportName": "My DNA Genotype Profile",
+      "reportType": "DNA",
+      "s3Key": "medical-reports/6a140d05b2b1391ed1952b1f/1779698949706-6a140d05b2b1391ed1952b3a.pdf",
+      "mimeType": "application/pdf",
+      "fileSize": 24581,
+      "reportUrl": "https://fitflix-storage.s3.ap-south-1.amazonaws.com/medical-reports/...&response-content-disposition=inline&response-content-type=application%2Fpdf...",
+      "createdAt": "2026-05-25T08:49:09.886Z",
+      "updatedAt": "2026-05-25T08:49:09.886Z"
     }
   ]
 }
@@ -3430,18 +3505,23 @@ POST /onboarding/reports
 **Authorization:** User only  
 **Required step:** `REPORT_UPLOAD` (after Consent)
 
-**Request Body:**
-```json
-{
-  "reportName": "Blood Panel April 2026",
-  "reportType": "Blood Test",
-  "reportUrl": "https://cdn.example.com/reports/blood-panel.pdf"
-}
-```
+**Request Options:**
+- **Multipart Form-Data (Recommended for file uploads):**
+  - `file`: The medical report file (PDF/Image).
+  - `reportName`: string (required)
+  - `reportType`: string (required)
+- **JSON Payload (Fallback / Legacy):**
+  - `reportName`: string (required)
+  - `reportType`: string (required)
+  - `reportUrl`: string (optional, legacy fallback url)
 
-**Validation Notes:**
+**Validation & Security Notes:**
 - `reportName` and `reportType` are required.
-- `reportUrl` is optional (S3 upload integration planned for a future release).
+- If a file is uploaded, the backend automatically uploads it to S3:
+  - Enforces **Server-Side Encryption (SSE-S3)** with `AES256`.
+  - Sets **inline Content-Disposition** to support direct in-browser rendering.
+  - Strips any direct/raw S3 bucket URLs from the database, storing only the unique `s3Key`.
+- The response `reportUrl` is populated dynamically with a secure **pre-signed S3 URL** (expires in 15 minutes / 900 seconds) forcing inline viewing.
 - Users may call this endpoint **multiple times** to upload additional reports — each call creates a new `MedicalReport` document.
 - The onboarding step `REPORT_UPLOAD` is marked complete only on the **first** successful report upload.
 
@@ -3454,7 +3534,10 @@ POST /onboarding/reports
     "userId": "507f1f77bcf86cd799439011",
     "reportName": "Blood Panel April 2026",
     "reportType": "Blood Test",
-    "reportUrl": "https://cdn.example.com/reports/blood-panel.pdf",
+    "s3Key": "medical-reports/507f1f77bcf86cd799439011/1779698949706-507f1f77bcf86cd799439204.pdf",
+    "mimeType": "application/pdf",
+    "fileSize": 24581,
+    "reportUrl": "https://fitflix-storage.s3.ap-south-1.amazonaws.com/medical-reports/...&response-content-disposition=inline&response-content-type=application%2Fpdf...",
     "uploadedAt": "2026-05-15T09:15:00Z",
     "createdAt": "2026-05-15T09:15:00Z",
     "updatedAt": "2026-05-15T09:15:00Z"

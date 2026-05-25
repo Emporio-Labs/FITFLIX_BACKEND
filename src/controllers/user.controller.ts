@@ -566,12 +566,15 @@ export const getMyUserReports: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const reports = await HpodReport.find({ userId: req.user.id })
-			.sort({ receivedAt: -1 })
-			.select("subject aiSummary summaryGeneratedAt receivedAt hasPdf userId");
+		const [hpodReports, medicalReports] = await Promise.all([
+			HpodReport.find({ userId: req.user.id }).sort({ receivedAt: -1 }),
+			MedicalReport.find({ userId: req.user.id }).sort({ uploadedAt: -1 }),
+		]);
 
 		const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
-		const normalizedReports = reports.map((report) => {
+
+		// Format HPOD Reports
+		const formattedHpod = hpodReports.map((report) => {
 			const reportId = report._id.toString();
 			const aiSummary =
 				report.aiSummary && typeof report.aiSummary === "object"
@@ -586,6 +589,7 @@ export const getMyUserReports: RequestHandler = async (req, res, next) => {
 			return {
 				id: reportId,
 				title,
+				type: "HPOD",
 				summary: buildReportSummary(aiSummary),
 				suggestions,
 				recommendations: suggestions,
@@ -595,7 +599,78 @@ export const getMyUserReports: RequestHandler = async (req, res, next) => {
 			};
 		});
 
-		res.status(200).json({ reports: normalizedReports });
+		// Format Medical Reports (including DNA, Blood Test, etc.)
+		const formattedMedical = await Promise.all(
+			medicalReports.map(async (report) => {
+				const reportId = report._id.toString();
+				let reportUrl: string | undefined;
+				if (report.s3Key) {
+					reportUrl = await generateSignedUrl(
+						report.s3Key,
+						900,
+						report.mimeType,
+					);
+				}
+
+				return {
+					id: reportId,
+					title: report.reportName,
+					type: report.reportType, // E.g., "DNA", "Blood Test"
+					summary: `Uploaded ${report.reportType} report`,
+					suggestions: [],
+					recommendations: [],
+					insights: [],
+					generated_date: (report.uploadedAt ?? report.createdAt).toISOString(),
+					pdf_url: reportUrl,
+				};
+			}),
+		);
+
+		// Combine and sort by date descending
+		const allReports = [...formattedHpod, ...formattedMedical].sort(
+			(a, b) =>
+				new Date(b.generated_date).getTime() -
+				new Date(a.generated_date).getTime(),
+		);
+
+		res.status(200).json({ reports: allReports });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getMyMedicalReports: RequestHandler = async (req, res, next) => {
+	if (!req.user || req.user.role !== "user") {
+		res.status(403).json({
+			error: "Only users can access this endpoint",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	try {
+		const reports = await MedicalReport.find({ userId: req.user.id }).sort({
+			uploadedAt: -1,
+		});
+
+		const reportsWithUrls = await Promise.all(
+			reports.map(async (report) => {
+				const r = report.toObject();
+				if (
+					r.reportUrl &&
+					(r.reportUrl.includes(".amazonaws.com") ||
+						r.reportUrl.includes("fitflix-storage"))
+				) {
+					r.reportUrl = undefined;
+				}
+				if (r.s3Key) {
+					r.reportUrl = await generateSignedUrl(r.s3Key, 900, r.mimeType);
+				}
+				return r;
+			}),
+		);
+
+		res.status(200).json({ reports: reportsWithUrls });
 	} catch (error) {
 		next(error);
 	}

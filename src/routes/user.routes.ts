@@ -3,13 +3,14 @@ import {
 	createUser,
 	deleteUserById,
 	getAllUsers,
-	getMyUserHpodMetrics,
+	getMyMedicalReports,
 	getMyUser,
+	getMyUserHpodMetrics,
 	getMyUserReportPdf,
 	getMyUserReports,
-	getUserById,
 	getOnboardingProfile,
 	getReportSignedUrl,
+	getUserById,
 	onboardUser,
 	updateMyPassword,
 	updateUserById,
@@ -24,11 +25,16 @@ userRouter.post("/", authorize(["admin"]), createUser);
 userRouter.get("/", authorize(["admin", "doctor"]), getAllUsers);
 userRouter.get("/me", authorize(["user"]), getMyUser);
 userRouter.get("/me/reports", authorize(["user"]), getMyUserReports);
+userRouter.get("/me/medical-reports", authorize(["user"]), getMyMedicalReports);
 userRouter.get("/me/hpod-metrics", authorize(["user"]), getMyUserHpodMetrics);
 userRouter.get("/me/reports/:id/pdf", authorize(["user"]), getMyUserReportPdf);
 userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
 userRouter.get("/:id", authorize(["admin", "doctor"]), getUserById);
-userRouter.get("/:id/onboarding-profile", authorize(["admin", "doctor"]), getOnboardingProfile);
+userRouter.get(
+	"/:id/onboarding-profile",
+	authorize(["admin", "doctor"]),
+	getOnboardingProfile,
+);
 userRouter.get(
 	"/:id/reports/:reportId/url",
 	authorize(["admin", "doctor"]),
