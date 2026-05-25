@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import TokenBlacklist from "../models/TokenBlacklist";
 import { getJwtConfig, verifyAuthToken } from "../utils/jwt";
 
 const getBearerToken = (authorization: string | undefined): string | null => {
@@ -15,7 +16,7 @@ const getBearerToken = (authorization: string | undefined): string | null => {
 	return trimmed ? trimmed : null;
 };
 
-export const authenticateToken: RequestHandler = (req, res, next) => {
+export const authenticateToken: RequestHandler = async (req, res, next) => {
 	const config = getJwtConfig();
 	if (!config) {
 		res.status(503).json({ message: "JWT authentication is not configured" });
@@ -27,6 +28,13 @@ export const authenticateToken: RequestHandler = (req, res, next) => {
 		res
 			.status(401)
 			.json({ message: "Missing or invalid Authorization header" });
+		return;
+	}
+
+	// Reject tokens that have been explicitly revoked via POST /auth/logout
+	const blacklisted = await TokenBlacklist.findOne({ token }).lean();
+	if (blacklisted) {
+		res.status(401).json({ message: "Token has been revoked" });
 		return;
 	}
 

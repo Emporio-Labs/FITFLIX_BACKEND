@@ -75,6 +75,7 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 						difficulty: exercise.difficulty,
 						equipment: exercise.equipment,
 						caloriesPerSet: exercise.caloriesPerSet,
+						sectionTypes: exercise.sectionTypes ?? ["workout"],
 					}
 				: null,
 			sets: setLogsByExercise.get(we._id.toString()) || [],
@@ -263,10 +264,13 @@ export const createSession: RequestHandler = async (req, res, next) => {
 					sessionId: session._id,
 					exerciseId: new mongoose.Types.ObjectId(e.exerciseId),
 					orderIndex: index,
+					section: e.section,
 					targetSets: e.targetSets,
 					targetReps: e.targetReps,
 					targetWeightKg: e.targetWeightKg ?? null,
 					restSeconds: e.restSeconds,
+					durationSeconds: e.durationSeconds ?? null,
+					notes: e.notes ?? null,
 				}));
 
 			if (workoutExercises.length > 0) {
@@ -441,10 +445,13 @@ export const addExerciseToSession: RequestHandler = async (req, res, next) => {
 			sessionId: session._id,
 			exerciseId: exercise._id,
 			orderIndex: maxOrder ? maxOrder.orderIndex + 1 : 0,
+			section: parsed.data.section,
 			targetSets: parsed.data.targetSets,
 			targetReps: parsed.data.targetReps,
 			targetWeightKg: parsed.data.targetWeightKg ?? null,
 			restSeconds: parsed.data.restSeconds,
+			durationSeconds: parsed.data.durationSeconds ?? null,
+			notes: parsed.data.notes ?? null,
 		});
 
 		res.status(201).json(workoutExercise);
@@ -986,92 +993,34 @@ export const getMyHistory: RequestHandler = async (req, res, next) => {
 		}
 
 		const userId = new mongoose.Types.ObjectId(req.user!.id);
-		const { page, limit } = parsed.data;
+		const { limit, cursor } = parsed.data;
 		const now = new Date();
-		const from = parsed.data.from || new Date(now.getTime() - 30 * 86400000);
+		const from = parsed.data.from || new Date(now.getTime() - 365 * 86400000);
 		const to = parsed.data.to || now;
 
-		const filter = {
+		const filter: Record<string, unknown> = {
 			userId,
-			status: WorkoutSessionStatus.Completed,
+			isDeleted: { $ne: true },
 			date: { $gte: normalizeToUtcDate(from), $lte: normalizeToUtcDate(to) },
 		};
 
-		const [sessions, total] = await Promise.all([
-			WorkoutSession.find(filter)
-				.sort({ date: -1 })
-				.skip((page - 1) * limit)
-				.limit(limit)
-				.lean(),
-			WorkoutSession.countDocuments(filter),
-		]);
+		// Cursor-based pagination: cursor is the _id of the last seen document
+		if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+			filter._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+		}
 
-		const sessionIds = sessions.map((s) => s._id);
-		const workoutExercises = await WorkoutExercise.find({
-			sessionId: { $in: sessionIds },
-		}).lean();
-
-		const workoutExerciseIds = workoutExercises.map((we) => we._id);
-		const setLogs = await SetLog.find({
-			workoutExerciseId: { $in: workoutExerciseIds },
-			isWarmup: false,
-		}).lean();
-
-		const exerciseIds = [
-			...new Set(workoutExercises.map((we) => we.exerciseId.toString())),
-		];
-		const exerciseDocs = await Exercise.find({
-			_id: { $in: exerciseIds },
-		})
-			.select("_id caloriesPerSet muscleGroup")
+		// Fetch one extra to determine hasMore
+		const sessions = await WorkoutSession.find(filter)
+			.sort({ date: -1, _id: -1 })
+			.limit(limit + 1)
 			.lean();
 
-		const exerciseInfoMap = new Map(
-			exerciseDocs.map((e) => [
-				e._id.toString(),
-				{ caloriesPerSet: e.caloriesPerSet, muscleGroup: e.muscleGroup },
-			]),
-		);
+		const hasMore = sessions.length > limit;
+		const page = sessions.slice(0, limit);
+		const nextCursor = hasMore ? page[page.length - 1]._id.toString() : null;
 
-		// Group data by session
-		const exercisesBySession = new Map<string, typeof workoutExercises>();
-		for (const we of workoutExercises) {
-			const key = we.sessionId.toString();
-			if (!exercisesBySession.has(key)) exercisesBySession.set(key, []);
-			exercisesBySession.get(key)!.push(we);
-		}
-
-		const setsByWorkoutExercise = new Map<string, typeof setLogs>();
-		for (const sl of setLogs) {
-			const key = sl.workoutExerciseId.toString();
-			if (!setsByWorkoutExercise.has(key))
-				setsByWorkoutExercise.set(key, []);
-			setsByWorkoutExercise.get(key)!.push(sl);
-		}
-
-		const workouts = sessions.map((session) => {
-			const sessionExercises =
-				exercisesBySession.get(session._id.toString()) || [];
-			let totalSets = 0;
-			let totalReps = 0;
-			let totalVolumeKg = 0;
-			let caloriesBurned = 0;
-			const muscleGroups = new Set<string>();
-
-			for (const we of sessionExercises) {
-				const sets =
-					setsByWorkoutExercise.get(we._id.toString()) || [];
-				const info = exerciseInfoMap.get(we.exerciseId.toString());
-
-				totalSets += sets.length;
-				for (const s of sets) {
-					totalReps += s.actualReps;
-					totalVolumeKg += s.actualWeightKg * s.actualReps;
-					if (info) caloriesBurned += info.caloriesPerSet;
-				}
-				if (info) muscleGroups.add(info.muscleGroup);
-			}
-
+		// Lightweight summary — no exercises or set data
+		const workouts = page.map((session) => {
 			const duration =
 				session.completedAt && session.startedAt
 					? Math.round(
@@ -1085,25 +1034,15 @@ export const getMyHistory: RequestHandler = async (req, res, next) => {
 				id: session._id,
 				date: session.date,
 				status: session.status,
+				startedAt: session.startedAt,
+				completedAt: session.completedAt,
+				notes: session.notes,
+				planId: session.planId,
 				duration,
-				exerciseCount: sessionExercises.length,
-				totalSets,
-				totalReps,
-				totalVolumeKg: Math.round(totalVolumeKg * 100) / 100,
-				caloriesBurned,
-				muscleGroups: [...muscleGroups],
 			};
 		});
 
-		res.status(200).json({
-			workouts,
-			pagination: {
-				page,
-				limit,
-				total,
-				totalPages: Math.ceil(total / limit),
-			},
-		});
+		res.status(200).json({ workouts, nextCursor });
 	} catch (error) {
 		next(error);
 	}

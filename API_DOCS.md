@@ -2422,8 +2422,9 @@ GET /exercises
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
-| `muscleGroup` | string | - | Filter by muscle group: `Chest`, `Back`, `Legs`, `Shoulders`, `Arms`, `Core` |
+| `muscleGroup` | string | - | Filter by muscle group: `Chest`, `Back`, `Legs`, `Shoulders`, `Arms`, `Core`, `FullBody` |
 | `difficulty` | string | - | Filter by difficulty: `Beginner`, `Intermediate`, `Advanced` |
+| `section` | string | - | Filter by section the exercise can be used in: `warmup`, `workout`, `stretching` |
 | `equipment` | string | - | Partial match (case-insensitive) on equipment field |
 | `search` | string | - | Case-insensitive search on exercise name |
 | `isSystem` | boolean | - | `true` = system only, `false` = user's own only, omit = both |
@@ -2445,6 +2446,7 @@ GET /exercises
       "commonMistakes": ["Bouncing the bar off the chest"],
       "tips": ["Keep your wrists straight..."],
       "caloriesPerSet": 12,
+      "sectionTypes": ["workout"],
       "imageUrl": null,
       "isSystem": true,
       "createdBy": null,
@@ -2536,6 +2538,7 @@ POST /exercises
 | `tips` | Array of max 20 strings, each max 500 chars |
 | `targetedMuscles` | Array of 1-10 strings, each max 100 chars |
 | `caloriesPerSet` | 1-1000, integer, optional |
+| `sectionTypes` | Array of 1-3 of `warmup`/`workout`/`stretching`, optional, default `["workout"]` |
 | `imageUrl` | Valid URL, optional |
 
 **Notes:**
@@ -2845,10 +2848,13 @@ POST /workouts/:sessionId/exercises
 ```json
 {
   "exerciseId": "664a...",
+  "section": "warmup",
   "targetSets": 3,
   "targetReps": 12,
   "targetWeightKg": 40.0,
-  "restSeconds": 60
+  "restSeconds": 60,
+  "durationSeconds": 30,
+  "notes": "Light pace"
 }
 ```
 
@@ -2857,15 +2863,20 @@ POST /workouts/:sessionId/exercises
 | Field | Rule |
 |-------|------|
 | `exerciseId` | Valid ObjectId, required |
+| `section` | `warmup` \| `workout` \| `stretching`, optional, default `workout` |
 | `targetSets` | 1-50, integer, required |
 | `targetReps` | 1-100, integer, required |
 | `targetWeightKg` | 0-999.99, optional |
 | `restSeconds` | 0-600, integer, default 60 |
+| `durationSeconds` | 1-86400, integer, optional (time-based entries) |
+| `notes` | string, max 500, optional |
 
 **Notes:**
 - Session must be `Active`.
 - `orderIndex` is auto-assigned (appended to end).
 - The exercise must be visible to the user (system or user-created).
+- `PATCH /workouts/:sessionId/exercises/:id` additionally accepts
+  `section`, `durationSeconds`, `notes`, `caloriesBurned`, `isCompleted`.
 
 **Response (201 Created):**
 ```json
@@ -2874,10 +2885,14 @@ POST /workouts/:sessionId/exercises
   "sessionId": "664b...",
   "exerciseId": "664a...",
   "orderIndex": 2,
+  "section": "warmup",
   "targetSets": 3,
   "targetReps": 12,
   "targetWeightKg": 40.0,
   "restSeconds": 60,
+  "durationSeconds": 30,
+  "notes": "Light pace",
+  "caloriesBurned": null,
   "isCompleted": false,
   "createdAt": "2026-05-15T07:45:00Z"
 }

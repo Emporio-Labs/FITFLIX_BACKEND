@@ -9,6 +9,13 @@ export const authorize = (allowedRoles: AppUserRole[]): RequestHandler => {
 		}
 
 		if (!allowedRoles.includes(req.user.role)) {
+			console.warn("[RBAC] Forbidden", {
+				path: req.originalUrl,
+				method: req.method,
+				userRole: req.user.role,
+				userId: req.user.id,
+				allowedRoles,
+			});
 			res.status(403).json({ message: "Forbidden" });
 			return;
 		}

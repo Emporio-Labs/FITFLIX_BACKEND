@@ -1,9 +1,10 @@
 import z from "zod";
-import { ExerciseDifficulty, MuscleGroup } from "../models/Enums";
+import { ExerciseDifficulty, ExerciseSection, MuscleGroup } from "../models/Enums";
 
 export const listExercisesQuerySchema = z.object({
 	muscleGroup: z.enum(Object.values(MuscleGroup) as [string, ...string[]]).optional(),
 	difficulty: z.enum(Object.values(ExerciseDifficulty) as [string, ...string[]]).optional(),
+	section: z.enum(Object.values(ExerciseSection) as [string, ...string[]]).optional(),
 	equipment: z.string().optional(),
 	search: z.string().optional(),
 	isSystem: z
@@ -40,6 +41,12 @@ export const createExerciseBodySchema = z.object({
 		.optional()
 		.default([]),
 	caloriesPerSet: z.coerce.number().int().min(1).max(1000).optional().default(0),
+	sectionTypes: z
+		.array(z.enum(Object.values(ExerciseSection) as [string, ...string[]]))
+		.min(1)
+		.max(3)
+		.optional()
+		.default(["workout"]),
 	imageUrl: z.string().url().optional(),
 });
 
@@ -62,6 +69,11 @@ export const updateExerciseBodySchema = z
 		commonMistakes: z.array(z.string().trim().max(500)).max(20).optional(),
 		tips: z.array(z.string().trim().max(500)).max(20).optional(),
 		caloriesPerSet: z.coerce.number().int().min(1).max(1000).optional(),
+		sectionTypes: z
+			.array(z.enum(Object.values(ExerciseSection) as [string, ...string[]]))
+			.min(1)
+			.max(3)
+			.optional(),
 		imageUrl: z.string().url().optional(),
 	})
 	.refine((payload) => Object.keys(payload).length > 0, {

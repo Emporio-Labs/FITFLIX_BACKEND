@@ -56,12 +56,19 @@ export enum MuscleGroup {
 	Shoulders = "Shoulders",
 	Arms = "Arms",
 	Core = "Core",
+	FullBody = "FullBody",
 }
 
 export enum ExerciseDifficulty {
 	Beginner = "Beginner",
 	Intermediate = "Intermediate",
 	Advanced = "Advanced",
+}
+
+export enum ExerciseSection {
+	Warmup = "warmup",
+	Workout = "workout",
+	Stretching = "stretching",
 }
 
 export enum WorkoutSessionStatus {

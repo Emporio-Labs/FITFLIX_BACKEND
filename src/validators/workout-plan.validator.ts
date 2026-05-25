@@ -39,7 +39,7 @@ export const createPlanBodySchema = z.object({
 		.optional()
 		.default(PlanStatus.Draft),
 	isTemplate: z.boolean().optional().default(false),
-	templateCategory: z.string().max(100).optional(),
+	templateCategory: z.string().max(100).nullable().optional(),
 	assignedUsers: z.array(z.string().min(1)).optional().default([]),
 	days: z.array(planDaySchema).optional().default([]),
 });
@@ -62,7 +62,7 @@ export const updatePlanBodySchema = z
 			.enum(Object.values(PlanStatus) as [string, ...string[]])
 			.optional(),
 		isTemplate: z.boolean().optional(),
-		templateCategory: z.string().max(100).optional(),
+		templateCategory: z.string().max(100).nullable().optional(),
 		assignedUsers: z.array(z.string().min(1)).optional(),
 		days: z.array(planDaySchema).optional(),
 	})
@@ -70,20 +70,41 @@ export const updatePlanBodySchema = z
 		message: "At least one field is required",
 	});
 
+const optionalEnumPreprocess = (value: unknown): unknown => {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value === "string" && value.trim() === "") return undefined;
+	return value;
+};
+
 export const listPlansQuerySchema = z.object({
-	page: z.coerce.number().int().min(1).default(1),
-	limit: z.coerce.number().int().min(1).max(100).default(20),
-	status: z
-		.enum(Object.values(PlanStatus) as [string, ...string[]])
-		.optional(),
-	goal: z
-		.enum(Object.values(PlanGoal) as [string, ...string[]])
-		.optional(),
-	difficulty: z
-		.enum(Object.values(ExerciseDifficulty) as [string, ...string[]])
-		.optional(),
+	page: z.preprocess(
+		(v) => (v === undefined || v === null || (typeof v === "string" && v.trim() === "") ? undefined : v),
+		z.coerce.number().int().min(1).default(1),
+	),
+	limit: z.preprocess(
+		(v) => (v === undefined || v === null || (typeof v === "string" && v.trim() === "") ? undefined : v),
+		z.coerce.number().int().min(1).max(100).default(20),
+	),
+	status: z.preprocess(
+		optionalEnumPreprocess,
+		z.enum(Object.values(PlanStatus) as [string, ...string[]]).optional(),
+	),
+	goal: z.preprocess(
+		optionalEnumPreprocess,
+		z.enum(Object.values(PlanGoal) as [string, ...string[]]).optional(),
+	),
+	difficulty: z.preprocess(
+		optionalEnumPreprocess,
+		z.enum(Object.values(ExerciseDifficulty) as [string, ...string[]]).optional(),
+	),
 });
 
 export const assignUsersBodySchema = z.object({
 	userIds: z.array(z.string().min(1)).min(1),
+	startDate: z
+		.string()
+		.refine((s) => !Number.isNaN(Date.parse(s)), {
+			message: "startDate must be a valid ISO date string",
+		})
+		.optional(),
 });

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { ExerciseSection } from "./Enums";
 
 const workoutExerciseSchema = new mongoose.Schema(
 	{
@@ -13,10 +14,21 @@ const workoutExerciseSchema = new mongoose.Schema(
 			required: true,
 		},
 		orderIndex: { type: Number, required: true },
+		// Workout section this exercise was placed in. Defaults to "workout"
+		// so pre-existing rows stay in the main workout section.
+		section: {
+			type: String,
+			enum: Object.values(ExerciseSection),
+			default: ExerciseSection.Workout,
+		},
 		targetSets: { type: Number, required: true },
 		targetReps: { type: Number, required: true },
 		targetWeightKg: { type: Number, default: null },
 		restSeconds: { type: Number, default: 60 },
+		// Time-based entries (e.g. Plank, stretches).
+		durationSeconds: { type: Number, default: null },
+		notes: { type: String, default: null },
+		caloriesBurned: { type: Number, default: null },
 		isCompleted: { type: Boolean, default: false },
 	},
 	{ timestamps: true },

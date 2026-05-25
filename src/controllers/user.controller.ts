@@ -166,10 +166,31 @@ export const createUser: RequestHandler = async (req, res, next) => {
 			...rest,
 			onboarded,
 			passwordHash,
+			// Explicitly initialise onboardingStatus so the sub-document is
+			// always present when the user first hits GET /onboarding/status.
+			onboardingStatus: {
+				currentStep: "HEALTH_MARKERS",
+				completedSteps: [],
+				healthMarkersCompleted: false,
+				healthGoalsCompleted: false,
+				consentCompleted: false,
+				reportsUploaded: false,
+				sportsScientistBooked: false,
+				nutritionistBooked: false,
+				onboardingCompleted: false,
+				startedAt: new Date(),
+			},
+		});
+
+		console.log("[POST /users] User created successfully:", {
+			userId: user._id,
+			email: user.email,
+			onboarded: user.onboarded,
 		});
 
 		res.status(201).json({ message: "User created", user });
 	} catch (error) {
+		console.error("[POST /users] Error creating user:", error);
 		next(error);
 	}
 };

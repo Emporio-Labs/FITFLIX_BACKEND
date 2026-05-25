@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { ExerciseDifficulty, MuscleGroup } from "./Enums";
+import { ExerciseDifficulty, ExerciseSection, MuscleGroup } from "./Enums";
 
 const exerciseSchema = new mongoose.Schema(
 	{
@@ -20,6 +20,14 @@ const exerciseSchema = new mongoose.Schema(
 		commonMistakes: { type: [String], default: [] },
 		tips: { type: [String], default: [] },
 		caloriesPerSet: { type: Number, default: 0 },
+		// Which workout sections this exercise can be used in.
+		// Defaults to ["workout"] so pre-existing exercises stay in the
+		// main workout section.
+		sectionTypes: {
+			type: [String],
+			enum: Object.values(ExerciseSection),
+			default: ["workout"],
+		},
 		imageUrl: { type: String, default: null },
 		isSystem: { type: Boolean, default: false },
 		createdBy: {
@@ -33,6 +41,7 @@ const exerciseSchema = new mongoose.Schema(
 
 exerciseSchema.index({ muscleGroup: 1 });
 exerciseSchema.index({ createdBy: 1 });
+exerciseSchema.index({ sectionTypes: 1 });
 exerciseSchema.index({ name: "text" });
 
 export type ExerciseDocument = mongoose.InferSchemaType<typeof exerciseSchema>;

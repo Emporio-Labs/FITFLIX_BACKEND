@@ -1,5 +1,9 @@
 import z from "zod";
-import { WorkoutSessionStatus } from "../models/Enums";
+import { ExerciseSection, WorkoutSessionStatus } from "../models/Enums";
+
+const sectionEnum = z.enum(
+	Object.values(ExerciseSection) as [string, ...string[]],
+);
 
 const exerciseInSessionSchema = z.object({
 	exerciseId: z.string().min(1),
@@ -7,6 +11,9 @@ const exerciseInSessionSchema = z.object({
 	targetReps: z.coerce.number().int().min(1).max(100),
 	targetWeightKg: z.coerce.number().min(0).max(999.99).optional(),
 	restSeconds: z.coerce.number().int().min(0).max(600).optional().default(60),
+	section: sectionEnum.optional().default("workout"),
+	durationSeconds: z.coerce.number().int().min(1).max(86400).optional(),
+	notes: z.string().max(500).optional(),
 });
 
 export const createSessionBodySchema = z.object({
@@ -41,6 +48,9 @@ export const addExerciseBodySchema = z.object({
 	targetReps: z.coerce.number().int().min(1).max(100),
 	targetWeightKg: z.coerce.number().min(0).max(999.99).optional(),
 	restSeconds: z.coerce.number().int().min(0).max(600).optional().default(60),
+	section: sectionEnum.optional().default("workout"),
+	durationSeconds: z.coerce.number().int().min(1).max(86400).optional(),
+	notes: z.string().max(500).optional(),
 });
 
 export const updateWorkoutExerciseBodySchema = z
@@ -49,6 +59,11 @@ export const updateWorkoutExerciseBodySchema = z
 		targetReps: z.coerce.number().int().min(1).max(100).optional(),
 		targetWeightKg: z.coerce.number().min(0).max(999.99).optional(),
 		restSeconds: z.coerce.number().int().min(0).max(600).optional(),
+		section: sectionEnum.optional(),
+		durationSeconds: z.coerce.number().int().min(0).max(86400).optional(),
+		notes: z.string().max(500).optional(),
+		caloriesBurned: z.coerce.number().int().min(0).max(100000).optional(),
+		isCompleted: z.coerce.boolean().optional(),
 	})
 	.refine((payload) => Object.keys(payload).length > 0, {
 		message: "At least one field is required",
@@ -81,6 +96,6 @@ export const updateSetBodySchema = z
 export const historyQuerySchema = z.object({
 	from: z.coerce.date().optional(),
 	to: z.coerce.date().optional(),
-	page: z.coerce.number().int().min(1).default(1),
-	limit: z.coerce.number().int().min(1).max(100).default(20),
+	cursor: z.string().optional(),
+	limit: z.coerce.number().int().min(1).max(100).default(30),
 });

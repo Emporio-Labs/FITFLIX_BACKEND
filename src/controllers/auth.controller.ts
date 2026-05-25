@@ -3,6 +3,7 @@ import Admin from "../models/Admin";
 import Doctor from "../models/Doctor";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
+import TokenBlacklist from "../models/TokenBlacklist";
 import {
 	hashPassword,
 	isHashedPassword,
@@ -120,6 +121,18 @@ export const signup: RequestHandler = async (req, res, next) => {
 			healthGoals,
 			onboarded: false,
 			passwordHash,
+			onboardingStatus: {
+				currentStep: "HEALTH_MARKERS",
+				completedSteps: [],
+				healthMarkersCompleted: false,
+				healthGoalsCompleted: false,
+				consentCompleted: false,
+				reportsUploaded: false,
+				sportsScientistBooked: false,
+				nutritionistBooked: false,
+				onboardingCompleted: false,
+				startedAt: new Date(),
+			},
 		});
 
 		res.status(201).json({
@@ -167,6 +180,14 @@ export const login: RequestHandler = async (req, res, next) => {
 			Trainer.findOne({ email }).select("+passwordHash"),
 		]);
 
+		console.log("[AUTH][LOGIN] Model lookups completed", {
+			email,
+			userFound: Boolean(user),
+			adminFound: Boolean(admin),
+			doctorFound: Boolean(doctor),
+			trainerFound: Boolean(trainer),
+		});
+
 		const matchedAccount =
 			(await matchAccount(password, "user", user)) ??
 			(await matchAccount(password, "admin", admin)) ??
@@ -204,6 +225,8 @@ export const login: RequestHandler = async (req, res, next) => {
 			email,
 			userId: req.user.id,
 			role: req.user.role,
+			userPayloadRole: userPayload.role,
+			userPayloadOnboarded: userPayload.onboarded,
 		});
 
 		res.status(200).json({
@@ -268,3 +291,50 @@ export const refreshAccessToken: RequestHandler = async (req, res, next) => {
 		next(error);
 	}
 };
+
+/** Logout — blacklists the current access token so it cannot be reused. */
+export const logout: RequestHandler = async (req, res, next) => {
+	const authorization = req.header("authorization");
+	const parts = authorization?.split(" ") ?? [];
+	const token = parts[0] === "Bearer" && parts[1]?.trim() ? parts[1].trim() : null;
+
+	if (!token) {
+		res.status(400).json({ message: "Missing Bearer token" });
+		return;
+	}
+
+	try {
+		const config = getJwtConfig();
+		// Parse the expiry string (e.g. "12h", "7200") into milliseconds so the
+		// blacklist entry auto-deletes when the token would have expired anyway.
+		const expiresIn = config?.expiresIn ?? "12h";
+		const expiresAt = new Date(Date.now() + parseExpiryMs(expiresIn));
+
+		// insertOne with upsert to tolerate duplicate logout calls gracefully
+		await TokenBlacklist.updateOne(
+			{ token },
+			{ $setOnInsert: { token, userId: req.user?.id, expiresAt } },
+			{ upsert: true },
+		);
+
+		res.status(200).json({ message: "Logged out successfully" });
+	} catch (error) {
+		next(error);
+	}
+};
+
+/** Convert a JWT expiresIn string ("12h", "30d", "3600") to milliseconds. */
+function parseExpiryMs(value: string): number {
+	const num = parseInt(value, 10);
+	if (!Number.isNaN(num) && String(num) === value) return num * 1000; // raw seconds
+	const unit = value.slice(-1);
+	const amount = parseInt(value.slice(0, -1), 10);
+	if (Number.isNaN(amount)) return 12 * 60 * 60 * 1000; // fallback: 12h
+	switch (unit) {
+		case "s": return amount * 1000;
+		case "m": return amount * 60 * 1000;
+		case "h": return amount * 60 * 60 * 1000;
+		case "d": return amount * 24 * 60 * 60 * 1000;
+		default:  return 12 * 60 * 60 * 1000;
+	}
+}

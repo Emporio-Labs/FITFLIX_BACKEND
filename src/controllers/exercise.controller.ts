@@ -29,8 +29,16 @@ export const listExercises: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const { muscleGroup, difficulty, equipment, search, isSystem, page, limit } =
-			parsed.data;
+		const {
+			muscleGroup,
+			difficulty,
+			section,
+			equipment,
+			search,
+			isSystem,
+			page,
+			limit,
+		} = parsed.data;
 
 		const filter: Record<string, unknown> = {};
 
@@ -50,6 +58,8 @@ export const listExercises: RequestHandler = async (req, res, next) => {
 
 		if (muscleGroup) filter.muscleGroup = muscleGroup;
 		if (difficulty) filter.difficulty = difficulty;
+		// Array-membership match: returns exercises usable in this section.
+		if (section) filter.sectionTypes = section;
 		if (equipment) filter.equipment = { $regex: equipment, $options: "i" };
 		if (search) filter.name = { $regex: search, $options: "i" };
 

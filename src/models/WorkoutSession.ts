@@ -22,12 +22,15 @@ const workoutSessionSchema = new mongoose.Schema(
 			ref: "WorkoutPlan",
 			default: null,
 		},
+		isDeleted: { type: Boolean, default: false, index: true },
 	},
 	{ timestamps: true },
 );
 
 workoutSessionSchema.index({ userId: 1, date: -1 });
 workoutSessionSchema.index({ userId: 1, status: 1 });
+workoutSessionSchema.index({ userId: 1, completedAt: -1 });
+workoutSessionSchema.index({ userId: 1, date: -1, status: 1 });
 workoutSessionSchema.index(
 	{ userId: 1, date: 1 },
 	{

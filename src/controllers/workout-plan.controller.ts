@@ -1,5 +1,7 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import fs from "fs";
+import path from "path";
 import WorkoutPlan from "../models/WorkoutPlan";
 import { PlanStatus } from "../models/Enums";
 import {
@@ -8,6 +10,18 @@ import {
 	listPlansQuerySchema,
 	updatePlanBodySchema,
 } from "../validators/workout-plan.validator";
+import { createAssignmentForUser } from "../services/planAssignment.service";
+
+const logValidationError = (endpoint: string, body: any, issues: any) => {
+	try {
+		const logPath = path.join(process.cwd(), "validation-errors.log");
+		const logMessage = `[${new Date().toISOString()}] Endpoint: ${endpoint}\nBody: ${JSON.stringify(body, null, 2)}\nIssues: ${JSON.stringify(issues, null, 2)}\n\n`;
+		fs.appendFileSync(logPath, logMessage);
+		console.log(`[Validation Error Logged] ${endpoint}`);
+	} catch (err) {
+		console.error("Failed to write validation error to file:", err);
+	}
+};
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -23,6 +37,7 @@ export const createPlan: RequestHandler = async (req, res, next) => {
 	try {
 		const parsed = createPlanBodySchema.safeParse(req.body);
 		if (!parsed.success) {
+			logValidationError("POST /workout-plans", req.body, parsed.error.issues);
 			res.status(400).json({
 				error: "Validation failed",
 				code: "VALIDATION_ERROR",
@@ -152,6 +167,7 @@ export const updatePlan: RequestHandler = async (req, res, next) => {
 
 		const parsed = updatePlanBodySchema.safeParse(req.body);
 		if (!parsed.success) {
+			logValidationError(`PATCH /workout-plans/${id}`, req.body, parsed.error.issues);
 			res.status(400).json({
 				error: "Validation failed",
 				code: "VALIDATION_ERROR",
@@ -224,6 +240,7 @@ export const assignUsers: RequestHandler = async (req, res, next) => {
 
 		const parsed = assignUsersBodySchema.safeParse(req.body);
 		if (!parsed.success) {
+			logValidationError(`POST /workout-plans/${id}/assign`, req.body, parsed.error.issues);
 			res.status(400).json({
 				error: "Validation failed",
 				code: "VALIDATION_ERROR",
@@ -232,20 +249,57 @@ export const assignUsers: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const plan = await WorkoutPlan.findByIdAndUpdate(
-			id,
-			{ assignedUsers: parsed.data.userIds },
-			{ new: true, runValidators: true },
-		)
-			.populate("assignedUsers", "name email")
-			.lean();
-
-		if (!plan) {
+		const planExists = await WorkoutPlan.exists({ _id: id });
+		if (!planExists) {
 			res.status(404).json({ error: "Plan not found" });
 			return;
 		}
 
-		res.json(plan);
+		const startDate = parsed.data.startDate
+			? new Date(parsed.data.startDate)
+			: new Date();
+		const adminId = req.user!.id;
+
+		const results = await Promise.allSettled(
+			parsed.data.userIds.map((uid) =>
+				createAssignmentForUser({
+					planId: id,
+					userId: uid,
+					assignedBy: adminId,
+					startDate,
+				}),
+			),
+		);
+
+		const created: string[] = [];
+		const skipped: string[] = [];
+		const failed: { userId: string; error: string }[] = [];
+
+		results.forEach((r, i) => {
+			const uid = parsed.data.userIds[i];
+			if (!uid) return;
+			if (r.status === "fulfilled") {
+				if (r.value.created) created.push(uid);
+				else skipped.push(uid);
+			} else {
+				const err = r.reason instanceof Error ? r.reason.message : String(r.reason);
+				console.error(`assignUsers failed for ${uid}:`, err);
+				failed.push({ userId: uid, error: err });
+			}
+		});
+
+		// Keep plan.assignedUsers in sync so the admin grid keeps working without refactor.
+		await WorkoutPlan.findByIdAndUpdate(id, {
+			$addToSet: { assignedUsers: { $each: parsed.data.userIds } },
+		});
+
+		res.json({
+			planId: id,
+			startDate: startDate.toISOString(),
+			created,
+			skipped,
+			failed,
+		});
 	} catch (error) {
 		next(error);
 	}
