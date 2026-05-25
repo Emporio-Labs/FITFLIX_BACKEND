@@ -138,7 +138,16 @@ app.use((_req, res, next) => {
 		}
 
 		if (isApiErrorEnvelope(body)) {
-			return originalJson(body as never);
+			if (body.code === "VALIDATION_ERROR") {
+				console.error("[VALIDATION_ERROR]", body.error, JSON.stringify(body.details ?? {}));
+			}
+
+			return originalJson({
+				success: false,
+				message: body.error,
+				errors: body.details ?? {},
+				...body
+			} as never);
 		}
 
 		if (body && typeof body === "object" && !Array.isArray(body)) {
@@ -156,21 +165,30 @@ app.use((_req, res, next) => {
 				details,
 			);
 
-			return originalJson(
-				buildApiErrorEnvelope({
+			if (code === "VALIDATION_ERROR") {
+				console.error("[VALIDATION_ERROR]", message, JSON.stringify(details));
+			}
+
+			return originalJson({
+				success: false,
+				message,
+				errors: details,
+				...buildApiErrorEnvelope({
 					error: message,
 					code,
 					details,
-				}) as never,
-			);
+				}),
+			} as never);
 		}
 
-		return originalJson(
-			buildApiErrorEnvelope({
+		return originalJson({
+			success: false,
+			message: typeof body === "string" ? body : "Request failed",
+			...buildApiErrorEnvelope({
 				error: typeof body === "string" ? body : "Request failed",
 				code: mapStatusToErrorCode(res.statusCode),
-			}) as never,
-		);
+			})
+		} as never);
 	}) as typeof res.json;
 
 	next();

@@ -1,7 +1,30 @@
 import z from "zod";
-import { MealType } from "../models/Enums";
+import { MealType, NutritionGoal } from "../models/Enums";
 
 const mealTypeValues = Object.values(MealType) as [string, ...string[]];
+
+const goalEnumValues = Object.values(NutritionGoal) as [string, ...string[]];
+const goalLookup = new Map<string, string>(
+	goalEnumValues.map((v) => [v.toLowerCase().replace(/[\s_-]+/g, ""), v]),
+);
+
+const normalizeGoal = (value: unknown): unknown => {
+	if (typeof value !== "string") return value;
+	const key = value.toLowerCase().replace(/[\s_-]+/g, "");
+	return goalLookup.get(key) ?? value;
+};
+
+export const goalSchema = z.preprocess(
+	normalizeGoal,
+	z.enum(goalEnumValues, {
+		message: `Goal must be one of: ${goalEnumValues.join(", ")}`,
+	}),
+);
+
+export const optionalGoalSchema = z.preprocess(
+	normalizeGoal,
+	z.enum(goalEnumValues).optional(),
+);
 
 export const optionalNutritionString = z.preprocess((value) => {
 	if (typeof value === "string" && value.trim() === "") {
@@ -74,19 +97,19 @@ export const daySchema = z.object({
 export const daysArraySchema = z.array(daySchema).default([]);
 
 const toDate = (value: unknown): unknown => {
-	if (value === undefined || value === null) {
-		return undefined;
+	if (value === undefined || value === null) return undefined;
+	if (value instanceof Date) return value;
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		if (trimmed === "") return undefined;
+		const parsed = new Date(trimmed);
+		return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 	}
-	if (value instanceof Date) {
-		return value;
-	}
-	if (typeof value === "string" || typeof value === "number") {
+	if (typeof value === "number") {
 		const parsed = new Date(value);
-		if (!Number.isNaN(parsed.getTime())) {
-			return parsed;
-		}
+		return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 	}
-	return value;
+	return undefined;
 };
 
 export const requiredDate = z.preprocess(toDate, z.date());

@@ -101,7 +101,7 @@ const collectAllergenWarnings = async (
 const MEMBER_POPULATE = { path: "userId", select: "username email phone" };
 
 export type AssignOptions = {
-	startDate: Date;
+	startDate?: Date | null;
 	endDate?: Date | null;
 };
 
@@ -114,7 +114,7 @@ export type LifestyleRecommendationInput = {
 export type AdHocPlanInput = {
 	name: string;
 	goal: NutritionGoal;
-	startDate: Date;
+	startDate?: Date | null;
 	endDate?: Date | null;
 	targetCaloriesKcal?: number | null;
 	targetMacros?: {

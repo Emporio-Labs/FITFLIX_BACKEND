@@ -1,16 +1,17 @@
 import z from "zod";
-import { NutritionGoal, NutritionPlanStatus } from "../models/Enums";
+import { NutritionPlanStatus } from "../models/Enums";
 import {
 	daySchema,
 	daysArraySchema,
+	goalSchema,
 	lifestyleRecommendationSchema,
 	macroTargetSchema,
 	objectIdString,
 	optionalDate,
+	optionalGoalSchema,
 	requiredDate,
 } from "./nutrition-shared.validator";
 
-const goalValues = Object.values(NutritionGoal) as [string, ...string[]];
 const statusValues = Object.values(NutritionPlanStatus) as [
 	string,
 	...string[],
@@ -21,7 +22,7 @@ export const assignTemplateBodySchema = z.object({
 		.string()
 		.trim()
 		.regex(/^[0-9a-fA-F]{24}$/, "Must be a valid user ID"),
-	startDate: requiredDate,
+	startDate: optionalDate,
 	endDate: optionalDate,
 });
 
@@ -31,10 +32,8 @@ export const createAdHocPlanBodySchema = z.object({
 		.trim()
 		.regex(/^[0-9a-fA-F]{24}$/, "Must be a valid user ID"),
 	name: z.string().trim().min(1, "Plan name is required"),
-	goal: z.enum(goalValues, {
-		message: `Goal must be one of: ${goalValues.join(", ")}`,
-	}),
-	startDate: requiredDate,
+	goal: goalSchema,
+	startDate: optionalDate,
 	endDate: optionalDate,
 	targetCaloriesKcal: z.coerce
 		.number()
@@ -50,7 +49,7 @@ export const createAdHocPlanBodySchema = z.object({
 
 export const updatePlanBodySchema = z.object({
 	name: z.string().trim().min(1).optional(),
-	goal: z.enum(goalValues).optional(),
+	goal: optionalGoalSchema,
 	startDate: optionalDate,
 	endDate: optionalDate,
 	targetCaloriesKcal: z.coerce

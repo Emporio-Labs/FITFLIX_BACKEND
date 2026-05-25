@@ -1,5 +1,6 @@
 import type { Request, RequestHandler } from "express";
 import mongoose from "mongoose";
+import { uploadToS3 } from "../utils/s3.service";
 import { ConsentType, ExpertType, OnboardingStep } from "../models/Enums";
 import ConsentForm from "../models/ConsentForm";
 import ExpertAppointment from "../models/ExpertAppointment";
@@ -42,7 +43,7 @@ const getValidationDetails = (
 	return details;
 };
 
-type RequestWithUser = Request & { user?: AuthenticatedUser };
+type RequestWithUser = Request & { user?: AuthenticatedUser; file?: Express.Multer.File };
 
 const handleServiceError = (
 	error: unknown,
@@ -313,9 +314,29 @@ export const submitReport = async (
 			await validateStepAllowed(req.user.id, OnboardingStep.REPORT_UPLOAD);
 		}
 
+		let s3Key: string | undefined;
+		let fileUrl: string | undefined;
+		let mimeType: string | undefined;
+		let fileSize: number | undefined;
+
+		if (req.file) {
+			const ext = req.file.originalname.split(".").pop() ?? "bin";
+			const key = `medical-reports/${req.user.id}/${Date.now()}-${new mongoose.Types.ObjectId().toString()}.${ext}`;
+			const result = await uploadToS3(key, req.file.buffer, req.file.mimetype);
+			s3Key = result.s3Key;
+			fileUrl = result.fileUrl;
+			mimeType = req.file.mimetype;
+			fileSize = req.file.size;
+		}
+
 		const report = new MedicalReport({
 			userId: req.user.id,
-			...parsedBody.data,
+			reportName: parsedBody.data.reportName,
+			reportType: parsedBody.data.reportType,
+			reportUrl: fileUrl ?? parsedBody.data.reportUrl,
+			s3Key,
+			mimeType,
+			fileSize,
 		});
 		await report.save();
 
@@ -363,12 +384,7 @@ const submitAppointmentInternal = async (
 	try {
 		const { expertType, ...appointmentData } = parsedBody.data;
 
-		if (expertType === ExpertType.SportsScientist) {
-			await validateStepAllowed(
-				req.user.id,
-				OnboardingStep.SPORTS_SCIENTIST_BOOKING,
-			);
-		} else if (expertType === ExpertType.Nutritionist) {
+		if (expertType === ExpertType.Nutritionist) {
 			await validateStepAllowed(
 				req.user.id,
 				OnboardingStep.NUTRITIONIST_BOOKING,
@@ -386,12 +402,9 @@ const submitAppointmentInternal = async (
 			{ upsert: true, returnDocument: "after", runValidators: true },
 		);
 
-		const stepToAdvance =
-			expertType === ExpertType.SportsScientist
-				? OnboardingStep.SPORTS_SCIENTIST_BOOKING
-				: OnboardingStep.NUTRITIONIST_BOOKING;
-
-		await advanceStep(req.user.id, stepToAdvance);
+		if (expertType === ExpertType.Nutritionist) {
+			await advanceStep(req.user.id, OnboardingStep.NUTRITIONIST_BOOKING);
+		}
 
 		res.status(201).json({
 			message: `${expertType === ExpertType.SportsScientist ? "Sports scientist" : "Nutritionist"} appointment booked`,

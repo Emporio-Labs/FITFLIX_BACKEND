@@ -8,12 +8,13 @@ import { getEffectiveMealItems, sumMacros } from "./nutrition-macro.util";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // Plans are a repeating cycle of `durationDays`. Returns the 1-based day
-// number for a date, or null if the date precedes the plan start.
+// number for a date, or null if the date precedes the plan start or no start is set.
 export const computeDayNumber = (
-	startDate: Date,
+	startDate: Date | null | undefined,
 	durationDays: number,
 	date: Date,
 ): number | null => {
+	if (!startDate) return null;
 	const start = normalizeToUtcDate(startDate).getTime();
 	const target = normalizeToUtcDate(date).getTime();
 	if (target < start) {

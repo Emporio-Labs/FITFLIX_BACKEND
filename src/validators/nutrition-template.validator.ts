@@ -2,6 +2,7 @@ import z from "zod";
 import { NutritionGoal, NutritionPlanStatus } from "../models/Enums";
 import {
 	daysArraySchema,
+	goalSchema,
 	lifestyleRecommendationSchema,
 	macroTargetSchema,
 	objectIdString,
@@ -16,9 +17,7 @@ const statusValues = Object.values(NutritionPlanStatus) as [
 export const createTemplateBodySchema = z.object({
 	name: z.string().trim().min(1, "Template name is required"),
 	description: z.string().trim().max(2000).optional(),
-	goal: z.enum(goalValues, {
-		message: `Goal must be one of: ${goalValues.join(", ")}`,
-	}),
+	goal: goalSchema,
 	status: z.enum(statusValues).optional(),
 	tags: z.array(z.string().trim().min(1)).default([]),
 	targetCaloriesKcal: z.coerce

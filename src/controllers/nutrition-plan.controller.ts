@@ -51,6 +51,13 @@ const withMember = (plan: any) => {
 export const assignTemplate: RequestHandler = async (req, res, next) => {
 	const parsed = assignTemplateBodySchema.safeParse(req.body);
 	if (!parsed.success) {
+		if (process.env.NODE_ENV !== "production") {
+			console.warn("[assignTemplate] validation failed", {
+				path: req.originalUrl,
+				body: req.body,
+				issues: parsed.error.issues,
+			});
+		}
 		res.status(400).json({
 			error: "Validation failed",
 			code: "VALIDATION_ERROR",
@@ -86,6 +93,13 @@ export const assignTemplate: RequestHandler = async (req, res, next) => {
 export const createPlan: RequestHandler = async (req, res, next) => {
 	const parsed = createAdHocPlanBodySchema.safeParse(req.body);
 	if (!parsed.success) {
+		if (process.env.NODE_ENV !== "production") {
+			console.warn("[createPlan] validation failed", {
+				path: req.originalUrl,
+				body: req.body,
+				issues: parsed.error.issues,
+			});
+		}
 		res.status(400).json({
 			error: "Validation failed",
 			code: "VALIDATION_ERROR",

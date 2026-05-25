@@ -37,7 +37,7 @@ const userNutritionPlanSchema = new mongoose.Schema(
 			enum: Object.values(NutritionPlanStatus),
 			default: NutritionPlanStatus.Active,
 		},
-		startDate: { type: Date, required: true },
+		startDate: { type: Date, required: false },
 		endDate: { type: Date, default: null },
 		targetCaloriesKcal: { type: Number, default: null },
 		targetMacros: { type: macroTargetSchema, default: () => ({}) },

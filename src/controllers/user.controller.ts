@@ -10,6 +10,7 @@ import HealthGoals from "../models/HealthGoals";
 import ConsentForm from "../models/ConsentForm";
 import MedicalReport from "../models/MedicalReport";
 import { buildApiErrorEnvelope } from "../utils/api-error";
+import { generateSignedUrl } from "../utils/s3.service";
 import { hashPassword, verifyPassword } from "../utils/password";
 import {
 	createUserBodySchema,
@@ -253,6 +254,8 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 								height: 1,
 								gender: 1,
 								activityLevel: 1,
+								bmi: 1,
+								bodyFatPct: "$bodyFatPercentage",
 							},
 						},
 					],
@@ -266,7 +269,7 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					let: { uid: "$_id" },
 					pipeline: [
 						{ $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
-						{ $project: { _id: 0, goals: 1 } },
+						{ $project: { _id: 0, goals: 1, targetWeight: 1 } },
 					],
 					as: "_healthGoalsDocs",
 				},
@@ -288,12 +291,24 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					gender: 1,
 					onboardingStep: "$onboardingStatus.currentStep",
 					bookingStatus: 1,
-					// Shape healthMarkers: first element of lookup result, or empty object
+					// Shape healthMarkers: merge first lookup element with targetWeight from healthGoals
 					healthMarkers: {
-						$cond: [
-							{ $gt: [{ $size: "$_healthMarkersDocs" }, 0] },
-							{ $arrayElemAt: ["$_healthMarkersDocs", 0] },
-							{},
+						$mergeObjects: [
+							{
+								$cond: [
+									{ $gt: [{ $size: "$_healthMarkersDocs" }, 0] },
+									{ $arrayElemAt: ["$_healthMarkersDocs", 0] },
+									{},
+								],
+							},
+							{
+								targetWeight: {
+									$ifNull: [
+										{ $arrayElemAt: ["$_healthGoalsDocs.targetWeight", 0] },
+										null,
+									],
+								},
+							},
 						],
 					},
 					// Shape healthGoals: goals[] from first element, or empty array
@@ -376,7 +391,39 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		res.status(200).json({ user });
+		const [healthMarkersRaw, healthGoals, reports] = await Promise.all([
+			HealthMarkers.findOne({ userId: id }),
+			HealthGoals.findOne({ userId: id }),
+			MedicalReport.find({ userId: id }).sort({ uploadedAt: -1 }),
+		]);
+
+		let computedBmi = healthMarkersRaw?.bmi;
+		if (healthMarkersRaw && !computedBmi && healthMarkersRaw.weight && healthMarkersRaw.height) {
+			const heightInMeters = healthMarkersRaw.height / 100;
+			computedBmi = Number((healthMarkersRaw.weight / (heightInMeters * heightInMeters)).toFixed(1));
+		}
+
+		res.status(200).json({
+			success: true,
+			data: {
+				user,
+				onboarding: user.onboardingStatus ?? null,
+				healthMarkers: {
+					weight: healthMarkersRaw?.weight ? `${healthMarkersRaw.weight}kg` : null,
+					height: healthMarkersRaw?.height ? `${healthMarkersRaw.height}cm` : null,
+					age: user.age ?? null,
+					goal: healthGoals?.goals?.[0] ?? null,
+					gender: user.gender ?? null,
+					bmi: computedBmi ?? null,
+					activityLevel: healthMarkersRaw?.activityLevel ?? null,
+					targetWeight: healthGoals?.targetWeight ? `${healthGoals.targetWeight}kg` : null,
+					bodyFatPct: healthMarkersRaw?.bodyFatPercentage ?? null,
+					bodyFatPercentage: healthMarkersRaw?.bodyFatPercentage ?? null,
+				},
+				goals: healthGoals?.goals ?? [],
+				reports,
+			}
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -427,6 +474,42 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 			reports,
 			appointments,
 		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getReportSignedUrl: RequestHandler = async (req, res, next) => {
+	const userId = getIdParam(req.params.id);
+	const reportId = getIdParam(req.params.reportId);
+
+	if (!userId || !reportId) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: { id: "Invalid user id or report id" },
+		});
+		return;
+	}
+
+	try {
+		const report = await MedicalReport.findOne({ _id: reportId, userId });
+
+		if (!report) {
+			res.status(404).json({ error: "Report not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		if (!report.s3Key) {
+			res.status(404).json({
+				error: "No file is attached to this report",
+				code: "NOT_FOUND",
+			});
+			return;
+		}
+
+		const url = await generateSignedUrl(report.s3Key);
+		res.status(200).json({ url, expiresIn: 3600 });
 	} catch (error) {
 		next(error);
 	}

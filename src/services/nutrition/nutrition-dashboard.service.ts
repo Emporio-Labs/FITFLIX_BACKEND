@@ -820,7 +820,7 @@ export interface UserNutritionDashboard {
 		status: string;
 		mealsPerDay: number;
 		durationDays: number;
-		startDate: Date;
+		startDate?: Date;
 		assignedByNutritionist?: string;
 	};
 	macroTargets: {
@@ -1185,7 +1185,7 @@ export const getUserNutritionDashboard = async (
 					status: activePlan.status,
 					mealsPerDay: plannedMeals.length,
 					durationDays: activePlan.durationDays || 7,
-					startDate: activePlan.startDate,
+					startDate: activePlan.startDate ?? undefined,
 					assignedByNutritionist: activePlan.nutritionistId
 						? activePlan.nutritionistId.toString()
 						: undefined,

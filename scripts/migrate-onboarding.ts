@@ -12,7 +12,7 @@ const ALL_STEPS = [
 	OnboardingStep.HEALTH_GOALS,
 	OnboardingStep.CONSENT,
 	OnboardingStep.REPORT_UPLOAD,
-	OnboardingStep.SPORTS_SCIENTIST_BOOKING,
+	// OnboardingStep.SPORTS_SCIENTIST_BOOKING, // Removed
 	OnboardingStep.NUTRITIONIST_BOOKING,
 	OnboardingStep.COMPLETED,
 ];

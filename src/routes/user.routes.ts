@@ -9,6 +9,7 @@ import {
 	getMyUserReports,
 	getUserById,
 	getOnboardingProfile,
+	getReportSignedUrl,
 	onboardUser,
 	updateMyPassword,
 	updateUserById,
@@ -28,6 +29,7 @@ userRouter.get("/me/reports/:id/pdf", authorize(["user"]), getMyUserReportPdf);
 userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
 userRouter.get("/:id", authorize(["admin", "doctor"]), getUserById);
 userRouter.get("/:id/onboarding-profile", authorize(["admin", "doctor"]), getOnboardingProfile);
+userRouter.get("/:id/reports/:reportId/url", authorize(["admin", "doctor"]), getReportSignedUrl);
 userRouter.patch("/:id/onboard", authorize(["admin", "user"]), onboardUser);
 userRouter.patch("/:id", authorize(["admin", "user"]), updateUserById);
 userRouter.delete("/:id", authorize(["admin"]), deleteUserById);

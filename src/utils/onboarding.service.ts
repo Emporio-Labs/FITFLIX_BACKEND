@@ -24,7 +24,6 @@ const STEP_ORDER: OnboardingStep[] = [
 	OnboardingStep.HEALTH_GOALS,
 	OnboardingStep.CONSENT,
 	OnboardingStep.REPORT_UPLOAD,
-	OnboardingStep.SPORTS_SCIENTIST_BOOKING,
 	OnboardingStep.NUTRITIONIST_BOOKING,
 	OnboardingStep.COMPLETED,
 ];
@@ -34,7 +33,6 @@ const STEP_FLAG_MAP: Record<string, string> = {
 	[OnboardingStep.HEALTH_GOALS]: "healthGoalsCompleted",
 	[OnboardingStep.CONSENT]: "consentCompleted",
 	[OnboardingStep.REPORT_UPLOAD]: "reportsUploaded",
-	[OnboardingStep.SPORTS_SCIENTIST_BOOKING]: "sportsScientistBooked",
 	[OnboardingStep.NUTRITIONIST_BOOKING]: "nutritionistBooked",
 };
 
@@ -174,31 +172,34 @@ export const cancelExpertAppointment = async (
 		);
 	}
 
-	const stepToRewind =
-		expertType === ExpertType.SportsScientist
-			? OnboardingStep.SPORTS_SCIENTIST_BOOKING
-			: OnboardingStep.NUTRITIONIST_BOOKING;
-	const flagField = STEP_FLAG_MAP[stepToRewind];
-
-	const setFields: Record<string, unknown> = {
-		"onboardingStatus.currentStep": stepToRewind,
-		"onboardingStatus.onboardingCompleted": false,
-		onboarded: false,
-	};
-
-	if (flagField) {
-		setFields[`onboardingStatus.${flagField}`] = false;
+	let stepToRewind: OnboardingStep | undefined;
+	if (expertType === ExpertType.Nutritionist) {
+		stepToRewind = OnboardingStep.NUTRITIONIST_BOOKING;
 	}
 
-	await User.findByIdAndUpdate(userObjectId, {
-		$set: setFields,
-		$unset: { "onboardingStatus.completedAt": "" },
-		$pull: {
-			"onboardingStatus.completedSteps": {
-				$in: [stepToRewind, OnboardingStep.COMPLETED],
+	if (stepToRewind) {
+		const flagField = STEP_FLAG_MAP[stepToRewind];
+
+		const setFields: Record<string, unknown> = {
+			"onboardingStatus.currentStep": stepToRewind,
+			"onboardingStatus.onboardingCompleted": false,
+			onboarded: false,
+		};
+
+		if (flagField) {
+			setFields[`onboardingStatus.${flagField}`] = false;
+		}
+
+		await User.findByIdAndUpdate(userObjectId, {
+			$set: setFields,
+			$unset: { "onboardingStatus.completedAt": "" },
+			$pull: {
+				"onboardingStatus.completedSteps": {
+					$in: [stepToRewind, OnboardingStep.COMPLETED],
+				},
 			},
-		},
-	});
+		});
+	}
 
 	return getOnboardingStatus(userId);
 };
