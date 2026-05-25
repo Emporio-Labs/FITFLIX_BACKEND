@@ -170,7 +170,6 @@ Register a new end-user account. Returns a `userId`; the client must call `/auth
 | `age` | number | yes | 0–130 |
 | `gender` | Gender | yes | `Male` \| `Female` \| `Others` or numeric (0–2) |
 | `password` | string | yes | min 8, must contain letter + number |
-| `healthGoals` | string[] | no | default `[]` |
 
 **Example request**
 
@@ -183,8 +182,7 @@ curl -X POST "https://api.example.com/auth/signup" \
     "email": "user@example.com",
     "age": 29,
     "gender": "Female",
-    "password": "Sup3rSecret!",
-    "healthGoals": ["weight loss", "better sleep"]
+    "password": "Sup3rSecret!"
   }'
 ```
 
@@ -198,7 +196,6 @@ const { data } = await axios.post("https://api.example.com/auth/signup", {
   age: 29,
   gender: "Female",
   password: "Sup3rSecret!",
-  healthGoals: ["weight loss", "better sleep"],
 });
 ```
 
@@ -423,7 +420,6 @@ Create a user (admin-managed). Use `/auth/signup` for self-service signup.
 | Field | Type | Required | Constraints |
 |---|---|---|---|
 | `username`, `phone`, `email`, `password`, `age`, `gender` | — | yes | Same as `/auth/signup` |
-| `healthGoals` | string[] | no | default `[]` |
 | `dateOfBirth` | string/Date | no | ISO date |
 | `emergencyContact` | string | no | |
 | `address` | string | no | |
@@ -2253,7 +2249,6 @@ Convert a lead into a `User`. If a user with that email already exists, the exis
 | `phone` | string | yes | |
 | `age` | string | yes | numeric string |
 | `gender` | enum | yes | `M` \| `F` \| `Other` \| `PreferNotToSay` |
-| `healthGoals` | string[] | no | |
 | `password` | string | yes | |
 
 ```bash

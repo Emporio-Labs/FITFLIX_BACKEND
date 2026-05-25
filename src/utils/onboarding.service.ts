@@ -24,6 +24,7 @@ const STEP_ORDER: OnboardingStep[] = [
 	OnboardingStep.HEALTH_GOALS,
 	OnboardingStep.CONSENT,
 	OnboardingStep.REPORT_UPLOAD,
+	OnboardingStep.SPORTS_SCIENTIST_BOOKING,
 	OnboardingStep.NUTRITIONIST_BOOKING,
 	OnboardingStep.COMPLETED,
 ];
@@ -33,6 +34,7 @@ const STEP_FLAG_MAP: Record<string, string> = {
 	[OnboardingStep.HEALTH_GOALS]: "healthGoalsCompleted",
 	[OnboardingStep.CONSENT]: "consentCompleted",
 	[OnboardingStep.REPORT_UPLOAD]: "reportsUploaded",
+	[OnboardingStep.SPORTS_SCIENTIST_BOOKING]: "sportsScientistBooked",
 	[OnboardingStep.NUTRITIONIST_BOOKING]: "nutritionistBooked",
 };
 
@@ -172,9 +174,22 @@ export const cancelExpertAppointment = async (
 		);
 	}
 
+	// Determine which step to rewind to and which subsequent steps to remove
 	let stepToRewind: OnboardingStep | undefined;
-	if (expertType === ExpertType.Nutritionist) {
+	let stepsToRemove: OnboardingStep[];
+
+	if (expertType === ExpertType.SportsScientist) {
+		stepToRewind = OnboardingStep.SPORTS_SCIENTIST_BOOKING;
+		stepsToRemove = [
+			OnboardingStep.SPORTS_SCIENTIST_BOOKING,
+			OnboardingStep.NUTRITIONIST_BOOKING,
+			OnboardingStep.COMPLETED,
+		];
+	} else if (expertType === ExpertType.Nutritionist) {
 		stepToRewind = OnboardingStep.NUTRITIONIST_BOOKING;
+		stepsToRemove = [OnboardingStep.NUTRITIONIST_BOOKING, OnboardingStep.COMPLETED];
+	} else {
+		stepsToRemove = [];
 	}
 
 	if (stepToRewind) {
@@ -190,12 +205,18 @@ export const cancelExpertAppointment = async (
 			setFields[`onboardingStatus.${flagField}`] = false;
 		}
 
+		// When rewinding sports scientist, also clear nutritionist flag
+		if (expertType === ExpertType.SportsScientist) {
+			setFields["onboardingStatus.sportsScientistBooked"] = false;
+			setFields["onboardingStatus.nutritionistBooked"] = false;
+		}
+
 		await User.findByIdAndUpdate(userObjectId, {
 			$set: setFields,
 			$unset: { "onboardingStatus.completedAt": "" },
 			$pull: {
 				"onboardingStatus.completedSteps": {
-					$in: [stepToRewind, OnboardingStep.COMPLETED],
+					$in: stepsToRemove,
 				},
 			},
 		});

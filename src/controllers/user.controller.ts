@@ -289,7 +289,11 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					phone: 1,
 					age: 1,
 					gender: 1,
-					onboardingStep: "$onboardingStatus.currentStep",
+					onboardingStatus: {
+						currentStep: "$onboardingStatus.currentStep",
+						completedSteps: { $ifNull: ["$onboardingStatus.completedSteps", []] },
+						isCompleted: { $ifNull: ["$onboardingStatus.onboardingCompleted", false] },
+					},
 					bookingStatus: 1,
 					// Shape healthMarkers: merge first lookup element with targetWeight from healthGoals
 					healthMarkers: {
@@ -372,6 +376,9 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 	const id = getIdParam(req.params.id);
 
 	if (!id) {
+		if (process.env.NODE_ENV !== "production") {
+			console.warn("[getUserById] invalid id", { raw: req.params.id, role: req.user?.role, requestingUser: req.user?.id });
+		}
 		res.status(400).json({
 			error: "Validation failed",
 			code: "VALIDATION_ERROR",
@@ -384,6 +391,9 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 		const user = await User.findById(id);
 
 		if (!user) {
+			if (process.env.NODE_ENV !== "production") {
+				console.warn("[getUserById] user not found", { id, role: req.user?.role, requestingUser: req.user?.id });
+			}
 			res.status(404).json({
 				error: "User not found",
 				code: "NOT_FOUND",
@@ -466,8 +476,16 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 				),
 			]);
 
+		const status = user.onboardingStatus;
+		const onboardingStatus = {
+			currentStep: status?.currentStep ?? "HEALTH_MARKERS",
+			completedSteps: status?.completedSteps ?? [],
+			isCompleted: Boolean(status?.onboardingCompleted),
+		};
+
 		res.status(200).json({
 			user,
+			onboardingStatus,
 			healthMarkers: healthMarkers ?? null,
 			healthGoals: healthGoals ?? null,
 			consents: consent?.consents ?? [],

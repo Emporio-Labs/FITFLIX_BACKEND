@@ -98,7 +98,7 @@ export const signup: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { username, phone, email, age, gender, healthGoals, password } =
+	const { username, phone, email, age, gender, password } =
 		parsedBody.data;
 
 	try {
@@ -117,7 +117,6 @@ export const signup: RequestHandler = async (req, res, next) => {
 			email,
 			age,
 			gender,
-			healthGoals,
 			onboarded: false,
 			passwordHash,
 		});

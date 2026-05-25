@@ -10,6 +10,7 @@ import {
 import ExpertAppointment from "../../models/ExpertAppointment";
 import HealthGoals from "../../models/HealthGoals";
 import HealthMarkers from "../../models/HealthMarkers";
+import NutritionistBooking from "../../models/NutritionistBooking";
 import NutritionProfile from "../../models/nutrition-profile.model";
 import NutritionHydrationLog from "../../models/nutrition-hydration.model";
 import UserNutritionPlan from "../../models/nutrition-plan.model";
@@ -271,7 +272,7 @@ export const getDashboardMembers = async (options: {
 				},
 			},
 		},
-		// ── HealthMarkers lookup (lightweight, projected to needed fields only) ──
+		// ── HealthMarkers lookup ───────────────────────────────────────────────
 		{
 			$lookup: {
 				from: "healthmarkers",
@@ -283,7 +284,7 @@ export const getDashboardMembers = async (options: {
 							_id: 0,
 							weight: 1,
 							height: 1,
-							gender: 1,
+							bmi: 1,
 							activityLevel: 1,
 						},
 					},
@@ -291,14 +292,14 @@ export const getDashboardMembers = async (options: {
 				as: "_healthMarkersDocs",
 			},
 		},
-		// ── HealthGoals lookup (goals[] only) ──────────────────────────────────
+		// ── HealthGoals lookup ─────────────────────────────────────────────────
 		{
 			$lookup: {
 				from: "healthgoals",
 				let: { uid: "$_id" },
 				pipeline: [
 					{ $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
-					{ $project: { _id: 0, goals: 1 } },
+					{ $project: { _id: 0, goals: 1, targetWeight: 1 } },
 				],
 				as: "_healthGoalsDocs",
 			},
@@ -347,7 +348,11 @@ export const getDashboardMembers = async (options: {
 				phone: 1,
 				age: 1,
 				gender: 1,
-				onboardingStep: "$onboardingStatus.currentStep",
+				onboardingStatus: {
+					currentStep: "$onboardingStatus.currentStep",
+					completedSteps: { $ifNull: ["$onboardingStatus.completedSteps", []] },
+					isCompleted: { $ifNull: ["$onboardingStatus.onboardingCompleted", false] },
+				},
 				nutritionBookingStatus: 1,
 				nutritionStatus: 1,
 				nutritionProfile: 1,
@@ -367,7 +372,19 @@ export const getDashboardMembers = async (options: {
 				healthMarkers: {
 					$cond: [
 						{ $gt: [{ $size: "$_healthMarkersDocs" }, 0] },
-						{ $arrayElemAt: ["$_healthMarkersDocs", 0] },
+						{
+							$mergeObjects: [
+								{ $arrayElemAt: ["$_healthMarkersDocs", 0] },
+								{
+									targetWeight: {
+										$ifNull: [
+											{ $arrayElemAt: ["$_healthGoalsDocs.targetWeight", 0] },
+											null,
+										],
+									},
+								},
+							],
+						},
 						{},
 					],
 				},
@@ -598,7 +615,7 @@ const resolveNutritionTargets = (
 	// age from User document (stored on User.age), fallback to undefined
 	const age: number | undefined =
 		typeof user?.age === "number" && user.age > 0 ? user.age : undefined;
-	// gender: User.gender is a string enum "Male"/"Female"/"Others"
+	// gender: User.gender is a string enum "Male"/"Female"/"Other"
 	const gender: string | undefined =
 		typeof user?.gender === "string" ? user.gender : undefined;
 
@@ -809,10 +826,42 @@ export interface UserNutritionDashboard {
 		healthMarkers: {
 			weight?: number;
 			height?: number;
+			bmi?: number;
 			gender?: string;
 			activityLevel?: string;
+			targetWeight?: number;
+			allergies?: string[];
+			medications?: string[];
+			diseaseHistory?: string[];
+			sleepHours?: number;
+			bodyFatPercentage?: number;
 		};
 	};
+	onboardingProgress: {
+		currentStep: string;
+		completedSteps: string[];
+		isCompleted: boolean;
+		healthMarkersCompleted: boolean;
+		healthGoalsCompleted: boolean;
+		consentCompleted: boolean;
+		reportsUploaded: boolean;
+		sportsScientistBooked: boolean;
+		nutritionistBooked: boolean;
+		startedAt?: Date;
+		completedAt?: Date;
+	};
+	bookingDetails: {
+		_id: string;
+		bookingStatus: string;
+		appointmentMode: string;
+		date?: Date;
+		startTime?: string;
+		endTime?: string;
+		meetingLink?: string;
+		calBookingId?: string;
+		nutritionistApprovalStatus: string;
+		acceptedAt?: Date;
+	} | null;
 	assignedPlan?: {
 		_id: string;
 		name: string;
@@ -924,15 +973,16 @@ export const getUserNutritionDashboard = async (
 		activePlan,
 		todayMealLogs,
 		todayHydration,
+		nutritionistBooking,
 	] = await Promise.all([
 		User.findById(userId)
-			.select("_id username email phone age gender healthGoals")
+			.select("_id username email phone age gender healthGoals onboardingStatus onboarded")
 			.lean(),
 		HealthMarkers.findOne({ userId })
-			.select("weight height bmi activityLevel")
+			.select("weight height bmi activityLevel allergies medications diseaseHistory sleepHours bodyFatPercentage")
 			.lean(),
 		HealthGoals.findOne({ userId })
-			.select("goals")
+			.select("goals targetWeight timeline workoutExperience foodPreferences")
 			.lean(),
 		NutritionProfile.findOne({ userId })
 			.select(
@@ -958,6 +1008,10 @@ export const getUserNutritionDashboard = async (
 			logDate: todayStart,
 		})
 			.select("totalMl goalMl")
+			.lean(),
+		NutritionistBooking.findOne({ user: userId })
+			.select("bookingStatus date startTime endTime appointmentMode meetingLink calBookingId nutritionistApprovalStatus acceptedAt createdAt")
+			.sort({ createdAt: -1 })
 			.lean(),
 	]);
 
@@ -1150,6 +1204,38 @@ export const getUserNutritionDashboard = async (
 		}
 	}
 
+	// ── Onboarding progress ─────────────────────────────────────────────────
+	const obs = (user as any).onboardingStatus;
+	const onboardingProgress = {
+		currentStep: obs?.currentStep ?? "HEALTH_MARKERS",
+		completedSteps: Array.isArray(obs?.completedSteps) ? obs.completedSteps : [],
+		isCompleted: obs?.onboardingCompleted ?? false,
+		healthMarkersCompleted: obs?.healthMarkersCompleted ?? false,
+		healthGoalsCompleted: obs?.healthGoalsCompleted ?? false,
+		consentCompleted: obs?.consentCompleted ?? false,
+		reportsUploaded: obs?.reportsUploaded ?? false,
+		sportsScientistBooked: obs?.sportsScientistBooked ?? false,
+		nutritionistBooked: obs?.nutritionistBooked ?? false,
+		startedAt: obs?.startedAt,
+		completedAt: obs?.completedAt,
+	};
+
+	// ── Booking details ──────────────────────────────────────────────────────
+	const bookingDetails = nutritionistBooking
+		? {
+				_id: (nutritionistBooking as any)._id.toString(),
+				bookingStatus: (nutritionistBooking as any).bookingStatus,
+				appointmentMode: (nutritionistBooking as any).appointmentMode,
+				date: (nutritionistBooking as any).date ?? undefined,
+				startTime: (nutritionistBooking as any).startTime ?? undefined,
+				endTime: (nutritionistBooking as any).endTime ?? undefined,
+				meetingLink: (nutritionistBooking as any).meetingLink ?? undefined,
+				calBookingId: (nutritionistBooking as any).calBookingId ?? undefined,
+				nutritionistApprovalStatus: (nutritionistBooking as any).nutritionistApprovalStatus,
+				acceptedAt: (nutritionistBooking as any).acceptedAt ?? undefined,
+			}
+		: null;
+
 	// ── Assemble response ───────────────────────────────────────────────────
 	return {
 		user: {
@@ -1173,10 +1259,19 @@ export const getUserNutritionDashboard = async (
 			healthMarkers: {
 				weight: healthMarkers?.weight,
 				height: healthMarkers?.height,
+				bmi: healthMarkers?.bmi ?? undefined,
 				gender: healthMarkers ? String(user.gender ?? "") : undefined,
 				activityLevel: healthMarkers?.activityLevel as string | undefined,
+				targetWeight: healthGoals?.targetWeight ?? undefined,
+				allergies: healthMarkers?.allergies,
+				medications: healthMarkers?.medications,
+				diseaseHistory: healthMarkers?.diseaseHistory,
+				sleepHours: healthMarkers?.sleepHours ?? undefined,
+				bodyFatPercentage: (healthMarkers as any)?.bodyFatPercentage ?? undefined,
 			},
 		},
+		onboardingProgress,
+		bookingDetails,
 		assignedPlan: activePlan
 			? {
 					_id: activePlan._id.toString(),

@@ -16,6 +16,18 @@ import {
 	progressListQuerySchema,
 } from "../validators/nutrition-progress.validator";
 
+const serializeProgress = (entry: any) => {
+	if (!entry) return entry;
+	const obj = typeof entry.toObject === "function" ? entry.toObject() : { ...entry };
+	const { recordedAt, weightKg, note, ...rest } = obj;
+	return {
+		...rest,
+		date: recordedAt,
+		weight: weightKg,
+		notes: note,
+	};
+};
+
 export const addMyProgress: RequestHandler = async (req, res, next) => {
 	const parsed = progressBodySchema.safeParse(req.body);
 	if (!parsed.success) {
@@ -33,7 +45,7 @@ export const addMyProgress: RequestHandler = async (req, res, next) => {
 			req.user!.id,
 			ProgressRecordedBy.User,
 		);
-		res.status(201).json({ message: "Progress recorded", entry });
+		res.status(201).json({ message: "Progress recorded", entry: serializeProgress(entry) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}
@@ -52,7 +64,7 @@ export const listMyProgress: RequestHandler = async (req, res, next) => {
 
 	try {
 		const entries = await listProgress(req.user!.id, parsed.data);
-		res.status(200).json({ entries });
+		res.status(200).json({ entries: entries.map(serializeProgress) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}
@@ -62,7 +74,7 @@ export const listPlanProgress: RequestHandler = async (req, res, next) => {
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
 		const entries = await getPlanProgress(planId, req.user!);
-		res.status(200).json({ entries });
+		res.status(200).json({ entries: entries.map(serializeProgress) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}
@@ -86,7 +98,7 @@ export const addPlanProgressEntry: RequestHandler = async (
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
 		const entry = await addPlanProgress(planId, parsed.data, req.user!);
-		res.status(201).json({ message: "Progress recorded", entry });
+		res.status(201).json({ message: "Progress recorded", entry: serializeProgress(entry) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}

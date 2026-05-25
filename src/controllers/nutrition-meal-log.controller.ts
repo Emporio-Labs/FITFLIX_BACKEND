@@ -39,7 +39,7 @@ export const createMealLog: RequestHandler = async (req, res, next) => {
 			},
 			req.user!.id,
 		);
-		res.status(201).json({ message: "Meal logged", log });
+		res.status(201).json({ message: "Meal logged", mealLog: log });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}
@@ -66,7 +66,7 @@ export const completePlanMeal: RequestHandler = async (req, res, next) => {
 			parsed.data.date,
 			parsed.data.completedOptionId ?? null,
 		);
-		res.status(200).json({ message: "Meal marked completed", log });
+		res.status(200).json({ message: "Meal marked completed", mealLog: log });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}
@@ -112,7 +112,7 @@ export const patchMealLog: RequestHandler = async (req, res, next) => {
 			},
 			req.user!.id,
 		);
-		res.status(200).json({ message: "Meal log updated", log });
+		res.status(200).json({ message: "Meal log updated", mealLog: log });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}

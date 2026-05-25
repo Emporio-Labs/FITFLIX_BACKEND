@@ -406,7 +406,7 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const { username, phone, age, gender, healthGoals, password } =
+		const { username, phone, age, gender, password } =
 			parsedBody.data;
 		const passwordHash = await hashPassword(password);
 
@@ -416,7 +416,6 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			email: lead.email,
 			age: typeof age === "string" ? Number(age) : age,
 			gender,
-			healthGoals,
 			passwordHash,
 		});
 

@@ -45,6 +45,9 @@ export const userDashboard: RequestHandler = async (req, res, next) => {
 
 	// Validate userId format
 	if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+		if (process.env.NODE_ENV !== "production") {
+			console.warn("[userDashboard] invalid userId", { raw: rawUserId, role: req.user?.role, requestingUser: req.user?.id });
+		}
 		res.status(400).json({
 			error: "Validation failed",
 			code: "VALIDATION_ERROR",
@@ -58,6 +61,9 @@ export const userDashboard: RequestHandler = async (req, res, next) => {
 		res.status(200).json(dashboard);
 	} catch (error: any) {
 		if (error.message === "User not found") {
+			if (process.env.NODE_ENV !== "production") {
+				console.warn("[userDashboard] user not found", { userId, role: req.user?.role, requestingUser: req.user?.id });
+			}
 			res.status(404).json({
 				error: "User not found",
 				code: "NOT_FOUND",

@@ -384,12 +384,12 @@ const submitAppointmentInternal = async (
 	try {
 		const { expertType, ...appointmentData } = parsedBody.data;
 
-		if (expertType === ExpertType.Nutritionist) {
-			await validateStepAllowed(
-				req.user.id,
-				OnboardingStep.NUTRITIONIST_BOOKING,
-			);
-		}
+		const requiredStep =
+			expertType === ExpertType.SportsScientist
+				? OnboardingStep.SPORTS_SCIENTIST_BOOKING
+				: OnboardingStep.NUTRITIONIST_BOOKING;
+
+		await validateStepAllowed(req.user.id, requiredStep);
 
 		const userObjectId = new mongoose.Types.ObjectId(req.user.id);
 
@@ -402,9 +402,7 @@ const submitAppointmentInternal = async (
 			{ upsert: true, returnDocument: "after", runValidators: true },
 		);
 
-		if (expertType === ExpertType.Nutritionist) {
-			await advanceStep(req.user.id, OnboardingStep.NUTRITIONIST_BOOKING);
-		}
+		await advanceStep(req.user.id, requiredStep);
 
 		res.status(201).json({
 			message: `${expertType === ExpertType.SportsScientist ? "Sports scientist" : "Nutritionist"} appointment booked`,
