@@ -619,8 +619,7 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 	try {
 		const session = await mongoose.startSession();
 		try {
-			let response: { status: number; body: Record<string, unknown> } | null =
-				null;
+			let response: any = null;
 
 			await session.withTransaction(async () => {
 				const existingBooking = await Booking.findById(id).session(session);
@@ -716,8 +715,7 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 		if (isCancelledBookingStatus(parsedBody.data.status)) {
 			const session = await mongoose.startSession();
 			try {
-				let response: { status: number; body: Record<string, unknown> } | null =
-					null;
+				let response: any = null;
 
 				await session.withTransaction(async () => {
 					const transitionedBooking = await Booking.findOneAndUpdate(

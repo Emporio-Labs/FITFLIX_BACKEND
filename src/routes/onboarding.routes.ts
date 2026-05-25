@@ -13,7 +13,7 @@ import {
 	submitSportsScientistAppointment,
 } from "../controllers/onboarding.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
-import { uploadMiddleware } from "../middleware/upload.middleware";
+import { uploadMiddleware, uploadRateLimiter } from "../middleware/upload.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const onboardingRouter = Router();
@@ -26,6 +26,7 @@ onboardingRouter.post("/consent", authorize(["user"]), submitConsent);
 onboardingRouter.post(
 	"/reports",
 	authorize(["user"]),
+	uploadRateLimiter,
 	uploadMiddleware.single("file"),
 	submitReport,
 );

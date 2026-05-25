@@ -15,7 +15,9 @@ import {
 	OnboardingServiceError,
 	validateStepAllowed,
 } from "../utils/onboarding.service";
-import { generateSignedUrl, uploadToS3 } from "../utils/s3.service";
+import { promises as fs } from "fs";
+import { deleteFromS3, generateSignedUrl, uploadStreamToS3 } from "../utils/s3.service";
+import { validateFileSignature } from "../middleware/upload.middleware";
 import {
 	appointmentBodySchema,
 	consentBodySchema,
@@ -278,7 +280,7 @@ export const submitReport = async (
 ) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
-			error: "Only users can access this endpoint",
+			error: "Access Denied",
 			code: "FORBIDDEN",
 		});
 		return;
@@ -295,6 +297,11 @@ export const submitReport = async (
 		return;
 	}
 
+	let s3Key: string | undefined;
+	let mimeType: string | undefined;
+	let fileSize: number | undefined;
+	let wasUploadedToS3 = false;
+
 	try {
 		const status = await getOnboardingStatus(req.user.id);
 
@@ -305,48 +312,83 @@ export const submitReport = async (
 			await validateStepAllowed(req.user.id, OnboardingStep.REPORT_UPLOAD);
 		}
 
-		let s3Key: string | undefined;
-		let mimeType: string | undefined;
-		let fileSize: number | undefined;
-
 		if (req.file) {
-			const ext = req.file.originalname.split(".").pop() ?? "bin";
-			const key = `medical-reports/${req.user.id}/${Date.now()}-${new mongoose.Types.ObjectId().toString()}.${ext}`;
-			const result = await uploadToS3(key, req.file.buffer, req.file.mimetype);
-			s3Key = result.s3Key;
+			const filePath = req.file.path;
 			mimeType = req.file.mimetype;
 			fileSize = req.file.size;
+
+			// Validate file content signature (magic numbers) on disk
+			const isValidSignature = await validateFileSignature(filePath, mimeType);
+			if (!isValidSignature) {
+				console.error(`[SECURITY] File signature validation failed for user ${req.user.id}. File path: ${filePath}, Expected: ${mimeType}`);
+				res.status(400).json({
+					error: "Invalid file contents",
+					code: "VALIDATION_ERROR",
+				});
+				return;
+			}
+
+			const ext = req.file.originalname.split(".").pop() ?? "bin";
+			const key = `medical-reports/${req.user.id}/${Date.now()}-${new mongoose.Types.ObjectId().toString()}.${ext}`;
+			
+			// Stream file directly to S3
+			const result = await uploadStreamToS3(key, filePath, mimeType, fileSize);
+			s3Key = result.s3Key;
+			wasUploadedToS3 = true;
 		}
 
-		// Strip direct S3 bucket URL if passed in body
-		let reportUrl = parsedBody.data.reportUrl;
-		if (
-			reportUrl &&
-			(reportUrl.includes(".amazonaws.com") ||
-				reportUrl.includes("fitflix-storage"))
-		) {
-			reportUrl = undefined;
-		}
+		// Save record in MongoDB, clean up S3 on failure
+		let report;
+		try {
+			let reportUrl = parsedBody.data.reportUrl;
+			if (
+				reportUrl &&
+				(reportUrl.includes(".amazonaws.com") ||
+					reportUrl.includes("fitflix-storage"))
+			) {
+				reportUrl = undefined;
+			}
 
-		const report = new MedicalReport({
-			userId: req.user.id,
-			reportName: parsedBody.data.reportName,
-			reportType: parsedBody.data.reportType,
-			reportUrl,
-			s3Key,
-			mimeType,
-			fileSize,
-		});
-		await report.save();
+			report = new MedicalReport({
+				userId: req.user.id,
+				reportName: parsedBody.data.reportName,
+				reportType: parsedBody.data.reportType,
+				reportUrl,
+				s3Key,
+				mimeType,
+				fileSize,
+			});
+			await report.save();
+		} catch (dbError) {
+			console.error(`[DATABASE_ERROR] MongoDB save failed for user ${req.user.id}:`, dbError);
+			if (s3Key && wasUploadedToS3) {
+				try {
+					await deleteFromS3(s3Key);
+					console.log(`[CLEANUP] Successfully removed orphaned S3 object: ${s3Key}`);
+				} catch (s3Error) {
+					console.error(`[CLEANUP_ERROR] Failed to delete orphaned S3 object ${s3Key}:`, s3Error);
+				}
+			}
+			res.status(500).json({
+				error: "Failed to store report record",
+				code: "INTERNAL_ERROR",
+			});
+			return;
+		}
 
 		if (!status.completedSteps.includes(OnboardingStep.REPORT_UPLOAD)) {
 			await advanceStep(req.user.id, OnboardingStep.REPORT_UPLOAD);
 		}
 
-		// Generate a short-lived presigned URL for the response payload
+		// Generate a short-lived presigned URL for the response payload safely
 		const reportObj = report.toObject();
 		if (s3Key) {
-			reportObj.reportUrl = await generateSignedUrl(s3Key, 900, mimeType);
+			try {
+				reportObj.reportUrl = await generateSignedUrl(s3Key, 900, mimeType);
+			} catch (s3SignError) {
+				console.error(`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${s3Key}:`, s3SignError);
+				reportObj.reportUrl = undefined; // Proceed without crashing the response
+			}
 		}
 
 		res.status(201).json({
@@ -354,7 +396,20 @@ export const submitReport = async (
 			report: reportObj,
 		});
 	} catch (error) {
-		handleServiceError(error, res, next);
+		console.error(`[UPLOAD_FAILED] Failed file ingestion for user ${req.user?.id}:`, error);
+		res.status(500).json({
+			error: "An error occurred during report ingestion",
+			code: "INTERNAL_ERROR",
+		});
+	} finally {
+		// Rule 2: Wrap fs.promises.unlink tightly in a finally block so local storage never leaks
+		if (req.file && req.file.path) {
+			try {
+				await fs.unlink(req.file.path);
+			} catch (unlinkError) {
+				console.error(`[CLEANUP_ERROR] Failed to unlink temp file at ${req.file.path}:`, unlinkError);
+			}
+		}
 	}
 };
 

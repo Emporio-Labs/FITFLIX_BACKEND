@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import { CreditTransactionSource } from "../models/Enums";
 import {
 	addCreditsToMembership,
 	CreditServiceError,
@@ -68,7 +69,7 @@ export const getMyCreditHistory: RequestHandler = async (req, res, next) => {
 		const history = await getUserCreditHistory({
 			userId: req.user.id,
 			limit: parsedQuery.data.limit,
-			sourceType: parsedQuery.data.sourceType,
+			sourceType: parsedQuery.data.sourceType as CreditTransactionSource,
 		});
 		res.status(200).json(history);
 	} catch (error) {
@@ -119,7 +120,7 @@ export const getUserCreditHistoryById: RequestHandler = async (
 		const history = await getUserCreditHistory({
 			userId,
 			limit: parsedQuery.data.limit,
-			sourceType: parsedQuery.data.sourceType,
+			sourceType: parsedQuery.data.sourceType as CreditTransactionSource,
 		});
 		res.status(200).json(history);
 	} catch (error) {

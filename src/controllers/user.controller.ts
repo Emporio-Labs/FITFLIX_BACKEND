@@ -36,7 +36,7 @@ const canUpdateUser = (
 };
 
 const getValidationDetails = (
-	issues: Array<{ path: Array<string | number>; message: string }>,
+	issues: Array<{ path: PropertyKey[]; message: string }>,
 ) => {
 	const details: Record<string, string> = {};
 
@@ -309,7 +309,12 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 					r.reportUrl = undefined;
 				}
 				if (r.s3Key) {
-					r.reportUrl = await generateSignedUrl(r.s3Key, 900, r.mimeType);
+					try {
+						r.reportUrl = await generateSignedUrl(r.s3Key, 900, r.mimeType);
+					} catch (err) {
+						console.error(`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${r.s3Key} in getOnboardingProfile:`, err);
+						r.reportUrl = undefined;
+					}
 				}
 				return r;
 			}),
@@ -605,11 +610,16 @@ export const getMyUserReports: RequestHandler = async (req, res, next) => {
 				const reportId = report._id.toString();
 				let reportUrl: string | undefined;
 				if (report.s3Key) {
-					reportUrl = await generateSignedUrl(
-						report.s3Key,
-						900,
-						report.mimeType,
-					);
+					try {
+						reportUrl = await generateSignedUrl(
+							report.s3Key,
+							900,
+							report.mimeType,
+						);
+					} catch (err) {
+						console.error(`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${report.s3Key} in getMyUserReports:`, err);
+						reportUrl = undefined;
+					}
 				}
 
 				return {
@@ -664,7 +674,12 @@ export const getMyMedicalReports: RequestHandler = async (req, res, next) => {
 					r.reportUrl = undefined;
 				}
 				if (r.s3Key) {
-					r.reportUrl = await generateSignedUrl(r.s3Key, 900, r.mimeType);
+					try {
+						r.reportUrl = await generateSignedUrl(r.s3Key, 900, r.mimeType);
+					} catch (err) {
+						console.error(`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${r.s3Key} in getMyMedicalReports:`, err);
+						r.reportUrl = undefined;
+					}
 				}
 				return r;
 			}),
@@ -780,8 +795,16 @@ export const getReportSignedUrl: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const url = await generateSignedUrl(report.s3Key, 900, report.mimeType);
-		res.status(200).json({ url, expiresIn: 900 });
+		try {
+			const url = await generateSignedUrl(report.s3Key, 900, report.mimeType);
+			res.status(200).json({ url, expiresIn: 900 });
+		} catch (signError) {
+			console.error(`[S3_SIGNING_ERROR] Failed to generate signed URL for report ${reportId}:`, signError);
+			res.status(500).json({
+				error: "Failed to generate signed URL",
+				code: "INTERNAL_ERROR",
+			});
+		}
 	} catch (error) {
 		next(error);
 	}
