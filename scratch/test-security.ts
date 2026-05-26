@@ -6,7 +6,7 @@ import mongoose from "mongoose";
 import Admin from "../src/models/Admin";
 import MedicalReport from "../src/models/MedicalReport";
 
-const PORT = 3009;
+const PORT = 3000;
 const BASE_URL = `http://localhost:${PORT}`;
 
 async function runTests() {
