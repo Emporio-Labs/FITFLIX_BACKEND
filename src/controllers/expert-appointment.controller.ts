@@ -16,13 +16,13 @@ import { fanOutToAdmin, notify } from "../services/notification.service";
 import { cancelReminders, scheduleReminders } from "../services/reminder.service";
 import { emitToFrontDesk, emitToUser } from "../services/realtime.service";
 import {
-	CalcomError,
-	CalcomSlotUnavailableError,
-	CalcomTimeoutError,
-} from "../integrations/calcom/calcom.types";
-import * as calcomService from "../integrations/calcom/calcom.service";
-import { mapCalBookingToAppointmentFields } from "../integrations/calcom/calcom.mapper";
-import { buildIdempotencyKey } from "../integrations/calcom/calcom.utils";
+	CalIdError,
+	CalIdSlotUnavailableError,
+	CalIdTimeoutError,
+} from "../integrations/calid/calid.types";
+import * as calidService from "../integrations/calid/calid.service";
+import { mapCalBookingToAppointmentFields } from "../integrations/calid/calid.mapper";
+import { buildIdempotencyKey } from "../integrations/calid/calid.utils";
 import type { AuthenticatedUser } from "../types/auth";
 import { withOptionalTransaction } from "../utils/transaction";
 import {
@@ -89,7 +89,7 @@ export const getAvailability: RequestHandler = async (req, res, next) => {
 	const { expertType, startDate, endDate, timezone } = parsed.data;
 
 	try {
-		const days = await calcomService.fetchAvailability(
+		const days = await calidService.fetchAvailability(
 			expertType as ExpertType,
 			startDate,
 			endDate,
@@ -97,12 +97,21 @@ export const getAvailability: RequestHandler = async (req, res, next) => {
 		);
 		res.status(200).json({ days });
 	} catch (err) {
-		if (err instanceof CalcomTimeoutError) {
+		if (err instanceof CalIdTimeoutError) {
 			res.status(504).json({ error: "Scheduling service timed out", code: "PROVIDER_TIMEOUT" });
 			return;
 		}
-		if (err instanceof CalcomError) {
-			res.status(502).json({ error: "Scheduling service error", code: "PROVIDER_ERROR" });
+		if (err instanceof CalIdError) {
+			console.error("[CalIdError Details] Message:", err.message, "Status Code:", err.statusCode, "Details:", JSON.stringify(err.body));
+			res.status(502).json({
+				error: "Scheduling service error",
+				code: "PROVIDER_ERROR",
+				details: {
+					message: err.message,
+					statusCode: err.statusCode,
+					response: err.body
+				}
+			});
 			return;
 		}
 		next(err);
@@ -132,7 +141,22 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 	const idempotencyKey =
 		parsed.data.idempotencyKey ?? buildIdempotencyKey(user.id, expertType, slotStart);
 
-	// 1. Validate onboarding step
+	// 1. Race guard — reject if active booking already exists
+	const existingActive = await ExpertAppointment.findOne({
+		userId: user.id,
+		expertType,
+		bookingStatus: { $in: ACTIVE_STATUSES },
+	}).lean();
+
+	if (existingActive) {
+		res.status(409).json({
+			error: "An active booking already exists for this expert type",
+			code: "DUPLICATE_BOOKING",
+		});
+		return;
+	}
+
+	// 2. Validate onboarding step
 	try {
 		await validateStepAllowed(user.id, stepForExpertType(expertType as ExpertType));
 	} catch (err: unknown) {
@@ -154,22 +178,7 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	// 2. Race guard — reject if active booking already exists
-	const existingActive = await ExpertAppointment.findOne({
-		userId: user.id,
-		expertType,
-		bookingStatus: { $in: ACTIVE_STATUSES },
-	}).lean();
-
-	if (existingActive) {
-		res.status(409).json({
-			error: "An active booking already exists for this expert type",
-			code: "DUPLICATE_BOOKING",
-		});
-		return;
-	}
-
-	// 3. Fetch user details for Cal.com attendee payload
+	// 3. Fetch user details for Cal ID attendee payload
 	const dbUser = await User.findById(user.id).select("username email").lean();
 	if (!dbUser) {
 		res.status(404).json({ error: "User not found", code: "NOT_FOUND" });
@@ -206,10 +215,10 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	// 5. Call Cal.com (outside transaction — external I/O)
-	let calBooking: Awaited<ReturnType<typeof calcomService.createBooking>>;
+	// 5. Call Cal ID (outside transaction — external I/O)
+	let calBooking: Awaited<ReturnType<typeof calidService.createBooking>>;
 	try {
-		calBooking = await calcomService.createBooking({
+		calBooking = await calidService.createBooking({
 			expertType: expertType as ExpertType,
 			slotStart,
 			timezone,
@@ -217,25 +226,41 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 			userId: user.id,
 		});
 	} catch (err) {
-		// Cal.com failed — delete the pending reservation
+		// Cal ID failed — delete the pending reservation
 		await ExpertAppointment.findByIdAndDelete(pendingAppointment._id).catch(() => {});
 
-		if (err instanceof CalcomSlotUnavailableError) {
+		if (err instanceof CalIdSlotUnavailableError) {
 			res.status(409).json({
 				error: "The selected slot is no longer available",
 				code: "SLOT_UNAVAILABLE",
 			});
 			return;
 		}
-		if (err instanceof CalcomTimeoutError) {
+		if (err instanceof CalIdTimeoutError) {
 			res.status(504).json({ error: "Scheduling service timed out", code: "PROVIDER_TIMEOUT" });
 			return;
 		}
+		if (err instanceof CalIdError) {
+			console.error("[CalIdBookError Details] Message:", err.message, "Status Code:", err.statusCode, "Body:", JSON.stringify(err.body));
+			res.status(502).json({
+				error: "Scheduling service error",
+				code: "PROVIDER_ERROR",
+				...(process.env.NODE_ENV !== "production" && {
+					details: {
+						message: err.message,
+						statusCode: err.statusCode,
+						response: err.body,
+					},
+				}),
+			});
+			return;
+		}
+		console.error("[Unexpected Booking Error]", err);
 		res.status(502).json({ error: "Scheduling service error", code: "PROVIDER_ERROR" });
 		return;
 	}
 
-	// 6. Persist Cal.com data + advance onboarding (in optional transaction)
+	// 6. Persist Cal ID data + advance onboarding (in optional transaction)
 	const calFields = mapCalBookingToAppointmentFields(calBooking);
 
 	try {
@@ -262,7 +287,7 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 						action: AuditAction.Booked,
 						actor: "user",
 						actorId: user.id,
-						calBookingId: calFields.calComBookingId,
+						calBookingId: calFields.calIdBookingId,
 						after: { ...calFields, bookingStatus: AppointmentBookingStatus.Confirmed },
 					},
 				],
@@ -273,9 +298,9 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 			await advanceStep(user.id, stepForExpertType(expertType as ExpertType));
 		});
 	} catch (err) {
-		// DB update failed after Cal.com succeeded — log orphan for sweeper
+		// DB update failed after Cal ID succeeded — log orphan for sweeper
 		console.error(
-			`[bookAppointment] DB update failed for calBookingId=${calFields.calComBookingId}. ` +
+			`[bookAppointment] DB update failed for calBookingId=${calFields.calIdBookingId}. ` +
 			`Appointment ${String(pendingAppointment._id)} may be orphaned.`,
 			err,
 		);
@@ -408,20 +433,25 @@ export const rescheduleAppointment: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		if (!appointment.calComBookingId) {
+		if (!appointment.calIdBookingId) {
 			res.status(409).json({
-				error: "Appointment has no Cal.com booking to reschedule",
+				error: "Appointment has no Cal ID booking to reschedule",
 				code: "INVALID_STATE",
 			});
 			return;
 		}
 
 		const oldStart = appointment.appointmentStart;
-		const calBooking = await calcomService.rescheduleBooking(
-			appointment.calComBookingId,
-			slotStart,
-			timezone,
-			reason,
+		const calBooking = await calidService.rescheduleBooking(
+			{
+				calBookingId: appointment.calIdEventId ?? appointment.calIdBookingId,
+				calBookingUid: appointment.calIdBookingId,
+				calEventTypeId: appointment.calIdEventTypeId,
+				newSlotStart: slotStart,
+				timezone,
+				reason,
+				rescheduledBy: user.email,
+			},
 		);
 
 		const calFields = mapCalBookingToAppointmentFields(calBooking);
@@ -451,7 +481,7 @@ export const rescheduleAppointment: RequestHandler = async (req, res, next) => {
 						action: AuditAction.Rescheduled,
 						actor: "user",
 						actorId: user.id,
-						calBookingId: calFields.calComBookingId,
+						calBookingId: calFields.calIdBookingId,
 						before: { appointmentStart: oldStart },
 						after: { appointmentStart: calFields.appointmentStart },
 						payload: { reason },
@@ -485,15 +515,15 @@ export const rescheduleAppointment: RequestHandler = async (req, res, next) => {
 		const updated = await ExpertAppointment.findById(id).lean();
 		res.status(200).json({ message: "Appointment rescheduled", appointment: updated });
 	} catch (err) {
-		if (err instanceof CalcomSlotUnavailableError) {
+		if (err instanceof CalIdSlotUnavailableError) {
 			res.status(409).json({ error: "Slot no longer available", code: "SLOT_UNAVAILABLE" });
 			return;
 		}
-		if (err instanceof CalcomTimeoutError) {
+		if (err instanceof CalIdTimeoutError) {
 			res.status(504).json({ error: "Scheduling service timed out", code: "PROVIDER_TIMEOUT" });
 			return;
 		}
-		if (err instanceof CalcomError) {
+		if (err instanceof CalIdError) {
 			res.status(502).json({ error: "Scheduling service error", code: "PROVIDER_ERROR" });
 			return;
 		}
@@ -587,17 +617,23 @@ async function cancelAppointmentById(
 			return;
 		}
 
-		// Cancel in Cal.com if linked
-		if (appointment.calComBookingId) {
+		// Cancel in Cal ID if linked
+		if (appointment.calIdEventId) {
 			try {
-				await calcomService.cancelBooking(appointment.calComBookingId, reason);
+				await calidService.cancelBooking(appointment.calIdEventId, reason);
 			} catch (err) {
-				if (err instanceof CalcomError && err.statusCode === 404) {
-					// Already cancelled in Cal.com — proceed with local update
+				if (err instanceof CalIdError && err.statusCode === 404) {
+					// Already cancelled in Cal ID — proceed with local update
 				} else {
 					throw err;
 				}
 			}
+		} else if (appointment.calIdBookingId) {
+			res.status(409).json({
+				error: "Appointment missing numeric Cal ID booking id",
+				code: "INVALID_STATE",
+			});
+			return;
 		}
 
 		const now = new Date();
@@ -625,7 +661,7 @@ async function cancelAppointmentById(
 						action: AuditAction.Cancelled,
 						actor,
 						actorId,
-						calBookingId: appointment.calComBookingId,
+						calBookingId: appointment.calIdBookingId,
 						payload: { reason },
 					},
 				],
@@ -657,11 +693,11 @@ async function cancelAppointmentById(
 
 		res.status(200).json({ message: "Appointment cancelled" });
 	} catch (err) {
-		if (err instanceof CalcomTimeoutError) {
+		if (err instanceof CalIdTimeoutError) {
 			res.status(504).json({ error: "Scheduling service timed out", code: "PROVIDER_TIMEOUT" });
 			return;
 		}
-		if (err instanceof CalcomError) {
+		if (err instanceof CalIdError) {
 			res.status(502).json({ error: "Scheduling service error", code: "PROVIDER_ERROR" });
 			return;
 		}

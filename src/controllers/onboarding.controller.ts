@@ -384,6 +384,11 @@ const submitAppointmentInternal = async (
 	try {
 		const { expertType, ...appointmentData } = parsedBody.data;
 
+		// Map legacy calComBookingId to calIdBookingId for database compatibility
+		if (appointmentData.calComBookingId && !appointmentData.calIdBookingId) {
+			appointmentData.calIdBookingId = appointmentData.calComBookingId;
+		}
+
 		const requiredStep =
 			expertType === ExpertType.SportsScientist
 				? OnboardingStep.SPORTS_SCIENTIST_BOOKING

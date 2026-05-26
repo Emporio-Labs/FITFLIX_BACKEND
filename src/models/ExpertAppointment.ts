@@ -25,14 +25,14 @@ const expertAppointmentSchema = new mongoose.Schema(
 		},
 		// Legacy field — kept for backward compat; new code uses meetingUrl
 		meetingLink: { type: String, default: undefined },
-		// Cal.com fields
-		calComBookingId: { type: String, default: undefined },
-		calEventId: { type: String, default: undefined },
-		calEventTypeId: { type: String, default: undefined },
+		// Cal ID fields
+		calIdBookingId: { type: String, default: undefined },
+		calIdEventId: { type: String, default: undefined },
+		calIdEventTypeId: { type: String, default: undefined },
 		meetingUrl: { type: String, default: undefined },
 		timezone: {
 			type: String,
-			default: () => process.env.CAL_DEFAULT_TIMEZONE ?? "Asia/Kolkata",
+			default: () => process.env.CALID_DEFAULT_TIMEZONE ?? "Asia/Kolkata",
 		},
 		appointmentStart: { type: Date, default: undefined },
 		appointmentEnd: { type: Date, default: undefined },
@@ -99,7 +99,7 @@ expertAppointmentSchema.index(
 	{ unique: true, sparse: true, name: "expert_appointment_idempotency" },
 );
 
-expertAppointmentSchema.index({ calComBookingId: 1 }, { sparse: true });
+expertAppointmentSchema.index({ calIdBookingId: 1 }, { sparse: true });
 expertAppointmentSchema.index({ userId: 1, bookingStatus: 1 });
 
 type ExpertAppointmentDocument = mongoose.InferSchemaType<

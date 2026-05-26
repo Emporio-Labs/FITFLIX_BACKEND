@@ -1,5 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { handleCalcomWebhookRequest } from "../controllers/calcom-webhook.controller";
+import { handleCalIdWebhookRequest } from "../controllers/calid-webhook.controller";
 
 const router = Router();
 
@@ -20,6 +20,6 @@ router.use((req: Request & { rawBody?: Buffer }, _res: Response, next: NextFunct
 	req.on("error", next);
 });
 
-router.post("/", handleCalcomWebhookRequest);
+router.post("/", handleCalIdWebhookRequest);
 
 export default router;

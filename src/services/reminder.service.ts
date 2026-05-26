@@ -1,4 +1,4 @@
-import type mongoose from "mongoose";
+import mongoose, { Types } from "mongoose";
 import {
 	NotificationChannel,
 	NotificationKind,
@@ -33,11 +33,13 @@ export async function scheduleReminders(
 	session?: mongoose.ClientSession,
 ): Promise<void> {
 	const now = new Date();
+	const aId = typeof appointmentId === "string" ? new Types.ObjectId(appointmentId) : appointmentId;
+	const uId = typeof userId === "string" ? new Types.ObjectId(userId) : userId;
 
 	const reminders = Object.entries(REMINDER_OFFSETS_MS)
 		.map(([kind, offsetMs]) => ({
-			appointmentId,
-			userId,
+			appointmentId: aId,
+			userId: uId,
 			kind: kind as ReminderKind,
 			fireAt: new Date(appointmentStart.getTime() - offsetMs),
 			status: ReminderStatus.Scheduled,
@@ -47,7 +49,22 @@ export async function scheduleReminders(
 	if (reminders.length === 0) return;
 
 	try {
-		await ScheduledReminder.insertMany(reminders, {
+		const ops = reminders.map((r) => ({
+			updateOne: {
+				filter: { appointmentId: r.appointmentId, kind: r.kind },
+				update: {
+					$set: {
+						userId: r.userId,
+						fireAt: r.fireAt,
+						status: r.status,
+						attempts: 0,
+					},
+					$unset: { lastError: true as const },
+				},
+				upsert: true,
+			},
+		}));
+		await ScheduledReminder.bulkWrite(ops, {
 			ordered: false,
 			...(session ? { session } : {}),
 		});

@@ -1,11 +1,9 @@
 import crypto from "node:crypto";
-import mongoose from "mongoose";
 import AppointmentAuditLog from "../../models/AppointmentAuditLog";
 import ExpertAppointment from "../../models/ExpertAppointment";
 import {
 	AppointmentBookingStatus,
 	AuditAction,
-	ExpertType,
 	NotificationChannel,
 	NotificationKind,
 	WebhookEventStatus,
@@ -17,21 +15,21 @@ import { cancelReminders } from "../../services/reminder.service";
 import { emitToFrontDesk, emitToUser } from "../../services/realtime.service";
 import { cancelExpertAppointment } from "../../utils/onboarding.service";
 import { withOptionalTransaction } from "../../utils/transaction";
-import { expertTypeFromEventTypeId, mapCalBookingToAppointmentFields } from "./calcom.mapper";
-import type { CalcomWebhookPayload } from "./calcom.types";
+import { expertTypeFromEventTypeId } from "./calid.mapper";
+import type { CalIdWebhookPayload } from "./calid.types";
 
 const MAX_ATTEMPTS = 5;
-const PROCESSING_TIMEOUT_MS = 60_000; // reclaim stuck PROCESSING rows after 60s
+const PROCESSING_TIMEOUT_MS = 60_000;
 
 // ─── Signature verification ───────────────────────────────────────────────────
 
-export function verifyCalcomSignature(
+export function verifyCalIdSignature(
 	rawBody: Buffer,
 	signatureHeader: string | undefined,
 ): boolean {
-	const secret = process.env.CAL_WEBHOOK_SECRET;
+	const secret = process.env.CALID_WEBHOOK_SECRET;
 	if (!secret) {
-		console.warn("[calcom-webhook] CAL_WEBHOOK_SECRET not set — skipping verification");
+		console.warn("[calid-webhook] CALID_WEBHOOK_SECRET not set — skipping verification");
 		return false;
 	}
 
@@ -43,27 +41,28 @@ export function verifyCalcomSignature(
 		.digest("hex");
 
 	const provided = signatureHeader.replace(/^sha256=/, "");
+	if (provided.length !== expected.length) return false;
 
-	return crypto.timingSafeEqual(
-		Buffer.from(expected, "hex"),
-		Buffer.from(provided.padEnd(expected.length, "0").slice(0, expected.length), "hex"),
-	);
+	const expectedBuf = Buffer.from(expected, "hex");
+	const providedBuf = Buffer.from(provided, "hex");
+	if (expectedBuf.length !== providedBuf.length) return false;
+
+	return crypto.timingSafeEqual(expectedBuf, providedBuf);
 }
 
 // ─── Main entry point (called by controller) ─────────────────────────────────
 
-export async function handleCalcomWebhook(
-	payload: CalcomWebhookPayload,
-	deliveryId: string, // Cal.com webhook delivery UID for idempotency
+export async function handleCalIdWebhook(
+	payload: CalIdWebhookPayload,
+	deliveryId: string,
 ): Promise<void> {
 	const receivedAt = new Date();
 
-	// 1. Upsert idempotency record
 	const webhookEvent = await WebhookEvent.findOneAndUpdate(
 		{ eventId: deliveryId },
 		{
 			$setOnInsert: {
-				provider: "calcom",
+				provider: "calid",
 				eventId: deliveryId,
 				triggerEvent: payload.triggerEvent,
 				payload,
@@ -75,30 +74,26 @@ export async function handleCalcomWebhook(
 		{ upsert: true, returnDocument: "after" },
 	);
 
-	// 2. Already processed → idempotent no-op
 	if (webhookEvent.status === WebhookEventStatus.Processed) {
 		return;
 	}
 
-	// 3. Reclaim stuck PROCESSING rows (from crashed handler)
 	const stuckThreshold = new Date(Date.now() - PROCESSING_TIMEOUT_MS);
 	const isStuck =
 		webhookEvent.status === WebhookEventStatus.Processing &&
 		webhookEvent.receivedAt < stuckThreshold;
 
 	if (webhookEvent.status === WebhookEventStatus.Processing && !isStuck) {
-		// Another handler is currently processing — skip
 		return;
 	}
 
-	// 4. Atomically claim for processing
 	const claimed = await WebhookEvent.findOneAndUpdate(
 		{ eventId: deliveryId, status: { $in: [WebhookEventStatus.Received, WebhookEventStatus.Failed] } },
 		{ $set: { status: WebhookEventStatus.Processing } },
 		{ returnDocument: "after" },
 	);
 
-	if (!claimed) return; // Race — another instance claimed it
+	if (!claimed) return;
 
 	try {
 		await dispatchWebhookEvent(payload);
@@ -118,17 +113,15 @@ export async function handleCalcomWebhook(
 			},
 		});
 
-		// Re-throw so the HTTP handler returns 5xx and Cal.com retries
 		if (newStatus !== WebhookEventStatus.DLQ) {
 			throw err;
 		}
-		// DLQ — return 200 to stop Cal.com retrying (we've given up on this event)
 	}
 }
 
 // ─── Event dispatcher ─────────────────────────────────────────────────────────
 
-async function dispatchWebhookEvent(payload: CalcomWebhookPayload): Promise<void> {
+async function dispatchWebhookEvent(payload: CalIdWebhookPayload): Promise<void> {
 	const { triggerEvent } = payload;
 	const booking = payload.payload;
 
@@ -145,22 +138,21 @@ async function dispatchWebhookEvent(payload: CalcomWebhookPayload): Promise<void
 			await handleBookingCancelled(booking, triggerEvent);
 			break;
 		default:
-			console.warn(`[calcom-webhook] Unknown triggerEvent: ${triggerEvent}`);
+			console.warn(`[calid-webhook] Unknown triggerEvent: ${triggerEvent}`);
 	}
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 async function handleBookingConfirmed(
-	booking: CalcomWebhookPayload["payload"],
+	booking: CalIdWebhookPayload["payload"],
 ): Promise<void> {
 	const appointment = await ExpertAppointment.findOne({
-		calComBookingId: booking.uid,
+		calIdBookingId: booking.uid,
 	});
 
 	if (!appointment) {
-		// Webhook arrived before our booking response was saved — wait briefly and retry
-		console.warn(`[calcom-webhook] CONFIRMED: no appointment for uid=${booking.uid}`);
+		console.warn(`[calid-webhook] CONFIRMED: no appointment for uid=${booking.uid}`);
 		return;
 	}
 
@@ -208,14 +200,14 @@ async function handleBookingConfirmed(
 }
 
 async function handleBookingRescheduled(
-	booking: CalcomWebhookPayload["payload"],
+	booking: CalIdWebhookPayload["payload"],
 ): Promise<void> {
 	const appointment = await ExpertAppointment.findOne({
-		calComBookingId: booking.uid,
+		calIdBookingId: booking.uid,
 	});
 
 	if (!appointment) {
-		console.warn(`[calcom-webhook] RESCHEDULED: no appointment for uid=${booking.uid}`);
+		console.warn(`[calid-webhook] RESCHEDULED: no appointment for uid=${booking.uid}`);
 		return;
 	}
 
@@ -255,7 +247,6 @@ async function handleBookingRescheduled(
 		);
 	});
 
-	// Refresh reminders
 	await cancelReminders(appointment._id).catch(() => {});
 	if (booking.startTime) {
 		const { scheduleReminders } = await import("../../services/reminder.service");
@@ -282,20 +273,20 @@ async function handleBookingRescheduled(
 }
 
 async function handleBookingCancelled(
-	booking: CalcomWebhookPayload["payload"],
+	booking: CalIdWebhookPayload["payload"],
 	triggerEvent: string,
 ): Promise<void> {
 	const appointment = await ExpertAppointment.findOne({
-		calComBookingId: booking.uid,
+		calIdBookingId: booking.uid,
 	});
 
 	if (!appointment) {
-		console.warn(`[calcom-webhook] CANCELLED: no appointment for uid=${booking.uid}`);
+		console.warn(`[calid-webhook] CANCELLED: no appointment for uid=${booking.uid}`);
 		return;
 	}
 
 	if (appointment.bookingStatus === AppointmentBookingStatus.Cancelled) {
-		return; // Already cancelled locally — idempotent
+		return;
 	}
 
 	const now = new Date();
@@ -330,14 +321,13 @@ async function handleBookingCancelled(
 		);
 	});
 
-	// Rewind onboarding step
 	const expertType = expertTypeFromEventTypeId(booking.eventTypeId);
 	if (expertType) {
 		await cancelExpertAppointment(
 			String(appointment.userId),
 			expertType,
 		).catch((err) =>
-			console.error("[calcom-webhook] cancelExpertAppointment rewind failed", err),
+			console.error("[calid-webhook] cancelExpertAppointment rewind failed", err),
 		);
 	}
 

@@ -1,4 +1,4 @@
-import type { NormalizedSlot, SlotsByDay } from "./calcom.types";
+import type { NormalizedSlot, SlotsByDay } from "./calid.types";
 
 // ─── Retry / backoff ──────────────────────────────────────────────────────────
 
@@ -43,53 +43,30 @@ export function sleep(ms: number): Promise<void> {
 // ─── Slot grouping ────────────────────────────────────────────────────────────
 
 /**
- * Takes the raw Cal.com slots dict (keyed by "YYYY-MM-DD") and a slot duration
- * in minutes, then returns an array of { date, slots: [{start, end}] } in the
- * requested timezone.
+ * Groups normalized slots by their UTC date key (YYYY-MM-DD).
+ * Used after local slot derivation to produce the SlotsByDay[] shape the
+ * controller already returns.
  */
-export function groupSlotsByDay(
-	rawSlots: Record<string, Array<{ time: string }>>,
-	slotDurationMinutes = 60,
-): SlotsByDay[] {
-	const days: SlotsByDay[] = [];
-
-	for (const [dateKey, timeSlots] of Object.entries(rawSlots)) {
-		const slots: NormalizedSlot[] = timeSlots.map((s) => {
-			const start = s.time;
-			const end = addMinutes(start, slotDurationMinutes);
-			return { start, end };
-		});
-
-		if (slots.length > 0) {
-			days.push({ date: dateKey, slots });
-		}
+export function groupSlotsByDay(slots: NormalizedSlot[]): SlotsByDay[] {
+	const byDay = new Map<string, NormalizedSlot[]>();
+	for (const slot of slots) {
+		const dateKey = slot.start.slice(0, 10);
+		const bucket = byDay.get(dateKey);
+		if (bucket) bucket.push(slot);
+		else byDay.set(dateKey, [slot]);
 	}
 
-	// Sort ascending by date
+	const days: SlotsByDay[] = [];
+	for (const [date, daySlots] of byDay) {
+		daySlots.sort((a, b) => a.start.localeCompare(b.start));
+		days.push({ date, slots: daySlots });
+	}
 	days.sort((a, b) => a.date.localeCompare(b.date));
-
 	return days;
-}
-
-function addMinutes(isoString: string, minutes: number): string {
-	const date = new Date(isoString);
-	date.setMinutes(date.getMinutes() + minutes);
-	return date.toISOString();
-}
-
-// ─── Cache key ────────────────────────────────────────────────────────────────
-
-export function buildCacheKey(
-	expertType: string,
-	dateKey: string,
-	timezone: string,
-): string {
-	return `${expertType}::${dateKey}::${timezone}`;
 }
 
 // ─── Date range helpers ───────────────────────────────────────────────────────
 
-/** Returns YYYY-MM-DD for every day in [startDate, endDate] inclusive */
 export function dateRange(startDate: string, endDate: string): string[] {
 	const dates: string[] = [];
 	const current = new Date(`${startDate}T00:00:00.000Z`);
@@ -103,12 +80,10 @@ export function dateRange(startDate: string, endDate: string): string[] {
 	return dates;
 }
 
-/** ISO 8601 start-of-day in UTC for a YYYY-MM-DD date */
 export function toStartOfDayUTC(dateKey: string): string {
 	return `${dateKey}T00:00:00.000Z`;
 }
 
-/** ISO 8601 end-of-day in UTC for a YYYY-MM-DD date */
 export function toEndOfDayUTC(dateKey: string): string {
 	return `${dateKey}T23:59:59.999Z`;
 }
@@ -120,6 +95,6 @@ export function buildIdempotencyKey(
 	expertType: string,
 	slotStart: string,
 ): string {
-	// Deterministic key — same booking attempt always produces the same key
+	// Deterministic — same booking attempt always produces the same key
 	return `${userId}:${expertType}:${new Date(slotStart).toISOString()}`;
 }

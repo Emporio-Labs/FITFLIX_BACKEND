@@ -15,7 +15,8 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(grep -E \"\\\\.ts$\")",
-      "Bash(grep -E \"\\\\.ts$|total\")"
+      "Bash(grep -E \"\\\\.ts$|total\")",
+      "PowerShell($envFile = Get-Content .env -Raw; $key = \\([regex]::Match\\($envFile, '\\(?m\\)^CAL_API_KEY=\\(.+\\)$'\\)\\).Groups[1].Value.Trim\\(\\); Write-Host \"=== Probe: who does this API key belong to? ===\"; try { $me = Invoke-WebRequest -Uri \"https://api.cal.com/v2/me?apiKey=$key\" -Method GET -Headers @{ \"cal-api-version\"=\"2024-08-13\"; \"Content-Type\"=\"application/json\" } -UseBasicParsing; Write-Host \"STATUS: $\\($me.StatusCode\\)\"; Write-Host $me.Content } catch { Write-Host \"STATUS: $\\($_.Exception.Response.StatusCode.value__\\)\"; try { $sr = New-Object System.IO.StreamReader\\($_.Exception.Response.GetResponseStream\\(\\)\\); Write-Host $sr.ReadToEnd\\(\\) } catch { Write-Host \"\\(no body\\)\" } })"
     ]
   }
 }
