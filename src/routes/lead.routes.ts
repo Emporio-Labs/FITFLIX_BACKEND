@@ -6,6 +6,7 @@ import {
 	deleteLeadById,
 	getAllLeads,
 	getLeadById,
+	getLeadStats,
 	updateLeadById,
 } from "../controllers/lead.controller";
 import { verifyLeadCaptcha } from "../middleware/captcha.middleware";
@@ -26,6 +27,7 @@ leadRouter.use(authenticateToken);
 
 leadRouter.post("/", authorize(["admin", "doctor", "trainer"]), createLead);
 leadRouter.get("/", authorize(["admin"]), getAllLeads);
+leadRouter.get("/stats", authorize(["admin"]), getLeadStats);
 leadRouter.get("/:id", authorize(["admin", "doctor", "trainer"]), getLeadById);
 leadRouter.patch(
 	"/:id",
