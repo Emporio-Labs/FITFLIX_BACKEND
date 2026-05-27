@@ -2,7 +2,7 @@
 
 **Base URL:** `http://localhost:3000`  
 **API Version:** 1.0.0  
-**Last Updated:** May 26, 2026
+**Last Updated:** May 27, 2026
 
 ---
 
@@ -27,9 +27,16 @@
 17. [Schedule Routes](#schedule-routes)
 18. [Exercise Routes](#exercise-routes)
 19. [Workout Routes](#workout-routes)
-20. [Onboarding Routes](#onboarding-routes)
-21. [Enums & Status Codes](#enums--status-codes)
-22. [Error Handling](#error-handling)
+20. [Workout Plan Routes](#workout-plan-routes)
+21. [Nutrition Routes](#nutrition-routes)
+22. [Nutritionist Booking Routes](#nutritionist-booking-routes)
+23. [Notification Routes](#notification-routes)
+24. [Webhook Routes](#webhook-routes)
+25. [Internal Routes](#internal-routes)
+26. [Onboarding Routes](#onboarding-routes)
+27. [Enums & Status Codes](#enums--status-codes)
+28. [Error Handling](#error-handling)
+29. [Health Check](#health-check)
 
 ---
 
@@ -51,6 +58,11 @@ curl -H "Authorization: Bearer <jwt>" \
 
 Tokens are issued by `POST /auth/login` and can be refreshed via `POST /auth/refresh` when refresh tokens are enabled.
 
+**Webhook/Internal Auth Notes:**
+- `/webhook/email` uses `X-Webhook-Secret` instead of JWT.
+- `/webhooks/cal` uses `X-Cal-Signature-256` (HMAC signature on raw body).
+- `/internal/*` uses `X-Internal-Secret` (or `X-Webhook-Secret` alias) instead of JWT.
+
 ### Migration Notes (Basic Auth → JWT)
 
 - Protected routes no longer accept `Authorization: Basic ...` headers.
@@ -60,10 +72,11 @@ Tokens are issued by `POST /auth/login` and can be refreshed via `POST /auth/ref
 
 ### User Roles
 
-The system supports 4 role types:
+The system supports 5 role types:
 - **`user`** — Patient/end-user (non-medical)
 - **`doctor`** — Healthcare provider
 - **`trainer`** — Fitness/wellness trainer
+- **`nutritionist`** — Nutrition specialist (dashboard role)
 - **`admin`** — Front desk/system administrator
 
 ---
@@ -72,27 +85,34 @@ The system supports 4 role types:
 
 | Route | Purpose | Auth | Endpoints |
 |-------|---------|------|-----------|
-| `/auth` | User authentication | ❌ No | 3 endpoints |
+| `/auth` | User authentication | ❌ Public | 4 endpoints |
 | `/admins` | Admin management | ✅ Admin only | 5 endpoints |
-| `/users` | Member management | ✅ Admin + Doctor (read, onboarding profile), Admin/User self (updates), User self-service profile/report/password | 11 endpoints |
-| `/doctors` | Doctor management | ✅ Admin + Role-based | 5 endpoints |
-| `/trainers` | Trainer management | ✅ Admin + Role-based | 5 endpoints |
-| `/slots` | Time slot management | ✅ Public read, Admin write | 5 endpoints |
-| `/memberships` | Membership plans per user | ✅ Mixed roles | 6 endpoints |
-| `/services` | Catalog of services | ✅ Mixed roles | 5 endpoints |
-| `/therapies` | Catalog of therapies | ✅ Mixed roles | 5 endpoints |
-| `/leads` | Lead intake and conversion | ✅ Mixed roles + 1 public capture endpoint | 7 endpoints |
-| `/bookings` | Service bookings | ✅ Mixed roles | 7 endpoints |
-| `/appointments` | Doctor appointments | ✅ Mixed roles | 7 endpoints |
-| `/expert-appointments` | Expert appointments (nutritionist/sports scientist) | ✅ User + Admin | 6 endpoints |
+| `/users` | Member management | ✅ Admin/Doctor/Nutritionist (read), Admin/User self (updates), User self-service profile/report/password | 14 endpoints |
+| `/doctors` | Doctor management | ✅ Public list + Admin + role-based | 7 endpoints |
+| `/trainers` | Trainer management | ✅ Public list + Admin + role-based | 7 endpoints |
+| `/slots` | Time slot management | ✅ Authenticated read, Admin write | 6 endpoints |
+| `/memberships` | Membership plans per user | ✅ Admin + User (self) | 6 endpoints |
+| `/services` | Catalog of services | ✅ Admin write, all roles read | 5 endpoints |
+| `/therapies` | Catalog of therapies | ✅ Public list + Admin write | 7 endpoints |
+| `/leads` | Lead intake and conversion | ✅ Mixed roles + 1 public capture endpoint | 8 endpoints |
+| `/bookings` | Service bookings | ✅ Admin + User | 7 endpoints |
+| `/appointments` | Doctor appointments | ✅ Admin + Doctor | 7 endpoints |
+| `/expert-appointments` | Expert appointments (nutritionist/sports scientist) | ✅ User + Admin | 8 endpoints |
 | `/credits` | Credit balance, history, top-up | ✅ Admin + User (self-service for user) | 5 endpoints |
 | `/schedules` | User schedules/todos | ✅ All authenticated | 6 endpoints |
 | `/exercises` | Exercise library | ✅ Admin + User | 5 endpoints |
 | `/workouts` | Workout sessions, exercises, set logging, stats | ✅ User | 15 endpoints |
-| `/onboarding` | Onboarding workflow — health markers, goals, dual-consent, reports, appointments | ✅ User only | 9 endpoints |
-| `/health` | Health check | ❌ No | 1 endpoint |
+| `/workout-plans` | Workout plan templates + assignments | ✅ Admin/Trainer + User assignments | 13 endpoints |
+| `/nutrition` | Nutrition system | ✅ User + Nutritionist/Admin | 48 endpoints |
+| `/nutritionist` | Nutritionist bookings | ✅ Admin + User | 4 endpoints |
+| `/notifications` | Notifications | ✅ All authenticated | 4 endpoints |
+| `/webhook` | HPOD webhook + reports | ✅ Webhook secret + Admin read | 4 endpoints |
+| `/webhooks/cal` | Cal ID webhook | ✅ Signature header | 1 endpoint |
+| `/internal` | Internal cron hooks | ✅ Internal secret | 1 endpoint |
+| `/onboarding` | Onboarding workflow — health markers, goals, dual-consent, reports, appointments | ✅ User only (+ 1 admin cancel) | 11 endpoints |
+| `/health` | Health check | ❌ Public | 1 endpoint |
 
-**Total Endpoints:** 113
+**Total Endpoints:** 209
 
 ---
 
@@ -116,14 +136,14 @@ POST /auth/signup
   "phone": "+1234567890",
   "password": "securePassword123",
   "age": 28,
-  "gender": 0,
-  "healthGoals": ["Build muscle", "Lose weight"]
+  "gender": "Male"
 }
 ```
 
 **Validation Notes:**
 - `password` must be at least 8 characters and include at least one letter and one number.
 - `age` must be an integer in range `0` to `130`.
+- `gender` accepts `Male`, `Female`, or `Other` (legacy numeric `0`–`2` is normalized).
 
 **Response (201 Created):**
 ```json
@@ -279,14 +299,33 @@ POST /auth/refresh
 
 ---
 
+#### 4. Logout
+```
+POST /auth/logout
+```
+
+**Authentication:** ✅ Bearer token required
+
+**Response (200 OK):**
+```json
+{ "message": "Logged out successfully" }
+```
+
+**Notes:**
+- The access token is blacklisted until it naturally expires.
+
+**Error Responses:**
+- `400` — Missing Bearer token
+
+---
+
 ## Admin Routes
 
 ### Base Path: `/admins`
 
 **Global Requirements:**
 - ✅ JWT Bearer token required
-- ✅ Admin role required for create/update/delete
-- ✅ Admin or Doctor role allowed for read (list and get by id)
+- ✅ Admin role required for all admin routes
 
 #### 1. Create Admin
 ```
@@ -419,7 +458,7 @@ DELETE /admins/:id
 **Global Requirements:**
 - ✅ JWT Bearer token required
 - ✅ Admin can create and delete users
-- ✅ Admin or Doctor can view full onboarding profile (`GET /users/:id/onboarding-profile`)
+- ✅ Admin, Doctor, or Nutritionist can view full onboarding profile (`GET /users/:id/onboarding-profile`)
 - ✅ Admin or user-self can update profile (`PATCH /users/:id`)
 - ✅ Users can access self-service endpoints (`/me`, `/me/reports`, `/me/password`)
 
@@ -479,7 +518,7 @@ POST /users
 GET /users
 ```
 
-**Authorization:** Admin or Doctor
+**Authorization:** Admin, Doctor, or Nutritionist
 
 **Response (200 OK):**
 ```json
@@ -510,7 +549,7 @@ GET /users/:id
 **URL Params:**
 - `id` (string, required) — User MongoDB ObjectId
 
-**Authorization:** Admin or Doctor
+**Authorization:** Admin, Doctor, or Nutritionist
 
 **Response (200 OK):**
 ```json
@@ -553,7 +592,7 @@ GET /users/:id/onboarding-profile
 **URL Params:**
 - `id` (string, required) — User MongoDB ObjectId
 
-**Authorization:** Admin or Doctor
+**Authorization:** Admin, Doctor, or Nutritionist
 
 Returns the full onboarding data submitted by a user, aggregated from all onboarding collections. Used by the FrontDesk dashboard to display member onboarding details.
 
@@ -639,7 +678,7 @@ GET /users/:id/reports/:reportId/url
 - `id` (string, required) — User MongoDB ObjectId
 - `reportId` (string, required) — Medical Report MongoDB ObjectId
 
-**Authorization:** Admin or Doctor
+**Authorization:** Admin, Doctor, or Nutritionist
 
 Generates a secure, temporary pre-signed URL to view the user's uploaded medical report inline.
 
@@ -657,7 +696,7 @@ Generates a secure, temporary pre-signed URL to view the user's uploaded medical
 
 **Error Responses:**
 - `400` — Invalid user ID or report ID format
-- `403` — `FORBIDDEN` — Caller is not an admin or doctor
+- `403` — `FORBIDDEN` — Caller is not an admin, doctor, or nutritionist
 - `404` — Report not found, or no S3 file attached to the report
 
 ---
@@ -993,12 +1032,23 @@ DELETE /users/:id
 ### Base Path: `/doctors`
 
 **Global Requirements:**
-- ✅ JWT Bearer token required for all endpoints
+- ✅ JWT Bearer token required for protected endpoints
+- ❌ `/doctors/public` endpoints are unauthenticated
 
 | Endpoint | POST | GET | PATCH | DELETE |
 |----------|------|-----|-------|--------|
+| `/doctors/public` | - | Public | - | - |
+| `/doctors/public/:id` | - | Public | - | - |
 | `/doctors` | Admin | Admin | - | - |
 | `/doctors/:id` | - | Doctor, Trainer | Doctor, Trainer | Admin |
+
+#### 0. Public Doctors
+```
+GET /doctors/public
+GET /doctors/public/:id
+```
+
+**Authentication:** ❌ None
 
 #### 1. Create Doctor
 ```
@@ -1123,13 +1173,24 @@ DELETE /doctors/:id
 ### Base Path: `/trainers`
 
 **Global Requirements:**
-- ✅ JWT Bearer token required for all endpoints
+- ✅ JWT Bearer token required for protected endpoints
+- ❌ `/trainers/public` endpoints are unauthenticated
 - Similar structure to Doctor routes
 
 | Endpoint | POST | GET | PATCH | DELETE |
 |----------|------|-----|-------|--------|
+| `/trainers/public` | - | Public | - | - |
+| `/trainers/public/:id` | - | Public | - | - |
 | `/trainers` | Admin | Admin | - | - |
 | `/trainers/:id` | - | Trainer, Doctor | Trainer, Doctor | Admin |
+
+#### 0. Public Trainers
+```
+GET /trainers/public
+GET /trainers/public/:id
+```
+
+**Authentication:** ❌ None
 
 #### 1. Create Trainer
 ```
@@ -1195,8 +1256,8 @@ DELETE /trainers/:id
 ### Base Path: `/slots`
 
 **Global Requirements:**
-- ✅ Public read access for `GET /slots` and `GET /slots/:id`
-- ✅ JWT Bearer token + Admin role required for `POST`, `PATCH`, and `DELETE`
+- ✅ JWT Bearer token required for all slot endpoints
+- ✅ Admin role required for `POST`, `PATCH`, and `DELETE`
 
 #### 1. Create Slot
 ```
@@ -1248,7 +1309,31 @@ POST /slots
 GET /slots
 ```
 
-**Authorization:** Public
+**Authorization:** Admin, Doctor, Trainer, User
+#### 2a. Get Available Slots (by date)
+```
+GET /slots/available?date=YYYY-MM-DD
+```
+
+**Authorization:** Admin, Doctor, Trainer, User
+
+**Response (200 OK):**
+```json
+{
+  "date": "2026-06-01T00:00:00.000Z",
+  "slots": [
+    {
+      "slotId": "507f1f77bcf86cd799439020",
+      "date": "2026-06-01T00:00:00.000Z",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "capacity": 4,
+      "remainingCapacity": 4
+    }
+  ]
+}
+```
+
 
 **Response (200 OK):**
 ```json
@@ -1264,7 +1349,7 @@ GET /slots
 GET /slots/:id
 ```
 
-**Authorization:** Public
+**Authorization:** Admin, Doctor, Trainer, User
 
 ---
 
@@ -1436,8 +1521,17 @@ DELETE /memberships/:id
 ### Base Path: `/services`
 
 **Global Requirements:**
-- ✅ JWT Bearer token required
+- ✅ JWT Bearer token required for protected endpoints
+- ❌ `/therapies/public` endpoints are unauthenticated
 - ✅ Admin creates/updates/deletes; all roles can read
+
+#### 0. Public Therapies
+```
+GET /therapies/public
+GET /therapies/public/:id
+```
+
+**Authentication:** ❌ None
 
 **Implementation Notes:**
 - Therapies are persisted in the same underlying collection as services with `serviceType = "Therapy"`.
@@ -1700,6 +1794,24 @@ GET /leads
 
 **Authorization:** Admin only
 
+#### 3a. Get Lead Stats
+```
+GET /leads/stats
+```
+
+**Authorization:** Admin only
+
+**Response (200 OK):**
+```json
+{
+  "byStatus": { "New": 42, "Warm": 11, "Converted": 9 },
+  "bySource": { "fitflix.in": 30, "app-signup": 18 },
+  "signupFunnel": [
+    { "_id": { "onboarded": true, "currentStep": "COMPLETED" }, "count": 5 }
+  ]
+}
+```
+
 #### 4. Get Lead by ID
 ```
 GET /leads/:id
@@ -1737,7 +1849,7 @@ POST /leads/:id/convert
   "username": "jane_member", // optional, defaults to leadName
   "phone": "+1234567890",
   "age": "32",
-  "gender": 1,
+  "gender": "Female",
   "healthGoals": ["weight loss", "sleep"],
   "password": "securePass"
 }
@@ -3359,13 +3471,161 @@ GET /workouts/me/history
 
 ---
 
+## Workout Plan Routes
+
+### Base Path: `/workout-plans`
+
+**Assignment Endpoints (User):**
+- `GET /workout-plans/assignments/mine`
+- `GET /workout-plans/assignments/mine/schedule`
+- `GET /workout-plans/assignments/mine/today`
+- `GET /workout-plans/assignments/mine/days/:dayNumber`
+- `POST /workout-plans/assignments/mine/complete-day`
+- `PATCH /workout-plans/assignments/mine/days/:dayNumber`
+
+**Plan Management (Admin/Trainer):**
+- `GET /workout-plans`
+- `POST /workout-plans`
+- `GET /workout-plans/:id`
+- `PATCH /workout-plans/:id`
+- `DELETE /workout-plans/:id`
+- `POST /workout-plans/:id/assign`
+
+**Self-Assign:**
+- `POST /workout-plans/:planId/assign-to-me` (User/Trainer/Admin)
+
+---
+
+## Nutrition Routes
+
+### Base Path: `/nutrition`
+
+**Roles:** USER = `user`, STAFF = `nutritionist` or `admin`, ADMIN = `admin`
+
+**Profiles**
+- `GET /nutrition/my/profile` (USER)
+- `POST /nutrition/profiles` (STAFF)
+- `GET /nutrition/profiles/:userId` (STAFF)
+- `PATCH /nutrition/profiles/:userId` (STAFF)
+- `DELETE /nutrition/profiles/:userId` (STAFF)
+
+**Food Catalog**
+- `GET /nutrition/foods` (USER/STAFF)
+- `POST /nutrition/foods` (STAFF)
+- `PATCH /nutrition/foods/:id` (STAFF)
+- `DELETE /nutrition/foods/:id` (STAFF)
+- `POST /nutrition/admin/foods` (ADMIN)
+- `POST /nutrition/admin/adherence/rebuild` (ADMIN)
+
+**Templates**
+- `POST /nutrition/templates` (STAFF)
+- `GET /nutrition/templates` (STAFF)
+- `GET /nutrition/templates/:id` (STAFF)
+- `PATCH /nutrition/templates/:id` (STAFF)
+- `DELETE /nutrition/templates/:id` (STAFF)
+- `POST /nutrition/templates/:id/assign` (STAFF)
+
+**Plans (Managed)**
+- `POST /nutrition/plans` (STAFF)
+- `GET /nutrition/plans` (STAFF)
+- `GET /nutrition/plans/:id` (STAFF)
+- `PATCH /nutrition/plans/:id` (STAFF)
+- `DELETE /nutrition/plans/:id` (STAFF)
+- `PATCH /nutrition/plans/:id/status` (STAFF)
+- `POST /nutrition/plans/:id/pdf` (STAFF)
+- `POST /nutrition/plans/:id/duplicate` (STAFF)
+- `GET /nutrition/plans/:id/adherence` (STAFF)
+- `GET /nutrition/plans/:id/adherence/weekly` (STAFF)
+- `GET /nutrition/plans/:id/progress` (STAFF)
+- `POST /nutrition/plans/:id/progress` (STAFF)
+
+**Plans (User)**
+- `GET /nutrition/my/plans` (USER)
+- `GET /nutrition/my/plans/:id` (USER)
+- `GET /nutrition/my/plans/:id/pdf` (USER)
+- `POST /nutrition/my/plans/:id/meals/complete` (USER)
+
+**Meal Logs (User)**
+- `POST /nutrition/my/meal-logs`
+- `GET /nutrition/my/meal-logs`
+- `PATCH /nutrition/my/meal-logs/:id`
+- `DELETE /nutrition/my/meal-logs/:id`
+
+**Hydration (User)**
+- `POST /nutrition/my/hydration`
+- `PATCH /nutrition/my/hydration/goal`
+- `GET /nutrition/my/hydration`
+
+**Progress (User)**
+- `POST /nutrition/my/progress`
+- `GET /nutrition/my/progress`
+
+**Adherence (User)**
+- `GET /nutrition/my/adherence`
+- `GET /nutrition/my/adherence/weekly`
+
+**Dashboard (Staff)**
+- `GET /nutrition/dashboard/stats`
+- `GET /nutrition/dashboard/members`
+- `GET /nutrition/members` (alias)
+- `GET /nutrition/users/:userId/dashboard`
+
+For full field-level schemas and examples, see [docs/API_REFERENCE.md](docs/API_REFERENCE.md).
+
+---
+
+## Nutritionist Booking Routes
+
+### Base Path: `/nutritionist`
+
+- `GET /nutritionist/my-booking` (User)
+- `GET /nutritionist/bookings` (Admin) — query: `status`, `date`
+- `PATCH /nutritionist/bookings/:id/accept` (Admin) — body: `meetingLink`, `clinicLocation`, `calBookingId`
+- `PATCH /nutritionist/bookings/:id/reject` (Admin) — body: `reason`
+
+---
+
+## Notification Routes
+
+### Base Path: `/notifications`
+
+- `GET /notifications` — query: `page`, `limit`
+- `PATCH /notifications/read-all`
+- `PATCH /notifications/:id/read`
+- `POST /notifications/fcm-token` — body: `{ token, platform }`
+
+---
+
+## Webhook Routes
+
+### Base Path: `/webhook`
+
+- `POST /webhook/email` — header: `X-Webhook-Secret`
+- `GET /webhook/reports` (Admin)
+- `GET /webhook/reports/:id` (Admin)
+- `GET /webhook/reports/user/:userId` (Admin)
+
+### Cal ID Webhook: `/webhooks/cal`
+
+- `POST /webhooks/cal` — header: `X-Cal-Signature-256`
+
+---
+
+## Internal Routes
+
+### Base Path: `/internal`
+
+- `POST /internal/reminders/tick` — header: `X-Internal-Secret` (or `X-Webhook-Secret` alias)
+
+---
+
 ## Onboarding Routes
 
 ### Base Path: `/onboarding`
 
 **Global Requirements:**
 - ✅ JWT Authentication required for all endpoints
-- ✅ User role only — admins and doctors cannot call these endpoints
+- ✅ User role for onboarding steps; admin-only for `DELETE /onboarding/appointments/nutritionist/:userId`
 - Backend is the **single source of truth** for onboarding progression
 - Steps must be completed in strict order — skipping returns `403`
 
@@ -3742,6 +4002,33 @@ POST /onboarding/nutritionist
 }
 ```
 
+---
+
+#### 7a. Book Nutritionist (Slot-Based)
+```
+POST /onboarding/nutritionist/book
+```
+
+**Authorization:** User only
+
+**Request Body:**
+```json
+{
+  "slotId": "507f1f77bcf86cd799439020",
+  "date": "2026-06-03",
+  "appointmentMode": "IN_PERSON",
+  "clinicLocation": "Gachibowli" 
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "message": "Nutritionist booking submitted for approval",
+  "booking": { /* booking object */ }
+}
+```
+
 **Error Responses:**
 - `403` — `STEP_NOT_ALLOWED` — Sports scientist not booked yet
 
@@ -3881,11 +4168,14 @@ POST /onboarding/complete
 ### Gender
 ```javascript
 {
-  0: "Male",
-  1: "Female",
-  2: "Others"
+  "Male": "Male",
+  "Female": "Female",
+  "Other": "Other"
 }
 ```
+
+**Notes:**
+- Legacy numeric inputs (`0`–`2`) are accepted on signup and normalized to the string values above.
 
 ### Lead Status
 ```javascript
@@ -3928,7 +4218,8 @@ POST /onboarding/complete
   "Legs": "Legs",
   "Shoulders": "Shoulders",
   "Arms": "Arms",
-  "Core": "Core"
+  "Core": "Core",
+  "FullBody": "FullBody"
 }
 ```
 
@@ -3976,7 +4267,85 @@ POST /onboarding/complete
 {
   "Pending": "Pending",
   "Confirmed": "Confirmed",
-  "Cancelled": "Cancelled"
+  "Cancelled": "Cancelled",
+  "Rescheduled": "Rescheduled",
+  "Completed": "Completed",
+  "NoShow": "NoShow"
+}
+```
+
+### Appointment Mode (Nutritionist Booking)
+```javascript
+{
+  "IN_PERSON": "IN_PERSON",
+  "ONLINE": "ONLINE"
+}
+```
+
+### Nutritionist Booking Status
+```javascript
+{
+  "PENDING": "PENDING",
+  "ACCEPTED": "ACCEPTED",
+  "REJECTED": "REJECTED",
+  "COMPLETED": "COMPLETED"
+}
+```
+
+### Nutritionist Approval Status
+```javascript
+{
+  "PENDING": "PENDING",
+  "APPROVED": "APPROVED",
+  "REJECTED": "REJECTED"
+}
+```
+
+### Notification Channel
+```javascript
+{
+  "INAPP": "INAPP",
+  "PUSH": "PUSH",
+  "SOCKET": "SOCKET"
+}
+```
+
+### Notification Kind
+```javascript
+{
+  "appointment_booked": "appointment_booked",
+  "appointment_rescheduled": "appointment_rescheduled",
+  "appointment_cancelled": "appointment_cancelled",
+  "appointment_reminder": "appointment_reminder",
+  "onboarding_step_updated": "onboarding_step_updated"
+}
+```
+
+### Reminder Kind
+```javascript
+{
+  "T_MINUS_24H": "T_MINUS_24H",
+  "T_MINUS_1H": "T_MINUS_1H",
+  "T_MINUS_15M": "T_MINUS_15M"
+}
+```
+
+### Reminder Status
+```javascript
+{
+  "SCHEDULED": "SCHEDULED",
+  "FIRED": "FIRED",
+  "CANCELLED": "CANCELLED"
+}
+```
+
+### Webhook Sync Status
+```javascript
+{
+  "PENDING": "PENDING",
+  "SYNCED": "SYNCED",
+  "FAILED": "FAILED",
+  "STALE": "STALE"
 }
 ```
 
@@ -4156,7 +4525,7 @@ GET /health
 6. **Submit consent (dual):** `POST /onboarding/consent` with `{ "consents": [{ "type": "WELLNESS_SERVICES", "accepted": true, ... }, { "type": "GYM_FITNESS", "accepted": true, ... }] }` → both consents stored; IP captured; step advances to `REPORT_UPLOAD`. Legacy `{ "accepted": true }` format still accepted.
 7. **Upload report(s):** `POST /onboarding/reports` → step advances to `SPORTS_SCIENTIST_BOOKING` (can call multiple times for more reports)
 8. **Book sports scientist:** `POST /onboarding/sports-scientist` → step advances to `NUTRITIONIST_BOOKING`
-9. **Book nutritionist:** `POST /onboarding/nutritionist` → all steps done
+9. **Book nutritionist:** `POST /onboarding/nutritionist` or `POST /onboarding/nutritionist/book` (slot-based) → all steps done
 10. **Complete onboarding:** `POST /onboarding/complete` → `user.onboarded` set to `true`; admin can now see full `onboardingStatus` via `GET /users/:id`
 
 ---
@@ -4192,4 +4561,4 @@ For questions or issues with the API:
 3. Verify Authorization: Bearer headers are properly formatted
 4. Check that resource IDs are valid MongoDB ObjectIds
 
-**Last Updated:** May 16, 2026
+**Last Updated:** May 27, 2026
