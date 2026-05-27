@@ -1,5 +1,6 @@
 import { config } from "dotenv";
 import { existsSync, readFileSync } from "fs";
+import crypto from "node:crypto";
 import mongoose from "mongoose";
 import User from "../src/models/User";
 import Lead from "../src/models/Lead";
@@ -127,6 +128,7 @@ interface TestContext {
 	nutritionistSlotId?: string;
 	exerciseId?: string;
 	planId?: string;
+	foodId?: string;
 
 	workoutSessionId?: string;
 	workoutExerciseId?: string;
@@ -580,9 +582,9 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 				description: "Targeted Chest hypertrophy plan",
 				difficulty: "Intermediate",
 				duration: 4,
-				goal: "MuscleGain",
+				goal: "Hypertrophy",
 				splitType: "UpperLower",
-				status: "Published",
+				status: "Active",
 				isTemplate: true,
 				days: [
 					{
@@ -689,7 +691,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 		}
 
 		// Configure profile (Admin/Nutritionist)
-		const profileRes = await fetch(`${baseUrl}/nutrition/profile`, {
+		const profileRes = await fetch(`${baseUrl}/nutrition/profiles`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
@@ -697,27 +699,51 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			},
 			body: JSON.stringify({
 				userId: context.userId,
-				targetCalories: 2500,
-				targetProtein: 150,
-				targetCarbs: 250,
-				targetFat: 80,
+				goal: "Maintenance",
+				targetCaloriesKcal: 2500,
+				targetMacros: {
+					proteinG: 150,
+					carbsG: 250,
+					fatG: 80,
+				},
 			}),
 		});
 		expect(profileRes.status).toBe(201);
 
+		// Create Food (Nutritionist / Admin)
+		const foodRes = await fetch(`${baseUrl}/nutrition/foods`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${context.adminToken}`,
+			},
+			body: JSON.stringify({
+				name: "Chicken Breast",
+				caloriesKcal: 165,
+				proteinG: 31,
+				carbsG: 0,
+				fatG: 3.6,
+			}),
+		});
+		expect(foodRes.status).toBe(201);
+		const foodData = (await foodRes.json()) as any;
+		expect(foodData.food._id).toBeDefined();
+		context.foodId = foodData.food._id;
+
 		// Log Meal (User)
-		const logMealRes = await fetch(`${baseUrl}/nutrition/meal-log`, {
+		const logMealRes = await fetch(`${baseUrl}/nutrition/my/meal-logs`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${context.userToken}`,
 			},
 			body: JSON.stringify({
-				mealName: "High Protein Lunch",
-				calories: 700,
-				protein: 50,
-				carbs: 80,
-				fat: 20,
+				items: [
+					{
+						foodId: context.foodId,
+						quantityG: 200,
+					},
+				],
 			}),
 		});
 		expect(logMealRes.status).toBe(201);
@@ -733,21 +759,37 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			return;
 		}
 
+		const url = existsSync("src/routes/calid-webhook.routes.ts")
+			? `${baseUrl}/webhooks/cal`
+			: `${baseUrl}/webhook/calcom`;
+
+		const payloadBody = JSON.stringify({
+			triggerEvent: "BOOKING_RESCHEDULED",
+			createdAt: new Date().toISOString(),
+			payload: {
+				uid: "cal_sports_123",
+				id: 12345,
+				status: "ACCEPTED",
+				title: "Mock Booking Title",
+				startTime: "2026-06-01T11:00:00.000Z",
+				endTime: "2026-06-01T12:00:00.000Z",
+				eventTypeId: 86431,
+			},
+		});
+
+		const secret = process.env.CALID_WEBHOOK_SECRET;
+		const signature = secret
+			? crypto.createHmac("sha256", secret).update(payloadBody).digest("hex")
+			: "mock_signature_for_testing";
+
 		// Fire mock calcom update payload
-		const webhookRes = await fetch(`${baseUrl}/webhook/calcom`, {
+		const webhookRes = await fetch(url, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				"X-Cal-Signature-256": "mock_signature_for_testing",
+				"X-Cal-Signature-256": signature,
 			},
-			body: JSON.stringify({
-				triggerEvent: "BOOKING_RESCHEDULED",
-				payload: {
-					bookingId: "cal_sports_123",
-					startTime: "2026-06-01T11:00:00.000Z",
-					endTime: "2026-06-01T12:00:00.000Z",
-				},
-			}),
+			body: payloadBody,
 		});
 		expect(webhookRes.status).toBe(200);
 	});
@@ -795,9 +837,9 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 
 		// 2. Verify Sports Scientist (Doctor) Isolation Blockages
 		// Doctor cannot access nutritionist plans or patient nutrition profiles (once active)
-		const hasNutritionProfile = await isRouteActive("/nutrition/profile", "GET");
+		const hasNutritionProfile = await isRouteActive("/nutrition/profiles", "GET");
 		if (hasNutritionProfile) {
-			const doctorNutriRes = await fetch(`${baseUrl}/nutrition/profile/${context.userId}`, {
+			const doctorNutriRes = await fetch(`${baseUrl}/nutrition/profiles/${context.userId}`, {
 				method: "GET",
 				headers: {
 					"Content-Type": "application/json",

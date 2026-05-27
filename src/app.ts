@@ -22,9 +22,19 @@ import webhookRouter from "./routes/webhook.route";
 import workoutRouter from "./routes/workout.routes";
 import workoutPlanRouter from "./routes/workout-plan.routes";
 import {
+	expertAppointmentRouter,
+	adminExpertAppointmentRouter,
+} from "./routes/expert-appointment.routes";
+import calidWebhookRouter from "./routes/calid-webhook.routes";
+import notificationRouter from "./routes/notification.routes";
+import internalRouter from "./routes/internal.routes";
+import {
 	isErrorVerboseEnabled,
 	normalizeErrorResponse,
 	resolveErrorResponse,
+	buildApiErrorEnvelope,
+	isApiErrorEnvelope,
+	mapStatusToErrorCode,
 } from "./utils/api-error";
 
 config();
@@ -119,6 +129,9 @@ app.use((req, res, next) => {
 	next();
 });
 
+// Cal ID webhook MUST be mounted before express.json() — it captures raw body for HMAC
+app.use("/webhooks/cal", calidWebhookRouter);
+
 app.use(express.json());
 app.use((_req, res, next) => {
 	const originalJson = res.json.bind(res);
@@ -175,6 +188,10 @@ app.use("/nutritionist", nutritionistRouter);
 app.use("/webhook", webhookRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
+app.use("/expert-appointments", expertAppointmentRouter);
+app.use("/admin/expert-appointments", adminExpertAppointmentRouter);
+app.use("/notifications", notificationRouter);
+app.use("/internal", internalRouter);
 
 app.get("/health", (_req, res) => {
 	res.status(200).json({ ok: true });

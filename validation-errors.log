@@ -1,0 +1,59 @@
+[2026-05-27T12:26:53.920Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "E2E Hypertrophy Plan",
+  "description": "Targeted Chest hypertrophy plan",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "MuscleGain",
+  "splitType": "UpperLower",
+  "status": "Published",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Chest Day",
+      "exercises": [
+        {
+          "exerciseId": "6a16e30d1a4e0a6e544e5053",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 10,
+          "targetWeightKg": 60,
+          "restSeconds": 90
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "Draft",
+      "Active",
+      "Paused",
+      "Completed",
+      "Archived"
+    ],
+    "path": [
+      "status"
+    ],
+    "message": "Invalid option: expected one of \"Draft\"|\"Active\"|\"Paused\"|\"Completed\"|\"Archived\""
+  }
+]
+

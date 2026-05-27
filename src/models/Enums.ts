@@ -1,7 +1,7 @@
 export enum Gender {
-	Male,
-	Female,
-	Others,
+	Male = "Male",
+	Female = "Female",
+	Other = "Other",
 }
 
 export enum BookingStatus {
@@ -96,6 +96,64 @@ export enum AppointmentBookingStatus {
 	Pending = "Pending",
 	Confirmed = "Confirmed",
 	Cancelled = "Cancelled",
+	Rescheduled = "Rescheduled",
+	Completed = "Completed",
+	NoShow = "NoShow",
+}
+
+export enum WebhookSyncStatus {
+	Pending = "PENDING",
+	Synced = "SYNCED",
+	Failed = "FAILED",
+	Stale = "STALE",
+}
+
+export enum AppointmentSource {
+	UserApp = "USER_APP",
+	Admin = "ADMIN",
+	CalDashboard = "CAL_DASHBOARD",
+}
+
+export enum WebhookEventStatus {
+	Received = "RECEIVED",
+	Processing = "PROCESSING",
+	Processed = "PROCESSED",
+	Failed = "FAILED",
+	DLQ = "DLQ",
+}
+
+export enum NotificationChannel {
+	InApp = "INAPP",
+	Push = "PUSH",
+	Socket = "SOCKET",
+}
+
+export enum NotificationKind {
+	AppointmentBooked = "appointment_booked",
+	AppointmentRescheduled = "appointment_rescheduled",
+	AppointmentCancelled = "appointment_cancelled",
+	AppointmentReminder = "appointment_reminder",
+	OnboardingStepUpdated = "onboarding_step_updated",
+}
+
+export enum ReminderKind {
+	TMinus24H = "T_MINUS_24H",
+	TMinus1H = "T_MINUS_1H",
+	TMinus15M = "T_MINUS_15M",
+}
+
+export enum ReminderStatus {
+	Scheduled = "SCHEDULED",
+	Fired = "FIRED",
+	Cancelled = "CANCELLED",
+}
+
+export enum AuditAction {
+	Booked = "BOOKED",
+	Rescheduled = "RESCHEDULED",
+	Cancelled = "CANCELLED",
+	WebhookSync = "WEBHOOK_SYNC",
+	StatusChanged = "STATUS_CHANGED",
 }
 
 export enum PlanGoal {

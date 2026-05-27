@@ -200,6 +200,7 @@ export const appointmentBodySchema = z.object({
 		return value;
 	}, z.date().optional()),
 	meetingLink: optionalString,
+	calIdBookingId: optionalString,
 	calComBookingId: optionalString,
 });
 
