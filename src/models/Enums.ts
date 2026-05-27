@@ -136,3 +136,20 @@ export enum NutritionistApprovalStatus {
 	APPROVED = "APPROVED",
 	REJECTED = "REJECTED",
 }
+
+export enum InvoicePaymentStatus {
+	DRAFT = "DRAFT",
+	PENDING = "PENDING",
+	PAID = "PAID",
+	FAILED = "FAILED",
+	CANCELLED = "CANCELLED",
+	REFUNDED = "REFUNDED",
+}
+
+export enum InvoicePaymentMethod {
+	CASH = "CASH",
+	UPI = "UPI",
+	CARD = "CARD",
+	BANK_TRANSFER = "BANK_TRANSFER",
+	NONE = "NONE",
+}
