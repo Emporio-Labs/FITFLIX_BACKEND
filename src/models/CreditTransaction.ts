@@ -38,7 +38,7 @@ const creditTransactionSchema = new mongoose.Schema(
 		},
 		actorRole: {
 			type: String,
-			enum: ["admin", "user", "doctor", "trainer"],
+			enum: ["admin", "user", "doctor", "trainer", "nutritionist"],
 			default: undefined,
 		},
 		metadata: {

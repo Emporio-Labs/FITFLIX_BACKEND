@@ -23,6 +23,7 @@ const healthMarkersSchema = new mongoose.Schema(
 		medications: { type: [String], default: [] },
 		diseaseHistory: { type: [String], default: [] },
 		sleepHours: { type: Number, default: undefined },
+		bodyFatPercentage: { type: Number, default: undefined },
 		activityLevel: {
 			type: String,
 			enum: Object.values(ActivityLevel),

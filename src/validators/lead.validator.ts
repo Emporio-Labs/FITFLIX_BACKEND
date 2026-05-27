@@ -181,7 +181,6 @@ export const convertLeadBodySchema = z.object({
 	phone: z.string().trim().min(1),
 	age: z.string().trim().min(1),
 	gender: z.enum(genderValues as [string, ...string[]]),
-	healthGoals: z.array(z.string().trim().min(1)).default([]),
 	password: z.string().min(1),
 });
 

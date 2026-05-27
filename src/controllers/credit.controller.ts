@@ -6,6 +6,7 @@ import {
 	CreditServiceError,
 	getUserCreditBalance,
 	getUserCreditHistory,
+	mapCreditServiceError,
 } from "../utils/credit.service";
 import {
 	creditHistoryQuerySchema,
@@ -23,18 +24,7 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	return idParam;
 };
 
-const mapCreditServiceError = (
-	error: CreditServiceError,
-): { status: number; message: string } => {
-	switch (error.code) {
-		case "NO_ACTIVE_MEMBERSHIP":
-			return { status: 404, message: error.message };
-		case "INSUFFICIENT_CREDITS":
-			return { status: 402, message: error.message };
-		default:
-			return { status: 400, message: error.message };
-	}
-};
+
 
 export const getMyCreditBalance: RequestHandler = async (req, res, next) => {
 	if (!req.user || req.user.role !== "user") {

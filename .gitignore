@@ -6,6 +6,10 @@ out
 dist
 *.tgz
 
+
+Standardized Meal Plan.Fitflix^L.xlsx
+fitflix-storage-user_accessKeys.csv
+
 # code coverage
 coverage
 *.lcov

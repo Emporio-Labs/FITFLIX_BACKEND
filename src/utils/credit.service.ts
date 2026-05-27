@@ -7,7 +7,7 @@ import {
 } from "../models/Enums";
 import Membership from "../models/Membership";
 
-type ActorRole = "admin" | "user" | "doctor" | "trainer";
+type ActorRole = "admin" | "user" | "doctor" | "trainer" | "nutritionist";
 
 const toObjectId = (
 	value: string,
@@ -86,6 +86,19 @@ export class CreditServiceError extends Error {
 		this.code = code;
 	}
 }
+
+export const mapCreditServiceError = (
+	error: CreditServiceError,
+): { status: number; message: string } => {
+	switch (error.code) {
+		case "NO_ACTIVE_MEMBERSHIP":
+			return { status: 404, message: error.message };
+		case "INSUFFICIENT_CREDITS":
+			return { status: 402, message: error.message };
+		default:
+			return { status: 400, message: error.message };
+	}
+};
 
 type CreditContext = {
 	actorId?: string;
@@ -350,7 +363,7 @@ export const refundCreditsBySource = async (
 		);
 	}
 
-	const insertOptions: any = input.session ? { session: input.session } : undefined;
+	const insertOptions = input.session ? { session: input.session } : {};
 
 	await CreditTransaction.insertMany(
 		pendingRefunds.map((pendingRefund) => ({

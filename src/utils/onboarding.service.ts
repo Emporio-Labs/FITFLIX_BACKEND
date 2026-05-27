@@ -174,31 +174,53 @@ export const cancelExpertAppointment = async (
 		);
 	}
 
-	const stepToRewind =
-		expertType === ExpertType.SportsScientist
-			? OnboardingStep.SPORTS_SCIENTIST_BOOKING
-			: OnboardingStep.NUTRITIONIST_BOOKING;
-	const flagField = STEP_FLAG_MAP[stepToRewind];
+	// Determine which step to rewind to and which subsequent steps to remove
+	let stepToRewind: OnboardingStep | undefined;
+	let stepsToRemove: OnboardingStep[];
 
-	const setFields: Record<string, unknown> = {
-		"onboardingStatus.currentStep": stepToRewind,
-		"onboardingStatus.onboardingCompleted": false,
-		onboarded: false,
-	};
-
-	if (flagField) {
-		setFields[`onboardingStatus.${flagField}`] = false;
+	if (expertType === ExpertType.SportsScientist) {
+		stepToRewind = OnboardingStep.SPORTS_SCIENTIST_BOOKING;
+		stepsToRemove = [
+			OnboardingStep.SPORTS_SCIENTIST_BOOKING,
+			OnboardingStep.NUTRITIONIST_BOOKING,
+			OnboardingStep.COMPLETED,
+		];
+	} else if (expertType === ExpertType.Nutritionist) {
+		stepToRewind = OnboardingStep.NUTRITIONIST_BOOKING;
+		stepsToRemove = [OnboardingStep.NUTRITIONIST_BOOKING, OnboardingStep.COMPLETED];
+	} else {
+		stepsToRemove = [];
 	}
 
-	await User.findByIdAndUpdate(userObjectId, {
-		$set: setFields,
-		$unset: { "onboardingStatus.completedAt": "" },
-		$pull: {
-			"onboardingStatus.completedSteps": {
-				$in: [stepToRewind, OnboardingStep.COMPLETED],
+	if (stepToRewind) {
+		const flagField = STEP_FLAG_MAP[stepToRewind];
+
+		const setFields: Record<string, unknown> = {
+			"onboardingStatus.currentStep": stepToRewind,
+			"onboardingStatus.onboardingCompleted": false,
+			onboarded: false,
+		};
+
+		if (flagField) {
+			setFields[`onboardingStatus.${flagField}`] = false;
+		}
+
+		// When rewinding sports scientist, also clear nutritionist flag
+		if (expertType === ExpertType.SportsScientist) {
+			setFields["onboardingStatus.sportsScientistBooked"] = false;
+			setFields["onboardingStatus.nutritionistBooked"] = false;
+		}
+
+		await User.findByIdAndUpdate(userObjectId, {
+			$set: setFields,
+			$unset: { "onboardingStatus.completedAt": "" },
+			$pull: {
+				"onboardingStatus.completedSteps": {
+					$in: stepsToRemove,
+				},
 			},
-		},
-	});
+		});
+	}
 
 	return getOnboardingStatus(userId);
 };

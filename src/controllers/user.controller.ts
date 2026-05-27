@@ -8,13 +8,15 @@ import HpodMetric from "../models/HpodMetric";
 import { HpodReport } from "../models/Hpodreport.model";
 import MedicalReport from "../models/MedicalReport";
 import User from "../models/User";
+import { AppointmentBookingStatus, ExpertType } from "../models/Enums";
 import { buildApiErrorEnvelope } from "../utils/api-error";
-import { hashPassword, verifyPassword } from "../utils/password";
 import { generateSignedUrl } from "../utils/s3.service";
+import { hashPassword, verifyPassword } from "../utils/password";
 import {
 	createUserBodySchema,
 	updateMyPasswordBodySchema,
 	updateUserBodySchema,
+	listUsersQuerySchema,
 } from "../validators/user.validator";
 
 const canOnboard = (
@@ -127,21 +129,13 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 };
 
 export const createUser: RequestHandler = async (req, res, next) => {
-	console.log("[POST /users] Incoming user payload:", req.body);
-
 	const parsedBody = createUserBodySchema.safeParse(req.body);
 
 	if (!parsedBody.success) {
-		const details = getValidationDetails(parsedBody.error.issues);
-		console.warn("[POST /users] Validation failed:", {
-			details,
-			issues: parsedBody.error.issues,
-			receivedKeys: Object.keys(req.body ?? {}),
-		});
 		res.status(400).json({
 			error: "Validation failed",
 			code: "VALIDATION_ERROR",
-			details,
+			details: getValidationDetails(parsedBody.error.issues),
 		});
 		return;
 	}
@@ -196,10 +190,178 @@ export const createUser: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllUsers: RequestHandler = async (_req, res, next) => {
+export const getAllUsers: RequestHandler = async (req, res, next) => {
+	const parsed = listUsersQuerySchema.safeParse(req.query);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
 	try {
-		const users = await User.find();
-		res.status(200).json({ users });
+		const { search, status, page, limit, sort, order } = parsed.data;
+
+		const filter: Record<string, unknown> = {};
+		if (search) {
+			const searchRegex = new RegExp(search, "i");
+			filter.$or = [
+				{ username: { $regex: searchRegex } },
+				{ email: { $regex: searchRegex } },
+				{ phone: { $regex: searchRegex } },
+			];
+		}
+
+		const sortOrder = order === "asc" ? 1 : -1;
+		const sortField = sort;
+
+		const aggregatePipeline: mongoose.PipelineStage[] = [
+			{ $match: filter },
+			{
+				$lookup: {
+					from: "expertappointments",
+					let: { uid: "$_id" },
+					pipeline: [
+						{
+							$match: {
+								$expr: {
+									$and: [
+										{ $eq: ["$userId", "$$uid"] },
+										{ $eq: ["$expertType", ExpertType.Nutritionist] },
+									],
+								},
+							},
+						},
+						{ $sort: { createdAt: -1 } },
+						{ $limit: 1 },
+					],
+					as: "latestNutritionistAppointment",
+				},
+			},
+			{
+				$addFields: {
+					bookingStatus: {
+						$arrayElemAt: [
+							"$latestNutritionistAppointment.bookingStatus",
+							0,
+						],
+					},
+				},
+			},
+		];
+
+		if (status) {
+			const appointmentStatus =
+				status === "booked"
+					? AppointmentBookingStatus.Confirmed
+					: AppointmentBookingStatus.Pending;
+			aggregatePipeline.push({ $match: { bookingStatus: appointmentStatus } });
+		}
+
+		aggregatePipeline.push(
+			// ── HealthMarkers lookup (one-to-one, userId unique index) ──────────
+			{
+				$lookup: {
+					from: "healthmarkers",
+					let: { uid: "$_id" },
+					pipeline: [
+						{ $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
+						{
+							$project: {
+								_id: 0,
+								weight: 1,
+								height: 1,
+								gender: 1,
+								activityLevel: 1,
+								bmi: 1,
+								bodyFatPct: "$bodyFatPercentage",
+							},
+						},
+					],
+					as: "_healthMarkersDocs",
+				},
+			},
+			// ── HealthGoals lookup (one-to-one, userId unique index) ─────────────
+			{
+				$lookup: {
+					from: "healthgoals",
+					let: { uid: "$_id" },
+					pipeline: [
+						{ $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
+						{ $project: { _id: 0, goals: 1, targetWeight: 1 } },
+					],
+					as: "_healthGoalsDocs",
+				},
+			},
+		);
+
+		// Sort → paginate → project (order matters: filter/lookup before sort+paginate)
+		aggregatePipeline.push(
+			{ $sort: { [sortField]: sortOrder } },
+			{ $skip: (page - 1) * limit },
+			{ $limit: limit },
+			{
+				$project: {
+					_id: 1,
+					username: 1,
+					email: 1,
+					phone: 1,
+					age: 1,
+					gender: 1,
+					onboardingStatus: {
+						currentStep: "$onboardingStatus.currentStep",
+						completedSteps: { $ifNull: ["$onboardingStatus.completedSteps", []] },
+						isCompleted: { $ifNull: ["$onboardingStatus.onboardingCompleted", false] },
+					},
+					bookingStatus: 1,
+					// Shape healthMarkers: merge first lookup element with targetWeight from healthGoals
+					healthMarkers: {
+						$mergeObjects: [
+							{
+								$cond: [
+									{ $gt: [{ $size: "$_healthMarkersDocs" }, 0] },
+									{ $arrayElemAt: ["$_healthMarkersDocs", 0] },
+									{},
+								],
+							},
+							{
+								targetWeight: {
+									$ifNull: [
+										{ $arrayElemAt: ["$_healthGoalsDocs.targetWeight", 0] },
+										null,
+									],
+								},
+							},
+						],
+					},
+					// Shape healthGoals: goals[] from first element, or empty array
+					healthGoals: {
+						$cond: [
+							{ $gt: [{ $size: "$_healthGoalsDocs" }, 0] },
+							{ $arrayElemAt: ["$_healthGoalsDocs.goals", 0] },
+							{ $ifNull: ["$healthGoals", []] },
+						],
+					},
+				},
+			},
+		);
+
+		const [users, total] = await Promise.all([
+			User.aggregate(aggregatePipeline).exec(),
+			User.countDocuments(filter),
+		]);
+
+		res.status(200).json({
+			users,
+			pagination: {
+				page,
+				limit,
+				total,
+				totalPages: Math.ceil(total / limit),
+			},
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -235,6 +397,9 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 	const id = getIdParam(req.params.id);
 
 	if (!id) {
+		if (process.env.NODE_ENV !== "production") {
+			console.warn("[getUserById] invalid id", { raw: req.params.id, role: req.user?.role, requestingUser: req.user?.id });
+		}
 		res.status(400).json({
 			error: "Validation failed",
 			code: "VALIDATION_ERROR",
@@ -247,6 +412,9 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 		const user = await User.findById(id);
 
 		if (!user) {
+			if (process.env.NODE_ENV !== "production") {
+				console.warn("[getUserById] user not found", { id, role: req.user?.role, requestingUser: req.user?.id });
+			}
 			res.status(404).json({
 				error: "User not found",
 				code: "NOT_FOUND",
@@ -254,7 +422,39 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		res.status(200).json({ user });
+		const [healthMarkersRaw, healthGoals, reports] = await Promise.all([
+			HealthMarkers.findOne({ userId: id }),
+			HealthGoals.findOne({ userId: id }),
+			MedicalReport.find({ userId: id }).sort({ uploadedAt: -1 }),
+		]);
+
+		let computedBmi = healthMarkersRaw?.bmi;
+		if (healthMarkersRaw && !computedBmi && healthMarkersRaw.weight && healthMarkersRaw.height) {
+			const heightInMeters = healthMarkersRaw.height / 100;
+			computedBmi = Number((healthMarkersRaw.weight / (heightInMeters * heightInMeters)).toFixed(1));
+		}
+
+		res.status(200).json({
+			success: true,
+			data: {
+				user,
+				onboarding: user.onboardingStatus ?? null,
+				healthMarkers: {
+					weight: healthMarkersRaw?.weight ? `${healthMarkersRaw.weight}kg` : null,
+					height: healthMarkersRaw?.height ? `${healthMarkersRaw.height}cm` : null,
+					age: user.age ?? null,
+					goal: healthGoals?.goals?.[0] ?? null,
+					gender: user.gender ?? null,
+					bmi: computedBmi ?? null,
+					activityLevel: healthMarkersRaw?.activityLevel ?? null,
+					targetWeight: healthGoals?.targetWeight ? `${healthGoals.targetWeight}kg` : null,
+					bodyFatPct: healthMarkersRaw?.bodyFatPercentage ?? null,
+					bodyFatPercentage: healthMarkersRaw?.bodyFatPercentage ?? null,
+				},
+				goals: healthGoals?.goals ?? [],
+				reports,
+			}
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -297,6 +497,13 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 				),
 			]);
 
+		const status = user.onboardingStatus;
+		const onboardingStatus = {
+			currentStep: status?.currentStep ?? "HEALTH_MARKERS",
+			completedSteps: status?.completedSteps ?? [],
+			isCompleted: Boolean(status?.onboardingCompleted),
+		};
+
 		const reportsWithUrls = await Promise.all(
 			reports.map(async (report) => {
 				const r = report.toObject();
@@ -322,12 +529,49 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({
 			user,
+			onboardingStatus,
 			healthMarkers: healthMarkers ?? null,
 			healthGoals: healthGoals ?? null,
 			consents: consent?.consents ?? [],
 			reports: reportsWithUrls,
 			appointments,
 		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getReportSignedUrl: RequestHandler = async (req, res, next) => {
+	const userId = getIdParam(req.params.id);
+	const reportId = getIdParam(req.params.reportId);
+
+	if (!userId || !reportId) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: { id: "Invalid user id or report id" },
+		});
+		return;
+	}
+
+	try {
+		const report = await MedicalReport.findOne({ _id: reportId, userId });
+
+		if (!report) {
+			res.status(404).json({ error: "Report not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		if (!report.s3Key) {
+			res.status(404).json({
+				error: "No file is attached to this report",
+				code: "NOT_FOUND",
+			});
+			return;
+		}
+
+		const url = await generateSignedUrl(report.s3Key);
+		res.status(200).json({ url, expiresIn: 3600 });
 	} catch (error) {
 		next(error);
 	}

@@ -73,6 +73,7 @@ export const createLead: RequestHandler = async (req, res, next) => {
 	try {
 		const lead = await Lead.create({
 			...leadData,
+			status: leadData.status as import("../models/Enums").LeadStatus | undefined,
 			...(followUpDateValue ? { followUpDate: followUpDateValue } : {}),
 			...(ownerId ? { owner: ownerId } : {}),
 		});

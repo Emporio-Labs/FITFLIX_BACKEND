@@ -12,7 +12,7 @@ const ALL_STEPS = [
 	OnboardingStep.HEALTH_GOALS,
 	OnboardingStep.CONSENT,
 	OnboardingStep.REPORT_UPLOAD,
-	OnboardingStep.SPORTS_SCIENTIST_BOOKING,
+	// OnboardingStep.SPORTS_SCIENTIST_BOOKING, // Removed
 	OnboardingStep.NUTRITIONIST_BOOKING,
 	OnboardingStep.COMPLETED,
 ];
@@ -23,12 +23,14 @@ async function main() {
 	try {
 		await connectDB();
 
-		const users = await User.find({}).select("_id onboarded onboardingStatus");
+		const users = await User.find({})
+			.select("_id onboarded onboardingStatus updatedAt")
+			.lean();
 		let updatedCount = 0;
 		let skippedCount = 0;
 
 		for (const user of users) {
-			if (user.onboardingStatus?.currentStep) {
+			if ((user as any).onboardingStatus?.currentStep) {
 				skippedCount++;
 				continue;
 			}
@@ -47,7 +49,7 @@ async function main() {
 							"onboardingStatus.sportsScientistBooked": true,
 							"onboardingStatus.nutritionistBooked": true,
 							"onboardingStatus.onboardingCompleted": true,
-							"onboardingStatus.completedAt": user.get("updatedAt") ?? new Date(),
+							"onboardingStatus.completedAt": (user as any).updatedAt ?? new Date(),
 						},
 					}
 				: {
