@@ -247,10 +247,83 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllLeads: RequestHandler = async (_req, res, next) => {
+export const getAllLeads: RequestHandler = async (req, res, next) => {
 	try {
-		const leads = await Lead.find();
+		const { source, status, tags } = req.query;
+		const filter: Record<string, unknown> = {};
+
+		if (typeof source === "string" && source) {
+			filter.source = source;
+		}
+		if (typeof status === "string" && status) {
+			filter.status = status;
+		}
+		if (typeof tags === "string" && tags) {
+			filter.tags = { $in: tags.split(",").map((t) => t.trim()).filter(Boolean) };
+		}
+
+		const leads = await Lead.find(filter).populate(
+			"convertedUser",
+			"username email onboarded onboardingStatus",
+		);
 		res.status(200).json({ leads });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getLeadStats: RequestHandler = async (_req, res, next) => {
+	try {
+		const [byStatus, bySource, signupFunnel] = await Promise.all([
+			Lead.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+			Lead.aggregate([{ $group: { _id: "$source", count: { $sum: 1 } } }]),
+			Lead.aggregate([
+				{ $match: { source: "app-signup", convertedUser: { $ne: null } } },
+				{
+					$lookup: {
+						from: "users",
+						localField: "convertedUser",
+						foreignField: "_id",
+						as: "user",
+						pipeline: [
+							{
+								$project: {
+									onboarded: 1,
+									"onboardingStatus.currentStep": 1,
+									"onboardingStatus.onboardingCompleted": 1,
+								},
+							},
+						],
+					},
+				},
+				{ $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+				{
+					$group: {
+						_id: {
+							onboarded: { $ifNull: ["$user.onboarded", false] },
+							currentStep: {
+								$ifNull: [
+									"$user.onboardingStatus.currentStep",
+									"HEALTH_MARKERS",
+								],
+							},
+						},
+						count: { $sum: 1 },
+					},
+				},
+				{ $sort: { count: -1 } },
+			]),
+		]);
+
+		res.status(200).json({
+			byStatus: Object.fromEntries(
+				byStatus.map((s) => [s._id ?? "unknown", s.count]),
+			),
+			bySource: Object.fromEntries(
+				bySource.map((s) => [s._id ?? "unknown", s.count]),
+			),
+			signupFunnel,
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -265,7 +338,10 @@ export const getLeadById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const lead = await Lead.findById(id);
+		const lead = await Lead.findById(id).populate(
+			"convertedUser",
+			"username email onboarded onboardingStatus",
+		);
 
 		if (!lead) {
 			res.status(404).json({ message: "Lead not found" });

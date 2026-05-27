@@ -1,9 +1,11 @@
 import type { RequestHandler } from "express";
 import Admin from "../models/Admin";
 import Doctor from "../models/Doctor";
+import Lead from "../models/Lead";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
 import TokenBlacklist from "../models/TokenBlacklist";
+import { LeadStatus } from "../models/Enums";
 import {
 	hashPassword,
 	isHashedPassword,
@@ -133,6 +135,26 @@ export const signup: RequestHandler = async (req, res, next) => {
 				onboardingCompleted: false,
 				startedAt: new Date(),
 			},
+		});
+
+		// Upsert CRM lead in background — never block signup on this.
+		// If this email was already captured as a public/form lead, update it
+		// rather than creating a duplicate record.
+		Lead.findOneAndUpdate(
+			{ email },
+			{
+				$set: {
+					leadName: username,
+					phone: phone ?? "",
+					source: "app-signup",
+					status: LeadStatus.Converted,
+					convertedUser: createdUser._id,
+				},
+				$addToSet: { tags: { $each: ["signup", "app-signup"] } },
+			},
+			{ upsert: true, new: true },
+		).catch((err) => {
+			console.error("[AUTH][SIGNUP] Lead upsert failed", err);
 		});
 
 		res.status(201).json({
