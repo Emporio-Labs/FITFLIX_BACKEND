@@ -64,7 +64,7 @@ export async function sendPushToUser(
 
 	// Prune dead tokens
 	const deadTokens: string[] = [];
-	response.responses.forEach((r, idx) => {
+	response.responses.forEach((r: any, idx: number) => {
 		if (
 			!r.success &&
 			(r.error?.code === "messaging/registration-token-not-registered" ||

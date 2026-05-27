@@ -446,7 +446,7 @@ export const rescheduleAppointment: RequestHandler = async (req, res, next) => {
 			{
 				calBookingId: appointment.calIdEventId ?? appointment.calIdBookingId,
 				calBookingUid: appointment.calIdBookingId,
-				calEventTypeId: appointment.calIdEventTypeId,
+				calEventTypeId: appointment.calIdEventTypeId ?? undefined,
 				newSlotStart: slotStart,
 				timezone,
 				reason,
