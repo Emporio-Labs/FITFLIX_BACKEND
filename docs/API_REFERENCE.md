@@ -26,18 +26,19 @@ Single-source HTTP reference for the Fitflix Express + MongoDB backend that powe
 12. [Services — `/services`](#services--services)
 13. [Therapies — `/therapies`](#therapies--therapies)
 14. [Bookings — `/bookings`](#bookings--bookings)
-15. [Appointments — `/appointments`](#appointments--appointments)
-16. [Credits — `/credits`](#credits--credits)
-17. [Memberships — `/memberships`](#memberships--memberships)
-18. [Schedules — `/schedules`](#schedules--schedules)
-19. [Exercises — `/exercises`](#exercises--exercises)
-20. [Workouts — `/workouts`](#workouts--workouts)
-21. [Workout plans — `/workout-plans`](#workout-plans--workout-plans)
-22. [Leads — `/leads`](#leads--leads)
-23. [Webhook — `/webhook`](#webhook--webhook)
-24. [Nutrition — `/nutrition`](#nutrition--nutrition)
-25. [Health check — `/health`](#health-check--health)
-26. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
+15. [Appointments (Doctors) — `/appointments`](#appointments--appointments)
+16. [Expert Appointments — `/expert-appointments`](#expert-appointments--expert-appointments)
+17. [Credits — `/credits`](#credits--credits)
+18. [Memberships — `/memberships`](#memberships--memberships)
+19. [Schedules — `/schedules`](#schedules--schedules)
+20. [Exercises — `/exercises`](#exercises--exercises)
+21. [Workouts — `/workouts`](#workouts--workouts)
+22. [Workout plans — `/workout-plans`](#workout-plans--workout-plans)
+23. [Leads — `/leads`](#leads--leads)
+24. [Webhook — `/webhook`](#webhook--webhook)
+25. [Nutrition — `/nutrition`](#nutrition--nutrition)
+26. [Health check — `/health`](#health-check--health)
+27. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
 
 ---
 
@@ -814,26 +815,10 @@ curl -X POST "https://api.example.com/onboarding/reports" \
 
 **Success (201):** `{ "message": "Report uploaded", "report": { /* ... */ } }`
 
-### POST /onboarding/appointments
+### Expert Appointments — `/expert-appointments`
 
-Steps 5 & 6. `sports_scientist` must be booked before `nutritionist`.
-
-**Request body**
-
-| Field | Type | Required |
-|---|---|---|
-| `expertType` | `ExpertType` | yes |
-| `appointmentDate` | ISO date | no |
-| `meetingLink` | string | no |
-| `calComBookingId` | string | no |
-
-```bash
-curl -X POST "https://api.example.com/onboarding/appointments" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{ "expertType": "sports_scientist", "appointmentDate": "2026-06-01T10:00:00.000Z" }'
-```
-
-**Success (201):** `{ "message": "sports_scientist appointment booked", "appointment": { /* ... */ } }`
+> [!NOTE]
+> The Expert Appointments endpoints (User & Admin routes) have been promoted to their own dedicated top-level section. See [Expert Appointments — `/expert-appointments`](#expert-appointments--expert-appointments) for complete routing details.
 
 ### POST /onboarding/complete
 
@@ -1429,6 +1414,325 @@ curl -X PATCH "https://api.example.com/appointments/5f1a2b3c4d5e6f7a8b9c0d1e/sta
 ```
 
 **Success (200):** `{ "message": "Appointment status updated", "appointment": { /* ... */ }, "credits": { "refunded": 0 } }`
+
+---
+
+## Expert Appointments — `/expert-appointments`
+
+Specialized appointment scheduling for booking Sports Scientist and Nutritionist consultations during and after onboarding. Powered by Cal ID and integrated with Google Meet and Google Calendar.
+
+### User Routes — `/expert-appointments`
+
+These endpoints require `Authorization: Bearer <token>` with the role `user`.
+
+#### GET /expert-appointments/availability
+
+Query available slot dates and times for a specific expert type.
+
+**Query parameters**
+
+| Parameter | Type | Required | Constraints |
+|---|---|---|---|
+| `expertType` | string | yes | `sports_scientist` \| `nutritionist` |
+| `startDate` | string | yes | `YYYY-MM-DD` |
+| `endDate` | string | yes | `YYYY-MM-DD` |
+| `timezone` | string | yes | IANA timezone string (e.g. `Asia/Kolkata`) |
+
+**Example request**
+```bash
+curl "https://api.example.com/expert-appointments/availability?expertType=nutritionist&startDate=2026-05-27&endDate=2026-06-09&timezone=Asia/Kolkata" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Success response (200)**
+```json
+{
+  "days": [
+    {
+      "date": "2026-05-27",
+      "slots": [
+        {
+          "start": "2026-05-27T10:00:00.000Z",
+          "end": "2026-05-27T10:30:00.000Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### POST /expert-appointments/book
+
+Book a selected availability slot. Marks the corresponding onboarding step complete.
+
+**Request body**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `expertType` | string | yes | `sports_scientist` \| `nutritionist` |
+| `slotStart` | string | yes | ISO-8601 timestamp (e.g., `2026-05-27T10:00:00.000Z`) |
+| `timezone` | string | yes | IANA timezone string (e.g. `Asia/Kolkata`) |
+| `idempotencyKey` | string | no | Custom unique string to prevent duplicate booking |
+
+**Example request**
+```bash
+curl -X POST "https://api.example.com/expert-appointments/book" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "expertType": "nutritionist",
+    "slotStart": "2026-05-27T10:00:00.000Z",
+    "timezone": "Asia/Kolkata"
+  }'
+```
+
+**Success response (201)**
+```json
+{
+  "message": "Appointment booked",
+  "appointment": {
+    "_id": "6a155160963fc70a99e94cb2",
+    "userId": "6a154915d00ec8d02047e53d",
+    "expertType": "nutritionist",
+    "bookingStatus": "Confirmed",
+    "appointmentStart": "2026-05-27T10:00:00.000Z",
+    "appointmentEnd": "2026-05-27T10:30:00.000Z",
+    "calIdBookingId": "bKHU7iV8fynVuG9vYqhaSr",
+    "calIdEventTypeId": "86433",
+    "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
+    "webhookSyncStatus": "SYNCED"
+  }
+}
+```
+
+#### GET /expert-appointments/me
+
+Retrieve the authenticated user's own expert appointments categorized by their temporal status.
+
+**Example request**
+```bash
+curl "https://api.example.com/expert-appointments/me" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Success response (200)**
+```json
+{
+  "upcoming": [
+    {
+      "_id": "6a155160963fc70a99e94cb2",
+      "userId": "6a154915d00ec8d02047e53d",
+      "expertType": "nutritionist",
+      "bookingStatus": "Confirmed",
+      "appointmentStart": "2026-05-27T10:00:00.000Z",
+      "appointmentEnd": "2026-05-27T10:30:00.000Z",
+      "calIdBookingId": "bKHU7iV8fynVuG9vYqhaSr",
+      "calIdEventTypeId": "86433",
+      "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
+      "webhookSyncStatus": "SYNCED"
+    }
+  ],
+  "completed": [],
+  "cancelled": [],
+  "missed": []
+}
+```
+
+#### PATCH /expert-appointments/:id/reschedule
+
+Reschedule a confirmed active appointment to a new slot.
+
+**Request body**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `slotStart` | string | yes | New ISO-8601 timestamp |
+| `timezone` | string | yes | IANA timezone string |
+| `reason` | string | no | Max 500 characters |
+
+**Example request**
+```bash
+curl -X PATCH "https://api.example.com/expert-appointments/6a155160963fc70a99e94cb2/reschedule" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "slotStart": "2026-05-27T11:00:00.000Z",
+    "timezone": "Asia/Kolkata"
+  }'
+```
+
+**Success response (200)**
+```json
+{
+  "message": "Appointment rescheduled",
+  "appointment": {
+    "_id": "6a155160963fc70a99e94cb2",
+    "userId": "6a154915d00ec8d02047e53d",
+    "expertType": "nutritionist",
+    "bookingStatus": "Rescheduled",
+    "appointmentStart": "2026-05-27T11:00:00.000Z",
+    "appointmentEnd": "2026-05-27T11:30:00.000Z",
+    "calIdBookingId": "bKHU7iV8fynVuG9vYqhaSr",
+    "calIdEventTypeId": "86433",
+    "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
+    "webhookSyncStatus": "SYNCED"
+  }
+}
+```
+
+#### PATCH /expert-appointments/:id/cancel
+
+Cancel a confirmed active appointment. Automatically rewinds the corresponding onboarding step if onboarding has not been finalized.
+
+**Request body**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `reason` | string | no | Max 500 characters |
+
+**Example request**
+```bash
+curl -X PATCH "https://api.example.com/expert-appointments/6a155160963fc70a99e94cb2/cancel" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Schedule conflict"
+  }'
+```
+
+**Success response (200)**
+```json
+{
+  "message": "Appointment cancelled"
+}
+```
+
+---
+
+### Admin Routes — `/admin/expert-appointments`
+
+These endpoints require `Authorization: Bearer <token>` with the role `admin`.
+
+#### GET /admin/expert-appointments
+
+Retrieve a paginated, filterable list of all expert appointments.
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `expertType` | string | no | `sports_scientist` \| `nutritionist` |
+| `status` | string | no | Filter by status |
+| `userId` | string | no | Filter by 24-character user ObjectId |
+| `date` | string | no | `YYYY-MM-DD` |
+| `page` | number | no | Default: 1 |
+| `limit` | number | no | Default: 20, max 100 |
+
+**Example request**
+```bash
+curl "https://api.example.com/admin/expert-appointments?expertType=nutritionist&page=1&limit=20" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Success response (200)**
+```json
+{
+  "appointments": [
+    {
+      "_id": "6a155160963fc70a99e94cb2",
+      "userId": {
+        "_id": "6a154915d00ec8d02047e53d",
+        "username": "jane.doe",
+        "email": "user@example.com",
+        "phone": "+15555550123"
+      },
+      "expertType": "nutritionist",
+      "bookingStatus": "Confirmed",
+      "appointmentStart": "2026-05-27T10:00:00.000Z",
+      "appointmentEnd": "2026-05-27T10:30:00.000Z",
+      "calIdBookingId": "bKHU7iV8fynVuG9vYqhaSr",
+      "calIdEventTypeId": "86433",
+      "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
+      "webhookSyncStatus": "SYNCED"
+    }
+  ],
+  "pagination": {
+    "total": 1,
+    "page": 1,
+    "limit": 20,
+    "pages": 1
+  }
+}
+```
+
+#### GET /admin/expert-appointments/:id
+
+Retrieve detailed information for a specific expert appointment, along with its comprehensive audit log history.
+
+**Path parameters:** `id` — appointment ObjectId.
+
+**Example request**
+```bash
+curl "https://api.example.com/admin/expert-appointments/6a155160963fc70a99e94cb2" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Success response (200)**
+```json
+{
+  "appointment": {
+    "_id": "6a155160963fc70a99e94cb2",
+    "userId": {
+      "_id": "6a154915d00ec8d02047e53d",
+      "username": "jane.doe",
+      "email": "user@example.com",
+      "phone": "+15555550123"
+    },
+    "expertType": "nutritionist",
+    "bookingStatus": "Confirmed",
+    "appointmentStart": "2026-05-27T10:00:00.000Z",
+    "appointmentEnd": "2026-05-27T10:30:00.000Z",
+    "calIdBookingId": "bKHU7iV8fynVuG9vYqhaSr",
+    "calIdEventTypeId": "86433",
+    "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
+    "webhookSyncStatus": "SYNCED"
+  },
+  "auditLogs": [
+    {
+      "_id": "6a155165963fc70a99e94cc3",
+      "appointmentId": "6a155160963fc70a99e94cb2",
+      "userId": "6a154915d00ec8d02047e53d",
+      "action": "booked",
+      "actor": "user",
+      "actorId": "6a154915d00ec8d02047e53d",
+      "calBookingId": "bKHU7iV8fynVuG9vYqhaSr",
+      "createdAt": "2026-05-26T13:45:00.000Z"
+    }
+  ]
+}
+```
+
+#### PATCH /admin/expert-appointments/:id/cancel
+
+Cancel an expert appointment as an administrator.
+
+**Request body**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `reason` | string | no | Max 500 characters |
+
+**Example request**
+```bash
+curl -X PATCH "https://api.example.com/admin/expert-appointments/6a155160963fc70a99e94cb2/cancel" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Administrative release of slot"
+  }'
+```
+
+**Success response (200)**
+```json
+{
+  "message": "Appointment cancelled"
+}
 
 ---
 
@@ -2838,8 +3142,8 @@ Steps are enforced server-side via [src/utils/onboarding.service.ts](../src/util
 | 2 | `HEALTH_GOALS` | `POST /onboarding/health-goals` | |
 | 3 | `CONSENT` | `POST /onboarding/consent` | Captures IP automatically |
 | 4 | `REPORT_UPLOAD` | `POST /onboarding/reports` | Multiple submissions allowed |
-| 5 | `SPORTS_SCIENTIST_BOOKING` | `POST /onboarding/appointments` (`expertType: "sports_scientist"`) | Must precede step 6 |
-| 6 | `NUTRITIONIST_BOOKING` | `POST /onboarding/appointments` (`expertType: "nutritionist"`) | |
+| 5 | `SPORTS_SCIENTIST_BOOKING` | `POST /expert-appointments/book` (`expertType: "sports_scientist"`) | Must precede step 6 |
+| 6 | `NUTRITIONIST_BOOKING` | `POST /expert-appointments/book` (`expertType: "nutritionist"`) | |
 | 7 | `COMPLETED` | `POST /onboarding/complete` | Sets `user.onboarded = true` |
 
 Legacy single-step alternative: `PATCH /users/:id/onboard` — still supported but bypasses the granular step tracking. New clients should use the steps above.

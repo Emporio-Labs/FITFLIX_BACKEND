@@ -14,6 +14,17 @@ const userSchema = new mongoose.Schema(
 		address: { type: String, default: undefined },
 		passwordHash: { type: String, required: true, select: false },
 		onboarded: { type: Boolean, default: false },
+		fcmTokens: {
+			type: [
+				{
+					token: { type: String, required: true },
+					platform: { type: String, enum: ["ios", "android"], required: true },
+					lastSeenAt: { type: Date, default: Date.now },
+				},
+			],
+			default: [],
+			select: false,
+		},
 		onboardingStatus: {
 			currentStep: {
 				type: String,

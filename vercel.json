@@ -11,5 +11,11 @@
 			"src": "/(.*)",
 			"dest": "/api/index.bundle.cjs"
 		}
+	],
+	"crons": [
+		{
+			"path": "/internal/reminders/tick",
+			"schedule": "* * * * *"
+		}
 	]
 }

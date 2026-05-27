@@ -9,13 +9,16 @@
 		"build:vercel": "bun build api/index.ts --target=node --format=cjs --outfile=api/index.bundle.cjs && echo module.exports = handler; >> api/index.bundle.cjs",
 		"create:admin": "bun run scripts/create-admin.ts",
 		"migrate:credits": "bun run scripts/migrate-credits.ts",
-		"seed:exercises": "bun run scripts/seed-exercises.ts"
+		"seed:exercises": "bun run scripts/seed-exercises.ts",
+		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
+		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.8",
 		"@types/bun": "latest",
 		"@types/jsonwebtoken": "^9.0.10",
 		"@types/multer": "^2.1.0",
+		"@types/node": "^25.9.1",
 		"@types/pdf-parse": "^1.1.5"
 	},
 	"peerDependencies": {
@@ -28,12 +31,14 @@
 		"bcryptjs": "^3.0.3",
 		"dotenv": "^17.3.1",
 		"express": "^5.2.1",
+		"firebase-admin": "^13.10.0",
 		"googleapis": "^171.4.0",
 		"jsonwebtoken": "^9.0.2",
 		"mongoose": "^9.3.1",
 		"multer": "^2.1.1",
 		"openai": "^6.33.0",
 		"pdf-parse": "^2.4.5",
+		"socket.io": "^4.8.3",
 		"zod": "^4.3.6"
 	}
 }

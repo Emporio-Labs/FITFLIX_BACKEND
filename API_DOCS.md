@@ -2,7 +2,7 @@
 
 **Base URL:** `http://localhost:3000`  
 **API Version:** 1.0.0  
-**Last Updated:** May 16, 2026
+**Last Updated:** May 26, 2026
 
 ---
 
@@ -22,13 +22,14 @@
 12. [Lead Routes](#lead-routes)
 13. [Booking Routes](#booking-routes)
 14. [Appointment Routes](#appointment-routes)
-15. [Credit Routes](#credit-routes)
-16. [Schedule Routes](#schedule-routes)
-17. [Exercise Routes](#exercise-routes)
-18. [Workout Routes](#workout-routes)
-19. [Onboarding Routes](#onboarding-routes)
-20. [Enums & Status Codes](#enums--status-codes)
-21. [Error Handling](#error-handling)
+15. [Expert Appointment Routes](#expert-appointment-routes)
+16. [Credit Routes](#credit-routes)
+17. [Schedule Routes](#schedule-routes)
+18. [Exercise Routes](#exercise-routes)
+19. [Workout Routes](#workout-routes)
+20. [Onboarding Routes](#onboarding-routes)
+21. [Enums & Status Codes](#enums--status-codes)
+22. [Error Handling](#error-handling)
 
 ---
 
@@ -83,6 +84,7 @@ The system supports 4 role types:
 | `/leads` | Lead intake and conversion | ✅ Mixed roles + 1 public capture endpoint | 7 endpoints |
 | `/bookings` | Service bookings | ✅ Mixed roles | 7 endpoints |
 | `/appointments` | Doctor appointments | ✅ Mixed roles | 7 endpoints |
+| `/expert-appointments` | Expert appointments (nutritionist/sports scientist) | ✅ User + Admin | 6 endpoints |
 | `/credits` | Credit balance, history, top-up | ✅ Admin + User (self-service for user) | 5 endpoints |
 | `/schedules` | User schedules/todos | ✅ All authenticated | 6 endpoints |
 | `/exercises` | Exercise library | ✅ Admin + User | 5 endpoints |
@@ -2024,6 +2026,116 @@ POST /appointments
   }
 }
 ```
+
+---
+
+## Expert Appointment Routes
+
+### Base Path: `/expert-appointments`
+
+**Global Requirements:**
+- ✅ JWT Bearer token required for all endpoints
+
+#### 1. Availability
+```
+GET /expert-appointments/availability
+```
+
+**Authentication:** ✅ User
+
+**Query Parameters:**
+```txt
+expertType: "nutritionist" | "sports_scientist"
+startDate: YYYY-MM-DD
+endDate: YYYY-MM-DD
+timezone: e.g. "Asia/Kolkata"
+```
+
+**Response (200 OK):**
+```json
+{
+  "days": [
+    {
+      "date": "YYYY-MM-DD",
+      "slots": [
+        { "start": "ISO_timestamp_string", "end": "ISO_timestamp_string" }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+#### 2. Book
+```
+POST /expert-appointments/book
+```
+
+**Authentication:** ✅ User
+
+**Request Body:**
+```json
+{
+  "expertType": "nutritionist" | "sports_scientist",
+  "slotStart": "ISO_timestamp_string",
+  "timezone": "Asia/Kolkata"
+}
+```
+
+---
+
+#### 3. Get My Expert Appointment
+```
+GET /expert-appointments/me
+```
+
+**Authentication:** ✅ User
+
+---
+
+#### 4. Reschedule
+```
+PATCH /expert-appointments/:id/reschedule
+```
+
+**Authentication:** ✅ User
+
+**Request Body:**
+```json
+{
+  "slotStart": "ISO_timestamp_string",
+  "timezone": "Asia/Kolkata",
+  "reason": "optional string"
+}
+```
+
+---
+
+#### 5. Cancel
+```
+PATCH /expert-appointments/:id/cancel
+```
+
+**Authentication:** ✅ User
+
+**Request Body:**
+```json
+{
+  "reason": "optional string"
+}
+```
+
+---
+
+### Admin Routes: `/admin/expert-appointments`
+
+#### 6. List Expert Appointments
+```
+GET /admin/expert-appointments
+```
+
+**Authentication:** ✅ Admin
 
 **Error Responses:**
 - `402` — Insufficient credits.
