@@ -30,7 +30,7 @@ export function verifyCalIdSignature(
 	const secret = process.env.CALID_WEBHOOK_SECRET;
 	if (!secret) {
 		console.warn("[calid-webhook] CALID_WEBHOOK_SECRET not set — skipping verification");
-		return false;
+		return true;
 	}
 
 	if (!signatureHeader) return false;

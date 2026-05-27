@@ -1,5 +1,6 @@
 import { config } from "dotenv";
 import { existsSync, readFileSync } from "fs";
+import crypto from "node:crypto";
 import mongoose from "mongoose";
 import User from "../src/models/User";
 import Lead from "../src/models/Lead";
@@ -758,21 +759,37 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			return;
 		}
 
+		const url = existsSync("src/routes/calid-webhook.routes.ts")
+			? `${baseUrl}/webhooks/cal`
+			: `${baseUrl}/webhook/calcom`;
+
+		const payloadBody = JSON.stringify({
+			triggerEvent: "BOOKING_RESCHEDULED",
+			createdAt: new Date().toISOString(),
+			payload: {
+				uid: "cal_sports_123",
+				id: 12345,
+				status: "ACCEPTED",
+				title: "Mock Booking Title",
+				startTime: "2026-06-01T11:00:00.000Z",
+				endTime: "2026-06-01T12:00:00.000Z",
+				eventTypeId: 86431,
+			},
+		});
+
+		const secret = process.env.CALID_WEBHOOK_SECRET;
+		const signature = secret
+			? crypto.createHmac("sha256", secret).update(payloadBody).digest("hex")
+			: "mock_signature_for_testing";
+
 		// Fire mock calcom update payload
-		const webhookRes = await fetch(`${baseUrl}/webhook/calcom`, {
+		const webhookRes = await fetch(url, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				"X-Cal-Signature-256": "mock_signature_for_testing",
+				"X-Cal-Signature-256": signature,
 			},
-			body: JSON.stringify({
-				triggerEvent: "BOOKING_RESCHEDULED",
-				payload: {
-					bookingId: "cal_sports_123",
-					startTime: "2026-06-01T11:00:00.000Z",
-					endTime: "2026-06-01T12:00:00.000Z",
-				},
-			}),
+			body: payloadBody,
 		});
 		expect(webhookRes.status).toBe(200);
 	});
