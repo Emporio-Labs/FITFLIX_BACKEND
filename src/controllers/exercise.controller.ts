@@ -127,7 +127,7 @@ export const createExercise: RequestHandler = async (req, res, next) => {
 
 		const exercise = await Exercise.create({
 			...parsed.data,
-			isSystem: false,
+			isSystem: req.user!.role === "admin",
 			createdBy: new mongoose.Types.ObjectId(req.user!.id),
 		});
 

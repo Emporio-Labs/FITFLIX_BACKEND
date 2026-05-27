@@ -28,5 +28,7 @@ const leadSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
-export default (mongoose.models.Lead as mongoose.Model<unknown>) ||
-	mongoose.model("Lead", leadSchema);
+type LeadDocument = mongoose.InferSchemaType<typeof leadSchema>;
+
+export default (mongoose.models.Lead as mongoose.Model<LeadDocument>) ||
+	mongoose.model<LeadDocument>("Lead", leadSchema);

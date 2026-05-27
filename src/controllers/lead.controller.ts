@@ -489,7 +489,7 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			username: username ?? lead.leadName,
 			phone,
 			email: lead.email,
-			age,
+			age: Number(age),
 			gender,
 			healthGoals,
 			passwordHash,

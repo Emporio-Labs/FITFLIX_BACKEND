@@ -1,4 +1,5 @@
 import { config } from "dotenv";
+import { existsSync, readFileSync } from "fs";
 import mongoose from "mongoose";
 import User from "../src/models/User";
 import Lead from "../src/models/Lead";
@@ -499,9 +500,8 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 		// Step 6: Nutritionist Booking
 		// Check if nutritionist onboarding step is active on this branch.
 		// If unmerged, the endpoint might advance differently. Let's probe.
-		const isNutriActive = await isRouteActive("/onboarding/nutritionist", "POST", {
-			Authorization: `Bearer ${context.userToken}`,
-		});
+		const isNutriActive = existsSync("src/routes/onboarding.routes.ts") &&
+			readFileSync("src/routes/onboarding.routes.ts", "utf8").includes("/nutritionist");
 
 		if (isNutriActive) {
 			const nutriRes = await fetch(`${baseUrl}/onboarding/nutritionist`, {
@@ -681,9 +681,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 
 	// Stage 7: Nutrition & Meal Tracking (Adaptive Path)
 	test("6. Nutrition & Meal Tracking (Adaptive)", async () => {
-		const active = await isRouteActive("/nutrition/profile", "POST", {
-			Authorization: `Bearer ${context.userToken}`,
-		});
+		const active = existsSync("src/routes/nutrition.routes.ts");
 
 		if (!active) {
 			console.log("  [SKIP] Nutrition routes not active on current branch");
@@ -727,7 +725,8 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 
 	// Stage 8: Cal.com webhook verification (Adaptive Path)
 	test("7. Cal.com Webhook Integration (Adaptive)", async () => {
-		const active = await isRouteActive("/webhook/calcom", "POST");
+		const active = existsSync("src/routes/calid-webhook.routes.ts") || 
+			(existsSync("src/routes/webhook.route.ts") && readFileSync("src/routes/webhook.route.ts", "utf8").includes("/calcom"));
 
 		if (!active) {
 			console.log("  [SKIP] Cal.com Webhook route not active on current branch");
@@ -784,7 +783,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 		// 1. Verify Nutritionist (Trainer) Isolation Blockages
 		// Trainer cannot mutate exercise database directly (only Admin can update system exercises or user can create user-level ones)
 		// Trainer cannot read system admin dashboards or perform credit updates
-		const trainerCreditRes = await fetch(`${baseUrl}/credits/balance/${context.userId}`, {
+		const trainerCreditRes = await fetch(`${baseUrl}/credits/users/${context.userId}/balance`, {
 			method: "GET",
 			headers: {
 				"Content-Type": "application/json",
