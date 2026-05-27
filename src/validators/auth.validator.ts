@@ -1,17 +1,16 @@
 import z from "zod";
 import { Gender } from "../models/Enums";
 
-const genderValues = Object.values(Gender) as [string, ...string[]];
-
-const legacyNumericGender: Record<string, string> = {
-	"0": Gender.Male,
-	"1": Gender.Female,
-	"2": Gender.Other,
-};
+const genderValues = Object.values(Gender).filter(
+	(value): value is string => typeof value === "string",
+) as [string, ...string[]];
 
 const normalizeGender = (value: unknown): unknown => {
 	if (typeof value === "number" && Number.isInteger(value)) {
-		return legacyNumericGender[String(value)] ?? value;
+		const enumValue = Gender[value];
+		if (typeof enumValue === "string") {
+			return enumValue;
+		}
 	}
 
 	if (typeof value !== "string") {
@@ -23,19 +22,25 @@ const normalizeGender = (value: unknown): unknown => {
 		return value;
 	}
 
-	if (/^\d+$/.test(normalized) && legacyNumericGender[normalized]) {
-		return legacyNumericGender[normalized];
-	}
-
-	const lower = normalized.toLowerCase();
-	if (lower === "others") {
-		return Gender.Other;
+	if (normalized.toLowerCase() === "other") {
+		return "Others";
 	}
 
 	const enumMatch = genderValues.find(
-		(genderValue) => genderValue.toLowerCase() === lower,
+		(genderValue) => genderValue.toLowerCase() === normalized.toLowerCase(),
 	);
-	return enumMatch ?? normalized;
+	if (enumMatch) {
+		return enumMatch;
+	}
+
+	if (/^\d+$/.test(normalized)) {
+		const enumValue = Gender[Number(normalized)];
+		if (typeof enumValue === "string") {
+			return enumValue;
+		}
+	}
+
+	return normalized;
 };
 
 const signupAgeSchema = z.preprocess((value) => {
@@ -69,6 +74,7 @@ export const signupBodySchema = z.object({
 	email: z.string().email(),
 	age: signupAgeSchema,
 	gender: signupGenderSchema,
+	healthGoals: z.array(z.string().trim().min(1)).default([]),
 	password: strongPassword,
 });
 

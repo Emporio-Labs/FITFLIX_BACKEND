@@ -163,7 +163,7 @@ export const getTodayAssignedWorkout: RequestHandler = async (req, res, next) =>
 
 export const getAssignedWorkoutForDay: RequestHandler = async (req, res, next) => {
 	try {
-		const dayNumber = parseInt(req.params.dayNumber, 10);
+		const dayNumber = parseInt(String(req.params.dayNumber), 10);
 		if (isNaN(dayNumber) || dayNumber < 1) {
 			res.status(400).json({ error: "Invalid day number" });
 			return;
@@ -280,7 +280,7 @@ export const completePlanDay: RequestHandler = async (req, res, next) => {
 
 export const updateMyDayExercises: RequestHandler = async (req, res, next) => {
 	try {
-		const dayNumber = parseInt(req.params.dayNumber, 10);
+		const dayNumber = parseInt(String(req.params.dayNumber), 10);
 		if (isNaN(dayNumber) || dayNumber < 1) {
 			res.status(400).json({ error: "Invalid day number" });
 			return;
