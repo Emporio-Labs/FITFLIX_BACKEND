@@ -65,7 +65,22 @@ const isOriginAllowed = (origin: string | undefined): boolean => {
 		return true;
 	}
 
-	return allowedOrigins.includes(origin);
+	return allowedOrigins.some((pattern) => {
+		if (pattern.includes("*")) {
+			// Convert wildcard pattern to a regular expression.
+			// Escape all special regex characters except '*'
+			const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+			const regexStr = "^" + escaped.replace(/\*/g, "[^/]*") + "$";
+			try {
+				const regex = new RegExp(regexStr);
+				return regex.test(origin);
+			} catch (e) {
+				console.error(`[CORS] Invalid wildcard pattern: ${pattern}`, e);
+				return false;
+			}
+		}
+		return pattern === origin;
+	});
 };
 
 app.use((req, res, next) => {
@@ -131,6 +146,8 @@ app.use((req, res, next) => {
 
 // Cal ID webhook MUST be mounted before express.json() — it captures raw body for HMAC
 app.use("/webhooks/cal", calidWebhookRouter);
+// Backwards-compatibility: legacy Cal webhook path used by external integrations
+app.use("/cal/webhook", calidWebhookRouter);
 
 app.use(express.json());
 app.use((_req, res, next) => {
