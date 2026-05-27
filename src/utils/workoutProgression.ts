@@ -19,7 +19,7 @@ const utcMidnight = (date: Date): Date =>
 export function initializeSchedule(
 	planDays: UserDay[],
 	startDate: Date,
-): DayProgress[] {
+): any[] {
 	const base = utcMidnight(startDate);
 	return planDays.map((day, i) => ({
 		dayNumber: day.dayNumber,

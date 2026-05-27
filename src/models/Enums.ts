@@ -77,29 +77,6 @@ export enum WorkoutSessionStatus {
 	Abandoned = "Abandoned",
 }
 
-export enum PlanGoal {
-	WeightLoss = "WeightLoss",
-	MuscleGain = "MuscleGain",
-	Strength = "Strength",
-	Endurance = "Endurance",
-	Mobility = "Mobility",
-	GeneralFitness = "GeneralFitness",
-}
-
-export enum SplitType {
-	FullBody = "FullBody",
-	UpperLower = "UpperLower",
-	PushPullLegs = "PushPullLegs",
-	BroSplit = "BroSplit",
-	Custom = "Custom",
-}
-
-export enum PlanStatus {
-	Draft = "Draft",
-	Published = "Published",
-	Archived = "Archived",
-}
-
 export enum OnboardingStep {
 	HEALTH_MARKERS = "HEALTH_MARKERS",
 	HEALTH_GOALS = "HEALTH_GOALS",
@@ -119,6 +96,93 @@ export enum AppointmentBookingStatus {
 	Pending = "Pending",
 	Confirmed = "Confirmed",
 	Cancelled = "Cancelled",
+}
+
+export enum PlanGoal {
+	Strength = "Strength",
+	Hypertrophy = "Hypertrophy",
+	Endurance = "Endurance",
+	WeightLoss = "WeightLoss",
+	Maintenance = "Maintenance",
+	Custom = "Custom",
+}
+
+export enum PlanStatus {
+	Draft = "Draft",
+	Active = "Active",
+	Paused = "Paused",
+	Completed = "Completed",
+	Archived = "Archived",
+}
+
+export enum SplitType {
+	FullBody = "FullBody",
+	UpperLower = "UpperLower",
+	PushPull = "PushPull",
+	PushPullLegs = "PushPullLegs",
+	Custom = "Custom",
+}
+
+export enum NutritionGoal {
+	WeightLoss = "WeightLoss",
+	MuscleGain = "MuscleGain",
+	Maintenance = "Maintenance",
+	Endurance = "Endurance",
+	Medical = "Medical",
+	Custom = "Custom",
+}
+
+export enum NutritionPlanStatus {
+	Draft = "Draft",
+	Scheduled = "Scheduled",
+	Active = "Active",
+	Paused = "Paused",
+	Completed = "Completed",
+	Archived = "Archived",
+}
+
+export enum MealType {
+	Breakfast = "Breakfast",
+	Lunch = "Lunch",
+	Dinner = "Dinner",
+	Snack = "Snack",
+	PreWorkout = "PreWorkout",
+	PostWorkout = "PostWorkout",
+	EarlyMorning = "EarlyMorning",
+	DuringWorkout = "DuringWorkout",
+	EveningSnack = "EveningSnack",
+	Bedtime = "Bedtime",
+}
+
+export enum DietaryPreference {
+	Veg = "Veg",
+	NonVeg = "NonVeg",
+	Vegan = "Vegan",
+	Eggetarian = "Eggetarian",
+}
+
+export enum NutritionFoodSource {
+	System = "System",
+	Custom = "Custom",
+}
+
+export enum MealLogStatus {
+	Logged = "Logged",
+	Skipped = "Skipped",
+	Partial = "Partial",
+	Pending = "Pending",
+}
+
+export enum MealLogSource {
+	Manual = "Manual",
+	AI = "AI",
+	Wearable = "Wearable",
+	Scan = "Scan",
+}
+
+export enum ProgressRecordedBy {
+	User = "User",
+	Nutritionist = "Nutritionist",
 }
 
 export enum ConsentType {

@@ -46,9 +46,15 @@ export const createPlan: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		const authReq = req as unknown as { user?: { id: string } };
+
 		const plan = await WorkoutPlan.create({
 			...parsed.data,
-			createdBy: req.user!.id,
+			goal: parsed.data.goal as import("../models/Enums").PlanGoal,
+			status: parsed.data.status as import("../models/Enums").PlanStatus,
+			difficulty: parsed.data.difficulty as import("../models/Enums").ExerciseDifficulty,
+			splitType: parsed.data.splitType as import("../models/Enums").SplitType,
+			createdBy: authReq.user!.id,
 		});
 
 		res.status(201).json(plan);

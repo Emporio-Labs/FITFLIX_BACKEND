@@ -1,5 +1,6 @@
 import type { Request, RequestHandler } from "express";
 import mongoose from "mongoose";
+
 import ConsentForm from "../models/ConsentForm";
 import { ConsentType, ExpertType, OnboardingStep } from "../models/Enums";
 import ExpertAppointment from "../models/ExpertAppointment";
@@ -72,7 +73,11 @@ const handleServiceError = (
 	next(error);
 };
 
-export const getStatus: RequestHandler = async (req, res, next) => {
+export const getStatus = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -89,7 +94,11 @@ export const getStatus: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const submitHealthMarkers: RequestHandler = async (req, res, next) => {
+export const submitHealthMarkers = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -134,7 +143,11 @@ export const submitHealthMarkers: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const submitHealthGoals: RequestHandler = async (req, res, next) => {
+export const submitHealthGoals = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -174,7 +187,11 @@ export const submitHealthGoals: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const submitConsent: RequestHandler = async (req, res, next) => {
+export const submitConsent = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -414,7 +431,7 @@ export const submitReport = async (
 };
 
 const submitAppointmentInternal = async (
-	req: Parameters<RequestHandler>[0],
+	req: RequestWithUser,
 	res: Parameters<RequestHandler>[1],
 	next: Parameters<RequestHandler>[2],
 	expertTypeOverride?: ExpertType,
@@ -444,17 +461,12 @@ const submitAppointmentInternal = async (
 	try {
 		const { expertType, ...appointmentData } = parsedBody.data;
 
-		if (expertType === ExpertType.SportsScientist) {
-			await validateStepAllowed(
-				req.user.id,
-				OnboardingStep.SPORTS_SCIENTIST_BOOKING,
-			);
-		} else if (expertType === ExpertType.Nutritionist) {
-			await validateStepAllowed(
-				req.user.id,
-				OnboardingStep.NUTRITIONIST_BOOKING,
-			);
-		}
+		const requiredStep =
+			expertType === ExpertType.SportsScientist
+				? OnboardingStep.SPORTS_SCIENTIST_BOOKING
+				: OnboardingStep.NUTRITIONIST_BOOKING;
+
+		await validateStepAllowed(req.user.id, requiredStep);
 
 		const userObjectId = new mongoose.Types.ObjectId(req.user.id);
 
@@ -467,12 +479,7 @@ const submitAppointmentInternal = async (
 			{ upsert: true, returnDocument: "after", runValidators: true },
 		);
 
-		const stepToAdvance =
-			expertType === ExpertType.SportsScientist
-				? OnboardingStep.SPORTS_SCIENTIST_BOOKING
-				: OnboardingStep.NUTRITIONIST_BOOKING;
-
-		await advanceStep(req.user.id, stepToAdvance);
+		await advanceStep(req.user.id, requiredStep);
 
 		res.status(201).json({
 			message: `${expertType === ExpertType.SportsScientist ? "Sports scientist" : "Nutritionist"} appointment booked`,
@@ -484,21 +491,27 @@ const submitAppointmentInternal = async (
 };
 
 export const submitAppointment: RequestHandler = (req, res, next) =>
-	submitAppointmentInternal(req, res, next);
+	submitAppointmentInternal(req as RequestWithUser, res, next);
 
 export const submitSportsScientistAppointment: RequestHandler = (
 	req,
 	res,
 	next,
-) => submitAppointmentInternal(req, res, next, ExpertType.SportsScientist);
+) =>
+	submitAppointmentInternal(
+		req as RequestWithUser,
+		res,
+		next,
+		ExpertType.SportsScientist,
+	);
 
 export const submitNutritionistAppointment: RequestHandler = (req, res, next) =>
-	submitAppointmentInternal(req, res, next, ExpertType.Nutritionist);
+	submitAppointmentInternal(req as RequestWithUser, res, next, ExpertType.Nutritionist);
 
-export const deleteNutritionistAppointment: RequestHandler = async (
-	req,
-	res,
-	next,
+export const deleteNutritionistAppointment = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
 ) => {
 	if (!req.user || req.user.role !== "admin") {
 		res.status(403).json({
@@ -534,7 +547,11 @@ export const deleteNutritionistAppointment: RequestHandler = async (
 	}
 };
 
-export const submitComplete: RequestHandler = async (req, res, next) => {
+export const submitComplete = async (
+	req: RequestWithUser,
+	res: Parameters<RequestHandler>[1],
+	next: Parameters<RequestHandler>[2],
+) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",

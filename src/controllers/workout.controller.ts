@@ -1017,7 +1017,7 @@ export const getMyHistory: RequestHandler = async (req, res, next) => {
 
 		const hasMore = sessions.length > limit;
 		const page = sessions.slice(0, limit);
-		const nextCursor = hasMore ? page[page.length - 1]._id.toString() : null;
+		const nextCursor = hasMore && page[page.length - 1] ? page[page.length - 1]!._id.toString() : null;
 
 		// Lightweight summary — no exercises or set data
 		const workouts = page.map((session) => {

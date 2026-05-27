@@ -23,7 +23,8 @@ const isAppUserRole = (value: unknown): value is AppUserRole =>
 	value === "user" ||
 	value === "admin" ||
 	value === "doctor" ||
-	value === "trainer";
+	value === "trainer" ||
+	value === "nutritionist";
 
 export const getJwtConfig = (): JwtConfig | null => {
 	const secret = process.env.JWT_SECRET?.trim();
@@ -54,7 +55,7 @@ export const getJwtRefreshConfig = (): JwtConfig | null => {
 };
 
 const buildSignOptions = (config: JwtConfig): SignOptions => {
-	const options: SignOptions = { expiresIn: config.expiresIn };
+	const options: SignOptions = { expiresIn: config.expiresIn as unknown as number };
 
 	if (config.issuer) {
 		options.issuer = config.issuer;

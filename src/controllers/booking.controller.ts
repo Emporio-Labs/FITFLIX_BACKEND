@@ -323,9 +323,19 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllBookings: RequestHandler = async (_req, res, next) => {
+export const getAllBookings: RequestHandler = async (req, res, next) => {
 	try {
-		const bookings = await Booking.find()
+		const userIdRaw = req.query.userId;
+		const filter: Record<string, unknown> = {};
+		if (typeof userIdRaw === "string" && userIdRaw.length > 0) {
+			const userId = getIdParam(userIdRaw);
+			if (!userId) {
+				res.status(400).json({ error: "Invalid userId", code: "BAD_REQUEST" });
+				return;
+			}
+			filter.user = userId;
+		}
+		const bookings = await Booking.find(filter)
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
 			.populate("slot", "date startTime endTime")
@@ -673,7 +683,8 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 			});
 
 			if (response) {
-				res.status(response.status).json(response.body);
+				const { status, body } = response as { status: number; body: Record<string, unknown> };
+				res.status(status).json(body);
 				return;
 			}
 
@@ -772,8 +783,8 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 				});
 
 				if (response) {
-					res.status(response.status).json(response.body);
-					return;
+				const { status, body } = response as { status: number; body: Record<string, unknown> };
+				res.status(status).json(body);
 				}
 
 				res.status(500).json({ message: "Booking cancellation failed" });

@@ -13,6 +13,7 @@ import {
 	consumeCredits,
 	refundCreditsBySource,
 	CreditServiceError,
+	mapCreditServiceError,
 } from "../utils/credit.service";
 import {
 	changeAppointmentStatusBodySchema,
@@ -31,18 +32,7 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	return idParam;
 };
 
-const mapCreditServiceError = (
-	error: CreditServiceError,
-): { status: number; message: string } => {
-	switch (error.code) {
-		case "NO_ACTIVE_MEMBERSHIP":
-			return { status: 404, message: error.message };
-		case "INSUFFICIENT_CREDITS":
-			return { status: 402, message: error.message };
-		default:
-			return { status: 400, message: error.message };
-	}
-};
+
 
 const getRequiredAuthenticatedUser = (
 	req: Parameters<RequestHandler>[0] & { user?: AuthenticatedUser },
@@ -363,9 +353,19 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllAppointments: RequestHandler = async (_req, res, next) => {
+export const getAllAppointments: RequestHandler = async (req, res, next) => {
 	try {
-		const appointments = await Appointment.find()
+		const userIdRaw = req.query.userId;
+		const filter: Record<string, unknown> = {};
+		if (typeof userIdRaw === "string" && userIdRaw.length > 0) {
+			const userId = getIdParam(userIdRaw);
+			if (!userId) {
+				res.status(400).json({ error: "Invalid userId", code: "BAD_REQUEST" });
+				return;
+			}
+			filter.user = userId;
+		}
+		const appointments = await Appointment.find(filter)
 			.populate("user", "username email phone")
 			.populate("doctor", "doctorName email specialities")
 			.populate("service", "serviceName serviceType creditCost")
