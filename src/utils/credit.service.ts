@@ -7,7 +7,7 @@ import {
 } from "../models/Enums";
 import Membership from "../models/Membership";
 
-type ActorRole = "admin" | "user" | "doctor" | "trainer";
+type ActorRole = "admin" | "user" | "doctor" | "trainer" | "frontdesk";
 
 const toObjectId = (
 	value: string,
@@ -317,7 +317,7 @@ export const refundCreditsBySource = async (
 			consumedByMembership.set(
 				membershipId,
 				(consumedByMembership.get(membershipId) ?? 0) +
-					Math.abs(Number(entry.amount)),
+				Math.abs(Number(entry.amount)),
 			);
 		}
 
@@ -397,21 +397,21 @@ export const addCreditsToMembership = async (
 	const baseFilter = buildActiveMembershipFilter(userObjectId, now);
 	const explicitMembershipId = input.membershipId
 		? toObjectId(
-				input.membershipId,
-				"INVALID_ARGUMENT",
-				"Invalid membership id",
-			)
+			input.membershipId,
+			"INVALID_ARGUMENT",
+			"Invalid membership id",
+		)
 		: undefined;
 	const actorId = toOptionalObjectId(input.actorId);
 
 	const targetMembership = explicitMembershipId
 		? await Membership.findOne({
-				_id: explicitMembershipId,
-				user: userObjectId,
-			}).select("_id")
+			_id: explicitMembershipId,
+			user: userObjectId,
+		}).select("_id")
 		: await Membership.findOne(baseFilter)
-				.select("_id")
-				.sort({ endDate: 1, createdAt: 1 });
+			.select("_id")
+			.sort({ endDate: 1, createdAt: 1 });
 
 	if (!targetMembership) {
 		if (explicitMembershipId) {

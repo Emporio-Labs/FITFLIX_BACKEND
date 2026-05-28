@@ -191,24 +191,24 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 		callback:
 			submissionFormType === "callback"
 				? {
-						name: resolvedLeadName,
-						email: resolvedEmail,
-						phone: resolvedPhone ?? null,
-						interests: normalizedCallbackInterests,
-					}
+					name: resolvedLeadName,
+					email: resolvedEmail,
+					phone: resolvedPhone ?? null,
+					interests: normalizedCallbackInterests,
+				}
 				: null,
 		personalDetails: personalDetails ?? null,
 		assessment:
 			assessment && scoreResult
 				? {
-						version: assessment.version,
-						answers: assessment.answers,
-						totalScore: scoreResult.totalScore,
-						maxScore: scoreResult.maxScore,
-						overallScore: scoreResult.overallScore,
-						categoryScores: scoreResult.categoryScores,
-						brandTier: scoreResult.brandTier,
-					}
+					version: assessment.version,
+					answers: assessment.answers,
+					totalScore: scoreResult.totalScore,
+					maxScore: scoreResult.maxScore,
+					overallScore: scoreResult.overallScore,
+					categoryScores: scoreResult.categoryScores,
+					brandTier: scoreResult.brandTier,
+				}
 				: null,
 		submittedAt: new Date(),
 	};

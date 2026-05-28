@@ -199,7 +199,7 @@ export const getInvoicePdfHandler: RequestHandler = async (req, res, next) => {
 		res.setHeader("Content-Type", "application/pdf");
 		res.setHeader(
 			"Content-Disposition",
-			`inline; filename="${invoice.invoiceNumber}.pdf"`,
+			`attachment; filename="${invoice.invoiceNumber}.pdf"`,
 		);
 
 		const doc = buildInvoicePdf(invoice as Parameters<typeof buildInvoicePdf>[0]);

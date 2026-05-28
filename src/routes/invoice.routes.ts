@@ -12,12 +12,11 @@ import { authorize } from "../middleware/rbac.middleware";
 const invoiceRouter = Router();
 
 invoiceRouter.use(authenticateToken);
-invoiceRouter.use(authorize(["admin"]));
 
-invoiceRouter.post("/", createInvoiceHandler);
-invoiceRouter.get("/", listInvoicesHandler);
-invoiceRouter.get("/:id", getInvoiceByIdHandler);
-invoiceRouter.patch("/:id/status", updateInvoiceStatusHandler);
-invoiceRouter.get("/:id/pdf", getInvoicePdfHandler);
+invoiceRouter.post("/", authorize(["admin", "frontdesk"]), createInvoiceHandler);
+invoiceRouter.get("/", authorize(["admin", "frontdesk"]), listInvoicesHandler);
+invoiceRouter.get("/:id", authorize(["admin", "frontdesk"]), getInvoiceByIdHandler);
+invoiceRouter.patch("/:id/status", authorize(["admin", "frontdesk"]), updateInvoiceStatusHandler);
+invoiceRouter.get("/:id/pdf", authorize(["admin", "frontdesk"]), getInvoicePdfHandler);
 
 export default invoiceRouter;

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { InvoicePaymentMethod, InvoicePaymentStatus } from "./Enums";
+import { applyIdTransform } from "../utils/mongoose-serialization";
 
 const invoiceItemSchema = new mongoose.Schema(
 	{
@@ -61,6 +62,8 @@ invoiceSchema.index({ userId: 1 });
 invoiceSchema.index({ leadId: 1 });
 invoiceSchema.index({ paymentStatus: 1 });
 invoiceSchema.index({ createdAt: -1 });
+
+applyIdTransform(invoiceSchema);
 
 type InvoiceDocument = mongoose.InferSchemaType<typeof invoiceSchema>;
 

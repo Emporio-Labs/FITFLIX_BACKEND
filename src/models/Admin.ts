@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { applyIdTransform } from "../utils/mongoose-serialization";
 
 const adminSchema = new mongoose.Schema(
 	{
@@ -9,6 +10,8 @@ const adminSchema = new mongoose.Schema(
 	},
 	{ timestamps: true },
 );
+
+applyIdTransform(adminSchema);
 
 export default (mongoose.models.Admin as mongoose.Model<any>) ||
 	mongoose.model("Admin", adminSchema);

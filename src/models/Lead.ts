@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { LeadStatus } from "./Enums";
+import { applyIdTransform } from "../utils/mongoose-serialization";
 
 const leadSchema = new mongoose.Schema(
 	{
@@ -28,5 +29,9 @@ const leadSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
-export default (mongoose.models.Lead as mongoose.Model<unknown>) ||
-	mongoose.model("Lead", leadSchema);
+applyIdTransform(leadSchema);
+
+type LeadDocument = mongoose.InferSchemaType<typeof leadSchema>;
+
+export default (mongoose.models.Lead as mongoose.Model<LeadDocument>) ||
+	mongoose.model<LeadDocument>("Lead", leadSchema);
