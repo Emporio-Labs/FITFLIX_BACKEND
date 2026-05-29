@@ -6,6 +6,22 @@ import {
 	updateSlotBodySchema,
 } from "../validators/slot.validator";
 import { availableSlotsQuerySchema } from "../validators/nutritionist-booking.validator";
+import * as calidService from "../integrations/calid/calid.service";
+import { ExpertType } from "../models/Enums";
+
+const formatToTimeZoneTime = (isoString: string, timeZone: string): string => {
+	const date = new Date(isoString);
+	const parts = new Intl.DateTimeFormat("en-US", {
+		timeZone,
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false,
+	}).formatToParts(date);
+	const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
+	const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
+	const hh = hour === "24" ? "00" : hour;
+	return `${hh}:${minute}`;
+};
 
 const normalizeToUtcDayStart = (value: Date): Date =>
 	new Date(
@@ -107,6 +123,33 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		const { date, expertType, timezone } = parsed.data;
+
+		if (expertType === "nutritionist") {
+			const tz = timezone || "Asia/Kolkata";
+			const dateStr = date.toISOString().slice(0, 10);
+			const days = await calidService.fetchAvailability(ExpertType.Nutritionist, dateStr, dateStr, tz);
+			const slots = [];
+			const dayStart = date;
+			const targetDay = days.find((d) => d.date === dateStr);
+
+			if (targetDay) {
+				for (const s of targetDay.slots) {
+					slots.push({
+						slotId: s.start,
+						date: dayStart,
+						startTime: formatToTimeZoneTime(s.start, tz),
+						endTime: formatToTimeZoneTime(s.end, tz),
+						capacity: 1,
+						remainingCapacity: 1,
+					});
+				}
+			}
+
+			res.status(200).json({ date: dayStart, slots });
+			return;
+		}
+
 		const dayStart = normalizeToUtcDayStart(parsed.data.date);
 		const dayEnd = normalizeToUtcDayEnd(parsed.data.date);
 

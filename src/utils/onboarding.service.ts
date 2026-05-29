@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { ExpertType, OnboardingStep } from "../models/Enums";
+import { ExpertType, OnboardingStep, AppointmentBookingStatus } from "../models/Enums";
 import ExpertAppointment from "../models/ExpertAppointment";
 import User from "../models/User";
 
@@ -64,6 +64,7 @@ export type OnboardingStatusResponse = {
 	completedSteps: string[];
 	onboardingCompleted: boolean;
 	allowedNextStep: string | null;
+	nutritionistBooking?: any;
 };
 
 export const getOnboardingStatus = async (
@@ -83,11 +84,81 @@ export const getOnboardingStatus = async (
 	const completedSteps = status?.completedSteps ?? [];
 	const onboardingCompleted = status?.onboardingCompleted ?? false;
 
+	// Fetch active nutritionist appointment
+	const nutritionistApp = await ExpertAppointment.findOne({
+		userId: userObjectId,
+		expertType: ExpertType.Nutritionist,
+		bookingStatus: {
+			$in: [
+				AppointmentBookingStatus.Pending,
+				AppointmentBookingStatus.Confirmed,
+				AppointmentBookingStatus.Rescheduled,
+			],
+		},
+	}).lean();
+
+	// Helper to format timezone times
+	const formatToTimeZoneTime = (isoString: string, timeZone: string): string => {
+		const d = new Date(isoString);
+		const parts = new Intl.DateTimeFormat("en-US", {
+			timeZone,
+			hour: "2-digit",
+			minute: "2-digit",
+			hour12: false,
+		}).formatToParts(d);
+		const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
+		const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
+		const hh = hour === "24" ? "00" : hour;
+		return `${hh}:${minute}`;
+	};
+
+	let nutritionistBooking: any = undefined;
+	if (nutritionistApp) {
+		const tz = nutritionistApp.timezone || "Asia/Kolkata";
+		nutritionistBooking = {
+			_id: nutritionistApp._id.toString(),
+			bookingId: nutritionistApp._id.toString(),
+			slotId: nutritionistApp.calIdBookingId || nutritionistApp._id.toString(),
+			date: nutritionistApp.appointmentStart || nutritionistApp.appointmentDate || nutritionistApp.createdAt,
+			startTime: nutritionistApp.appointmentStart ? formatToTimeZoneTime(nutritionistApp.appointmentStart.toISOString(), tz) : "",
+			endTime: nutritionistApp.appointmentEnd ? formatToTimeZoneTime(nutritionistApp.appointmentEnd.toISOString(), tz) : "",
+			appointmentMode: nutritionistApp.meetingUrl || nutritionistApp.meetingLink ? "ONLINE" : "IN_PERSON",
+			bookingStatus: nutritionistApp.bookingStatus === AppointmentBookingStatus.Confirmed ? "ACCEPTED" : nutritionistApp.bookingStatus,
+			status: nutritionistApp.bookingStatus === AppointmentBookingStatus.Confirmed ? "ACCEPTED" : nutritionistApp.bookingStatus,
+			meetingLink: nutritionistApp.meetingUrl || nutritionistApp.meetingLink,
+		};
+	} else {
+		// Fallback: check legacy NutritionistBooking table
+		const NutritionistBookingModel = mongoose.models.NutritionistBooking;
+		if (NutritionistBookingModel) {
+			const legacyBooking = await NutritionistBookingModel.findOne({
+				user: userObjectId,
+				bookingStatus: { $in: ["PENDING", "ACCEPTED"] },
+			}).populate("slot").lean();
+
+			if (legacyBooking) {
+				nutritionistBooking = {
+					_id: legacyBooking._id.toString(),
+					bookingId: legacyBooking._id.toString(),
+					slotId: legacyBooking.slot?._id?.toString() || legacyBooking.slot?.toString() || "",
+					date: legacyBooking.date,
+					startTime: legacyBooking.startTime || "",
+					endTime: legacyBooking.endTime || "",
+					appointmentMode: legacyBooking.appointmentMode,
+					bookingStatus: legacyBooking.bookingStatus,
+					status: legacyBooking.bookingStatus,
+					meetingLink: legacyBooking.meetingLink,
+				};
+			}
+		}
+	}
+
 	return {
 		currentStep,
 		completedSteps: completedSteps as string[],
 		onboardingCompleted,
 		allowedNextStep: onboardingCompleted ? null : currentStep,
+		nutritionistBooking,
 	};
 };
 

@@ -165,8 +165,10 @@ async function handleBookingConfirmed(
 				$set: {
 					bookingStatus: AppointmentBookingStatus.Confirmed,
 					meetingUrl: booking.meetingUrl,
+					meetingLink: booking.meetingUrl, // Mapped for backward compat
 					appointmentStart: new Date(booking.startTime),
 					appointmentEnd: new Date(booking.endTime),
+					appointmentDate: new Date(booking.startTime), // Mapped for backward compat
 					webhookSyncStatus: WebhookSyncStatus.Synced,
 					lastSyncedAt: now,
 				},
@@ -222,7 +224,9 @@ async function handleBookingRescheduled(
 					bookingStatus: AppointmentBookingStatus.Rescheduled,
 					appointmentStart: new Date(booking.startTime),
 					appointmentEnd: new Date(booking.endTime),
+					appointmentDate: new Date(booking.startTime), // Mapped for backward compat
 					meetingUrl: booking.meetingUrl ?? appointment.meetingUrl,
+					meetingLink: booking.meetingUrl ?? appointment.meetingUrl ?? appointment.meetingLink, // Mapped for backward compat
 					webhookSyncStatus: WebhookSyncStatus.Synced,
 					lastSyncedAt: now,
 				},

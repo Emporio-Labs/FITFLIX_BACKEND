@@ -476,7 +476,13 @@ const submitAppointmentInternal = async (
 		const userObjectId = new mongoose.Types.ObjectId(req.user.id);
 
 		const filter = { userId: userObjectId, expertType };
-		const update = { userId: userObjectId, expertType, ...appointmentData };
+		const update: Record<string, unknown> = { userId: userObjectId, expertType, ...appointmentData };
+		if (appointmentData.appointmentDate) {
+			update.appointmentStart = appointmentData.appointmentDate;
+		}
+		if (appointmentData.meetingLink) {
+			update.meetingUrl = appointmentData.meetingLink;
+		}
 
 		const appointment = await ExpertAppointment.findOneAndUpdate(
 			filter as Record<string, unknown>,

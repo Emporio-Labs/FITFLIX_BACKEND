@@ -57,6 +57,8 @@ export const mealOptionSchema = new mongoose.Schema({
 	foods: { type: [mealFoodItemSchema], default: [] },
 	macros: { type: macroTotalsSchema, default: () => ({}) },
 	reasoning: { type: String, default: "" },
+	cookingDirections: { type: [String], default: [] },
+	prepTimeMinutes: { type: Number, default: null },
 });
 
 // Lifestyle recommendation attached at the plan/template level.
@@ -83,6 +85,8 @@ export const templateMealSchema = new mongoose.Schema(
 		// Optional multi-option support. When present the default option's
 		// foods drive planned-macro math; items[] stays for backward compat.
 		options: { type: [mealOptionSchema], default: [] },
+		cookingDirections: { type: [String], default: [] },
+		prepTimeMinutes: { type: Number, default: null },
 	},
 	{ _id: false },
 );

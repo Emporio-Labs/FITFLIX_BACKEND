@@ -10,7 +10,7 @@ const objectIdString = z
 	});
 
 export const bookNutritionistBodySchema = z.object({
-	slotId: objectIdString,
+	slotId: z.string().trim().min(1),
 	date: z.coerce.date(),
 	appointmentMode: z.nativeEnum(AppointmentMode),
 	clinicLocation: z.string().trim().min(1).optional(),
@@ -39,6 +39,8 @@ export const acceptBookingBodySchema = z.object({
 
 export const availableSlotsQuerySchema = z.object({
 	date: z.coerce.date(),
+	expertType: z.enum(["nutritionist", "sports_scientist"]).optional(),
+	timezone: z.string().trim().optional(),
 });
 
 export type BookNutritionistBody = z.infer<typeof bookNutritionistBodySchema>;

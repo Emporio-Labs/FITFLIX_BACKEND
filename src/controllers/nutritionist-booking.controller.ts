@@ -4,9 +4,13 @@ import {
 	NutritionistApprovalStatus,
 	NutritionistBookingStatus,
 	OnboardingStep,
+	AppointmentBookingStatus,
+	WebhookSyncStatus,
+	ExpertType,
 } from "../models/Enums";
 import NutritionistBooking from "../models/NutritionistBooking";
 import Slot from "../models/Slots";
+import User from "../models/User";
 import {
 	OnboardingServiceError,
 	advanceStep,
@@ -17,6 +21,9 @@ import {
 	listNutritionistBookingsQuerySchema,
 	rejectBookingBodySchema,
 } from "../validators/nutritionist-booking.validator";
+import * as calidService from "../integrations/calid/calid.service";
+import ExpertAppointment from "../models/ExpertAppointment";
+import { mapCalBookingToAppointmentFields } from "../integrations/calid/calid.mapper";
 
 type ZodIssue = { path: PropertyKey[]; message: string };
 
@@ -160,6 +167,104 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 	}
 
 	const { slotId, date, appointmentMode, clinicLocation } = parsed.data;
+
+	if (slotId.includes("T") || slotId.includes("-")) {
+		try {
+			// 1. Race guard
+			const existingActive = await ExpertAppointment.findOne({
+				userId: req.user.id,
+				expertType: ExpertType.Nutritionist,
+				bookingStatus: {
+					$in: [
+						AppointmentBookingStatus.Pending,
+						AppointmentBookingStatus.Confirmed,
+						AppointmentBookingStatus.Rescheduled,
+					],
+				},
+			}).lean();
+
+			if (existingActive) {
+				res.status(409).json({
+					error: "You already have an active nutritionist booking.",
+					code: "CONFLICT",
+				});
+				return;
+			}
+
+			// 2. Fetch user details
+			const dbUser = await User.findById(req.user.id).select("username email").lean();
+			if (!dbUser) {
+				res.status(404).json({ error: "User not found", code: "NOT_FOUND" });
+				return;
+			}
+
+			// 3. Create booking on Cal.id
+			const calBooking = await calidService.createBooking({
+				expertType: ExpertType.Nutritionist,
+				slotStart: slotId,
+				timezone: "Asia/Kolkata",
+				attendee: { name: dbUser.username, email: dbUser.email },
+				userId: req.user.id,
+			});
+
+			// 4. Save to ExpertAppointment
+			const calFields = mapCalBookingToAppointmentFields(calBooking);
+			const appointment = await ExpertAppointment.create({
+				userId: req.user.id,
+				expertType: ExpertType.Nutritionist,
+				bookingStatus: AppointmentBookingStatus.Confirmed,
+				timezone: "Asia/Kolkata",
+				appointmentSource: "USER_APP",
+				webhookSyncStatus: WebhookSyncStatus.Pending,
+				...calFields,
+			});
+
+			// 5. Advance onboarding step
+			try {
+				await advanceStep(req.user.id, OnboardingStep.NUTRITIONIST_BOOKING);
+			} catch (error) {
+				if (!(error instanceof OnboardingServiceError)) throw error;
+			}
+
+			// Helper to format slot time:
+			const formatToTimeZoneTime = (isoString: string, timeZone: string): string => {
+				const d = new Date(isoString);
+				const parts = new Intl.DateTimeFormat("en-US", {
+					timeZone,
+					hour: "2-digit",
+					minute: "2-digit",
+					hour12: false,
+				}).formatToParts(d);
+				const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
+				const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
+				const hh = hour === "24" ? "00" : hour;
+				return `${hh}:${minute}`;
+			};
+
+			const mappedBooking = {
+				_id: appointment._id.toString(),
+				bookingId: appointment._id.toString(),
+				slotId: slotId,
+				date: calFields.appointmentStart || appointment.appointmentStart || date,
+				startTime: calFields.appointmentStart ? formatToTimeZoneTime(calFields.appointmentStart.toISOString(), appointment.timezone) : "",
+				endTime: calFields.appointmentEnd ? formatToTimeZoneTime(calFields.appointmentEnd.toISOString(), appointment.timezone) : "",
+				appointmentMode: appointmentMode,
+				bookingStatus: "ACCEPTED",
+				status: "ACCEPTED",
+				meetingLink: appointment.meetingUrl || appointment.meetingLink,
+			};
+
+			res.status(201).json({
+				message: "Nutritionist booking submitted for approval",
+				booking: mappedBooking,
+			});
+			return;
+		} catch (error) {
+			next(error);
+			return;
+		}
+	}
+
 	const bookingDay = normalizeToUtcDayStart(date);
 
 	if (bookingDay.getTime() < normalizeToUtcDayStart(new Date()).getTime()) {
