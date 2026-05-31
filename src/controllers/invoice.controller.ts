@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import { InvoicePaymentStatus } from "../models/Enums";
+import Lead from "../models/Lead";
 import {
 	createInvoiceBodySchema,
 	isValidStatusTransition,
@@ -44,7 +45,7 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	if (!mongoose.Types.ObjectId.isValid(parsed.data.userId)) {
+	if (parsed.data.userId && !mongoose.Types.ObjectId.isValid(parsed.data.userId)) {
 		res.status(400).json({ error: "Invalid userId", code: "BAD_REQUEST" });
 		return;
 	}
@@ -62,8 +63,35 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// Resolve userId from leadId.convertedUser when not explicitly provided
+	let resolvedUserId = parsed.data.userId;
+	if (!resolvedUserId && parsed.data.leadId) {
+		try {
+			const lead = await Lead.findById(parsed.data.leadId).select("convertedUser");
+			if (!lead) {
+				res.status(404).json({ error: "Lead not found", code: "NOT_FOUND" });
+				return;
+			}
+			resolvedUserId = lead.convertedUser ? String(lead.convertedUser) : undefined;
+		} catch (error) {
+			next(error);
+			return;
+		}
+	}
+
+	if (!resolvedUserId && !parsed.data.leadId) {
+		res.status(400).json({
+			error: "Either userId or leadId is required",
+			code: "BAD_REQUEST",
+		});
+		return;
+	}
+
 	try {
-		const invoice = await createInvoice(parsed.data, req.user!.id);
+		const invoice = await createInvoice(
+			{ ...parsed.data, userId: resolvedUserId },
+			req.user!.id,
+		);
 		res.status(201).json({ message: "Invoice created", invoice });
 	} catch (error) {
 		next(error);

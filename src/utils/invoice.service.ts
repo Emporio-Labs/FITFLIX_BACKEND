@@ -20,7 +20,7 @@ export const createInvoice = async (
 
 	const invoice = await Invoice.create({
 		invoiceNumber,
-		userId: new mongoose.Types.ObjectId(data.userId),
+		...(data.userId ? { userId: new mongoose.Types.ObjectId(data.userId) } : {}),
 		...(data.leadId ? { leadId: new mongoose.Types.ObjectId(data.leadId) } : {}),
 		items: data.items,
 		subtotal,
@@ -149,6 +149,17 @@ export const transitionInvoiceStatus = async (
 			);
 		}
 
+		// Resolve userId — may be null if invoice was created before lead conversion
+		let membershipUserId = invoice.userId;
+		if (!membershipUserId && invoice.leadId) {
+			const lead = await Lead.findById(invoice.leadId).select("convertedUser").session(session);
+			membershipUserId = lead?.convertedUser ?? null;
+		}
+		if (!membershipUserId) {
+			await session.abortTransaction();
+			throw Object.assign(new Error("Cannot activate membership: no user account linked to this invoice. Convert the lead to a user first."), { status: 409, code: "CONFLICT" });
+		}
+
 		// Activate membership from planSnapshot
 		const snap = invoice.planSnapshot as {
 			name: string;
@@ -164,7 +175,7 @@ export const transitionInvoiceStatus = async (
 		const [membership] = await Membership.create(
 			[
 				{
-					user: invoice.userId,
+					user: membershipUserId,
 					planName: snap.name,
 					creditsIncluded: snap.includedCredits,
 					creditsRemaining: snap.includedCredits,

@@ -26,7 +26,7 @@ export const isValidStatusTransition = (from: string, to: string): boolean => {
 };
 
 export const createInvoiceBodySchema = z.object({
-	userId: z.string().trim().min(1),
+	userId: z.string().trim().optional(),
 	leadId: z.string().trim().optional(),
 	items: z
 		.array(

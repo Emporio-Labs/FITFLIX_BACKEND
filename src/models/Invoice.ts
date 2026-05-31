@@ -27,7 +27,7 @@ const invoiceSchema = new mongoose.Schema(
 		userId: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "User",
-			required: true,
+			default: undefined,
 		},
 		leadId: {
 			type: mongoose.Schema.Types.ObjectId,
