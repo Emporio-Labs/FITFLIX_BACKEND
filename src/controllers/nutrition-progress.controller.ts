@@ -63,7 +63,9 @@ export const listMyProgress: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const entries = await listProgress(req.user!.id, parsed.data);
+		const isStaff = ["nutritionist", "admin"].includes(req.user!.role);
+		const targetUserId = (isStaff && parsed.data.userId) ? parsed.data.userId : req.user!.id;
+		const entries = await listProgress(targetUserId, parsed.data);
 		res.status(200).json({ entries: entries.map(serializeProgress) });
 	} catch (error) {
 		handleNutritionError(error, res, next);

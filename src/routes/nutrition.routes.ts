@@ -140,16 +140,16 @@ nutritionRouter.delete("/my/meal-logs/:id", USER, removeMealLog);
 // ---- User hydration ----
 nutritionRouter.post("/my/hydration", USER, addHydrationIntake);
 nutritionRouter.patch("/my/hydration/goal", USER, updateHydrationGoal);
-nutritionRouter.get("/my/hydration", USER, getMyHydration);
+nutritionRouter.get("/my/hydration", authorize(["user", "nutritionist", "admin"]), getMyHydration);
 
 // ---- User progress ----
 nutritionRouter.post("/my/progress", USER, addMyProgress);
-nutritionRouter.get("/my/progress", USER, listMyProgress);
+nutritionRouter.get("/my/progress", authorize(["user", "nutritionist", "admin"]), listMyProgress);
 
 // ---- Adherence ----
 // /my/adherence/weekly before /my/adherence to avoid partial match.
-nutritionRouter.get("/my/adherence/weekly", USER, getMyWeeklyAdherence);
-nutritionRouter.get("/my/adherence", USER, getMyAdherence);
+nutritionRouter.get("/my/adherence/weekly", authorize(["user", "nutritionist", "admin"]), getMyWeeklyAdherence);
+nutritionRouter.get("/my/adherence", authorize(["user", "nutritionist", "admin"]), getMyAdherence);
 
 nutritionRouter.post("/plans", STAFF, createPlan);
 nutritionRouter.get("/plans", STAFF, listManagedPlans);

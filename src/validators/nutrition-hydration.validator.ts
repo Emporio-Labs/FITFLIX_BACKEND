@@ -1,5 +1,5 @@
 import z from "zod";
-import { optionalDate } from "./nutrition-shared.validator";
+import { objectIdString, optionalDate } from "./nutrition-shared.validator";
 
 export const addHydrationBodySchema = z
 	.object({
@@ -25,6 +25,7 @@ export const hydrationGoalBodySchema = z.object({
 
 export const hydrationQuerySchema = z.object({
 	date: optionalDate,
+	userId: objectIdString.optional(),
 });
 
 export type AddHydrationBody = z.infer<typeof addHydrationBodySchema>;

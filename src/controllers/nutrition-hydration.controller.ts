@@ -77,8 +77,10 @@ export const getMyHydration: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		const isStaff = ["nutritionist", "admin"].includes(req.user!.role);
+		const targetUserId = (isStaff && parsed.data.userId) ? parsed.data.userId : req.user!.id;
 		const hydration = await getHydration(
-			req.user!.id,
+			targetUserId,
 			parsed.data.date,
 		);
 		res.status(200).json({ hydration });

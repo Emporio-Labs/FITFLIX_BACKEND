@@ -44,6 +44,7 @@ export const progressBodySchema = z
 
 export const progressListQuerySchema = z.object({
 	planId: objectIdString.optional(),
+	userId: objectIdString.optional(),
 	from: optionalDate,
 	to: optionalDate,
 });

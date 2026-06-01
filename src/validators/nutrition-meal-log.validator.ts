@@ -52,9 +52,10 @@ export const listMealLogsQuerySchema = z.object({
 });
 
 export const adherenceRangeQuerySchema = z.object({
-	planId: objectIdString,
-	from: requiredDate,
-	to: requiredDate,
+	planId: objectIdString.optional(),
+	userId: objectIdString.optional(),
+	from: optionalDate,
+	to: optionalDate,
 });
 
 export const planAdherenceQuerySchema = z.object({
