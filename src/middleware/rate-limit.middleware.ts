@@ -126,3 +126,24 @@ export const authRateLimit = createRateLimiter({
 	keyPrefix: "auth",
 	message: "Too many authentication attempts. Please try again later.",
 });
+
+// General API rate limiter for sensitive authenticated routes.
+// 120 requests per minute per IP — generous enough for normal use,
+// tight enough to blunt brute-force / scraping attempts.
+const API_RATE_LIMIT_WINDOW_MS = parseEnvNumber(
+	process.env.API_RATE_LIMIT_WINDOW_MS,
+	60 * 1000, // 1 minute
+	1000,
+);
+const API_RATE_LIMIT_MAX = parseEnvNumber(
+	process.env.API_RATE_LIMIT_MAX,
+	120,
+	1,
+);
+
+export const apiRateLimit = createRateLimiter({
+	windowMs: API_RATE_LIMIT_WINDOW_MS,
+	max: API_RATE_LIMIT_MAX,
+	keyPrefix: "api",
+	message: "Too many requests. Please slow down and try again shortly.",
+});

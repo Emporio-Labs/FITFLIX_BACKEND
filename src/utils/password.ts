@@ -24,9 +24,14 @@ export const verifyPassword = async (
 	plainPassword: string,
 	passwordHash: string,
 ): Promise<boolean> => {
-	if (isHashedPassword(passwordHash)) {
-		return compare(plainPassword, passwordHash);
+	if (!isHashedPassword(passwordHash)) {
+		// Plaintext passwords are no longer accepted.
+		// Run `bun run scripts/migrate-passwords.ts` to bcrypt-hash any legacy entries.
+		console.error(
+			"[AUTH] Rejecting login: stored password is not bcrypt-hashed. Run the migrate-passwords script.",
+		);
+		return false;
 	}
 
-	return passwordHash === plainPassword;
+	return compare(plainPassword, passwordHash);
 };

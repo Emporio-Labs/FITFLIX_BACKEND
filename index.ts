@@ -8,6 +8,16 @@ import {
 import { initSocketIO } from "./src/services/realtime.service";
 import { startReminderPoller } from "./src/services/reminder.service";
 
+// --- Startup environment validation ---
+const REQUIRED_ENV_VARS = ["MONGODB_URL", "JWT_SECRET"] as const;
+const missingEnvVars = REQUIRED_ENV_VARS.filter((v) => !process.env[v]?.trim());
+if (missingEnvVars.length > 0) {
+	console.error(
+		`[STARTUP] Missing required environment variables: ${missingEnvVars.join(", ")}. Server cannot start.`,
+	);
+	process.exit(1);
+}
+
 const port = Number(process.env.PORT ?? 3000);
 
 const start = async () => {

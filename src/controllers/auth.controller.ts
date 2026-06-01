@@ -136,25 +136,27 @@ export const signup: RequestHandler = async (req, res, next) => {
 			},
 		});
 
-		// Upsert CRM lead in background — never block signup on this.
-		// If this email was already captured as a public/form lead, update it
-		// rather than creating a duplicate record.
-		Lead.findOneAndUpdate(
-			{ email },
-			{
-				$set: {
-					leadName: username,
-					phone: phone ?? "",
-					source: "app-signup",
-					status: LeadStatus.Converted,
-					convertedUser: createdUser._id,
+		// Upsert CRM lead — awaited so failures are visible, but a lead sync
+		// error does NOT fail the signup (user account was already created).
+		try {
+			await Lead.findOneAndUpdate(
+				{ email },
+				{
+					$set: {
+						leadName: username,
+						phone: phone ?? "",
+						source: "app-signup",
+						status: LeadStatus.Converted,
+						convertedUser: createdUser._id,
+					},
+					$addToSet: { tags: { $each: ["signup", "app-signup"] } },
 				},
-				$addToSet: { tags: { $each: ["signup", "app-signup"] } },
-			},
-			{ upsert: true, new: true },
-		).catch((err) => {
-			console.error("[AUTH][SIGNUP] Lead upsert failed", err);
-		});
+				{ upsert: true, new: true },
+			);
+		} catch (err) {
+			// Non-fatal: user account exists; CRM sync can be retried manually.
+			console.error("[AUTH][SIGNUP] Lead upsert failed — signup still succeeded:", err);
+		}
 
 		res.status(201).json({
 			message: "User signup successful",

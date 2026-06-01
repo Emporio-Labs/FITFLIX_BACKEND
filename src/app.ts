@@ -39,6 +39,7 @@ import {
 	isApiErrorEnvelope,
 	mapStatusToErrorCode,
 } from "./utils/api-error";
+import { apiRateLimit } from "./middleware/rate-limit.middleware";
 
 config();
 
@@ -203,14 +204,14 @@ app.use("/memberships", membershipRouter);
 app.use("/slots", slotRouter);
 app.use("/services", serviceRouter);
 app.use("/therapies", therapyRouter);
-app.use("/bookings", bookingRouter);
-app.use("/credits", creditRouter);
-app.use("/appointments", appointmentRouter);
-app.use("/schedules", scheduleRouter);
-app.use("/exercises", exerciseRouter);
-app.use("/leads", leadRouter);
-app.use("/invoices", invoiceRouter);
-app.use("/api/invoices", invoiceRouter);
+app.use("/bookings", apiRateLimit, bookingRouter);
+app.use("/credits", apiRateLimit, creditRouter);
+app.use("/appointments", apiRateLimit, appointmentRouter);
+app.use("/schedules", apiRateLimit, scheduleRouter);
+app.use("/exercises", apiRateLimit, exerciseRouter);
+app.use("/leads", apiRateLimit, leadRouter);
+app.use("/invoices", apiRateLimit, invoiceRouter);
+app.use("/api/invoices", apiRateLimit, invoiceRouter);
 app.use("/membership-plans", membershipPlanRouter);
 app.use("/onboarding", onboardingRouter);
 app.use("/nutrition", nutritionRouter);

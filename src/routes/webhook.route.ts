@@ -217,36 +217,73 @@ router.post("/email", verifyWebhookSecret, async (req: Request, res: Response) =
 });
 
 router.use(authenticateToken);
+
+// GET /webhook/reports/me — user can read their own reports
+router.get("/reports/me", authorize(["user"]), async (req: Request, res: Response) => {
+	const userId = (req as Request & { user?: { id: string } }).user?.id;
+	if (!userId) {
+		return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+	}
+	try {
+		const reports = await HpodReport.find({ userId })
+			.sort({ receivedAt: -1 })
+			.select("-rawBody");
+		return res.json({ reports });
+	} catch (err) {
+		console.error("[WEBHOOK] GET /reports/me failed:", err);
+		return res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+	}
+});
+
 router.use(authorize(["admin"]));
 
-// GET /webhook/reports — list all reports (for app to consume)
+// GET /webhook/reports — list all reports (admin only)
 router.get("/reports", async (_req: Request, res: Response) => {
-	const reports = await HpodReport.find()
-		.sort({ receivedAt: -1 })
-		.select("-rawBody") // exclude heavy field from list view
-		.populate("userId", "username email age gender healthGoals");
-
-	return res.json({ reports });
+	try {
+		const reports = await HpodReport.find()
+			.sort({ receivedAt: -1 })
+			.select("-rawBody")
+			.populate("userId", "username email age gender healthGoals");
+		return res.json({ reports });
+	} catch (err) {
+		console.error("[WEBHOOK] GET /reports failed:", err);
+		return res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+	}
 });
 
-// GET /webhook/reports/:id — single report with full body + summary
-router.get("/reports/:id", async (req: Request, res: Response) => {
-	const report = await HpodReport.findById(req.params.id).populate(
-		"userId",
-		"username email age gender healthGoals",
-	);
-
-	if (!report) return res.status(404).json({ error: "Not found" });
-	return res.json(report);
-});
-
-// GET /webhook/reports/user/:userId — all reports for a specific user
+// GET /webhook/reports/user/:userId — all reports for a specific user (admin only)
 router.get("/reports/user/:userId", async (req: Request, res: Response) => {
-	const reports = await HpodReport.find({ userId: req.params.userId })
-		.sort({ receivedAt: -1 })
-		.populate("userId", "username email age gender healthGoals");
+	const { userId } = req.params;
+	if (!mongoose.Types.ObjectId.isValid(userId)) {
+		return res.status(400).json({ error: "Invalid user ID", code: "BAD_REQUEST" });
+	}
+	try {
+		const reports = await HpodReport.find({ userId })
+			.sort({ receivedAt: -1 })
+			.populate("userId", "username email age gender healthGoals");
+		return res.json({ reports });
+	} catch (err) {
+		console.error("[WEBHOOK] GET /reports/user/:userId failed:", err);
+		return res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+	}
+});
 
-	return res.json({ reports });
+// GET /webhook/reports/:id — single report (admin only)
+router.get("/reports/:id", async (req: Request, res: Response) => {
+	if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+		return res.status(400).json({ error: "Invalid report ID", code: "BAD_REQUEST" });
+	}
+	try {
+		const report = await HpodReport.findById(req.params.id).populate(
+			"userId",
+			"username email age gender healthGoals",
+		);
+		if (!report) return res.status(404).json({ error: "Not found", code: "NOT_FOUND" });
+		return res.json(report);
+	} catch (err) {
+		console.error("[WEBHOOK] GET /reports/:id failed:", err);
+		return res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+	}
 });
 
 export default router;

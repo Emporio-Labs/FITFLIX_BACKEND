@@ -12,7 +12,8 @@
 		"migrate:credits": "bun run scripts/migrate-credits.ts",
 		"seed:exercises": "bun run scripts/seed-exercises.ts",
 		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
-		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts"
+		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts",
+		"migrate:passwords": "bun run scripts/migrate-passwords.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.8",
