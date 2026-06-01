@@ -15,9 +15,9 @@ const membershipRouter = Router();
 membershipRouter.use(authenticateToken);
 
 membershipRouter.post("/", authorize(["admin"]), createMembership);
-membershipRouter.get("/", authorize(["admin"]), getAllMemberships);
+membershipRouter.get("/", authorize(["admin", "frontdesk"]), getAllMemberships);
 membershipRouter.get("/me", authorize(["user"]), getMyMemberships);
-membershipRouter.get("/:id", authorize(["admin"]), getMembershipById);
+membershipRouter.get("/:id", authorize(["admin", "frontdesk"]), getMembershipById);
 membershipRouter.patch("/:id", authorize(["admin"]), updateMembershipById);
 membershipRouter.delete("/:id", authorize(["admin"]), deleteMembershipById);
 

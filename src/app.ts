@@ -5,10 +5,13 @@ import appointmentRouter from "./routes/appointment.routes";
 import authRouter from "./routes/auth.routes";
 import bookingRouter from "./routes/booking.routes";
 import creditRouter from "./routes/credit.routes";
+import dashboardRouter from "./routes/dashboard.routes";
 import doctorRouter from "./routes/doctor.routes";
 import exerciseRouter from "./routes/exercise.routes";
+import invoiceRouter from "./routes/invoice.routes";
 import leadRouter from "./routes/lead.routes";
 import membershipRouter from "./routes/membership.routes";
+import membershipPlanRouter from "./routes/membershipPlan.routes";
 import nutritionRouter from "./routes/nutrition.routes";
 import nutritionistRouter from "./routes/nutritionist-booking.routes";
 import onboardingRouter from "./routes/onboarding.routes";
@@ -98,6 +101,9 @@ app.use((req, res, next) => {
 
 		if (!allowAnyOrigin) {
 			res.setHeader("Vary", "Origin");
+			res.setHeader("Access-Control-Allow-Credentials", "true");
+		} else {
+			res.setHeader("Access-Control-Allow-Credentials", "false");
 		}
 	}
 
@@ -109,7 +115,11 @@ app.use((req, res, next) => {
 		"Access-Control-Allow-Headers",
 		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret",
 	);
-	res.setHeader("Access-Control-Allow-Credentials", "false");
+	res.setHeader(
+		"Access-Control-Expose-Headers",
+		"X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-Total-Count, Content-Disposition",
+	);
+	res.setHeader("Access-Control-Max-Age", "86400");
 	res.setHeader("X-Content-Type-Options", "nosniff");
 	res.setHeader("X-Frame-Options", "DENY");
 	res.setHeader("Referrer-Policy", "no-referrer");
@@ -199,9 +209,13 @@ app.use("/appointments", appointmentRouter);
 app.use("/schedules", scheduleRouter);
 app.use("/exercises", exerciseRouter);
 app.use("/leads", leadRouter);
+app.use("/invoices", invoiceRouter);
+app.use("/api/invoices", invoiceRouter);
+app.use("/membership-plans", membershipPlanRouter);
 app.use("/onboarding", onboardingRouter);
 app.use("/nutrition", nutritionRouter);
 app.use("/nutritionist", nutritionistRouter);
+app.use("/dashboard", dashboardRouter);
 app.use("/webhook", webhookRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);

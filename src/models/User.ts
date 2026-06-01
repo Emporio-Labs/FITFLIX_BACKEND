@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { Gender, OnboardingStep } from "./Enums";
+import { applyIdTransform } from "../utils/mongoose-serialization";
 
 const userSchema = new mongoose.Schema(
 	{
@@ -47,6 +48,8 @@ const userSchema = new mongoose.Schema(
 	},
 	{ timestamps: true },
 );
+
+applyIdTransform(userSchema);
 
 type UserDocument = mongoose.InferSchemaType<typeof userSchema>;
 

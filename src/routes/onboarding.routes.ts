@@ -3,6 +3,7 @@ import { bookNutritionist } from "../controllers/nutritionist-booking.controller
 import {
 	deleteNutritionistAppointment,
 	getStatus,
+	getStatusByUserId,
 	submitAppointment,
 	submitComplete,
 	submitConsent,
@@ -20,6 +21,7 @@ const onboardingRouter = Router();
 
 onboardingRouter.use(authenticateToken);
 onboardingRouter.get("/status", authorize(["user"]), getStatus);
+onboardingRouter.get("/status/:userId", authorize(["admin", "frontdesk"]), getStatusByUserId);
 onboardingRouter.post("/health-markers", authorize(["user"]), submitHealthMarkers);
 onboardingRouter.post("/health-goals", authorize(["user"]), submitHealthGoals);
 onboardingRouter.post("/consent", authorize(["user"]), submitConsent);

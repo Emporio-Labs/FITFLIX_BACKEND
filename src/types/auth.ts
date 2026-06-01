@@ -3,7 +3,8 @@ export type AppUserRole =
 	| "admin"
 	| "doctor"
 	| "trainer"
-	| "nutritionist";
+	| "nutritionist"
+	| "frontdesk";
 
 export type AuthenticatedUser = {
 	id: string;
