@@ -64,6 +64,14 @@ import {
 	getProfileByUserHandler,
 	updateProfileHandler,
 } from "../controllers/nutrition-profile.controller";
+import {
+	buildTemplateFromCategoryHandler,
+	buildTemplateFromRecipeHandler,
+	getRecipeHandler,
+	listCategoriesHandler,
+	listRecipesByCategoryHandler,
+	listRecipesHandler,
+} from "../controllers/nutrition-recipe.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
@@ -102,7 +110,31 @@ nutritionRouter.post("/foods", STAFF, createCustomFood);
 nutritionRouter.patch("/foods/:id", STAFF, patchFood);
 nutritionRouter.delete("/foods/:id", STAFF, removeFood);
 
+// ---- Recipe catalog browse (nutritionist + admin + user) ----
+// Static /categories and /recipes routes before any parameterized template routes
+// so "from-category" / "from-recipe" are never captured by /:id.
+const BROWSE = authorize(["nutritionist", "admin", "user"]);
+nutritionRouter.get("/categories", BROWSE, listCategoriesHandler);
+nutritionRouter.get(
+	"/categories/:categoryId/recipes",
+	BROWSE,
+	listRecipesByCategoryHandler,
+);
+nutritionRouter.get("/recipes", BROWSE, listRecipesHandler);
+nutritionRouter.get("/recipes/:id", BROWSE, getRecipeHandler);
+
 // ---- Diet plans (reusable templates backing the Diet Plans tab) ----
+// Template builders from recipe catalog must come BEFORE /:id param routes.
+nutritionRouter.post(
+	"/templates/from-category/:categoryId",
+	STAFF,
+	buildTemplateFromCategoryHandler,
+);
+nutritionRouter.post(
+	"/templates/from-recipe/:recipeId",
+	STAFF,
+	buildTemplateFromRecipeHandler,
+);
 nutritionRouter.post("/templates", STAFF, createNutritionTemplate);
 nutritionRouter.get("/templates", STAFF, listNutritionTemplates);
 nutritionRouter.get("/templates/:id", STAFF, getNutritionTemplate);

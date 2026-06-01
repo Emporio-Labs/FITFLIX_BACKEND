@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { MealType } from "./Enums";
+import { IngredientUnit, MealType } from "./Enums";
 
 // Macro target — nullable goals set by the nutritionist on a plan/template.
 export const macroTargetSchema = new mongoose.Schema(
@@ -28,6 +28,9 @@ export const macroTotalsSchema = new mongoose.Schema(
 
 // Immutable per-portion macro snapshot. foodId is provenance only —
 // editing/deactivating the catalog row must never mutate this.
+// unit preserves the original Excel measure ("g" or "ml"); quantityG stores
+// the numeric value verbatim — for ml items density≈1 is assumed for
+// display purposes only, never for macro math.
 export const mealFoodItemSchema = new mongoose.Schema(
 	{
 		foodId: {
@@ -37,6 +40,11 @@ export const mealFoodItemSchema = new mongoose.Schema(
 		},
 		foodName: { type: String, required: true },
 		quantityG: { type: Number, required: true },
+		unit: {
+			type: String,
+			enum: Object.values(IngredientUnit),
+			default: IngredientUnit.Gram,
+		},
 		caloriesKcal: { type: Number, required: true },
 		proteinG: { type: Number, required: true },
 		carbsG: { type: Number, required: true },
@@ -79,6 +87,13 @@ export const templateMealSchema = new mongoose.Schema(
 			required: true,
 		},
 		name: { type: String, required: true },
+		// Optional back-reference to the canonical Recipe document. Set when the
+		// template meal was seeded from a Recipe; null for manually-authored meals.
+		recipeId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Recipe",
+			default: null,
+		},
 		timeOfDay: { type: String, default: null },
 		notes: { type: String, default: "" },
 		items: { type: [mealFoodItemSchema], default: [] },
