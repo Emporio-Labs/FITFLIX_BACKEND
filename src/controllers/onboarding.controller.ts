@@ -73,11 +73,23 @@ const handleServiceError = (
 	next(error);
 };
 
-export const getStatus = async (
-	req: RequestWithUser,
-	res: Parameters<RequestHandler>[1],
-	next: Parameters<RequestHandler>[2],
-) => {
+export const getStatusByUserId: RequestHandler = async (req, res, next) => {
+	const { userId } = req.params;
+
+	if (typeof userId !== "string" || !mongoose.Types.ObjectId.isValid(userId)) {
+		res.status(400).json({ error: "Invalid user ID", code: "BAD_REQUEST" });
+		return;
+	}
+
+	try {
+		const status = await getOnboardingStatus(userId);
+		res.status(200).json(status);
+	} catch (error) {
+		handleServiceError(error, res, next);
+	}
+};
+
+export const getStatus: RequestHandler = async (req, res, next) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",

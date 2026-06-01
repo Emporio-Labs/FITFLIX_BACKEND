@@ -25,16 +25,16 @@ leadRouter.post(
 
 leadRouter.use(authenticateToken);
 
-leadRouter.post("/", authorize(["admin", "doctor", "trainer"]), createLead);
-leadRouter.get("/", authorize(["admin"]), getAllLeads);
-leadRouter.get("/stats", authorize(["admin"]), getLeadStats);
-leadRouter.get("/:id", authorize(["admin", "doctor", "trainer"]), getLeadById);
+leadRouter.post("/", authorize(["admin", "frontdesk", "doctor", "trainer"]), createLead);
+leadRouter.get("/", authorize(["admin", "frontdesk"]), getAllLeads);
+leadRouter.get("/stats", authorize(["admin", "frontdesk"]), getLeadStats);
+leadRouter.get("/:id", authorize(["admin", "frontdesk", "doctor", "trainer"]), getLeadById);
 leadRouter.patch(
 	"/:id",
-	authorize(["admin", "doctor", "trainer"]),
+	authorize(["admin", "frontdesk", "doctor", "trainer"]),
 	updateLeadById,
 );
-leadRouter.delete("/:id", authorize(["admin"]), deleteLeadById);
-leadRouter.post("/:id/convert", authorize(["admin"]), convertLeadToUser);
+leadRouter.delete("/:id", authorize(["admin", "frontdesk"]), deleteLeadById);
+leadRouter.post("/:id/convert", authorize(["admin", "frontdesk"]), convertLeadToUser);
 
 export default leadRouter;
