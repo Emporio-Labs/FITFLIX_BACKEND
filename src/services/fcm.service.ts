@@ -4,26 +4,28 @@ import User from "../models/User";
 
 let initialized = false;
 
-function getApp(): admin.app.App | null {
+export function getApp(): admin.app.App | null {
 	if (initialized) return admin.app();
 
 	const encoded = process.env.FCM_SERVICE_ACCOUNT_JSON;
+	console.log("[fcm] process.env.FCM_SERVICE_ACCOUNT_JSON exists:", !!encoded);
 	if (!encoded) {
 		console.warn("[fcm] FCM_SERVICE_ACCOUNT_JSON not set — push notifications disabled");
 		return null;
 	}
 
 	try {
+		console.log("[fcm] Attempting Firebase Admin SDK initialization...");
 		const serviceAccount = JSON.parse(
 			Buffer.from(encoded, "base64").toString("utf-8"),
 		) as admin.ServiceAccount;
 
 		admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 		initialized = true;
-		console.log("[fcm] Firebase Admin initialized");
+		console.log("[fcm] Firebase Admin initialized successfully");
 		return admin.app();
 	} catch (err) {
-		console.error("[fcm] Failed to initialize Firebase Admin", err);
+		console.error("[fcm] Failed to initialize Firebase Admin, error:", err);
 		return null;
 	}
 }

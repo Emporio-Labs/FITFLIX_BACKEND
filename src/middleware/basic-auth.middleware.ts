@@ -13,8 +13,10 @@ type AppRole = "admin" | "doctor" | "trainer" | "user";
 
 type AuthDocument = {
 	_id: { toString(): string };
-	email: string;
-	passwordHash: string;
+	// Phone-auth users may lack email/passwordHash; basic-auth requires both,
+	// guarded below before use.
+	email?: string | null;
+	passwordHash?: string | null;
 	save: () => Promise<unknown>;
 };
 
@@ -82,7 +84,7 @@ export const authenticateBasicCredentials: RequestHandler = async (
 		];
 
 		for (const candidate of candidates) {
-			if (!candidate.account) {
+			if (!candidate.account || !candidate.account.passwordHash) {
 				continue;
 			}
 
@@ -101,7 +103,7 @@ export const authenticateBasicCredentials: RequestHandler = async (
 
 			req.user = {
 				id: candidate.account._id.toString(),
-				email: candidate.account.email,
+				email: candidate.account.email ?? "",
 				role: candidate.role,
 			};
 			next();

@@ -31,6 +31,7 @@ import {
 import calidWebhookRouter from "./routes/calid-webhook.routes";
 import notificationRouter from "./routes/notification.routes";
 import internalRouter from "./routes/internal.routes";
+import { getApp } from "./services/fcm.service";
 import {
 	isErrorVerboseEnabled,
 	normalizeErrorResponse,
@@ -227,6 +228,32 @@ app.use("/internal", internalRouter);
 
 app.get("/health", (_req, res) => {
 	res.status(200).json({ ok: true });
+});
+
+app.post("/test/firebase", (_req, res) => {
+	try {
+		console.log("[test-firebase] POST /test/firebase triggered. Initializing Firebase...");
+		const appInstance = getApp();
+		if (appInstance) {
+			res.status(200).json({
+				success: true,
+				message: "Firebase Admin initialized successfully",
+				projectName: appInstance.options.projectId || "unknown",
+			});
+		} else {
+			res.status(500).json({
+				success: false,
+				message: "Firebase Admin initialization failed or was disabled (check server logs)",
+			});
+		}
+	} catch (err: any) {
+		console.error("[test-firebase] Exception during Firebase Admin test:", err);
+		res.status(500).json({
+			success: false,
+			message: "Firebase Admin test threw an exception",
+			error: err?.message || String(err),
+		});
+	}
 });
 
 app.use(

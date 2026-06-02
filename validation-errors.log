@@ -57,3 +57,21 @@ Issues: [
   }
 ]
 
+[2026-06-01T10:24:45.781Z] Endpoint: POST /workout-plans/6a1d5ded96b4cceb5bb04dda/assign
+Body: {
+  "userIds": [
+    null
+  ]
+}
+Issues: [
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "userIds",
+      0
+    ],
+    "message": "Invalid input: expected string, received null"
+  }
+]
+

@@ -474,10 +474,14 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			lead.convertedUser = existingUser._id;
 			await lead.save();
 
-			res.status(200).json({
-				message: "Lead linked to existing user",
+			res.status(201).json({
+				message: "Lead converted to user",
 				lead,
-				userId: existingUser._id,
+				user: {
+					id: existingUser._id,
+					email: existingUser.email,
+					role: "user" as const,
+				},
 			});
 			return;
 		}

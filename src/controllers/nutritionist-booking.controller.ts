@@ -203,7 +203,7 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 				expertType: ExpertType.Nutritionist,
 				slotStart: slotId,
 				timezone: "Asia/Kolkata",
-				attendee: { name: dbUser.username, email: dbUser.email },
+				attendee: { name: dbUser.username, email: dbUser.email ?? "" },
 				userId: req.user.id,
 			});
 

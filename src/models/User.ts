@@ -6,14 +6,21 @@ const userSchema = new mongoose.Schema(
 	{
 		username: { type: String, required: true },
 		phone: { type: String, required: true },
-		email: { type: String, required: true, unique: true, sparse: true },
+		// Firebase phone-auth identity (user app). Sparse-unique so legacy
+		// email/password users without a firebaseUid are unaffected.
+		firebaseUid: { type: String, unique: true, sparse: true, default: undefined },
+		phoneVerified: { type: Boolean, default: false },
+		// Email/password are no longer required for user-app (phone-auth) accounts.
+		email: { type: String, unique: true, sparse: true, default: undefined },
 		age: { type: Number, required: true, min: 0 },
 		gender: { type: String, enum: Object.values(Gender), required: true },
+		// Basic-profile goal collected at phone signup (distinct from onboarding healthGoals[]).
+		goal: { type: String, default: undefined },
 		healthGoals: { type: [String], default: [] },
 		dateOfBirth: { type: Date, default: undefined },
 		emergencyContact: { type: String, default: undefined },
 		address: { type: String, default: undefined },
-		passwordHash: { type: String, required: true, select: false },
+		passwordHash: { type: String, select: false },
 		onboarded: { type: Boolean, default: false },
 		fcmTokens: {
 			type: [
@@ -47,6 +54,13 @@ const userSchema = new mongoose.Schema(
 		},
 	},
 	{ timestamps: true },
+);
+
+// Enforce one account per phone number for phone-auth (user app) accounts only.
+// Partial filter keeps legacy email users with blank/duplicate phones unaffected.
+userSchema.index(
+	{ phone: 1 },
+	{ unique: true, partialFilterExpression: { firebaseUid: { $exists: true } } },
 );
 
 applyIdTransform(userSchema);

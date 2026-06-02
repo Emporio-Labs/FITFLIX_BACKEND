@@ -1,11 +1,11 @@
 import mongoose from "mongoose";
 import { LeadStatus } from "./Enums";
-import { applyIdTransform } from "../utils/mongoose-serialization";
 
 const leadSchema = new mongoose.Schema(
 	{
 		leadName: { type: String, required: true },
-		email: { type: String, required: true },
+		// Optional: phone-auth (app) leads have no email and are keyed by phone.
+		email: { type: String, default: "" },
 		phone: { type: String, default: "" },
 		source: { type: String, default: "" },
 		status: {
@@ -29,7 +29,18 @@ const leadSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
-applyIdTransform(leadSchema);
+// Lead responses must expose `_id` (read directly by clients/tests as `lead._id`)
+// while still keeping the `id` virtual for backward compatibility. We intentionally
+// do NOT use the shared `applyIdTransform` here — that helper strips `_id`, and the
+// requirement is to change only the Lead model without touching the shared utility or
+// any other model's serialization.
+leadSchema.set("toJSON", {
+	virtuals: true,
+	transform: (_doc, ret: Record<string, unknown>) => {
+		delete ret.__v;
+		return ret;
+	},
+});
 
 
 type LeadDocument = mongoose.InferSchemaType<typeof leadSchema>;

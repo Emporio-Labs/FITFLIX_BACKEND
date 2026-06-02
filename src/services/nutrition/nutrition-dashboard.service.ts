@@ -1241,7 +1241,7 @@ export const getUserNutritionDashboard = async (
 		user: {
 			_id: user._id.toString(),
 			username: user.username,
-			email: user.email,
+			email: user.email ?? "",
 			phone: user.phone,
 			// Flat fields kept for backward compat with existing consumers
 			weight: healthMarkers?.weight,

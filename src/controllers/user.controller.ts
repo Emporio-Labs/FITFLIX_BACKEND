@@ -785,7 +785,7 @@ export const updateMyPassword: RequestHandler = async (req, res, next) => {
 
 		const isCurrentPasswordValid = await verifyPassword(
 			parsedBody.data.currentPassword,
-			user.passwordHash,
+			user.passwordHash ?? "",
 		);
 
 		if (!isCurrentPasswordValid) {
