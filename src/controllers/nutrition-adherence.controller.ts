@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import UserNutritionPlan from "../models/nutrition-plan.model";
 import {
 	getAdherenceRange,
 	getPlanAdherenceSummary,
@@ -16,9 +17,14 @@ import {
 	planAdherenceQuerySchema,
 	rebuildAdherenceBodySchema,
 } from "../validators/nutrition-meal-log.validator";
-import UserNutritionPlan from "../models/nutrition-plan.model";
 
 export const getMyAdherence: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = adherenceRangeQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -30,12 +36,15 @@ export const getMyAdherence: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const isStaff = ["nutritionist", "admin"].includes(req.user!.role);
-		const targetUserId = (isStaff && parsed.data.userId) ? parsed.data.userId : req.user!.id;
+		const isStaff = ["nutritionist", "admin"].includes(requester.role);
+		const targetUserId =
+			isStaff && parsed.data.userId ? parsed.data.userId : requester.id;
 
 		let planId = parsed.data.planId;
 		if (!planId) {
-			const latestPlan = await UserNutritionPlan.findOne({ userId: targetUserId }).sort({ createdAt: -1 });
+			const latestPlan = await UserNutritionPlan.findOne({
+				userId: targetUserId,
+			}).sort({ createdAt: -1 });
 			if (!latestPlan) {
 				res.status(200).json({ days: [] });
 				return;
@@ -44,7 +53,7 @@ export const getMyAdherence: RequestHandler = async (req, res, next) => {
 		}
 
 		// Authorize plan access for this user before reading rollups.
-		await getPlan(planId, req.user!);
+		await getPlan(planId, requester);
 		const days = await getAdherenceRange(
 			targetUserId,
 			planId,
@@ -58,6 +67,12 @@ export const getMyAdherence: RequestHandler = async (req, res, next) => {
 };
 
 export const getPlanAdherence: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = planAdherenceQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -70,7 +85,7 @@ export const getPlanAdherence: RequestHandler = async (req, res, next) => {
 
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
-		await getPlan(planId, req.user!);
+		await getPlan(planId, requester);
 		const summary = await getPlanAdherenceSummary(
 			planId,
 			parsed.data.from,
@@ -83,6 +98,12 @@ export const getPlanAdherence: RequestHandler = async (req, res, next) => {
 };
 
 export const getMyWeeklyAdherence: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = adherenceRangeQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -94,12 +115,15 @@ export const getMyWeeklyAdherence: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const isStaff = ["nutritionist", "admin"].includes(req.user!.role);
-		const targetUserId = (isStaff && parsed.data.userId) ? parsed.data.userId : req.user!.id;
+		const isStaff = ["nutritionist", "admin"].includes(requester.role);
+		const targetUserId =
+			isStaff && parsed.data.userId ? parsed.data.userId : requester.id;
 
 		let planId = parsed.data.planId;
 		if (!planId) {
-			const latestPlan = await UserNutritionPlan.findOne({ userId: targetUserId }).sort({ createdAt: -1 });
+			const latestPlan = await UserNutritionPlan.findOne({
+				userId: targetUserId,
+			}).sort({ createdAt: -1 });
 			if (!latestPlan) {
 				res.status(200).json({ adherence: [], weeklyAverage: 0 });
 				return;
@@ -107,7 +131,7 @@ export const getMyWeeklyAdherence: RequestHandler = async (req, res, next) => {
 			planId = latestPlan._id.toString();
 		}
 
-		await getPlan(planId, req.user!);
+		await getPlan(planId, requester);
 		const result = await getWeeklyAdherence(
 			targetUserId,
 			planId,
@@ -120,7 +144,17 @@ export const getMyWeeklyAdherence: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getPlanWeeklyAdherence: RequestHandler = async (req, res, next) => {
+export const getPlanWeeklyAdherence: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = planAdherenceQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -133,7 +167,7 @@ export const getPlanWeeklyAdherence: RequestHandler = async (req, res, next) => 
 
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
-		const plan = await getPlan(planId, req.user!);
+		const plan = await getPlan(planId, requester);
 		const rawUserId = plan.userId as unknown;
 		const planOwnerId =
 			rawUserId && typeof rawUserId === "object" && "_id" in rawUserId
@@ -151,11 +185,13 @@ export const getPlanWeeklyAdherence: RequestHandler = async (req, res, next) => 
 	}
 };
 
-export const rebuildPlanAdherence: RequestHandler = async (
-	req,
-	res,
-	next,
-) => {
+export const rebuildPlanAdherence: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = rebuildAdherenceBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({

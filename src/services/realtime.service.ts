@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from "node:http";
-import { Server as SocketIOServer, type Socket } from "socket.io";
-import { verifyAuthToken, getJwtConfig } from "../utils/jwt";
+import { type Socket, Server as SocketIOServer } from "socket.io";
+import { getJwtConfig, verifyAuthToken } from "../utils/jwt";
 
 export type FrontDeskEvent =
 	| "appointment_created"
@@ -103,10 +103,7 @@ export function emitToUser(
 	io.to(`user:${userId}`).emit(event, data);
 }
 
-export function emitToFrontDesk(
-	event: FrontDeskEvent,
-	data: unknown,
-): void {
+export function emitToFrontDesk(event: FrontDeskEvent, data: unknown): void {
 	if (!io) return;
 	io.to("frontdesk").emit(event, data);
 }

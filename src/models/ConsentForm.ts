@@ -35,5 +35,6 @@ const consentFormSchema = new mongoose.Schema(
 
 type ConsentFormDocument = mongoose.InferSchemaType<typeof consentFormSchema>;
 
-export default (mongoose.models.ConsentForm as mongoose.Model<ConsentFormDocument>) ||
+export default (mongoose.models
+	.ConsentForm as mongoose.Model<ConsentFormDocument>) ||
 	mongoose.model<ConsentFormDocument>("ConsentForm", consentFormSchema);

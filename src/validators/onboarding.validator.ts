@@ -1,7 +1,7 @@
 import z from "zod";
 import { ConsentType, ExpertType } from "../models/Enums";
-import { ActivityLevel } from "../models/HealthMarkers";
 import { WorkoutExperience } from "../models/HealthGoals";
+import { ActivityLevel } from "../models/HealthMarkers";
 
 const positiveNumber = z.preprocess((value) => {
 	if (typeof value === "number" && Number.isFinite(value)) {
@@ -101,7 +101,9 @@ export const healthMarkersBodySchema = z.object({
 });
 
 export const healthGoalsBodySchema = z.object({
-	goals: z.array(z.string().trim().min(1)).min(1, "At least one goal is required"),
+	goals: z
+		.array(z.string().trim().min(1))
+		.min(1, "At least one goal is required"),
 	targetWeight: optionalPositiveNumber,
 	timeline: optionalString,
 	workoutExperience: z.preprocess((value) => {
@@ -128,18 +130,15 @@ const consentEntryValidation = z.object({
 		message: "Consent must be accepted",
 	}),
 	signatureName: optionalString,
-	dateSigned: z.preprocess(
-		(v) => {
-			if (v === undefined || v === null) return undefined;
-			if (v instanceof Date) return v;
-			if (typeof v === "string" || typeof v === "number") {
-				const parsed = new Date(v);
-				if (!Number.isNaN(parsed.getTime())) return parsed;
-			}
-			return v;
-		},
-		z.date().optional(),
-	),
+	dateSigned: z.preprocess((v) => {
+		if (v === undefined || v === null) return undefined;
+		if (v instanceof Date) return v;
+		if (typeof v === "string" || typeof v === "number") {
+			const parsed = new Date(v);
+			if (!Number.isNaN(parsed.getTime())) return parsed;
+		}
+		return v;
+	}, z.date().optional()),
 });
 
 export const consentBodySchema = z
@@ -158,8 +157,7 @@ export const consentBodySchema = z
 			);
 		},
 		{
-			message:
-				"Both WELLNESS_SERVICES and GYM_FITNESS consents are required",
+			message: "Both WELLNESS_SERVICES and GYM_FITNESS consents are required",
 		},
 	);
 

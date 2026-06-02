@@ -15,6 +15,12 @@ import {
 } from "../validators/nutrition-hydration.validator";
 
 export const addHydrationIntake: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = addHydrationBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -27,7 +33,7 @@ export const addHydrationIntake: RequestHandler = async (req, res, next) => {
 
 	try {
 		const hydration = await addHydration(
-			req.user!.id,
+			requester.id,
 			parsed.data.amountMl,
 			parsed.data.source,
 			parsed.data.date,
@@ -38,11 +44,13 @@ export const addHydrationIntake: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const updateHydrationGoal: RequestHandler = async (
-	req,
-	res,
-	next,
-) => {
+export const updateHydrationGoal: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = hydrationGoalBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -55,7 +63,7 @@ export const updateHydrationGoal: RequestHandler = async (
 
 	try {
 		const hydration = await setHydrationGoal(
-			req.user!.id,
+			requester.id,
 			parsed.data.goalMl,
 			parsed.data.date,
 		);
@@ -66,6 +74,12 @@ export const updateHydrationGoal: RequestHandler = async (
 };
 
 export const getMyHydration: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = hydrationQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -77,12 +91,10 @@ export const getMyHydration: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const isStaff = ["nutritionist", "admin"].includes(req.user!.role);
-		const targetUserId = (isStaff && parsed.data.userId) ? parsed.data.userId : req.user!.id;
-		const hydration = await getHydration(
-			targetUserId,
-			parsed.data.date,
-		);
+		const isStaff = ["nutritionist", "admin"].includes(requester.role);
+		const targetUserId =
+			isStaff && parsed.data.userId ? parsed.data.userId : requester.id;
+		const hydration = await getHydration(targetUserId, parsed.data.date);
 		res.status(200).json({ hydration });
 	} catch (error) {
 		handleNutritionError(error, res, next);

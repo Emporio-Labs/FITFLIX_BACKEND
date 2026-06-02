@@ -68,9 +68,7 @@ export const getPublicDoctors: RequestHandler = async (_req, res, next) => {
 		const doctors = await Doctor.find().select(
 			"doctorName description specialities",
 		);
-		res
-			.status(200)
-			.json({ doctors: doctors.map(toPublicDoctorResponse) });
+		res.status(200).json({ doctors: doctors.map(toPublicDoctorResponse) });
 	} catch (error) {
 		next(error);
 	}

@@ -1,12 +1,12 @@
 import mongoose from "mongoose";
-import { NutritionPlanStatus } from "../../models/Enums";
 import type { NutritionGoal } from "../../models/Enums";
+import { NutritionPlanStatus } from "../../models/Enums";
 import NutritionFood from "../../models/nutrition-food.model";
-import NutritionProfile from "../../models/nutrition-profile.model";
-import NutritionTemplate from "../../models/nutrition-template.model";
 import UserNutritionPlan, {
 	type UserNutritionPlanDocument,
 } from "../../models/nutrition-plan.model";
+import NutritionProfile from "../../models/nutrition-profile.model";
+import NutritionTemplate from "../../models/nutrition-template.model";
 import type { DayInput, NutritionActor } from "../../types/nutrition";
 import { NutritionServiceError, toObjectId } from "./nutrition-errors";
 import { resolveDaysToSnapshots } from "./nutrition-snapshot.util";
@@ -136,9 +136,7 @@ export type PlanListFilters = {
 // Deep, value-only copy of the template's embedded days so the assigned
 // plan is fully detached from the template document.
 const cloneDays = (days: unknown): UserNutritionPlanDocument["days"] =>
-	JSON.parse(
-		JSON.stringify(days ?? []),
-	) as UserNutritionPlanDocument["days"];
+	JSON.parse(JSON.stringify(days ?? [])) as UserNutritionPlanDocument["days"];
 
 export const assignTemplateToUser = async (
 	templateId: string,
@@ -153,10 +151,7 @@ export const assignTemplateToUser = async (
 		throw new NutritionServiceError("NOT_FOUND", "Template not found");
 	}
 
-	if (
-		actor.role !== "admin" &&
-		template.createdBy.toString() !== actor.id
-	) {
+	if (actor.role !== "admin" && template.createdBy.toString() !== actor.id) {
 		throw new NutritionServiceError(
 			"FORBIDDEN",
 			"You can only assign your own templates",
@@ -269,9 +264,7 @@ export const listNutritionistPlans = async (
 // Authorization: the owning user, the assigning nutritionist, or any admin.
 export const getPlan = async (planId: string, actor: NutritionActor) => {
 	const id = toObjectId(planId, "NOT_FOUND", "Plan not found");
-	const plan = await UserNutritionPlan.findById(id).populate(
-		MEMBER_POPULATE,
-	);
+	const plan = await UserNutritionPlan.findById(id).populate(MEMBER_POPULATE);
 
 	if (!plan) {
 		throw new NutritionServiceError("NOT_FOUND", "Plan not found");
@@ -379,7 +372,11 @@ export const duplicatePlan = async (
 
 	const doc = await UserNutritionPlan.create({
 		userId: toObjectId(targetUserId, "BAD_REQUEST", "Invalid user ID"),
-		nutritionistId: toObjectId(actor.id, "BAD_REQUEST", "Invalid nutritionist ID"),
+		nutritionistId: toObjectId(
+			actor.id,
+			"BAD_REQUEST",
+			"Invalid nutritionist ID",
+		),
 		sourceTemplateId: source.sourceTemplateId ?? null,
 		name: opts.name ?? `${source.name} (Copy)`,
 		goal: source.goal,
@@ -395,7 +392,5 @@ export const duplicatePlan = async (
 		),
 	});
 
-	return UserNutritionPlan.findById(doc._id)
-		.populate(MEMBER_POPULATE)
-		.lean();
+	return UserNutritionPlan.findById(doc._id).populate(MEMBER_POPULATE).lean();
 };

@@ -19,43 +19,49 @@ config();
 
 const isDryRun = process.argv.slice(2).includes("--dry-run");
 
-// Import models that have passwordHash fields (select:false — must use +passwordHash)
-import User from "../src/models/User";
 import Admin from "../src/models/Admin";
 import Doctor from "../src/models/Doctor";
 import Trainer from "../src/models/Trainer";
+// Import models that have passwordHash fields (select:false — must use +passwordHash)
+import User from "../src/models/User";
 
 type ModelEntry = {
 	name: string;
-	model: mongoose.Model<mongoose.Document & { passwordHash?: string }>;
+	model: mongoose.Model<any>;
 };
 
 const MODELS: ModelEntry[] = [
-	{ name: "User", model: User as ModelEntry["model"] },
-	{ name: "Admin", model: Admin as ModelEntry["model"] },
-	{ name: "Doctor", model: Doctor as ModelEntry["model"] },
-	{ name: "Trainer", model: Trainer as ModelEntry["model"] },
+	{ name: "User", model: User as mongoose.Model<any> },
+	{ name: "Admin", model: Admin as mongoose.Model<any> },
+	{ name: "Doctor", model: Doctor as mongoose.Model<any> },
+	{ name: "Trainer", model: Trainer as mongoose.Model<any> },
 ];
 
-async function migrateModel({ name, model }: ModelEntry): Promise<{ found: number; migrated: number }> {
+async function migrateModel({
+	name,
+	model,
+}: ModelEntry): Promise<{ found: number; migrated: number }> {
 	// select +passwordHash to override select:false
 	const docs = await model.find({}).select("+passwordHash").lean();
 	let found = 0;
 	let migrated = 0;
 
-	for (const doc of docs) {
-		const raw = (doc as Record<string, unknown>).passwordHash;
+	for (const doc of docs as any[]) {
+		const raw = doc.passwordHash;
 		if (typeof raw !== "string" || raw.trim() === "") continue;
 
 		if (!isHashedPassword(raw)) {
 			found++;
-			console.log(`  [${name}] id=${String((doc as Record<string, unknown>)._id)} has plaintext password`);
+			console.log(`  [${name}] id=${String(doc._id)} has plaintext password`);
 
 			if (!isDryRun) {
 				const hashed = await hashPassword(raw);
-				await model.updateOne({ _id: (doc as Record<string, unknown>)._id }, { $set: { passwordHash: hashed } });
+				await model.updateOne(
+					{ _id: doc._id },
+					{ $set: { passwordHash: hashed } },
+				);
 				migrated++;
-				console.log(`  [${name}] id=${String((doc as Record<string, unknown>)._id)} → migrated to bcrypt`);
+				console.log(`  [${name}] id=${String(doc._id)} → migrated to bcrypt`);
 			}
 		}
 	}

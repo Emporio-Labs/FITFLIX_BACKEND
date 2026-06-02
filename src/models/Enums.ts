@@ -282,3 +282,17 @@ export enum InvoicePaymentMethod {
 	BANK_TRANSFER = "BANK_TRANSFER",
 	NONE = "NONE",
 }
+
+export enum IngredientUnit {
+	Gram = "g",
+	Milliliter = "ml",
+}
+
+export enum ImportRowType {
+	CategoryHeader = "CategoryHeader",
+	ColumnHeader = "ColumnHeader",
+	Empty = "Empty",
+	Total = "Total",
+	Recipe = "Recipe",
+	Ingredient = "Ingredient",
+}

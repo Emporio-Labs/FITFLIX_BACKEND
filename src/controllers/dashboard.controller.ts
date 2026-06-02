@@ -1,9 +1,9 @@
 import type { RequestHandler } from "express";
+import { MembershipStatus } from "../models/Enums";
 import Invoice from "../models/Invoice";
 import Lead from "../models/Lead";
 import Membership from "../models/Membership";
 import User from "../models/User";
-import { MembershipStatus } from "../models/Enums";
 
 export const getDashboardMetrics: RequestHandler = async (_req, res, next) => {
 	try {

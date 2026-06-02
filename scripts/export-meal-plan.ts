@@ -20,18 +20,17 @@
  *   6. RecipeIngredient macro sum vs Recipe.totals for a sample
  */
 
+import * as path from "node:path";
 import { config } from "dotenv";
 import mongoose from "mongoose";
 import XLSX from "xlsx";
-import * as path from "path";
-
-import connectDB from "../src/utils/db";
-import MealPlanImportRow from "../src/models/MealPlanImportRow";
+import { NutritionFoodSource } from "../src/models/Enums";
 import MealPlanCategory from "../src/models/MealPlanCategory";
+import MealPlanImportRow from "../src/models/MealPlanImportRow";
+import NutritionFood from "../src/models/nutrition-food.model";
 import Recipe from "../src/models/Recipe";
 import RecipeIngredient from "../src/models/RecipeIngredient";
-import NutritionFood from "../src/models/nutrition-food.model";
-import { NutritionFoodSource } from "../src/models/Enums";
+import connectDB from "../src/utils/db";
 
 config();
 
@@ -45,7 +44,9 @@ async function main() {
 			.sort({ importedAt: -1 })
 			.lean();
 		if (!latest) {
-			console.error("❌  No import rows found in database. Run import-meal-plan.ts first.");
+			console.error(
+				"❌  No import rows found in database. Run import-meal-plan.ts first.",
+			);
 			process.exit(1);
 		}
 		importBatchId = latest.importBatchId;
@@ -72,14 +73,18 @@ async function main() {
 	console.log(`  MealPlanImportRow — Sheet2    : ${sheet2RowCount} rows`);
 
 	// 1b. Categories
-	const categories = await MealPlanCategory.find().sort({ sortOrder: 1 }).lean();
+	const categories = await MealPlanCategory.find()
+		.sort({ sortOrder: 1 })
+		.lean();
 	console.log(`\n  Categories (${categories.length}):`);
 	for (const cat of categories) {
 		const count = await Recipe.countDocuments({
 			categoryId: cat._id,
 			source: NutritionFoodSource.System,
 		});
-		console.log(`    [${cat.sortOrder}] ${cat.name} (${cat.slug}) — ${count} recipes`);
+		console.log(
+			`    [${cat.sortOrder}] ${cat.name} (${cat.slug}) — ${count} recipes`,
+		);
 	}
 
 	// 1c. Unresolved ingredients
@@ -92,7 +97,12 @@ async function main() {
 
 	// 1d. Duplicate recipe slugs within same category
 	const dupCheck = await Recipe.aggregate([
-		{ $group: { _id: { slug: "$slug", categoryId: "$categoryId" }, n: { $sum: 1 } } },
+		{
+			$group: {
+				_id: { slug: "$slug", categoryId: "$categoryId" },
+				n: { $sum: 1 },
+			},
+		},
 		{ $match: { n: { $gt: 1 } } },
 	]);
 	console.log(
@@ -132,7 +142,9 @@ async function main() {
 	console.log("\n  Category completeness:");
 	for (const cat of categories) {
 		const count = await Recipe.countDocuments({ categoryId: cat._id });
-		console.log(`    ${cat.name}: ${count} recipes ${count > 0 ? "✅" : "⚠  EMPTY"}`);
+		console.log(
+			`    ${cat.name}: ${count} recipes ${count > 0 ? "✅" : "⚠  EMPTY"}`,
+		);
 	}
 
 	// ════════════════════════════════════════════════════════════════════════
@@ -160,7 +172,9 @@ async function main() {
 	XLSX.writeFile(wb, outputPath);
 	console.log(`  ✅  Exported to ${outputPath}`);
 	console.log(`\n  To verify zero-loss, diff the original and exported files:`);
-	console.log(`  (Note: minor formatting differences are expected; content should match)\n`);
+	console.log(
+		`  (Note: minor formatting differences are expected; content should match)\n`,
+	);
 
 	// ════════════════════════════════════════════════════════════════════════
 	// 3. Idempotency check hint
@@ -171,20 +185,34 @@ async function main() {
 
 	const totals = {
 		importRows: autoMenuRowCount + sheet2RowCount,
-		foods: await NutritionFood.countDocuments({ source: NutritionFoodSource.System }),
+		foods: await NutritionFood.countDocuments({
+			source: NutritionFoodSource.System,
+		}),
 		categories: categories.length,
-		recipes: await Recipe.countDocuments({ source: NutritionFoodSource.System }),
+		recipes: await Recipe.countDocuments({
+			source: NutritionFoodSource.System,
+		}),
 		ingredients: await RecipeIngredient.countDocuments(),
 	};
 
 	console.log(`╔══════════════════════════════════════╗`);
 	console.log(`║  Export & verification complete`);
 	console.log(`╠══════════════════════════════════════╣`);
-	console.log(`║  MealPlanImportRow : ${String(totals.importRows).padStart(5)} archived rows`);
-	console.log(`║  NutritionFood     : ${String(totals.foods).padStart(5)} docs`);
-	console.log(`║  MealPlanCategory  : ${String(totals.categories).padStart(5)} docs`);
-	console.log(`║  Recipe            : ${String(totals.recipes).padStart(5)} docs`);
-	console.log(`║  RecipeIngredient  : ${String(totals.ingredients).padStart(5)} docs`);
+	console.log(
+		`║  MealPlanImportRow : ${String(totals.importRows).padStart(5)} archived rows`,
+	);
+	console.log(
+		`║  NutritionFood     : ${String(totals.foods).padStart(5)} docs`,
+	);
+	console.log(
+		`║  MealPlanCategory  : ${String(totals.categories).padStart(5)} docs`,
+	);
+	console.log(
+		`║  Recipe            : ${String(totals.recipes).padStart(5)} docs`,
+	);
+	console.log(
+		`║  RecipeIngredient  : ${String(totals.ingredients).padStart(5)} docs`,
+	);
 	console.log(`╚══════════════════════════════════════╝\n`);
 
 	await mongoose.disconnect();

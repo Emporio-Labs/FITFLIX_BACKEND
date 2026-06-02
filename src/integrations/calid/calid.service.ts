@@ -1,7 +1,10 @@
 import AvailabilityCache from "../../models/AvailabilityCache";
 import { ExpertType } from "../../models/Enums";
 import * as client from "./calid.client";
-import { eventTypeIdForExpert, mapCalBookingToAppointmentFields } from "./calid.mapper";
+import {
+	eventTypeIdForExpert,
+	mapCalBookingToAppointmentFields,
+} from "./calid.mapper";
 import type {
 	CalIdBookingData,
 	CalIdEventType,
@@ -67,7 +70,15 @@ export async function fetchAvailability(
 
 			return AvailabilityCache.findOneAndUpdate(
 				{ expertType, eventTypeId, dateKey: dk, timezone },
-				{ expertType, eventTypeId, dateKey: dk, timezone, slots, fetchedAt, expiresAt },
+				{
+					expertType,
+					eventTypeId,
+					dateKey: dk,
+					timezone,
+					slots,
+					fetchedAt,
+					expiresAt,
+				},
 				{ upsert: true, new: true },
 			);
 		});
@@ -114,8 +125,9 @@ async function deriveAvailableSlots(
 	if (dateKeys.length === 0) return [];
 
 	const sortedDates = [...dateKeys].sort();
-	const startDate = sortedDates[0]!;
-	const endDate = sortedDates[sortedDates.length - 1]!;
+	const startDate = sortedDates[0];
+	const endDate = sortedDates[sortedDates.length - 1];
+	if (!startDate || !endDate) return [];
 
 	const eventType = await fetchEventType(eventTypeId);
 	const schedule = await fetchSchedule(eventType.scheduleId ?? null);
@@ -151,7 +163,10 @@ async function deriveAvailableSlots(
 				const startMs = cursorMs;
 				const endMs = cursorMs + slotLengthMin * 60_000;
 
-				if (startMs >= noticeCutoff.getTime() && !overlapsBooked(startMs, endMs, bookedRanges)) {
+				if (
+					startMs >= noticeCutoff.getTime() &&
+					!overlapsBooked(startMs, endMs, bookedRanges)
+				) {
 					slots.push({
 						start: new Date(startMs).toISOString(),
 						end: new Date(endMs).toISOString(),
@@ -175,7 +190,9 @@ async function fetchEventType(eventTypeId: string): Promise<CalIdEventType> {
 	return data;
 }
 
-async function fetchSchedule(scheduleId: number | null): Promise<CalIdSchedule | null> {
+async function fetchSchedule(
+	scheduleId: number | null,
+): Promise<CalIdSchedule | null> {
 	try {
 		if (scheduleId !== null && scheduleId !== undefined) {
 			const resp = await client.getSchedule(scheduleId);
@@ -185,11 +202,14 @@ async function fetchSchedule(scheduleId: number | null): Promise<CalIdSchedule |
 		// Fall back to first schedule in the account
 		const list = await client.listSchedules();
 		const data = list.data;
-		if (Array.isArray(data) && data.length > 0) return data[0]!;
+		if (Array.isArray(data) && data.length > 0) return data[0] ?? null;
 		if (data && !Array.isArray(data)) return data;
 		return null;
 	} catch (err) {
-		console.warn("[calid] schedule fetch failed; assuming 09:00-17:00 Mon-Fri", err);
+		console.warn(
+			"[calid] schedule fetch failed; assuming 09:00-17:00 Mon-Fri",
+			err,
+		);
 		return null;
 	}
 }
@@ -215,7 +235,10 @@ async function fetchBookedRanges(
 			}))
 			.filter((r) => Number.isFinite(r.startMs) && Number.isFinite(r.endMs));
 	} catch (err) {
-		console.warn("[calid] booked-ranges fetch failed; treating window as fully open", err);
+		console.warn(
+			"[calid] booked-ranges fetch failed; treating window as fully open",
+			err,
+		);
 		return [];
 	}
 }
@@ -242,9 +265,12 @@ function windowsForDate(
 			: DEFAULT_WEEKLY_WINDOWS;
 
 	const dateOverrides = availability.filter((a) => a.date === dateKey);
-	const candidates = dateOverrides.length > 0
-		? dateOverrides
-		: availability.filter((a) => !a.date && Array.isArray(a.days) && a.days.includes(weekday));
+	const candidates =
+		dateOverrides.length > 0
+			? dateOverrides
+			: availability.filter(
+					(a) => !a.date && Array.isArray(a.days) && a.days.includes(weekday),
+				);
 
 	const windows: DayWindow[] = [];
 	for (const c of candidates) {
@@ -266,7 +292,9 @@ function parseTimeOnDate(dateKey: string, timeStr: string): number | null {
 				const hour = d.getUTCHours();
 				const minute = d.getUTCMinutes();
 				const pad = (n: number) => String(n).padStart(2, "0");
-				return new Date(`${dateKey}T${pad(hour)}:${pad(minute)}:00.000Z`).getTime();
+				return new Date(
+					`${dateKey}T${pad(hour)}:${pad(minute)}:00.000Z`,
+				).getTime();
 			}
 		} catch (_) {}
 	}
@@ -319,8 +347,9 @@ export async function createBooking(params: {
 
 	// Attempt to preserve exact provider slot object from availability cache
 	// If available, use its `start`/`end` and the cache `timezone` (provider context)
-	let providerSlot: { start: string; end?: string; fetchedAt?: string } | null = null;
-	let providerTimezone: string | undefined = undefined;
+	let providerSlot: { start: string; end?: string; fetchedAt?: string } | null =
+		null;
+	let providerTimezone: string | undefined;
 	try {
 		const bookedDate = new Date(params.slotStart).toISOString().slice(0, 10);
 		const cached = await AvailabilityCache.findOne({
@@ -333,7 +362,8 @@ export async function createBooking(params: {
 			const match = cached.slots.find((s) => s.start === params.slotStart);
 			if (match) {
 				providerSlot = { start: match.start, end: match.end };
-				if (cached.fetchedAt) providerSlot.fetchedAt = new Date(cached.fetchedAt).toISOString();
+				if (cached.fetchedAt)
+					providerSlot.fetchedAt = new Date(cached.fetchedAt).toISOString();
 				providerTimezone = cached.timezone;
 			}
 		}
@@ -342,25 +372,42 @@ export async function createBooking(params: {
 	}
 
 	// Determine slot end: prefer provider slot end when available
-	const slotEnd = providerSlot && providerSlot.end
+	const slotEnd = providerSlot?.end
 		? providerSlot.end
-		: new Date(new Date(params.slotStart).getTime() + length * 60_000).toISOString();
+		: new Date(
+				new Date(params.slotStart).getTime() + length * 60_000,
+			).toISOString();
 
 	const currentUtcTime = new Date().toISOString();
-	console.log(`\n  ┌──────────────────────────────────────────────────────────────────────────────┐`);
-	console.log(`  │ 🔍 CAL ID Downstream Booking Dispatch Diagnostics                             │`);
-	console.log(`  ├──────────────────────────────────────────────────────────────────────────────┤`);
+	console.log(
+		`\n  ┌──────────────────────────────────────────────────────────────────────────────┐`,
+	);
+	console.log(
+		`  │ 🔍 CAL ID Downstream Booking Dispatch Diagnostics                             │`,
+	);
+	console.log(
+		`  ├──────────────────────────────────────────────────────────────────────────────┤`,
+	);
 	console.log(`  │ Current UTC Time     : ${currentUtcTime.padEnd(52)} │`);
 	console.log(`  │ Fetched Slot Start   : ${params.slotStart.padEnd(52)} │`);
-	console.log(`  │ Provider Slot End    : ${(providerSlot && providerSlot.end) ? providerSlot.end : "<none>"}
-`.padEnd(52) + ` │`);
+	console.log(
+		`  │ Provider Slot End    : ${(providerSlot?.end ?? "<none>").padEnd(52)} │`,
+	);
 	console.log(`  │ Generated Slot End   : ${slotEnd.padEnd(52)} │`);
-	console.log(`  │ Provider Timezone    : ${(providerTimezone ?? "<none>").padEnd(52)} │`);
-	console.log(`  │ Event Duration       : ${(length + " minutes").padEnd(52)} │`);
+	console.log(
+		`  │ Provider Timezone    : ${(providerTimezone ?? "<none>").padEnd(52)} │`,
+	);
+	console.log(
+		`  │ Event Duration       : ${(`${length} minutes`).padEnd(52)} │`,
+	);
 	console.log(`  │ Timezone Context     : ${params.timezone.padEnd(52)} │`);
 	console.log(`  │ Event Type ID        : ${eventTypeId.padEnd(52)} │`);
-	console.log(`  ├──────────────────────────────────────────────────────────────────────────────┤`);
-	console.log(`  │ Payload Sent:                                                                │`);
+	console.log(
+		`  ├──────────────────────────────────────────────────────────────────────────────┤`,
+	);
+	console.log(
+		`  │ Payload Sent:                                                                │`,
+	);
 	const finalTimezone = providerTimezone ?? params.timezone;
 
 	const payload = {
@@ -384,7 +431,9 @@ export async function createBooking(params: {
 	for (const line of payloadLog) {
 		console.log(`  │   ${line.padEnd(74)} │`);
 	}
-	console.log(`  └──────────────────────────────────────────────────────────────────────────────┘\n`);
+	console.log(
+		`  └──────────────────────────────────────────────────────────────────────────────┘\n`,
+	);
 
 	// Additional debug: schedule windows for the date (provider schedule context)
 	try {
@@ -394,7 +443,9 @@ export async function createBooking(params: {
 			start: new Date(w.startMs).toISOString(),
 			end: new Date(w.endMs).toISOString(),
 		}));
-		console.log(`  │ Schedule windows for ${bookedDate}: ${JSON.stringify(scheduleWindows)}\n`);
+		console.log(
+			`  │ Schedule windows for ${bookedDate}: ${JSON.stringify(scheduleWindows)}\n`,
+		);
 	} catch (err) {
 		console.warn("[CALID SVC] schedule fetch for diagnostics failed", err);
 	}
@@ -408,7 +459,9 @@ export async function createBooking(params: {
 		if (providerSlot && providerSlot.fetchedAt) {
 			const fetchedMs = new Date(providerSlot.fetchedAt).getTime();
 			const delayMs = Date.now() - fetchedMs;
-			console.log(`  │ Slot fetchedAt       : ${providerSlot.fetchedAt.padEnd(52)} │`);
+			console.log(
+				`  │ Slot fetchedAt       : ${providerSlot.fetchedAt.padEnd(52)} │`,
+			);
 			console.log(`  │ Delay fetch->book ms : ${String(delayMs).padEnd(52)} │`);
 		} else {
 			console.log(`  │ Slot fetchedAt       : ${"<unknown>".padEnd(52)} │`);
@@ -452,11 +505,16 @@ export async function rescheduleBooking(params: {
 	);
 
 	const response = await client.rescheduleBooking(params.calBookingId, payload);
-	const responseMeta = response.data as { bookingId?: number; bookingUid?: string };
+	const responseMeta = response.data as {
+		bookingId?: number;
+		bookingUid?: string;
+	};
 	const resolvedEventTypeId =
 		params.calEventTypeId ?? booking.eventTypeId ?? booking.eventType?.id;
 	if (!resolvedEventTypeId) {
-		throw new Error("Cal ID reschedule missing eventTypeId; cannot derive slot length.");
+		throw new Error(
+			"Cal ID reschedule missing eventTypeId; cannot derive slot length.",
+		);
 	}
 	const eventTypeId = String(resolvedEventTypeId);
 	const eventType = await fetchEventType(eventTypeId);
@@ -499,5 +557,5 @@ export async function getBooking(uid: string): Promise<CalIdBookingData> {
 }
 
 // ─── Re-exports for callers ───────────────────────────────────────────────────
-export type { CalIdBookingData, SlotsByDay, CalIdSlotUnavailableError };
+export type { CalIdBookingData, CalIdSlotUnavailableError, SlotsByDay };
 export { mapCalBookingToAppointmentFields };

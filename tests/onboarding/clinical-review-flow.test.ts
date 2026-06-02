@@ -21,6 +21,7 @@
 import { config } from "dotenv";
 import mongoose from "mongoose";
 import ConsentForm from "../../src/models/ConsentForm";
+import type { Gender } from "../../src/models/Enums";
 import ExpertAppointment from "../../src/models/ExpertAppointment";
 import HealthGoals from "../../src/models/HealthGoals";
 import HealthMarkers from "../../src/models/HealthMarkers";
@@ -30,8 +31,10 @@ import { hashPassword } from "../../src/utils/password";
 
 config();
 
-const API_BASE = process.env.API_BASE || `http://localhost:${process.env.PORT || 3000}`;
-const TEST_EMAIL = process.env.TEST_USER_EMAIL || "clinical-review-test@fitflix.in";
+const API_BASE =
+	process.env.API_BASE || `http://localhost:${process.env.PORT || 3000}`;
+const TEST_EMAIL =
+	process.env.TEST_USER_EMAIL || "clinical-review-test@fitflix.in";
 const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || "TestPass123!";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
@@ -46,7 +49,9 @@ const banner = (title: string) => {
 
 const recordStep = (name: string, pass: boolean, reason?: string) => {
 	results.push({ name, pass, reason });
-	console.log(`  ${pass ? "PASS" : "FAIL"}: ${name}${reason ? ` — ${reason}` : ""}`);
+	console.log(
+		`  ${pass ? "PASS" : "FAIL"}: ${name}${reason ? ` — ${reason}` : ""}`,
+	);
 };
 
 async function callApi(
@@ -57,7 +62,9 @@ async function callApi(
 	token?: string,
 ): Promise<{ status: number; data: any }> {
 	const url = `${API_BASE}${path}`;
-	const headers: Record<string, string> = { "Content-Type": "application/json" };
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
 	if (token) headers.Authorization = `Bearer ${token}`;
 
 	console.log(`\n[API] ${label}`);
@@ -72,8 +79,9 @@ async function callApi(
 			headers,
 			body: body ? JSON.stringify(body) : undefined,
 		});
-	} catch (err: any) {
-		console.log(`  NETWORK ERROR: ${err.message}`);
+	} catch (err: unknown) {
+		const message = err instanceof Error ? err.message : String(err);
+		console.log(`  NETWORK ERROR: ${message}`);
 		throw err;
 	}
 
@@ -86,7 +94,9 @@ async function callApi(
 	}
 
 	console.log(`  RESPONSE:     ${res.status} (${Date.now() - startedAt}ms)`);
-	console.log(`  RESPONSE BODY:${typeof data === "string" ? ` ${data.slice(0, 400)}` : `\n${JSON.stringify(data, null, 2).slice(0, 2000)}`}`);
+	console.log(
+		`  RESPONSE BODY:${typeof data === "string" ? ` ${data.slice(0, 400)}` : `\n${JSON.stringify(data, null, 2).slice(0, 2000)}`}`,
+	);
 
 	return { status: res.status, data };
 }
@@ -120,11 +130,17 @@ function compareContract(
 		return;
 	}
 	for (const [key, want] of Object.entries(expected)) {
-		const got = (actual as any)[key];
+		const got = (actual as Record<string, unknown>)[key];
 		const present = got !== undefined && got !== null && got !== "";
-		const matches = present && (typeof want === "number" ? Math.abs(Number(got) - want) < 0.5 : got === want);
+		const matches =
+			present &&
+			(typeof want === "number"
+				? Math.abs(Number(got) - want) < 0.5
+				: got === want);
 		const verdict = matches ? "PASS" : present ? "MISMATCH" : "MISSING";
-		console.log(`  ${verdict.padEnd(8)} ${key.padEnd(15)} expected=${JSON.stringify(want)} got=${JSON.stringify(got)}`);
+		console.log(
+			`  ${verdict.padEnd(8)} ${key.padEnd(15)} expected=${JSON.stringify(want)} got=${JSON.stringify(got)}`,
+		);
 		if (!matches) {
 			fieldFindings.push(
 				`${section}.${key}: ${verdict.toLowerCase()} (expected ${JSON.stringify(want)}, got ${JSON.stringify(got)})`,
@@ -138,7 +154,9 @@ async function run() {
 	banner("FITFLIX ONBOARDING → CLINICAL REVIEW INTEGRATION TEST");
 	console.log(`API_BASE:   ${API_BASE}`);
 	console.log(`TEST_EMAIL: ${TEST_EMAIL}`);
-	console.log(`ADMIN_EMAIL: ${ADMIN_EMAIL ?? "(NOT SET — admin assertions will be skipped)"}`);
+	console.log(
+		`ADMIN_EMAIL: ${ADMIN_EMAIL ?? "(NOT SET — admin assertions will be skipped)"}`,
+	);
 
 	// ── DB connect + reset test user ─────────────────────────────────────────
 	const mongoUrl = process.env.MONGODB_URL;
@@ -154,7 +172,7 @@ async function run() {
 			phone: "+15555550199",
 			email: TEST_EMAIL,
 			age: EXPECTED_HEALTH_MARKERS.age,
-			gender: EXPECTED_HEALTH_MARKERS.gender,
+			gender: EXPECTED_HEALTH_MARKERS.gender as Gender,
 			passwordHash,
 			onboarded: false,
 		});
@@ -169,7 +187,11 @@ async function run() {
 		});
 	}
 	const userId = testUser._id.toString();
-	recordStep("User exists (and age/gender aligned with contract)", true, userId);
+	recordStep(
+		"User exists (and age/gender aligned with contract)",
+		true,
+		userId,
+	);
 
 	// Reset onboarding + clear children
 	await User.findByIdAndUpdate(userId, {
@@ -212,64 +234,129 @@ async function run() {
 
 	// ── 2. Health Markers ────────────────────────────────────────────────────
 	banner("STEP 2 — HEALTH MARKERS");
-	const hm = await callApi("POST /onboarding/health-markers", "POST", "/onboarding/health-markers", {
-		weight: EXPECTED_HEALTH_MARKERS.weight,
-		height: EXPECTED_HEALTH_MARKERS.height,
-		allergies: EXPECTED_HEALTH_MARKERS.allergies,
-		medications: EXPECTED_HEALTH_MARKERS.medications,
-		diseaseHistory: EXPECTED_HEALTH_MARKERS.diseaseHistory,
-		sleepHours: EXPECTED_HEALTH_MARKERS.sleepHours,
-		activityLevel: EXPECTED_HEALTH_MARKERS.activityLevel,
-	}, userToken);
+	const hm = await callApi(
+		"POST /onboarding/health-markers",
+		"POST",
+		"/onboarding/health-markers",
+		{
+			weight: EXPECTED_HEALTH_MARKERS.weight,
+			height: EXPECTED_HEALTH_MARKERS.height,
+			allergies: EXPECTED_HEALTH_MARKERS.allergies,
+			medications: EXPECTED_HEALTH_MARKERS.medications,
+			diseaseHistory: EXPECTED_HEALTH_MARKERS.diseaseHistory,
+			sleepHours: EXPECTED_HEALTH_MARKERS.sleepHours,
+			activityLevel: EXPECTED_HEALTH_MARKERS.activityLevel,
+		},
+		userToken,
+	);
 	const hmOk = hm.status === 201 && hm.data?.healthMarkers?.bmi != null;
-	recordStep("Health markers submitted (BMI computed)", hmOk, hmOk ? `bmi=${hm.data.healthMarkers.bmi}` : `status=${hm.status}`);
+	recordStep(
+		"Health markers submitted (BMI computed)",
+		hmOk,
+		hmOk ? `bmi=${hm.data.healthMarkers.bmi}` : `status=${hm.status}`,
+	);
 	const dbHm = await HealthMarkers.findOne({ userId }).lean();
-	recordStep("HealthMarkers persisted to MongoDB", !!dbHm, dbHm ? `weight=${dbHm.weight}, bmi=${dbHm.bmi}` : "doc missing");
-	recordStep("HealthMarkers.allergies[] persisted", JSON.stringify(dbHm?.allergies) === JSON.stringify(EXPECTED_HEALTH_MARKERS.allergies));
-	recordStep("HealthMarkers.medications[] persisted", JSON.stringify(dbHm?.medications) === JSON.stringify(EXPECTED_HEALTH_MARKERS.medications));
-	recordStep("HealthMarkers.diseaseHistory[] persisted", JSON.stringify(dbHm?.diseaseHistory) === JSON.stringify(EXPECTED_HEALTH_MARKERS.diseaseHistory));
-	recordStep("HealthMarkers.sleepHours persisted", dbHm?.sleepHours === EXPECTED_HEALTH_MARKERS.sleepHours);
+	recordStep(
+		"HealthMarkers persisted to MongoDB",
+		!!dbHm,
+		dbHm ? `weight=${dbHm.weight}, bmi=${dbHm.bmi}` : "doc missing",
+	);
+	recordStep(
+		"HealthMarkers.allergies[] persisted",
+		JSON.stringify(dbHm?.allergies) ===
+			JSON.stringify(EXPECTED_HEALTH_MARKERS.allergies),
+	);
+	recordStep(
+		"HealthMarkers.medications[] persisted",
+		JSON.stringify(dbHm?.medications) ===
+			JSON.stringify(EXPECTED_HEALTH_MARKERS.medications),
+	);
+	recordStep(
+		"HealthMarkers.diseaseHistory[] persisted",
+		JSON.stringify(dbHm?.diseaseHistory) ===
+			JSON.stringify(EXPECTED_HEALTH_MARKERS.diseaseHistory),
+	);
+	recordStep(
+		"HealthMarkers.sleepHours persisted",
+		dbHm?.sleepHours === EXPECTED_HEALTH_MARKERS.sleepHours,
+	);
 
 	// ── 3. Health Goals ──────────────────────────────────────────────────────
 	banner("STEP 3 — HEALTH GOALS");
-	const hg = await callApi("POST /onboarding/health-goals", "POST", "/onboarding/health-goals", {
-		goals: EXPECTED_GOALS,
-		targetWeight: EXPECTED_HEALTH_MARKERS.targetWeight,
-		timeline: "3 months",
-		workoutExperience: "Intermediate",
-		foodPreferences: ["Vegetarian", "High Protein", "Low Sugar"],
-	}, userToken);
+	const hg = await callApi(
+		"POST /onboarding/health-goals",
+		"POST",
+		"/onboarding/health-goals",
+		{
+			goals: EXPECTED_GOALS,
+			targetWeight: EXPECTED_HEALTH_MARKERS.targetWeight,
+			timeline: "3 months",
+			workoutExperience: "Intermediate",
+			foodPreferences: ["Vegetarian", "High Protein", "Low Sugar"],
+		},
+		userToken,
+	);
 	recordStep("Health goals submitted", hg.status === 201);
 	const dbHg = await HealthGoals.findOne({ userId }).lean();
-	const goalsStored = Array.isArray(dbHg?.goals) && EXPECTED_GOALS.every((g) => dbHg!.goals.includes(g));
-	recordStep("HealthGoals.goals[] persisted", goalsStored, dbHg ? JSON.stringify(dbHg.goals) : "doc missing");
+	const goalsStored =
+		Array.isArray(dbHg?.goals) &&
+		EXPECTED_GOALS.every((g) => dbHg?.goals.includes(g));
+	recordStep(
+		"HealthGoals.goals[] persisted",
+		goalsStored,
+		dbHg ? JSON.stringify(dbHg.goals) : "doc missing",
+	);
 	recordStep(
 		"HealthGoals.targetWeight persisted",
 		dbHg?.targetWeight === EXPECTED_HEALTH_MARKERS.targetWeight,
 		`got=${dbHg?.targetWeight}`,
 	);
-	recordStep("HealthGoals.foodPreferences[] persisted", Array.isArray(dbHg?.foodPreferences) && dbHg!.foodPreferences.length === 3);
-	recordStep("HealthGoals.workoutExperience persisted", dbHg?.workoutExperience === "Intermediate");
+	recordStep(
+		"HealthGoals.foodPreferences[] persisted",
+		Array.isArray(dbHg?.foodPreferences) && dbHg?.foodPreferences.length === 3,
+	);
+	recordStep(
+		"HealthGoals.workoutExperience persisted",
+		dbHg?.workoutExperience === "Intermediate",
+	);
 	recordStep("HealthGoals.timeline persisted", dbHg?.timeline === "3 months");
 
 	// ── 4. Consent ───────────────────────────────────────────────────────────
 	banner("STEP 4 — CONSENT");
-	const cs = await callApi("POST /onboarding/consent", "POST", "/onboarding/consent", {
-		consents: [
-			{ type: "WELLNESS_SERVICES", accepted: true, signatureName: "Clinical Review Tester", dateSigned: new Date().toISOString() },
-			{ type: "GYM_FITNESS", accepted: true, signatureName: "Clinical Review Tester", dateSigned: new Date().toISOString() },
-		],
-	}, userToken);
+	const cs = await callApi(
+		"POST /onboarding/consent",
+		"POST",
+		"/onboarding/consent",
+		{
+			consents: [
+				{
+					type: "WELLNESS_SERVICES",
+					accepted: true,
+					signatureName: "Clinical Review Tester",
+					dateSigned: new Date().toISOString(),
+				},
+				{
+					type: "GYM_FITNESS",
+					accepted: true,
+					signatureName: "Clinical Review Tester",
+					dateSigned: new Date().toISOString(),
+				},
+			],
+		},
+		userToken,
+	);
 	recordStep("Consent submitted", cs.status === 201);
 
 	// ── 5. SKIP Reports Upload (force flag + advance currentStep) ────────────
 	banner("STEP 5 — REPORTS UPLOAD (SKIPPED PER REQUIREMENTS)");
 	console.log("  Reports upload is intentionally skipped (no S3/multipart).");
-	console.log("  Forcing onboardingStatus.reportsUploaded=true and advancing currentStep.");
+	console.log(
+		"  Forcing onboardingStatus.reportsUploaded=true and advancing currentStep.",
+	);
 	await User.findByIdAndUpdate(userId, {
 		$set: {
 			"onboardingStatus.reportsUploaded": true,
-			"onboardingStatus.currentStep": "NUTRITIONIST_BOOKING",
+			"onboardingStatus.currentStep": "SPORTS_SCIENTIST_BOOKING",
 		},
 		$addToSet: { "onboardingStatus.completedSteps": "REPORT_UPLOAD" },
 	});
@@ -309,7 +396,13 @@ async function run() {
 
 	// ── 8. Complete onboarding ───────────────────────────────────────────────
 	banner("STEP 8 — COMPLETE ONBOARDING");
-	const complete = await callApi("POST /onboarding/complete", "POST", "/onboarding/complete", undefined, userToken);
+	const complete = await callApi(
+		"POST /onboarding/complete",
+		"POST",
+		"/onboarding/complete",
+		undefined,
+		userToken,
+	);
 	recordStep("Onboarding complete", complete.status === 200);
 	const finalUser = await User.findById(userId).lean();
 	recordStep(
@@ -321,7 +414,9 @@ async function run() {
 	// ── 9. Admin assertions ──────────────────────────────────────────────────
 	banner("STEP 9 — ADMIN APIs (Clinical Review)");
 	if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
-		console.log("  ADMIN_EMAIL/ADMIN_PASSWORD not set — skipping admin assertions.");
+		console.log(
+			"  ADMIN_EMAIL/ADMIN_PASSWORD not set — skipping admin assertions.",
+		);
 	} else {
 		const adminLogin = await callApi("ADMIN LOGIN", "POST", "/auth/login", {
 			email: ADMIN_EMAIL,
@@ -341,11 +436,15 @@ async function run() {
 				undefined,
 				adminToken,
 			);
-			const rosterUser = roster.data?.items?.find((m: any) => m._id === userId);
+			const rosterUser = roster.data?.items?.find(
+				(member: { _id?: string }) => member._id === userId,
+			);
 			recordStep(
 				"User appears in /nutrition/dashboard/members",
 				!!rosterUser,
-				rosterUser ? `nutritionStatus=${rosterUser.nutritionStatus}` : "not found",
+				rosterUser
+					? `nutritionStatus=${rosterUser.nutritionStatus}`
+					: "not found",
 			);
 			if (rosterUser) {
 				compareContract(
@@ -360,14 +459,24 @@ async function run() {
 				);
 				compareContract(
 					"roster.user",
-					{ age: EXPECTED_HEALTH_MARKERS.age, gender: EXPECTED_HEALTH_MARKERS.gender },
+					{
+						age: EXPECTED_HEALTH_MARKERS.age,
+						gender: EXPECTED_HEALTH_MARKERS.gender,
+					},
 					rosterUser,
 				);
-				const goalsArr = Array.isArray(rosterUser.healthGoals) ? rosterUser.healthGoals : [];
+				const goalsArr = Array.isArray(rosterUser.healthGoals)
+					? rosterUser.healthGoals
+					: [];
 				const goalsMatch = EXPECTED_GOALS.every((g) => goalsArr.includes(g));
 				console.log(`\n[CONTRACT] roster.healthGoals`);
-				console.log(`  ${goalsMatch ? "PASS" : "MISMATCH"} goals expected=${JSON.stringify(EXPECTED_GOALS)} got=${JSON.stringify(goalsArr)}`);
-				if (!goalsMatch) fieldFindings.push(`roster.healthGoals: expected ${JSON.stringify(EXPECTED_GOALS)}, got ${JSON.stringify(goalsArr)}`);
+				console.log(
+					`  ${goalsMatch ? "PASS" : "MISMATCH"} goals expected=${JSON.stringify(EXPECTED_GOALS)} got=${JSON.stringify(goalsArr)}`,
+				);
+				if (!goalsMatch)
+					fieldFindings.push(
+						`roster.healthGoals: expected ${JSON.stringify(EXPECTED_GOALS)}, got ${JSON.stringify(goalsArr)}`,
+					);
 			}
 
 			// (b) View User modal — /nutrition/users/:userId/dashboard
@@ -401,27 +510,51 @@ async function run() {
 					u.healthMarkers,
 				);
 				// Validate array fields separately (order-insensitive)
-				for (const field of ["allergies", "medications", "diseaseHistory"] as const) {
-					const gotArr: string[] = Array.isArray(u.healthMarkers?.[field]) ? u.healthMarkers[field] : [];
+				for (const field of [
+					"allergies",
+					"medications",
+					"diseaseHistory",
+				] as const) {
+					const gotArr: string[] = Array.isArray(u.healthMarkers?.[field])
+						? u.healthMarkers[field]
+						: [];
 					const wantArr = EXPECTED_HEALTH_MARKERS[field];
 					const ok = wantArr.every((v) => gotArr.includes(v));
-					console.log(`  ${ok ? "PASS" : "MISMATCH"} healthMarkers.${field} expected=${JSON.stringify(wantArr)} got=${JSON.stringify(gotArr)}`);
-					if (!ok) fieldFindings.push(`viewUser.healthMarkers.${field}: expected ${JSON.stringify(wantArr)}, got ${JSON.stringify(gotArr)}`);
+					console.log(
+						`  ${ok ? "PASS" : "MISMATCH"} healthMarkers.${field} expected=${JSON.stringify(wantArr)} got=${JSON.stringify(gotArr)}`,
+					);
+					if (!ok)
+						fieldFindings.push(
+							`viewUser.healthMarkers.${field}: expected ${JSON.stringify(wantArr)}, got ${JSON.stringify(gotArr)}`,
+						);
 				}
 				const goalsArr2 = Array.isArray(u.healthGoals) ? u.healthGoals : [];
 				const goalsOk = EXPECTED_GOALS.every((g) => goalsArr2.includes(g));
 				console.log(`\n[CONTRACT] viewUser.healthGoals`);
-				console.log(`  ${goalsOk ? "PASS" : "MISMATCH"} expected=${JSON.stringify(EXPECTED_GOALS)} got=${JSON.stringify(goalsArr2)}`);
-				if (!goalsOk) fieldFindings.push(`viewUser.healthGoals: expected ${JSON.stringify(EXPECTED_GOALS)}, got ${JSON.stringify(goalsArr2)}`);
+				console.log(
+					`  ${goalsOk ? "PASS" : "MISMATCH"} expected=${JSON.stringify(EXPECTED_GOALS)} got=${JSON.stringify(goalsArr2)}`,
+				);
+				if (!goalsOk)
+					fieldFindings.push(
+						`viewUser.healthGoals: expected ${JSON.stringify(EXPECTED_GOALS)}, got ${JSON.stringify(goalsArr2)}`,
+					);
 
 				// Onboarding progress + booking details
 				if (view.data?.onboardingProgress === undefined) {
-					fieldFindings.push("viewUser.onboardingProgress: MISSING (frontend likely shows 'Not Provided')");
-					console.log(`\n[CONTRACT] viewUser.onboardingProgress\n  MISSING — not returned by dashboard endpoint`);
+					fieldFindings.push(
+						"viewUser.onboardingProgress: MISSING (frontend likely shows 'Not Provided')",
+					);
+					console.log(
+						`\n[CONTRACT] viewUser.onboardingProgress\n  MISSING — not returned by dashboard endpoint`,
+					);
 				}
 				if (view.data?.bookingDetails === undefined) {
-					fieldFindings.push("viewUser.bookingDetails: MISSING (frontend likely shows 'Not Provided')");
-					console.log(`\n[CONTRACT] viewUser.bookingDetails\n  MISSING — not returned by dashboard endpoint`);
+					fieldFindings.push(
+						"viewUser.bookingDetails: MISSING (frontend likely shows 'Not Provided')",
+					);
+					console.log(
+						`\n[CONTRACT] viewUser.bookingDetails\n  MISSING — not returned by dashboard endpoint`,
+					);
 				}
 			}
 		}
@@ -433,13 +566,19 @@ async function run() {
 	console.log("FITFLIX ONBOARDING REPORT");
 	console.log("=========================\n");
 	for (const r of results) {
-		console.log(`${r.pass ? "PASS" : "FAIL"}: ${r.name}${r.reason ? `\n  Reason: ${r.reason}` : ""}`);
+		console.log(
+			`${r.pass ? "PASS" : "FAIL"}: ${r.name}${r.reason ? `\n  Reason: ${r.reason}` : ""}`,
+		);
 	}
 	if (fieldFindings.length > 0) {
-		console.log(`\nFIELD-LEVEL MISMATCHES (root cause of "Not Provided" in modal):`);
+		console.log(
+			`\nFIELD-LEVEL MISMATCHES (root cause of "Not Provided" in modal):`,
+		);
 		for (const f of fieldFindings) console.log(`  • ${f}`);
 	} else {
-		console.log("\nNo field-level mismatches detected — modal should render all values.");
+		console.log(
+			"\nNo field-level mismatches detected — modal should render all values.",
+		);
 	}
 	const allPassed = results.every((r) => r.pass) && fieldFindings.length === 0;
 	console.log(`\nOVERALL: ${allPassed ? "PASS" : "FAIL"}`);

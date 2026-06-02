@@ -27,7 +27,9 @@ export function eventTypeIdForExpert(expertType: ExpertType): string {
 	return nuId;
 }
 
-export function extractMeetingUrl(booking: CalIdBookingData): string | undefined {
+export function extractMeetingUrl(
+	booking: CalIdBookingData,
+): string | undefined {
 	return booking.meetingUrl ?? booking.location ?? undefined;
 }
 

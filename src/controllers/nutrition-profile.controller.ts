@@ -18,6 +18,12 @@ import {
 } from "../validators/nutrition-profile.validator";
 
 export const createProfileHandler: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = createProfileBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -37,7 +43,7 @@ export const createProfileHandler: RequestHandler = async (req, res, next) => {
 					| DietaryPreference
 					| undefined,
 			},
-			req.user!.id,
+			requester.id,
 		);
 		res.status(201).json({ message: "Nutrition profile created", profile });
 	} catch (error) {
@@ -46,6 +52,12 @@ export const createProfileHandler: RequestHandler = async (req, res, next) => {
 };
 
 export const updateProfileHandler: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = updateProfileBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -68,7 +80,7 @@ export const updateProfileHandler: RequestHandler = async (req, res, next) => {
 					? { dietaryPreference: dietaryPreference as DietaryPreference }
 					: {}),
 			},
-			req.user!,
+			requester,
 		);
 		res.status(200).json({ message: "Nutrition profile updated", profile });
 	} catch (error) {
@@ -81,9 +93,15 @@ export const getProfileByUserHandler: RequestHandler = async (
 	res,
 	next,
 ) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const userId = requireIdParam(req.params.userId, "User not found");
-		const profile = await getProfileByUser(userId, req.user!);
+		const profile = await getProfileByUser(userId, requester);
 		res.status(200).json({ profile });
 	} catch (error) {
 		handleNutritionError(error, res, next);
@@ -91,8 +109,14 @@ export const getProfileByUserHandler: RequestHandler = async (
 };
 
 export const getMyProfileHandler: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
-		const profile = await getMyProfile(req.user!);
+		const profile = await getMyProfile(requester);
 		res.status(200).json({ profile });
 	} catch (error) {
 		handleNutritionError(error, res, next);
@@ -100,9 +124,15 @@ export const getMyProfileHandler: RequestHandler = async (req, res, next) => {
 };
 
 export const deleteProfileHandler: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const userId = requireIdParam(req.params.userId, "User not found");
-		await deleteProfile(userId, req.user!);
+		await deleteProfile(userId, requester);
 		res.status(200).json({ message: "Nutrition profile deleted" });
 	} catch (error) {
 		handleNutritionError(error, res, next);

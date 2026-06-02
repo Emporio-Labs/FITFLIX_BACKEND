@@ -63,7 +63,8 @@ export type RecipeIngredientDocument = mongoose.InferSchemaType<
 >;
 
 const RecipeIngredient =
-	(mongoose.models.RecipeIngredient as mongoose.Model<RecipeIngredientDocument>) ||
+	(mongoose.models
+		.RecipeIngredient as mongoose.Model<RecipeIngredientDocument>) ||
 	mongoose.model<RecipeIngredientDocument>(
 		"RecipeIngredient",
 		recipeIngredientSchema,

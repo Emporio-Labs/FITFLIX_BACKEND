@@ -86,10 +86,7 @@ export const listTemplates = async (
 	return NutritionTemplate.find(filter).sort({ updatedAt: -1 });
 };
 
-const loadOwnedTemplate = async (
-	templateId: string,
-	actor: NutritionActor,
-) => {
+const loadOwnedTemplate = async (templateId: string, actor: NutritionActor) => {
 	const id = toObjectId(templateId, "NOT_FOUND", "Template not found");
 	const template = await NutritionTemplate.findById(id);
 
@@ -97,10 +94,7 @@ const loadOwnedTemplate = async (
 		throw new NutritionServiceError("NOT_FOUND", "Template not found");
 	}
 
-	if (
-		actor.role !== "admin" &&
-		template.createdBy.toString() !== actor.id
-	) {
+	if (actor.role !== "admin" && template.createdBy.toString() !== actor.id) {
 		throw new NutritionServiceError(
 			"FORBIDDEN",
 			"You do not own this template",
@@ -110,10 +104,8 @@ const loadOwnedTemplate = async (
 	return template;
 };
 
-export const getTemplate = async (
-	templateId: string,
-	actor: NutritionActor,
-) => loadOwnedTemplate(templateId, actor);
+export const getTemplate = async (templateId: string, actor: NutritionActor) =>
+	loadOwnedTemplate(templateId, actor);
 
 export const updateTemplate = async (
 	templateId: string,

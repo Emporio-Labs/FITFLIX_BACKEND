@@ -5,7 +5,9 @@ export const recipeBrowseQuerySchema = z.object({
 	isVeg: z
 		.string()
 		.optional()
-		.transform((v) => (v === "true" ? true : v === "false" ? false : undefined)),
+		.transform((v) =>
+			v === "true" ? true : v === "false" ? false : undefined,
+		),
 	page: z.coerce.number().int().min(1).default(1),
 	limit: z.coerce.number().int().min(1).max(200).default(50),
 });

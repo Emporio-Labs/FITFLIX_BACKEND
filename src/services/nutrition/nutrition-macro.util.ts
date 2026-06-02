@@ -27,7 +27,9 @@ type MealWithOptions = {
 // Single chokepoint for planned-macro item resolution.
 // When options[] is present and non-empty, uses the default option (isDefault=true,
 // fallback = first). Otherwise falls back to items[] for full backward compat.
-export const getEffectiveMealItems = (meal: MealWithOptions): MealFoodItem[] => {
+export const getEffectiveMealItems = (
+	meal: MealWithOptions,
+): MealFoodItem[] => {
 	const options = meal.options ?? [];
 	if (options.length > 0) {
 		const defaultOpt = options.find((o) => o.isDefault) ?? options[0];

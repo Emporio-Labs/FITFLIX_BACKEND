@@ -22,25 +22,24 @@
  * (0 docs modified on second run).
  */
 
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { config } from "dotenv";
 import mongoose from "mongoose";
 import XLSX from "xlsx";
-import * as path from "path";
-import * as fs from "fs";
-import * as crypto from "crypto";
-
-import connectDB from "../src/utils/db";
-import NutritionFood from "../src/models/nutrition-food.model";
-import MealPlanImportRow from "../src/models/MealPlanImportRow";
-import MealPlanCategory from "../src/models/MealPlanCategory";
-import Recipe from "../src/models/Recipe";
-import RecipeIngredient from "../src/models/RecipeIngredient";
 import {
 	ImportRowType,
 	IngredientUnit,
 	MealType,
 	NutritionFoodSource,
 } from "../src/models/Enums";
+import MealPlanCategory from "../src/models/MealPlanCategory";
+import MealPlanImportRow from "../src/models/MealPlanImportRow";
+import NutritionFood from "../src/models/nutrition-food.model";
+import Recipe from "../src/models/Recipe";
+import RecipeIngredient from "../src/models/RecipeIngredient";
+import connectDB from "../src/utils/db";
 
 config();
 
@@ -264,16 +263,20 @@ function classifySegmentType(
 ): ImportRowType {
 	if (rowIndex === 0) return ImportRowType.CategoryHeader;
 	if (rowIndex === 1) return ImportRowType.ColumnHeader;
-	const allNull =
-		!recipe && !ingredient && !quantity && !calories;
+	const allNull = !recipe && !ingredient && !quantity && !calories;
 	if (allNull) return ImportRowType.Empty;
 	if (isTotal(recipe) || isTotal(ingredient)) return ImportRowType.Total;
 	// Silent total: no recipe/ingredient name but numeric values present
-	if (!recipe && !ingredient && (parseNum(quantity) != null || parseNum(calories) != null)) {
+	if (
+		!recipe &&
+		!ingredient &&
+		(parseNum(quantity) != null || parseNum(calories) != null)
+	) {
 		return ImportRowType.Total;
 	}
 	if (recipe && !isTotal(recipe)) return ImportRowType.Recipe;
-	if (!recipe && ingredient && !isTotal(ingredient)) return ImportRowType.Ingredient;
+	if (!recipe && ingredient && !isTotal(ingredient))
+		return ImportRowType.Ingredient;
 	return ImportRowType.Empty;
 }
 
@@ -317,14 +320,16 @@ function parseAutoMenu(rows: unknown[][]): CategoryParsed[] {
 			const carb = cellStr(row[colOffset + 5]);
 			const fat = cellStr(row[colOffset + 6]);
 
-			const allNull = !recipe && !ingredient && !quantity && !cal && !pro && !carb && !fat;
+			const allNull =
+				!recipe && !ingredient && !quantity && !cal && !pro && !carb && !fat;
 			if (allNull) continue;
 
 			// ── Total rows (explicit or silent) ──────────────────────────────
 			const recipeIsTotal = isTotal(recipe);
 			const ingredientIsTotal = isTotal(ingredient);
 			const isSilentTotal =
-				!recipe && !ingredient &&
+				!recipe &&
+				!ingredient &&
 				(parseNum(quantity) != null || parseNum(cal) != null);
 
 			if (recipeIsTotal || ingredientIsTotal || isSilentTotal) {
@@ -374,7 +379,16 @@ function parseAutoMenu(rows: unknown[][]): CategoryParsed[] {
 				// First ingredient may appear on the same row
 				if (ingredient && !isTotal(ingredient)) {
 					currentRecipe.ingredients.push(
-						makeIngredient(ingredient, quantity, cal, pro, carb, fat, ri, config.defaultUnit),
+						makeIngredient(
+							ingredient,
+							quantity,
+							cal,
+							pro,
+							carb,
+							fat,
+							ri,
+							config.defaultUnit,
+						),
 					);
 				}
 				continue;
@@ -389,15 +403,27 @@ function parseAutoMenu(rows: unknown[][]): CategoryParsed[] {
 					continue;
 				}
 				currentRecipe.ingredients.push(
-					makeIngredient(ingredient, quantity, cal, pro, carb, fat, ri, config.defaultUnit),
+					makeIngredient(
+						ingredient,
+						quantity,
+						cal,
+						pro,
+						carb,
+						fat,
+						ri,
+						config.defaultUnit,
+					),
 				);
 			}
 		}
 
 		// Compute isVeg per recipe from aggregated ingredient names
 		for (const recipe of recipes) {
-			const allText = [recipe.name, ...recipe.ingredients.map((i) => i.rawIngredientName)].join(" ");
-			recipe.isVeg = isNonVegText(allText) ? false : true;
+			const allText = [
+				recipe.name,
+				...recipe.ingredients.map((i) => i.rawIngredientName),
+			].join(" ");
+			recipe.isVeg = !isNonVegText(allText);
 		}
 
 		result.push({
@@ -480,7 +506,7 @@ async function main() {
 		if (xlsxFiles.length === 0) {
 			console.error(
 				"❌  No .xlsx file found in current directory. Pass a path explicitly:\n" +
-				'   bun run scripts/import-meal-plan.ts "path/to/file.xlsx"',
+					'   bun run scripts/import-meal-plan.ts "path/to/file.xlsx"',
 			);
 			process.exit(1);
 		}
@@ -516,9 +542,11 @@ async function main() {
 	// ── Parse Excel ──────────────────────────────────────────────────────────
 	const wb = XLSX.read(fileBuffer, { type: "buffer", raw: false });
 	const autoMenuSheet = wb.Sheets["Auto Menu"];
-	const sheet2Sheet = wb.Sheets["Sheet2"];
+	const sheet2Sheet = wb.Sheets.Sheet2;
 	if (!autoMenuSheet || !sheet2Sheet) {
-		console.error('❌  Excel file must contain "Auto Menu" and "Sheet2" sheets');
+		console.error(
+			'❌  Excel file must contain "Auto Menu" and "Sheet2" sheets',
+		);
 		console.error(`  Found sheets: ${wb.SheetNames.join(", ")}`);
 		process.exit(1);
 	}
@@ -563,9 +591,6 @@ async function main() {
 		}>
 	>();
 
-	// Derive category band boundaries
-	const bandOffsets = categories.map((c) => c.colOffset);
-
 	for (let ri = 0; ri < autoMenuRows.length; ri++) {
 		const row = autoMenuRows[ri] as unknown[];
 		const segments: NonNullable<ReturnType<typeof rowSegmentMap.get>> = [];
@@ -580,13 +605,24 @@ async function main() {
 			const carbs = cellStr(row[colOffset + 5]);
 			const fat = cellStr(row[colOffset + 6]);
 
-			const segmentType = classifySegmentType(ri, recipe, ingredient, quantity, calories);
+			const segmentType = classifySegmentType(
+				ri,
+				recipe,
+				ingredient,
+				quantity,
+				calories,
+			);
 
 			// Only store segment if it has any non-null content (or is the header row)
 			const hasContent =
 				ri <= 1 ||
-				recipe != null || ingredient != null || quantity != null ||
-				calories != null || protein != null || carbs != null || fat != null;
+				recipe != null ||
+				ingredient != null ||
+				quantity != null ||
+				calories != null ||
+				protein != null ||
+				carbs != null ||
+				fat != null;
 
 			if (!hasContent) continue;
 
@@ -609,31 +645,30 @@ async function main() {
 	}
 
 	// Upsert Auto Menu rows
-	const autoMenuOps = autoMenuRows
-		.map((rawRow, ri) => {
-			const segs = rowSegmentMap.get(ri) ?? [];
-			return {
-				updateOne: {
-					filter: { importBatchId, sheet: "Auto Menu", rowIndex: ri },
-					update: {
-						$setOnInsert: {
-							importBatchId,
-							fileName,
-							sheet: "Auto Menu",
-							rowIndex: ri,
-							rawRow: rawRow as unknown[],
-							sheet2Data: null,
-							autoMenuSegments: segs,
-							importedAt: new Date(),
-						},
+	const autoMenuOps = autoMenuRows.map((rawRow: any, ri: number) => {
+		const segs = rowSegmentMap.get(ri) ?? [];
+		return {
+			updateOne: {
+				filter: { importBatchId, sheet: "Auto Menu", rowIndex: ri },
+				update: {
+					$setOnInsert: {
+						importBatchId,
+						fileName,
+						sheet: "Auto Menu",
+						rowIndex: ri,
+						rawRow: rawRow as unknown[],
+						sheet2Data: null,
+						autoMenuSegments: segs,
+						importedAt: new Date(),
 					},
-					upsert: true,
 				},
-			};
-		});
+				upsert: true,
+			},
+		};
+	});
 
 	// Upsert Sheet2 rows
-	const sheet2Ops = sheet2Rows.map((rawRow, ri) => {
+	const sheet2Ops = sheet2Rows.map((rawRow: any, ri: number) => {
 		const s = sheet2Data.find((d) => d.rowIndex === ri);
 		return {
 			updateOne: {
@@ -664,8 +699,12 @@ async function main() {
 		};
 	});
 
-	const resA1 = await MealPlanImportRow.bulkWrite(autoMenuOps as Parameters<typeof MealPlanImportRow.bulkWrite>[0]);
-	const resA2 = await MealPlanImportRow.bulkWrite(sheet2Ops as Parameters<typeof MealPlanImportRow.bulkWrite>[0]);
+	const resA1 = await MealPlanImportRow.bulkWrite(
+		autoMenuOps as Parameters<typeof MealPlanImportRow.bulkWrite>[0],
+	);
+	const resA2 = await MealPlanImportRow.bulkWrite(
+		sheet2Ops as Parameters<typeof MealPlanImportRow.bulkWrite>[0],
+	);
 	console.log(
 		`  Auto Menu: ${resA1.upsertedCount} inserted, ${resA1.modifiedCount} modified`,
 	);
@@ -760,9 +799,18 @@ async function main() {
 
 		for (const recipe of cat.recipes) {
 			// Compute totals by summing ingredients (more reliable than Excel totals)
-			const sumCal = recipe.ingredients.reduce((s, i) => s + (i.caloriesKcal ?? 0), 0);
-			const sumPro = recipe.ingredients.reduce((s, i) => s + (i.proteinG ?? 0), 0);
-			const sumCarb = recipe.ingredients.reduce((s, i) => s + (i.carbsG ?? 0), 0);
+			const sumCal = recipe.ingredients.reduce(
+				(s, i) => s + (i.caloriesKcal ?? 0),
+				0,
+			);
+			const sumPro = recipe.ingredients.reduce(
+				(s, i) => s + (i.proteinG ?? 0),
+				0,
+			);
+			const sumCarb = recipe.ingredients.reduce(
+				(s, i) => s + (i.carbsG ?? 0),
+				0,
+			);
 			const sumFat = recipe.ingredients.reduce((s, i) => s + (i.fatG ?? 0), 0);
 
 			recipeOps.push({
@@ -804,10 +852,7 @@ async function main() {
 		source: NutritionFoodSource.System,
 	}).lean();
 	const recipeBySlugCategory = new Map(
-		recipeDocs.map((r) => [
-			`${r.slug}::${String(r.categoryId)}`,
-			r._id,
-		]),
+		recipeDocs.map((r) => [`${r.slug}::${String(r.categoryId)}`, r._id]),
 	);
 
 	// ════════════════════════════════════════════════════════════════════════
@@ -839,10 +884,13 @@ async function main() {
 		if (!categoryId) continue;
 
 		for (const recipe of cat.recipes) {
-			const recipeId =
-				recipeBySlugCategory.get(`${recipe.slug}::${String(categoryId)}`);
+			const recipeId = recipeBySlugCategory.get(
+				`${recipe.slug}::${String(categoryId)}`,
+			);
 			if (!recipeId) {
-				console.warn(`  ⚠  No recipeId for "${recipe.name}" — skipping ingredients`);
+				console.warn(
+					`  ⚠  No recipeId for "${recipe.name}" — skipping ingredients`,
+				);
 				continue;
 			}
 
@@ -850,7 +898,7 @@ async function main() {
 				const nameKey = ing.rawIngredientName.toLowerCase().trim();
 
 				// Try to resolve foodId
-				let foodId = foodByName.get(nameKey) ?? null;
+				const foodId = foodByName.get(nameKey) ?? null;
 
 				// If not found in Sheet2, create a supplemental NutritionFood entry
 				if (!foodId && !queuedFoodNames.has(nameKey)) {
@@ -929,9 +977,13 @@ async function main() {
 	// Patch foodId on ingredient ops that were unresolved at first pass
 	// (now that supplemental foods exist)
 	for (const op of ingredientOps) {
-		const up = (op as { updateOne: { update: { $set: Record<string, unknown> } } }).updateOne;
+		const up = (
+			op as { updateOne: { update: { $set: Record<string, unknown> } } }
+		).updateOne;
 		if (up.update.$set.foodId == null) {
-			const rawName = String(up.update.$set.rawIngredientName ?? "").toLowerCase().trim();
+			const rawName = String(up.update.$set.rawIngredientName ?? "")
+				.toLowerCase()
+				.trim();
 			const resolvedId = foodByName.get(rawName);
 			if (resolvedId) up.update.$set.foodId = resolvedId;
 		}
@@ -953,7 +1005,7 @@ async function main() {
 	console.log("\n── Phase F: back-filling resolved FKs ──────────────────────");
 
 	// Load all ingredient docs to map (recipeId, sortOrder) → _id
-	const allIngredients = await RecipeIngredient.find({ }).lean();
+	const allIngredients = await RecipeIngredient.find({}).lean();
 	const ingredientByKey = new Map(
 		allIngredients.map((i) => [`${String(i.recipeId)}::${i.sortOrder}`, i]),
 	);
@@ -967,8 +1019,9 @@ async function main() {
 		if (!categoryId) continue;
 
 		for (const recipe of cat.recipes) {
-			const recipeId =
-				recipeBySlugCategory.get(`${recipe.slug}::${String(categoryId)}`);
+			const recipeId = recipeBySlugCategory.get(
+				`${recipe.slug}::${String(categoryId)}`,
+			);
 
 			// Update the recipe header row
 			const recipeImportRow = await MealPlanImportRow.findOne({
@@ -986,8 +1039,10 @@ async function main() {
 							filter: { _id: recipeImportRow._id },
 							update: {
 								$set: {
-									[`autoMenuSegments.${segIdx}.resolved.categoryId`]: categoryId,
-									[`autoMenuSegments.${segIdx}.resolved.recipeId`]: recipeId ?? null,
+									[`autoMenuSegments.${segIdx}.resolved.categoryId`]:
+										categoryId,
+									[`autoMenuSegments.${segIdx}.resolved.recipeId`]:
+										recipeId ?? null,
 								},
 							},
 						},
@@ -1017,10 +1072,14 @@ async function main() {
 							filter: { _id: importRow._id },
 							update: {
 								$set: {
-									[`autoMenuSegments.${segIdx}.resolved.categoryId`]: categoryId,
-									[`autoMenuSegments.${segIdx}.resolved.recipeId`]: recipeId ?? null,
-									[`autoMenuSegments.${segIdx}.resolved.foodId`]: ingDoc.foodId ?? null,
-									[`autoMenuSegments.${segIdx}.resolved.recipeIngredientId`]: ingDoc._id,
+									[`autoMenuSegments.${segIdx}.resolved.categoryId`]:
+										categoryId,
+									[`autoMenuSegments.${segIdx}.resolved.recipeId`]:
+										recipeId ?? null,
+									[`autoMenuSegments.${segIdx}.resolved.foodId`]:
+										ingDoc.foodId ?? null,
+									[`autoMenuSegments.${segIdx}.resolved.recipeIngredientId`]:
+										ingDoc._id,
 								},
 							},
 						},
@@ -1050,7 +1109,9 @@ async function main() {
 	}
 
 	if (bulkFOps.length > 0) {
-		const resF = await MealPlanImportRow.bulkWrite(bulkFOps as Parameters<typeof MealPlanImportRow.bulkWrite>[0]);
+		const resF = await MealPlanImportRow.bulkWrite(
+			bulkFOps as Parameters<typeof MealPlanImportRow.bulkWrite>[0],
+		);
 		console.log(
 			`  ${resF.modifiedCount} import rows updated with resolved FKs`,
 		);

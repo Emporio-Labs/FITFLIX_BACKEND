@@ -1,9 +1,17 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import { mapCalBookingToAppointmentFields } from "../integrations/calid/calid.mapper";
+import * as calidService from "../integrations/calid/calid.service";
+import {
+	CalIdError,
+	CalIdSlotUnavailableError,
+	CalIdTimeoutError,
+} from "../integrations/calid/calid.types";
+import { buildIdempotencyKey } from "../integrations/calid/calid.utils";
 import AppointmentAuditLog from "../models/AppointmentAuditLog";
-import ExpertAppointment from "../models/ExpertAppointment";
 import {
 	AppointmentBookingStatus,
+	AppointmentSource,
 	AuditAction,
 	ExpertType,
 	NotificationChannel,
@@ -11,25 +19,21 @@ import {
 	OnboardingStep,
 	WebhookSyncStatus,
 } from "../models/Enums";
+import ExpertAppointment from "../models/ExpertAppointment";
 import User from "../models/User";
 import { fanOutToAdmin, notify } from "../services/notification.service";
-import { cancelReminders, scheduleReminders } from "../services/reminder.service";
 import { emitToFrontDesk, emitToUser } from "../services/realtime.service";
 import {
-	CalIdError,
-	CalIdSlotUnavailableError,
-	CalIdTimeoutError,
-} from "../integrations/calid/calid.types";
-import * as calidService from "../integrations/calid/calid.service";
-import { mapCalBookingToAppointmentFields } from "../integrations/calid/calid.mapper";
-import { buildIdempotencyKey } from "../integrations/calid/calid.utils";
+	cancelReminders,
+	scheduleReminders,
+} from "../services/reminder.service";
 import type { AuthenticatedUser } from "../types/auth";
-import { withOptionalTransaction } from "../utils/transaction";
 import {
 	advanceStep,
 	cancelExpertAppointment,
 	validateStepAllowed,
 } from "../utils/onboarding.service";
+import { withOptionalTransaction } from "../utils/transaction";
 import {
 	adminListQuerySchema,
 	availabilityQuerySchema,
@@ -51,7 +55,8 @@ const getValidationDetails = (
 ) => {
 	const details: Record<string, string> = {};
 	for (const issue of issues) {
-		const field = issue.path.length > 0 ? issue.path.map(String).join(".") : "body";
+		const field =
+			issue.path.length > 0 ? issue.path.map(String).join(".") : "body";
 		if (!details[field]) details[field] = issue.message;
 	}
 	return details;
@@ -98,19 +103,29 @@ export const getAvailability: RequestHandler = async (req, res, next) => {
 		res.status(200).json({ days });
 	} catch (err) {
 		if (err instanceof CalIdTimeoutError) {
-			res.status(504).json({ error: "Scheduling service timed out", code: "PROVIDER_TIMEOUT" });
+			res.status(504).json({
+				error: "Scheduling service timed out",
+				code: "PROVIDER_TIMEOUT",
+			});
 			return;
 		}
 		if (err instanceof CalIdError) {
-			console.error("[CalIdError Details] Message:", err.message, "Status Code:", err.statusCode, "Details:", JSON.stringify(err.body));
+			console.error(
+				"[CalIdError Details] Message:",
+				err.message,
+				"Status Code:",
+				err.statusCode,
+				"Details:",
+				JSON.stringify(err.body),
+			);
 			res.status(502).json({
 				error: "Scheduling service error",
 				code: "PROVIDER_ERROR",
 				details: {
 					message: err.message,
 					statusCode: err.statusCode,
-					response: err.body
-				}
+					response: err.body,
+				},
 			});
 			return;
 		}
@@ -139,12 +154,13 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 
 	const { expertType, slotStart, timezone } = parsed.data;
 	const idempotencyKey =
-		parsed.data.idempotencyKey ?? buildIdempotencyKey(user.id, expertType, slotStart);
+		parsed.data.idempotencyKey ??
+		buildIdempotencyKey(user.id, expertType, slotStart);
 
 	// 1. Race guard — reject if active booking already exists
 	const existingActive = await ExpertAppointment.findOne({
 		userId: user.id,
-		expertType,
+		expertType: expertType as ExpertType,
 		bookingStatus: { $in: ACTIVE_STATUSES },
 	}).lean();
 
@@ -158,7 +174,10 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 
 	// 2. Validate onboarding step
 	try {
-		await validateStepAllowed(user.id, stepForExpertType(expertType as ExpertType));
+		await validateStepAllowed(
+			user.id,
+			stepForExpertType(expertType as ExpertType),
+		);
 	} catch (err: unknown) {
 		if (err instanceof Error && "code" in err) {
 			const svcErr = err as { code: string; message: string };
@@ -186,17 +205,21 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 	}
 
 	// 4. Insert pending appointment as reservation (idempotency key prevents duplicates)
-	let pendingAppointment: (typeof ExpertAppointment extends mongoose.Model<infer D> ? D : never) & { _id: mongoose.Types.ObjectId };
+	let pendingAppointment: (typeof ExpertAppointment extends mongoose.Model<
+		infer D
+	>
+		? D
+		: never) & { _id: mongoose.Types.ObjectId };
 	try {
-		pendingAppointment = await ExpertAppointment.create({
+		pendingAppointment = (await ExpertAppointment.create({
 			userId: user.id,
-			expertType,
+			expertType: expertType as ExpertType,
 			bookingStatus: AppointmentBookingStatus.Pending,
 			timezone,
 			idempotencyKey,
-			appointmentSource: "USER_APP",
+			appointmentSource: AppointmentSource.UserApp,
 			webhookSyncStatus: WebhookSyncStatus.Pending,
-		}) as typeof pendingAppointment;
+		})) as typeof pendingAppointment;
 	} catch (err: unknown) {
 		// Duplicate idempotency key — idempotent response: find and return existing
 		if (
@@ -204,7 +227,9 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 			"code" in err &&
 			(err as { code: number }).code === 11000
 		) {
-			const existing = await ExpertAppointment.findOne({ idempotencyKey }).lean();
+			const existing = await ExpertAppointment.findOne({
+				idempotencyKey,
+			}).lean();
 			res.status(200).json({
 				message: "Appointment already created (idempotent)",
 				appointment: existing,
@@ -227,7 +252,9 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 		});
 	} catch (err) {
 		// Cal ID failed — delete the pending reservation
-		await ExpertAppointment.findByIdAndDelete(pendingAppointment._id).catch(() => {});
+		await ExpertAppointment.findByIdAndDelete(pendingAppointment._id).catch(
+			() => {},
+		);
 
 		if (err instanceof CalIdSlotUnavailableError) {
 			res.status(409).json({
@@ -237,11 +264,21 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 			return;
 		}
 		if (err instanceof CalIdTimeoutError) {
-			res.status(504).json({ error: "Scheduling service timed out", code: "PROVIDER_TIMEOUT" });
+			res.status(504).json({
+				error: "Scheduling service timed out",
+				code: "PROVIDER_TIMEOUT",
+			});
 			return;
 		}
 		if (err instanceof CalIdError) {
-			console.error("[CalIdBookError Details] Message:", err.message, "Status Code:", err.statusCode, "Body:", JSON.stringify(err.body));
+			console.error(
+				"[CalIdBookError Details] Message:",
+				err.message,
+				"Status Code:",
+				err.statusCode,
+				"Body:",
+				JSON.stringify(err.body),
+			);
 			res.status(502).json({
 				error: "Scheduling service error",
 				code: "PROVIDER_ERROR",
@@ -256,7 +293,9 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 			return;
 		}
 		console.error("[Unexpected Booking Error]", err);
-		res.status(502).json({ error: "Scheduling service error", code: "PROVIDER_ERROR" });
+		res
+			.status(502)
+			.json({ error: "Scheduling service error", code: "PROVIDER_ERROR" });
 		return;
 	}
 
@@ -288,7 +327,10 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 						actor: "user",
 						actorId: user.id,
 						calBookingId: calFields.calIdBookingId,
-						after: { ...calFields, bookingStatus: AppointmentBookingStatus.Confirmed },
+						after: {
+							...calFields,
+							bookingStatus: AppointmentBookingStatus.Confirmed,
+						},
 					},
 				],
 				{ session },
@@ -301,7 +343,7 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 		// DB update failed after Cal ID succeeded — log orphan for sweeper
 		console.error(
 			`[bookAppointment] DB update failed for calBookingId=${calFields.calIdBookingId}. ` +
-			`Appointment ${String(pendingAppointment._id)} may be orphaned.`,
+				`Appointment ${String(pendingAppointment._id)} may be orphaned.`,
 			err,
 		);
 		// Don't delete the pending doc — the sweeper will reconcile via getBooking
@@ -315,11 +357,17 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 			pendingAppointment._id,
 			user.id,
 			calFields.appointmentStart,
-		).catch((err) => console.error("[bookAppointment] scheduleReminders failed", err));
+		).catch((err) =>
+			console.error("[bookAppointment] scheduleReminders failed", err),
+		);
 	}
 
 	// 8. Fan-out notifications + realtime (best-effort, never blocks response)
-	const appointmentSnapshot = { _id: pendingAppointment._id, expertType, ...calFields };
+	const appointmentSnapshot = {
+		_id: pendingAppointment._id,
+		expertType,
+		...calFields,
+	};
 
 	notify({
 		userId: user.id,
@@ -327,7 +375,11 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 		title: "Appointment confirmed",
 		body: `Your ${expertType === ExpertType.SportsScientist ? "sports scientist" : "nutritionist"} appointment is confirmed.`,
 		data: { appointmentId: String(pendingAppointment._id), expertType },
-		channels: [NotificationChannel.InApp, NotificationChannel.Push, NotificationChannel.Socket],
+		channels: [
+			NotificationChannel.InApp,
+			NotificationChannel.Push,
+			NotificationChannel.Socket,
+		],
 	}).catch((err) => console.error("[bookAppointment] notify failed", err));
 
 	fanOutToAdmin(
@@ -340,8 +392,12 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 		step: stepForExpertType(expertType as ExpertType),
 	});
 
-	const confirmedAppointment = await ExpertAppointment.findById(pendingAppointment._id).lean();
-	res.status(201).json({ message: "Appointment booked", appointment: confirmedAppointment });
+	const confirmedAppointment = await ExpertAppointment.findById(
+		pendingAppointment._id,
+	).lean();
+	res
+		.status(201)
+		.json({ message: "Appointment booked", appointment: confirmedAppointment });
 };
 
 // ─── GET /expert-appointments/me ──────────────────────────────────────────────
@@ -395,7 +451,9 @@ export const rescheduleAppointment: RequestHandler = async (req, res, next) => {
 
 	const id = getIdParam(req.params.id);
 	if (!id) {
-		res.status(400).json({ error: "Invalid appointment ID", code: "BAD_REQUEST" });
+		res
+			.status(400)
+			.json({ error: "Invalid appointment ID", code: "BAD_REQUEST" });
 		return;
 	}
 
@@ -414,7 +472,9 @@ export const rescheduleAppointment: RequestHandler = async (req, res, next) => {
 	try {
 		const appointment = await ExpertAppointment.findById(id);
 		if (!appointment) {
-			res.status(404).json({ error: "Appointment not found", code: "NOT_FOUND" });
+			res
+				.status(404)
+				.json({ error: "Appointment not found", code: "NOT_FOUND" });
 			return;
 		}
 
@@ -425,7 +485,11 @@ export const rescheduleAppointment: RequestHandler = async (req, res, next) => {
 		}
 
 		// State check
-		if (!ACTIVE_STATUSES.includes(appointment.bookingStatus as AppointmentBookingStatus)) {
+		if (
+			!ACTIVE_STATUSES.includes(
+				appointment.bookingStatus as AppointmentBookingStatus,
+			)
+		) {
 			res.status(409).json({
 				error: "Only active appointments can be rescheduled",
 				code: "INVALID_STATE",
@@ -442,22 +506,20 @@ export const rescheduleAppointment: RequestHandler = async (req, res, next) => {
 		}
 
 		const oldStart = appointment.appointmentStart;
-		const calBooking = await calidService.rescheduleBooking(
-			{
-				calBookingId: appointment.calIdEventId ?? appointment.calIdBookingId,
-				calBookingUid: appointment.calIdBookingId,
-				calEventTypeId: appointment.calIdEventTypeId ?? undefined,
-				newSlotStart: slotStart,
-				timezone,
-				reason,
-				rescheduledBy: user.email,
-			},
-		);
+		const calBooking = await calidService.rescheduleBooking({
+			calBookingId: appointment.calIdEventId ?? appointment.calIdBookingId,
+			calBookingUid: appointment.calIdBookingId,
+			calEventTypeId: appointment.calIdEventTypeId ?? undefined,
+			newSlotStart: slotStart,
+			timezone,
+			reason,
+			rescheduledBy: user.email,
+		});
 
 		const calFields = mapCalBookingToAppointmentFields(calBooking);
 
 		await withOptionalTransaction(async (session) => {
-			const before = appointment.toObject();
+			const _before = appointment.toObject();
 
 			await ExpertAppointment.findByIdAndUpdate(
 				id,
@@ -507,24 +569,40 @@ export const rescheduleAppointment: RequestHandler = async (req, res, next) => {
 			title: "Appointment rescheduled",
 			body: "Your appointment has been rescheduled.",
 			data: { appointmentId: id },
-			channels: [NotificationChannel.InApp, NotificationChannel.Push, NotificationChannel.Socket],
+			channels: [
+				NotificationChannel.InApp,
+				NotificationChannel.Push,
+				NotificationChannel.Socket,
+			],
 		}).catch(() => {});
 
-		fanOutToAdmin("appointment_created", { appointmentId: id, userId: user.id });
+		fanOutToAdmin("appointment_created", {
+			appointmentId: id,
+			userId: user.id,
+		});
 
 		const updated = await ExpertAppointment.findById(id).lean();
-		res.status(200).json({ message: "Appointment rescheduled", appointment: updated });
+		res
+			.status(200)
+			.json({ message: "Appointment rescheduled", appointment: updated });
 	} catch (err) {
 		if (err instanceof CalIdSlotUnavailableError) {
-			res.status(409).json({ error: "Slot no longer available", code: "SLOT_UNAVAILABLE" });
+			res
+				.status(409)
+				.json({ error: "Slot no longer available", code: "SLOT_UNAVAILABLE" });
 			return;
 		}
 		if (err instanceof CalIdTimeoutError) {
-			res.status(504).json({ error: "Scheduling service timed out", code: "PROVIDER_TIMEOUT" });
+			res.status(504).json({
+				error: "Scheduling service timed out",
+				code: "PROVIDER_TIMEOUT",
+			});
 			return;
 		}
 		if (err instanceof CalIdError) {
-			res.status(502).json({ error: "Scheduling service error", code: "PROVIDER_ERROR" });
+			res
+				.status(502)
+				.json({ error: "Scheduling service error", code: "PROVIDER_ERROR" });
 			return;
 		}
 		next(err);
@@ -542,7 +620,9 @@ export const cancelAppointment: RequestHandler = async (req, res, next) => {
 
 	const id = getIdParam(req.params.id);
 	if (!id) {
-		res.status(400).json({ error: "Invalid appointment ID", code: "BAD_REQUEST" });
+		res
+			.status(400)
+			.json({ error: "Invalid appointment ID", code: "BAD_REQUEST" });
 		return;
 	}
 
@@ -556,12 +636,23 @@ export const cancelAppointment: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	await cancelAppointmentById(id, user.id, "user", parsed.data.reason, res, next);
+	await cancelAppointmentById(
+		id,
+		user.id,
+		"user",
+		parsed.data.reason,
+		res,
+		next,
+	);
 };
 
 // ─── PATCH /admin/expert-appointments/:id/cancel ──────────────────────────────
 
-export const adminCancelAppointment: RequestHandler = async (req, res, next) => {
+export const adminCancelAppointment: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
 	const user = req.user as AuthenticatedUser | undefined;
 	if (!user || user.role !== "admin") {
 		res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
@@ -570,7 +661,9 @@ export const adminCancelAppointment: RequestHandler = async (req, res, next) => 
 
 	const id = getIdParam(req.params.id);
 	if (!id) {
-		res.status(400).json({ error: "Invalid appointment ID", code: "BAD_REQUEST" });
+		res
+			.status(400)
+			.json({ error: "Invalid appointment ID", code: "BAD_REQUEST" });
 		return;
 	}
 
@@ -584,7 +677,14 @@ export const adminCancelAppointment: RequestHandler = async (req, res, next) => 
 		return;
 	}
 
-	await cancelAppointmentById(id, user.id, "admin", parsed.data.reason, res, next);
+	await cancelAppointmentById(
+		id,
+		user.id,
+		"admin",
+		parsed.data.reason,
+		res,
+		next,
+	);
 };
 
 // Shared cancel logic
@@ -599,7 +699,9 @@ async function cancelAppointmentById(
 	try {
 		const appointment = await ExpertAppointment.findById(id);
 		if (!appointment) {
-			res.status(404).json({ error: "Appointment not found", code: "NOT_FOUND" });
+			res
+				.status(404)
+				.json({ error: "Appointment not found", code: "NOT_FOUND" });
 			return;
 		}
 
@@ -609,7 +711,11 @@ async function cancelAppointmentById(
 			return;
 		}
 
-		if (!ACTIVE_STATUSES.includes(appointment.bookingStatus as AppointmentBookingStatus)) {
+		if (
+			!ACTIVE_STATUSES.includes(
+				appointment.bookingStatus as AppointmentBookingStatus,
+			)
+		) {
 			res.status(409).json({
 				error: "Appointment is not in an active state",
 				code: "INVALID_STATE",
@@ -673,7 +779,9 @@ async function cancelAppointmentById(
 		await cancelExpertAppointment(
 			String(appointment.userId),
 			appointment.expertType as ExpertType,
-		).catch((err) => console.error("[cancel] cancelExpertAppointment rewind failed", err));
+		).catch((err) =>
+			console.error("[cancel] cancelExpertAppointment rewind failed", err),
+		);
 
 		await cancelReminders(id).catch(() => {});
 
@@ -683,10 +791,17 @@ async function cancelAppointmentById(
 			title: "Appointment cancelled",
 			body: "Your appointment has been cancelled.",
 			data: { appointmentId: id },
-			channels: [NotificationChannel.InApp, NotificationChannel.Push, NotificationChannel.Socket],
+			channels: [
+				NotificationChannel.InApp,
+				NotificationChannel.Push,
+				NotificationChannel.Socket,
+			],
 		}).catch(() => {});
 
-		fanOutToAdmin("slot_released", { appointmentId: id, userId: String(appointment.userId) });
+		fanOutToAdmin("slot_released", {
+			appointmentId: id,
+			userId: String(appointment.userId),
+		});
 		emitToFrontDesk("onboarding_progress_changed", {
 			userId: String(appointment.userId),
 		});
@@ -694,11 +809,16 @@ async function cancelAppointmentById(
 		res.status(200).json({ message: "Appointment cancelled" });
 	} catch (err) {
 		if (err instanceof CalIdTimeoutError) {
-			res.status(504).json({ error: "Scheduling service timed out", code: "PROVIDER_TIMEOUT" });
+			res.status(504).json({
+				error: "Scheduling service timed out",
+				code: "PROVIDER_TIMEOUT",
+			});
 			return;
 		}
 		if (err instanceof CalIdError) {
-			res.status(502).json({ error: "Scheduling service error", code: "PROVIDER_ERROR" });
+			res
+				.status(502)
+				.json({ error: "Scheduling service error", code: "PROVIDER_ERROR" });
 			return;
 		}
 		next(err);
@@ -768,7 +888,9 @@ export const adminGetAppointment: RequestHandler = async (req, res, next) => {
 
 	const id = getIdParam(req.params.id);
 	if (!id) {
-		res.status(400).json({ error: "Invalid appointment ID", code: "BAD_REQUEST" });
+		res
+			.status(400)
+			.json({ error: "Invalid appointment ID", code: "BAD_REQUEST" });
 		return;
 	}
 
@@ -783,7 +905,9 @@ export const adminGetAppointment: RequestHandler = async (req, res, next) => {
 		]);
 
 		if (!appointment) {
-			res.status(404).json({ error: "Appointment not found", code: "NOT_FOUND" });
+			res
+				.status(404)
+				.json({ error: "Appointment not found", code: "NOT_FOUND" });
 			return;
 		}
 

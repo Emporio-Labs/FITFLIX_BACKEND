@@ -1,30 +1,94 @@
-import { config } from "dotenv";
-import { existsSync, readFileSync } from "fs";
 import crypto from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { config } from "dotenv";
 import mongoose from "mongoose";
-import User from "../src/models/User";
-import Lead from "../src/models/Lead";
 import Admin from "../src/models/Admin";
-import Doctor from "../src/models/Doctor";
-import Trainer from "../src/models/Trainer";
-import Slot from "../src/models/Slots";
 import ConsentForm from "../src/models/ConsentForm";
+import Doctor from "../src/models/Doctor";
+import ExpertAppointment from "../src/models/ExpertAppointment";
 import HealthGoals from "../src/models/HealthGoals";
 import HealthMarkers from "../src/models/HealthMarkers";
+import Lead from "../src/models/Lead";
 import MedicalReport from "../src/models/MedicalReport";
-import ExpertAppointment from "../src/models/ExpertAppointment";
-import WorkoutSession from "../src/models/WorkoutSession";
-import WorkoutExercise from "../src/models/WorkoutExercise";
 import SetLog from "../src/models/SetLog";
+import Slot from "../src/models/Slots";
+import Trainer from "../src/models/Trainer";
+import User from "../src/models/User";
+import WorkoutExercise from "../src/models/WorkoutExercise";
 import WorkoutPlan from "../src/models/WorkoutPlan";
+import WorkoutSession from "../src/models/WorkoutSession";
 import { hashPassword } from "../src/utils/password";
-import { PlanGoal, SplitType, PlanStatus, ExerciseDifficulty, Gender, OnboardingStep } from "../src/models/Enums";
 
 declare global {
 	var describe: (name: string, fn: () => void | Promise<void>) => Promise<void>;
 	var test: (name: string, fn: () => void | Promise<void>) => Promise<void>;
-	var expect: (actual: any) => any;
+	var expect: (actual: unknown) => Expectation;
 }
+
+type TestFunction = () => void | Promise<void>;
+
+type Expectation = {
+	toBe(expected: unknown): void;
+	toEqual(expected: unknown): void;
+	toBeDefined(): void;
+	toBeGreaterThan(expected: number): void;
+	toContain(expected: unknown): void;
+	toHaveProperty(prop: string): void;
+};
+
+type LoginResponse = {
+	accessToken: string;
+	user: {
+		onboarded?: boolean;
+	};
+};
+
+type LeadResponse = {
+	lead: {
+		_id: string;
+	};
+};
+
+type SlotResponse = {
+	slot: {
+		_id: string;
+	};
+};
+
+type MarkerResponse = {
+	healthMarkers: {
+		bmi: number;
+	};
+};
+
+type ReportResponse = {
+	report: {
+		reportUrl: string;
+	};
+};
+
+type IdResponse = {
+	_id: string;
+};
+
+type SessionResponse = {
+	_id: string;
+	exercises: Array<{ _id: string }>;
+};
+
+type FoodResponse = {
+	food: {
+		_id: string;
+	};
+};
+
+type TestGlobals = {
+	describe?: (name: string, fn: TestFunction) => Promise<void>;
+	test?: (name: string, fn: TestFunction) => Promise<void>;
+	expect?: (actual: unknown) => Expectation;
+};
+
+const testGlobals = globalThis as typeof globalThis & TestGlobals;
 
 // Load environment variables
 config();
@@ -34,42 +98,46 @@ const port = Number(process.env.PORT ?? 3000);
 const baseUrl = `http://localhost:${port}`;
 
 // Setup fallback test runner for Node.js (npx tsx) if not executing inside Bun's test runner
-if (!(globalThis as any).describe) {
-	console.log("ℹ️ [INFO] Bun test environment not detected. Initializing custom TSX test runner.");
+if (!testGlobals.describe) {
+	console.log(
+		"ℹ️ [INFO] Bun test environment not detected. Initializing custom TSX test runner.",
+	);
 
-	(globalThis as any).describe = async (name: string, fn: () => void | Promise<void>) => {
+	testGlobals.describe = async (name: string, fn: TestFunction) => {
 		console.log(`\n📦 Describe: ${name}`);
 		try {
 			await fn();
-		} catch (err: any) {
-			console.error(`🔴 Group Failure in describe "${name}":`, err.message || err);
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : String(err);
+			console.error(`🔴 Group Failure in describe "${name}":`, message);
 			process.exitCode = 1;
 		}
 	};
 
-	(globalThis as any).test = async (name: string, fn: () => void | Promise<void>) => {
+	testGlobals.test = async (name: string, fn: TestFunction) => {
 		try {
 			await fn();
 			console.log(`  [PASS] ${name}`);
-		} catch (err: any) {
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : String(err);
 			console.error(`  [FAIL] ${name}`);
-			console.error(`         Reason:`, err.message || err);
+			console.error(`         Reason:`, message);
 			process.exitCode = 1;
 		}
 	};
 
-	(globalThis as any).expect = (actual: any) => {
+	testGlobals.expect = (actual: unknown): Expectation => {
 		const assertionError = (msg: string) => {
 			throw new Error(msg);
 		};
 
 		return {
-			toBe(expected: any) {
+			toBe(expected: unknown) {
 				if (actual !== expected) {
 					assertionError(`Expected "${actual}" to be "${expected}"`);
 				}
 			},
-			toEqual(expected: any) {
+			toEqual(expected: unknown) {
 				const actStr = JSON.stringify(actual);
 				const expStr = JSON.stringify(expected);
 				if (actStr !== expStr) {
@@ -78,7 +146,9 @@ if (!(globalThis as any).describe) {
 			},
 			toBeDefined() {
 				if (actual === undefined || actual === null) {
-					assertionError("Expected value to be defined, but got undefined/null");
+					assertionError(
+						"Expected value to be defined, but got undefined/null",
+					);
 				}
 			},
 			toBeGreaterThan(expected: number) {
@@ -86,8 +156,15 @@ if (!(globalThis as any).describe) {
 					assertionError(`Expected ${actual} to be greater than ${expected}`);
 				}
 			},
-			toContain(expected: any) {
-				if (!actual || typeof actual.includes !== "function" || !actual.includes(expected)) {
+			toContain(expected: unknown) {
+				const haystack = actual as {
+					includes?: (value: unknown) => boolean;
+				} | null;
+				if (
+					!haystack ||
+					typeof haystack.includes !== "function" ||
+					!haystack.includes(expected)
+				) {
 					assertionError(`Expected ${actual} to contain ${expected}`);
 				}
 			},
@@ -101,7 +178,9 @@ if (!(globalThis as any).describe) {
 
 	process.on("exit", () => {
 		if (process.exitCode === 1) {
-			console.log("\n❌ [FAIL] Master test suite completed with regression failures.");
+			console.log(
+				"\n❌ [FAIL] Master test suite completed with regression failures.",
+			);
 		} else {
 			console.log("\n✅ [PASS] Master test suite completed successfully.");
 		}
@@ -143,7 +222,11 @@ const context: TestContext = {
 };
 
 // Route Probing utility for graceful degradation
-async function isRouteActive(path: string, method = "GET", headers: Record<string, string> = {}): Promise<boolean> {
+async function isRouteActive(
+	path: string,
+	method = "GET",
+	headers: Record<string, string> = {},
+): Promise<boolean> {
 	const url = `${baseUrl}${path}`;
 	try {
 		const res = await fetch(url, {
@@ -160,7 +243,7 @@ async function isRouteActive(path: string, method = "GET", headers: Record<strin
 			if (!contentType.includes("json")) {
 				return false;
 			}
-			const body = (await res.json()) as any;
+			const body = (await res.json()) as { code?: string; error?: string };
 			// If it's our own JSON structure, it's a mounted route returning logical 404
 			if (body?.code === "NOT_FOUND" || body?.error) {
 				return true;
@@ -180,8 +263,11 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 	test("0. DB Reset & Seeding", async () => {
 		const dbUrl = process.env.MONGODB_URL;
 		expect(dbUrl).toBeDefined();
+		if (!dbUrl) {
+			throw new Error("MONGODB_URL must be configured");
+		}
 
-		await mongoose.connect(dbUrl!);
+		await mongoose.connect(dbUrl);
 		console.log("  [INFO] Connected to MongoDB");
 
 		const testEmails = [
@@ -211,7 +297,9 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 
 			// Clean Nutrition bookings if model exists
 			if (mongoose.models.NutritionistBooking) {
-				await mongoose.models.NutritionistBooking.deleteMany({ user: { $in: userIds } });
+				await mongoose.models.NutritionistBooking.deleteMany({
+					user: { $in: userIds },
+				});
 			}
 
 			// Clean Workout Sessions & logs
@@ -220,7 +308,9 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			await WorkoutSession.deleteMany({ userId: { $in: userIds } });
 
 			if (sessionIds.length > 0) {
-				const workoutExercises = await WorkoutExercise.find({ sessionId: { $in: sessionIds } });
+				const workoutExercises = await WorkoutExercise.find({
+					sessionId: { $in: sessionIds },
+				});
 				const weIds = workoutExercises.map((we) => we._id);
 				await WorkoutExercise.deleteMany({ sessionId: { $in: sessionIds } });
 				await SetLog.deleteMany({ workoutExerciseId: { $in: weIds } });
@@ -276,7 +366,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(loginRes.status).toBe(200);
-		const loginData = (await loginRes.json()) as any;
+		const loginData = (await loginRes.json()) as LoginResponse;
 		expect(loginData.accessToken).toBeDefined();
 		context.adminToken = loginData.accessToken;
 
@@ -296,7 +386,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(createLeadRes.status).toBe(201);
-		const leadData = (await createLeadRes.json()) as any;
+		const leadData = (await createLeadRes.json()) as LeadResponse;
 		expect(leadData.lead._id).toBeDefined();
 		context.leadId = leadData.lead._id;
 
@@ -315,23 +405,26 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 		expect(updateLeadRes.status).toBe(200);
 
 		// Convert Lead to User
-		const convertRes = await fetch(`${baseUrl}/leads/${context.leadId}/convert`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${context.adminToken}`,
+		const convertRes = await fetch(
+			`${baseUrl}/leads/${context.leadId}/convert`,
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${context.adminToken}`,
+				},
+				body: JSON.stringify({
+					username: "converteduser",
+					phone: "+1999999999",
+					age: "28",
+					gender: "Male",
+					healthGoals: ["Weight Loss"],
+					password: "SecurePassword123!",
+				}),
 			},
-			body: JSON.stringify({
-				username: "converteduser",
-				phone: "+1999999999",
-				age: "28",
-				gender: "Male",
-				healthGoals: ["Weight Loss"],
-				password: "SecurePassword123!",
-			}),
-		});
+		);
 		expect(convertRes.status).toBe(201);
-		const convertData = (await convertRes.json()) as any;
+		const convertData = (await convertRes.json()) as { user: { id: string } };
 		expect(convertData.user.id).toBeDefined();
 		context.userId = convertData.user.id;
 
@@ -345,7 +438,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(userLoginRes.status).toBe(200);
-		const userLoginData = (await userLoginRes.json()) as any;
+		const userLoginData = (await userLoginRes.json()) as LoginResponse;
 		expect(userLoginData.accessToken).toBeDefined();
 		expect(userLoginData.user.onboarded).toBe(false);
 		context.userToken = userLoginData.accessToken;
@@ -369,7 +462,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(sportsSlotRes.status).toBe(201);
-		const sportsSlotData = (await sportsSlotRes.json()) as any;
+		const sportsSlotData = (await sportsSlotRes.json()) as SlotResponse;
 		expect(sportsSlotData.slot._id).toBeDefined();
 		context.sportsSlotId = sportsSlotData.slot._id;
 
@@ -389,7 +482,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(nutriSlotRes.status).toBe(201);
-		const nutriSlotData = (await nutriSlotRes.json()) as any;
+		const nutriSlotData = (await nutriSlotRes.json()) as SlotResponse;
 		expect(nutriSlotData.slot._id).toBeDefined();
 		context.nutritionistSlotId = nutriSlotData.slot._id;
 	});
@@ -405,8 +498,18 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			},
 			body: JSON.stringify({
 				consents: [
-					{ type: "WELLNESS_SERVICES", accepted: true, signatureName: "Test", dateSigned: "2026-05-26" },
-					{ type: "GYM_FITNESS", accepted: true, signatureName: "Test", dateSigned: "2026-05-26" },
+					{
+						type: "WELLNESS_SERVICES",
+						accepted: true,
+						signatureName: "Test",
+						dateSigned: "2026-05-26",
+					},
+					{
+						type: "GYM_FITNESS",
+						accepted: true,
+						signatureName: "Test",
+						dateSigned: "2026-05-26",
+					},
 				],
 			}),
 		});
@@ -431,7 +534,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(markersRes.status).toBe(201);
-		const markersData = (await markersRes.json()) as any;
+		const markersData = (await markersRes.json()) as MarkerResponse;
 		expect(markersData.healthMarkers.bmi).toBe(24.7); // 80 / (1.8^2) -> 80 / 3.24 = 24.69
 
 		// Step 2: Health Goals
@@ -460,8 +563,18 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			},
 			body: JSON.stringify({
 				consents: [
-					{ type: "WELLNESS_SERVICES", accepted: true, signatureName: "Test User", dateSigned: "2026-05-26" },
-					{ type: "GYM_FITNESS", accepted: true, signatureName: "Test User", dateSigned: "2026-05-26" },
+					{
+						type: "WELLNESS_SERVICES",
+						accepted: true,
+						signatureName: "Test User",
+						dateSigned: "2026-05-26",
+					},
+					{
+						type: "GYM_FITNESS",
+						accepted: true,
+						signatureName: "Test User",
+						dateSigned: "2026-05-26",
+					},
 				],
 			}),
 		});
@@ -481,7 +594,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(reportRes.status).toBe(201);
-		const reportData = (await reportRes.json()) as any;
+		const reportData = (await reportRes.json()) as ReportResponse;
 		expect(reportData.report.reportUrl).toContain("s3://"); // Verify S3 URL stored successfully without leaks
 
 		// Step 5: Sports Scientist Booking
@@ -502,8 +615,11 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 		// Step 6: Nutritionist Booking
 		// Check if nutritionist onboarding step is active on this branch.
 		// If unmerged, the endpoint might advance differently. Let's probe.
-		const isNutriActive = existsSync("src/routes/onboarding.routes.ts") &&
-			readFileSync("src/routes/onboarding.routes.ts", "utf8").includes("/nutritionist");
+		const isNutriActive =
+			existsSync("src/routes/onboarding.routes.ts") &&
+			readFileSync("src/routes/onboarding.routes.ts", "utf8").includes(
+				"/nutritionist",
+			);
 
 		if (isNutriActive) {
 			const nutriRes = await fetch(`${baseUrl}/onboarding/nutritionist`, {
@@ -520,7 +636,9 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			});
 			expect(nutriRes.status).toBe(201);
 		} else {
-			console.log("  [SKIP] Step 6: Onboarding Nutritionist booking not active on current branch");
+			console.log(
+				"  [SKIP] Step 6: Onboarding Nutritionist booking not active on current branch",
+			);
 		}
 
 		// Step 7: Onboarding Completion
@@ -543,7 +661,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(userLoginRes.status).toBe(200);
-		const userLoginData = (await userLoginRes.json()) as any;
+		const userLoginData = (await userLoginRes.json()) as LoginResponse;
 		expect(userLoginData.user.onboarded).toBe(true);
 	});
 
@@ -566,7 +684,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(exerciseRes.status).toBe(201);
-		const exerciseData = (await exerciseRes.json()) as any;
+		const exerciseData = (await exerciseRes.json()) as IdResponse;
 		expect(exerciseData._id).toBeDefined();
 		context.exerciseId = exerciseData._id;
 
@@ -605,21 +723,24 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(planRes.status).toBe(201);
-		const planData = (await planRes.json()) as any;
+		const planData = (await planRes.json()) as IdResponse;
 		expect(planData._id).toBeDefined();
 		context.planId = planData._id;
 
 		// Assign Workout Plan to Converted User
-		const assignRes = await fetch(`${baseUrl}/workout-plans/${context.planId}/assign`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${context.adminToken}`,
+		const assignRes = await fetch(
+			`${baseUrl}/workout-plans/${context.planId}/assign`,
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${context.adminToken}`,
+				},
+				body: JSON.stringify({
+					userIds: [context.userId],
+				}),
 			},
-			body: JSON.stringify({
-				userIds: [context.userId],
-			}),
-		});
+		);
 		expect(assignRes.status).toBe(200);
 	});
 
@@ -638,14 +759,14 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(createSessionRes.status).toBe(201);
-		const sessionData = (await createSessionRes.json()) as any;
+		const sessionData = (await createSessionRes.json()) as SessionResponse;
 		expect(sessionData._id).toBeDefined();
 		context.workoutSessionId = sessionData._id;
 
 		// Verify the session contains the exercise we added to the plan
 		expect(sessionData.exercises).toBeDefined();
 		expect(sessionData.exercises.length).toBeGreaterThan(0);
-		context.workoutExerciseId = sessionData.exercises[0]._id;
+		context.workoutExerciseId = sessionData.exercises[0]?._id;
 
 		// Log Set
 		const logSetRes = await fetch(
@@ -666,7 +787,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			},
 		);
 		expect(logSetRes.status).toBe(201);
-		const setLogData = (await logSetRes.json()) as any;
+		const setLogData = (await logSetRes.json()) as IdResponse;
 		expect(setLogData._id).toBeDefined();
 		context.logSetId = setLogData._id;
 
@@ -726,7 +847,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(foodRes.status).toBe(201);
-		const foodData = (await foodRes.json()) as any;
+		const foodData = (await foodRes.json()) as FoodResponse;
 		expect(foodData.food._id).toBeDefined();
 		context.foodId = foodData.food._id;
 
@@ -751,11 +872,17 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 
 	// Stage 8: Cal.com webhook verification (Adaptive Path)
 	test("7. Cal.com Webhook Integration (Adaptive)", async () => {
-		const active = existsSync("src/routes/calid-webhook.routes.ts") || 
-			(existsSync("src/routes/webhook.route.ts") && readFileSync("src/routes/webhook.route.ts", "utf8").includes("/calcom"));
+		const active =
+			existsSync("src/routes/calid-webhook.routes.ts") ||
+			(existsSync("src/routes/webhook.route.ts") &&
+				readFileSync("src/routes/webhook.route.ts", "utf8").includes(
+					"/calcom",
+				));
 
 		if (!active) {
-			console.log("  [SKIP] Cal.com Webhook route not active on current branch");
+			console.log(
+				"  [SKIP] Cal.com Webhook route not active on current branch",
+			);
 			return;
 		}
 
@@ -806,7 +933,7 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(nutLoginRes.status).toBe(200);
-		const nutLoginData = (await nutLoginRes.json()) as any;
+		const nutLoginData = (await nutLoginRes.json()) as LoginResponse;
 		context.nutritionistToken = nutLoginData.accessToken;
 
 		// Log in as Sports Scientist (Doctor role)
@@ -819,33 +946,42 @@ describe("FITFLIX Backend E2E Regression Suite", () => {
 			}),
 		});
 		expect(sciLoginRes.status).toBe(200);
-		const sciLoginData = (await sciLoginRes.json()) as any;
+		const sciLoginData = (await sciLoginRes.json()) as LoginResponse;
 		context.sportsScientistToken = sciLoginData.accessToken;
 
 		// 1. Verify Nutritionist (Trainer) Isolation Blockages
 		// Trainer cannot mutate exercise database directly (only Admin can update system exercises or user can create user-level ones)
 		// Trainer cannot read system admin dashboards or perform credit updates
-		const trainerCreditRes = await fetch(`${baseUrl}/credits/users/${context.userId}/balance`, {
-			method: "GET",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${context.nutritionistToken}`,
+		const trainerCreditRes = await fetch(
+			`${baseUrl}/credits/users/${context.userId}/balance`,
+			{
+				method: "GET",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${context.nutritionistToken}`,
+				},
 			},
-		});
+		);
 		// Hitting admin-only credit stats returns 403 Forbidden
 		expect(trainerCreditRes.status).toBe(403);
 
 		// 2. Verify Sports Scientist (Doctor) Isolation Blockages
 		// Doctor cannot access nutritionist plans or patient nutrition profiles (once active)
-		const hasNutritionProfile = await isRouteActive("/nutrition/profiles", "GET");
+		const hasNutritionProfile = await isRouteActive(
+			"/nutrition/profiles",
+			"GET",
+		);
 		if (hasNutritionProfile) {
-			const doctorNutriRes = await fetch(`${baseUrl}/nutrition/profiles/${context.userId}`, {
-				method: "GET",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${context.sportsScientistToken}`,
+			const doctorNutriRes = await fetch(
+				`${baseUrl}/nutrition/profiles/${context.userId}`,
+				{
+					method: "GET",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${context.sportsScientistToken}`,
+					},
 				},
-			});
+			);
 			expect(doctorNutriRes.status).toBe(403);
 		}
 

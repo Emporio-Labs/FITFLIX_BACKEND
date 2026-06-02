@@ -1,17 +1,25 @@
 import { config } from "dotenv";
 import express from "express";
+import { apiRateLimit } from "./middleware/rate-limit.middleware";
 import adminRouter from "./routes/admin.routes";
 import appointmentRouter from "./routes/appointment.routes";
 import authRouter from "./routes/auth.routes";
 import bookingRouter from "./routes/booking.routes";
+import calidWebhookRouter from "./routes/calid-webhook.routes";
 import creditRouter from "./routes/credit.routes";
 import dashboardRouter from "./routes/dashboard.routes";
 import doctorRouter from "./routes/doctor.routes";
 import exerciseRouter from "./routes/exercise.routes";
+import {
+	adminExpertAppointmentRouter,
+	expertAppointmentRouter,
+} from "./routes/expert-appointment.routes";
+import internalRouter from "./routes/internal.routes";
 import invoiceRouter from "./routes/invoice.routes";
 import leadRouter from "./routes/lead.routes";
 import membershipRouter from "./routes/membership.routes";
 import membershipPlanRouter from "./routes/membershipPlan.routes";
+import notificationRouter from "./routes/notification.routes";
 import nutritionRouter from "./routes/nutrition.routes";
 import nutritionistRouter from "./routes/nutritionist-booking.routes";
 import onboardingRouter from "./routes/onboarding.routes";
@@ -25,21 +33,10 @@ import webhookRouter from "./routes/webhook.route";
 import workoutRouter from "./routes/workout.routes";
 import workoutPlanRouter from "./routes/workout-plan.routes";
 import {
-	expertAppointmentRouter,
-	adminExpertAppointmentRouter,
-} from "./routes/expert-appointment.routes";
-import calidWebhookRouter from "./routes/calid-webhook.routes";
-import notificationRouter from "./routes/notification.routes";
-import internalRouter from "./routes/internal.routes";
-import {
 	isErrorVerboseEnabled,
 	normalizeErrorResponse,
 	resolveErrorResponse,
-	buildApiErrorEnvelope,
-	isApiErrorEnvelope,
-	mapStatusToErrorCode,
 } from "./utils/api-error";
-import { apiRateLimit } from "./middleware/rate-limit.middleware";
 
 config();
 
@@ -74,7 +71,7 @@ const isOriginAllowed = (origin: string | undefined): boolean => {
 			// Convert wildcard pattern to a regular expression.
 			// Escape all special regex characters except '*'
 			const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-			const regexStr = "^" + escaped.replace(/\*/g, "[^/]*") + "$";
+			const regexStr = `^${escaped.replace(/\*/g, "[^/]*")}$`;
 			try {
 				const regex = new RegExp(regexStr);
 				return regex.test(origin);

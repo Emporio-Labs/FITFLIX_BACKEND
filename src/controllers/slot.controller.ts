@@ -1,13 +1,13 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import * as calidService from "../integrations/calid/calid.service";
+import { ExpertType } from "../models/Enums";
 import Slot from "../models/Slots";
+import { availableSlotsQuerySchema } from "../validators/nutritionist-booking.validator";
 import {
 	createSlotBodySchema,
 	updateSlotBodySchema,
 } from "../validators/slot.validator";
-import { availableSlotsQuerySchema } from "../validators/nutritionist-booking.validator";
-import * as calidService from "../integrations/calid/calid.service";
-import { ExpertType } from "../models/Enums";
 
 const formatToTimeZoneTime = (isoString: string, timeZone: string): string => {
 	const date = new Date(isoString);
@@ -128,7 +128,12 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 		if (expertType === "nutritionist") {
 			const tz = timezone || "Asia/Kolkata";
 			const dateStr = date.toISOString().slice(0, 10);
-			const days = await calidService.fetchAvailability(ExpertType.Nutritionist, dateStr, dateStr, tz);
+			const days = await calidService.fetchAvailability(
+				ExpertType.Nutritionist,
+				dateStr,
+				dateStr,
+				tz,
+			);
 			const slots = [];
 			const dayStart = date;
 			const targetDay = days.find((d) => d.date === dateStr);

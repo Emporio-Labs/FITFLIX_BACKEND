@@ -10,7 +10,8 @@ export const addHydrationBodySchema = z
 		date: optionalDate,
 	})
 	.refine(
-		(v) => v.ml !== undefined || v.glasses !== undefined || v.amountMl !== undefined,
+		(v) =>
+			v.ml !== undefined || v.glasses !== undefined || v.amountMl !== undefined,
 		{ message: "Provide ml or glasses", path: ["ml"] },
 	)
 	.transform((v) => ({

@@ -69,7 +69,8 @@ type NutritionistBookingDocument = mongoose.InferSchemaType<
 	typeof nutritionistBookingSchema
 >;
 
-export default (mongoose.models.NutritionistBooking as mongoose.Model<NutritionistBookingDocument>) ||
+export default (mongoose.models
+	.NutritionistBooking as mongoose.Model<NutritionistBookingDocument>) ||
 	mongoose.model<NutritionistBookingDocument>(
 		"NutritionistBooking",
 		nutritionistBookingSchema,

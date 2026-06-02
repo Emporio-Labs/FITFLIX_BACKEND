@@ -1,9 +1,17 @@
 import mongoose from "mongoose";
-import { InvoicePaymentMethod, InvoicePaymentStatus, LeadStatus, MembershipStatus } from "../models/Enums";
+import {
+	type InvoicePaymentMethod,
+	InvoicePaymentStatus,
+	LeadStatus,
+	MembershipStatus,
+} from "../models/Enums";
 import Invoice from "../models/Invoice";
 import Lead from "../models/Lead";
 import Membership from "../models/Membership";
-import type { CreateInvoiceBody, ListInvoicesQuery } from "../validators/invoice.validator";
+import type {
+	CreateInvoiceBody,
+	ListInvoicesQuery,
+} from "../validators/invoice.validator";
 import { generateInvoiceNumber } from "./invoice-number";
 
 export const createInvoice = async (
@@ -20,16 +28,20 @@ export const createInvoice = async (
 
 	const invoice = await Invoice.create({
 		invoiceNumber,
-		...(data.userId ? { userId: new mongoose.Types.ObjectId(data.userId) } : {}),
-		...(data.leadId ? { leadId: new mongoose.Types.ObjectId(data.leadId) } : {}),
+		...(data.userId
+			? { userId: new mongoose.Types.ObjectId(data.userId) }
+			: {}),
+		...(data.leadId
+			? { leadId: new mongoose.Types.ObjectId(data.leadId) }
+			: {}),
 		items: data.items,
 		subtotal,
 		tax: data.tax,
 		discount: data.discount,
 		total,
 		planSnapshot: data.planSnapshot,
-		paymentStatus: data.paymentStatus,
-		paymentMethod: data.paymentMethod,
+		paymentStatus: data.paymentStatus as InvoicePaymentStatus,
+		paymentMethod: data.paymentMethod as InvoicePaymentMethod,
 		...(data.issuedAt ? { issuedAt: new Date(data.issuedAt) } : {}),
 		createdBy: new mongoose.Types.ObjectId(createdById),
 	});
@@ -76,11 +88,9 @@ export const getInvoiceById = async (id: string) => {
 };
 
 export const getInvoiceForPdf = async (id: string) => {
-	return Invoice.findById(id)
-		.populate<{ userId: { username: string; email: string; phone?: string } }>(
-			"userId",
-			"username email phone",
-		);
+	return Invoice.findById(id).populate<{
+		userId: { username: string; email: string; phone?: string };
+	}>("userId", "username email phone");
 };
 
 export const transitionInvoiceStatus = async (
@@ -152,12 +162,19 @@ export const transitionInvoiceStatus = async (
 		// Resolve userId — may be null if invoice was created before lead conversion
 		let membershipUserId = invoice.userId;
 		if (!membershipUserId && invoice.leadId) {
-			const lead = await Lead.findById(invoice.leadId).select("convertedUser").session(session);
+			const lead = await Lead.findById(invoice.leadId)
+				.select("convertedUser")
+				.session(session);
 			membershipUserId = lead?.convertedUser ?? null;
 		}
 		if (!membershipUserId) {
 			await session.abortTransaction();
-			throw Object.assign(new Error("Cannot activate membership: no user account linked to this invoice. Convert the lead to a user first."), { status: 409, code: "CONFLICT" });
+			throw Object.assign(
+				new Error(
+					"Cannot activate membership: no user account linked to this invoice. Convert the lead to a user first.",
+				),
+				{ status: 409, code: "CONFLICT" },
+			);
 		}
 
 		// Activate membership from planSnapshot

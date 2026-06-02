@@ -25,15 +25,14 @@
 
 import { config } from "dotenv";
 import mongoose from "mongoose";
-
-import connectDB from "../src/utils/db";
-import User from "../src/models/User";
+import { NutritionPlanStatus } from "../src/models/Enums";
+import MealPlanCategory from "../src/models/MealPlanCategory";
 import UserNutritionPlan from "../src/models/nutrition-plan.model";
 import NutritionTemplate from "../src/models/nutrition-template.model";
-import MealPlanCategory from "../src/models/MealPlanCategory";
 import RecipeIngredient from "../src/models/RecipeIngredient";
-import { NutritionPlanStatus } from "../src/models/Enums";
+import User from "../src/models/User";
 import { assignTemplateToUser } from "../src/services/nutrition/nutrition-assignment.service";
+import connectDB from "../src/utils/db";
 
 config();
 
@@ -108,8 +107,8 @@ type DayLike = {
 
 const getItems = (meal: MealLike): ItemLike[] => {
 	if ((meal.options?.length ?? 0) > 0) {
-		const def =
-			meal.options!.find((o) => o.isDefault) ?? meal.options![0];
+		const options = meal.options ?? [];
+		const def = options.find((o) => o.isDefault) ?? options[0];
 		return def?.foods ?? [];
 	}
 	return meal.items ?? [];
@@ -129,16 +128,34 @@ type PlanTotals = {
 
 const diagnosePlan = async (
 	plan: Record<string, unknown>,
-): Promise<{ totals: PlanTotals; mealsCount: number; itemsCount: number; recipeRefs: number; missingFoodRefs: number }> => {
+): Promise<{
+	totals: PlanTotals;
+	mealsCount: number;
+	itemsCount: number;
+	recipeRefs: number;
+	missingFoodRefs: number;
+}> => {
 	const days = (plan.days ?? []) as DayLike[];
-	const planTotals: PlanTotals = { caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 };
+	const planTotals: PlanTotals = {
+		caloriesKcal: 0,
+		proteinG: 0,
+		carbsG: 0,
+		fatG: 0,
+		fiberG: 0,
+	};
 	let mealsCount = 0;
 	let itemsCount = 0;
 	let recipeRefs = 0;
 	let missingFoodRefs = 0;
 
 	for (const day of days) {
-		const dayTotals: PlanTotals = { caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 };
+		const dayTotals: PlanTotals = {
+			caloriesKcal: 0,
+			proteinG: 0,
+			carbsG: 0,
+			fatG: 0,
+			fiberG: 0,
+		};
 		console.log();
 		console.log(hr("═"));
 		console.log(bold(`  DAY ${day.dayNumber ?? "?"}`));
@@ -149,12 +166,20 @@ const diagnosePlan = async (
 			if (meal.recipeId) recipeRefs++;
 
 			const items = getItems(meal);
-			const mealTotals: PlanTotals = { caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 };
+			const mealTotals: PlanTotals = {
+				caloriesKcal: 0,
+				proteinG: 0,
+				carbsG: 0,
+				fatG: 0,
+				fiberG: 0,
+			};
 
 			console.log();
 			console.log(
 				`  ${bold(meal.mealType ?? "?")}  ${cyan(meal.name ?? "[unnamed]")}` +
-				(meal.recipeId ? dim(`  [recipe: ${meal.recipeId}]`) : red("  [no recipeId]")),
+					(meal.recipeId
+						? dim(`  [recipe: ${meal.recipeId}]`)
+						: red("  [no recipeId]")),
 			);
 
 			if (items.length === 0) {
@@ -178,23 +203,23 @@ const diagnosePlan = async (
 				mealTotals.fiberG += fib;
 				console.log(
 					`    • ${bold(item.foodName ?? dim("[unnamed]"))}` +
-					` | ${fmt(item.quantityG, item.unit ?? "g", 0)}` +
-					` | ${fmt(item.caloriesKcal, " kcal", 0)}` +
-					` | P:${fmt(item.proteinG, "g")}` +
-					` | C:${fmt(item.carbsG, "g")}` +
-					` | F:${fmt(item.fatG, "g")}` +
-					` | Fiber:${fmt(item.fiberG, "g")}` +
-					(item.foodId ? "" : red("  ⚠ no foodId")),
+						` | ${fmt(item.quantityG, item.unit ?? "g", 0)}` +
+						` | ${fmt(item.caloriesKcal, " kcal", 0)}` +
+						` | P:${fmt(item.proteinG, "g")}` +
+						` | C:${fmt(item.carbsG, "g")}` +
+						` | F:${fmt(item.fatG, "g")}` +
+						` | Fiber:${fmt(item.fiberG, "g")}` +
+						(item.foodId ? "" : red("  ⚠ no foodId")),
 				);
 			}
 
 			console.log(
 				dim(`    Recipe Totals: `) +
-				cyan(`${fmt(mealTotals.caloriesKcal, " kcal", 0)}`) +
-				`  P:${fmt(mealTotals.proteinG, "g")}` +
-				`  C:${fmt(mealTotals.carbsG, "g")}` +
-				`  F:${fmt(mealTotals.fatG, "g")}` +
-				`  Fiber:${fmt(mealTotals.fiberG, "g")}`,
+					cyan(`${fmt(mealTotals.caloriesKcal, " kcal", 0)}`) +
+					`  P:${fmt(mealTotals.proteinG, "g")}` +
+					`  C:${fmt(mealTotals.carbsG, "g")}` +
+					`  F:${fmt(mealTotals.fatG, "g")}` +
+					`  Fiber:${fmt(mealTotals.fiberG, "g")}`,
 			);
 
 			dayTotals.caloriesKcal += mealTotals.caloriesKcal;
@@ -208,11 +233,11 @@ const diagnosePlan = async (
 		console.log(hr());
 		console.log(
 			bold("  Day Totals: ") +
-			cyan(`${fmt(dayTotals.caloriesKcal, " kcal", 0)}`) +
-			`  P:${fmt(dayTotals.proteinG, "g")}` +
-			`  C:${fmt(dayTotals.carbsG, "g")}` +
-			`  F:${fmt(dayTotals.fatG, "g")}` +
-			`  Fiber:${fmt(dayTotals.fiberG, "g")}`,
+				cyan(`${fmt(dayTotals.caloriesKcal, " kcal", 0)}`) +
+				`  P:${fmt(dayTotals.proteinG, "g")}` +
+				`  C:${fmt(dayTotals.carbsG, "g")}` +
+				`  F:${fmt(dayTotals.fatG, "g")}` +
+				`  Fiber:${fmt(dayTotals.fiberG, "g")}`,
 		);
 
 		planTotals.caloriesKcal += dayTotals.caloriesKcal;
@@ -222,7 +247,13 @@ const diagnosePlan = async (
 		planTotals.fiberG += dayTotals.fiberG;
 	}
 
-	return { totals: planTotals, mealsCount, itemsCount, recipeRefs, missingFoodRefs };
+	return {
+		totals: planTotals,
+		mealsCount,
+		itemsCount,
+		recipeRefs,
+		missingFoodRefs,
+	};
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -269,14 +300,20 @@ async function main() {
 		const totalMeals = days.reduce((s, d) => s + (d.meals?.length ?? 0), 0);
 		const totalItems = days.reduce(
 			(s, d) =>
-				s + (d.meals ?? []).reduce((ms, m) => ms + getItems(m as MealLike).length, 0),
+				s +
+				(d.meals ?? []).reduce(
+					(ms, m) => ms + getItems(m as MealLike).length,
+					0,
+				),
 			0,
 		);
 		const tag = driven ? green("[recipe-driven]") : red("[legacy manual]");
 		console.log(
 			`  ${tag}  ${bold(plan.name)}` +
-			dim(`  id=${plan._id}  days=${days.length}  meals=${totalMeals}  items=${totalItems}`) +
-			dim(`  src=${plan.sourceTemplateId ?? "none (ad-hoc)"}`),
+				dim(
+					`  id=${plan._id}  days=${days.length}  meals=${totalMeals}  items=${totalItems}`,
+				) +
+				dim(`  src=${plan.sourceTemplateId ?? "none (ad-hoc)"}`),
 		);
 		(driven ? recipePlans : legacyPlans).push(plan);
 	}
@@ -284,7 +321,11 @@ async function main() {
 	if (legacyPlans.length === 0) {
 		console.log(green("  No legacy plans to migrate."));
 		if (recipePlans.length > 0) {
-			console.log(green(`  User already has ${recipePlans.length} recipe-driven plan(s). Nothing to do.`));
+			console.log(
+				green(
+					`  User already has ${recipePlans.length} recipe-driven plan(s). Nothing to do.`,
+				),
+			);
 		}
 		await mongoose.disconnect();
 		return;
@@ -301,7 +342,7 @@ async function main() {
 		}
 		console.log(
 			(isDryRun ? yellow("[dry-run] would archive") : green("✓ Archived")) +
-			`  "${plan.name}"  (${plan._id})`,
+				`  "${plan.name}"  (${plan._id})`,
 		);
 	}
 
@@ -313,9 +354,7 @@ async function main() {
 		.sort({ sortOrder: 1 })
 		.select("name slug")
 		.lean();
-	const categoryOrder = new Map(
-		allCategories.map((c, i) => [c.name, i]),
-	);
+	const categoryOrder = new Map(allCategories.map((c, i) => [c.name, i]));
 
 	const seededTemplates = await NutritionTemplate.find({
 		name: /Starter Template$/,
@@ -328,7 +367,11 @@ async function main() {
 	});
 
 	if (seededTemplates.length === 0) {
-		console.log(red("  ✗ No Starter Templates found. Run seed-templates-from-recipes.ts first."));
+		console.log(
+			red(
+				"  ✗ No Starter Templates found. Run seed-templates-from-recipes.ts first.",
+			),
+		);
 		await mongoose.disconnect();
 		process.exit(1);
 	}
@@ -342,17 +385,16 @@ async function main() {
 			0,
 		);
 		const recipeRefCount = days.reduce(
-			(s, d) =>
-				s + (d.meals ?? []).filter((m) => m.recipeId).length,
+			(s, d) => s + (d.meals ?? []).filter((m) => m.recipeId).length,
 			0,
 		);
 		console.log(
 			`  ${bold(tmpl.name)}` +
-			dim(`  id=${tmpl._id}`) +
-			`  meals=${mealCount}  items=${itemCount}` +
-			(recipeRefCount === mealCount
-				? green(`  recipeIds: ${recipeRefCount}/${mealCount} ✓`)
-				: yellow(`  recipeIds: ${recipeRefCount}/${mealCount}`)),
+				dim(`  id=${tmpl._id}`) +
+				`  meals=${mealCount}  items=${itemCount}` +
+				(recipeRefCount === mealCount
+					? green(`  recipeIds: ${recipeRefCount}/${mealCount} ✓`)
+					: yellow(`  recipeIds: ${recipeRefCount}/${mealCount}`)),
 		);
 	}
 
@@ -366,7 +408,9 @@ async function main() {
 		);
 		if (!match) {
 			console.log(
-				yellow(`  ⚠ --template-name "${templateNameArg}" not found; using first available.`),
+				yellow(
+					`  ⚠ --template-name "${templateNameArg}" not found; using first available.`,
+				),
 			);
 		} else {
 			chosenTemplate = match;
@@ -374,7 +418,9 @@ async function main() {
 	}
 
 	console.log();
-	console.log(bold(`Selected template: ${chosenTemplate.name}  (${chosenTemplate._id})`));
+	console.log(
+		bold(`Selected template: ${chosenTemplate.name}  (${chosenTemplate._id})`),
+	);
 
 	// ── 6. Verify template meal quality before assigning ────────────────────
 	const tmplDays = (chosenTemplate.days ?? []) as DayLike[];
@@ -394,8 +440,8 @@ async function main() {
 
 	console.log(
 		`  Recipe refs: ${recipeIdCount === (tmplDays[0]?.meals?.length ?? 0) ? green(String(recipeIdCount)) : yellow(String(recipeIdCount))}` +
-		`  Ingredients: ${totalIngredients}` +
-		`  Missing foodId: ${nullFoodIdCount > 0 ? red(String(nullFoodIdCount)) : green("0")}`,
+			`  Ingredients: ${totalIngredients}` +
+			`  Missing foodId: ${nullFoodIdCount > 0 ? red(String(nullFoodIdCount)) : green("0")}`,
 	);
 
 	if (totalIngredients === 0) {
@@ -407,13 +453,20 @@ async function main() {
 	// ── 7. Assign template ───────────────────────────────────────────────────
 	console.log();
 	if (isDryRun) {
-		console.log(yellow(`[dry-run] would call assignTemplateToUser(${chosenTemplate._id}, ${userId})`));
+		console.log(
+			yellow(
+				`[dry-run] would call assignTemplateToUser(${chosenTemplate._id}, ${userId})`,
+			),
+		);
 		await mongoose.disconnect();
 		return;
 	}
 
 	// Resolve an admin-role actor. The service ownership check passes when role="admin".
-	const adminUser = await User.findOne({ role: "admin" } as Record<string, unknown>)
+	const adminUser = await User.findOne({ role: "admin" } as Record<
+		string,
+		unknown
+	>)
 		.select("_id role")
 		.lean();
 	const actorId = adminUser
@@ -435,16 +488,26 @@ async function main() {
 		process.exit(1);
 	}
 
-	console.log(green(`✓ New UserNutritionPlan created: ${(newPlan as { _id: unknown })._id}`));
+	console.log(
+		green(
+			`✓ New UserNutritionPlan created: ${(newPlan as { _id: unknown })._id}`,
+		),
+	);
 	if (warnings.length > 0) {
 		console.log(yellow(`  Allergen warnings (${warnings.length}):`));
 		for (const w of warnings) {
-			console.log(yellow(`    Day ${w.dayNumber} · ${w.mealName} · ${w.foodName} → ${w.matchedAllergens.join(", ")}`));
+			console.log(
+				yellow(
+					`    Day ${w.dayNumber} · ${w.mealName} · ${w.foodName} → ${w.matchedAllergens.join(", ")}`,
+				),
+			);
 		}
 	}
 
 	// ── 8. Full ingredient-level diagnostic on the new plan ──────────────────
-	const freshPlan = await UserNutritionPlan.findById((newPlan as { _id: unknown })._id).lean();
+	const freshPlan = await UserNutritionPlan.findById(
+		(newPlan as { _id: unknown })._id,
+	).lean();
 	if (!freshPlan) {
 		console.log(red("✗ Could not reload new plan for diagnostic."));
 		await mongoose.disconnect();
@@ -458,18 +521,23 @@ async function main() {
 	console.log(hr("═"));
 	console.log(
 		`  Goal: ${cyan(freshPlan.goal)}` +
-		`  Duration: ${freshPlan.durationDays} day(s)` +
-		`  Status: ${green(freshPlan.status)}`,
+			`  Duration: ${freshPlan.durationDays} day(s)` +
+			`  Status: ${green(freshPlan.status)}`,
 	);
 	console.log(
 		`  Target calories: ${fmt(freshPlan.targetCaloriesKcal, " kcal", 0)}` +
-		`  Protein: ${fmt((freshPlan.targetMacros as { proteinG?: number | null })?.proteinG, "g")}` +
-		`  Carbs: ${fmt((freshPlan.targetMacros as { carbsG?: number | null })?.carbsG, "g")}` +
-		`  Fat: ${fmt((freshPlan.targetMacros as { fatG?: number | null })?.fatG, "g")}`,
+			`  Protein: ${fmt((freshPlan.targetMacros as { proteinG?: number | null })?.proteinG, "g")}` +
+			`  Carbs: ${fmt((freshPlan.targetMacros as { carbsG?: number | null })?.carbsG, "g")}` +
+			`  Fat: ${fmt((freshPlan.targetMacros as { fatG?: number | null })?.fatG, "g")}`,
 	);
 
-	const { totals, mealsCount, itemsCount, recipeRefs: diagRecipeRefs, missingFoodRefs } =
-		await diagnosePlan(freshPlan as unknown as Record<string, unknown>);
+	const {
+		totals,
+		mealsCount,
+		itemsCount,
+		recipeRefs: diagRecipeRefs,
+		missingFoodRefs,
+	} = await diagnosePlan(freshPlan as unknown as Record<string, unknown>);
 
 	// ── Plan totals ───────────────────────────────────────────────────────────
 	console.log();
@@ -478,10 +546,10 @@ async function main() {
 	console.log(hr("═"));
 	console.log(
 		`  ${cyan(fmt(totals.caloriesKcal, " kcal", 0))}` +
-		`  Protein: ${fmt(totals.proteinG, "g")}` +
-		`  Carbs: ${fmt(totals.carbsG, "g")}` +
-		`  Fat: ${fmt(totals.fatG, "g")}` +
-		`  Fiber: ${fmt(totals.fiberG, "g")}`,
+			`  Protein: ${fmt(totals.proteinG, "g")}` +
+			`  Carbs: ${fmt(totals.carbsG, "g")}` +
+			`  Fat: ${fmt(totals.fatG, "g")}` +
+			`  Fiber: ${fmt(totals.fiberG, "g")}`,
 	);
 
 	// ── Database diagnostics ──────────────────────────────────────────────────
@@ -498,9 +566,12 @@ async function main() {
 		.flatMap((d) => d.meals ?? [])
 		.map((m) => m.recipeId)
 		.filter(Boolean) as mongoose.Types.ObjectId[];
-	const catalogVerified = allRecipeIds.length > 0
-		? await RecipeIngredient.countDocuments({ recipeId: { $in: allRecipeIds } })
-		: 0;
+	const catalogVerified =
+		allRecipeIds.length > 0
+			? await RecipeIngredient.countDocuments({
+					recipeId: { $in: allRecipeIds },
+				})
+			: 0;
 
 	console.log(`  ${tick(true)} User found`);
 	console.log(`  ${tick(true)} Active UserNutritionPlan created`);
@@ -508,34 +579,50 @@ async function main() {
 	console.log(`  Meals count:                    ${mealsCount}`);
 	console.log(
 		`  Meals with recipeId ref:        ` +
-		(diagRecipeRefs === mealsCount
-			? green(`${diagRecipeRefs} / ${mealsCount} ✓`)
-			: yellow(`${diagRecipeRefs} / ${mealsCount}`)),
+			(diagRecipeRefs === mealsCount
+				? green(`${diagRecipeRefs} / ${mealsCount} ✓`)
+				: yellow(`${diagRecipeRefs} / ${mealsCount}`)),
 	);
 	console.log(`  Total ingredient rows:          ${itemsCount}`);
 	console.log(
 		`  Missing foodId refs:            ` +
-		(missingFoodRefs > 0 ? red(String(missingFoodRefs)) : green("0")),
+			(missingFoodRefs > 0 ? red(String(missingFoodRefs)) : green("0")),
 	);
 	console.log(
 		`  RecipeIngredient catalog rows:  ` +
-		(catalogVerified > 0 ? green(String(catalogVerified)) : red("0")),
+			(catalogVerified > 0 ? green(String(catalogVerified)) : red("0")),
 	);
 	console.log(
 		`  Items from plan snapshot:       ${itemsCount}` +
-		dim("  (verbatim Excel macros — no re-scaling)"),
+			dim("  (verbatim Excel macros — no re-scaling)"),
 	);
-	console.log(`  Items from catalog fallback:    ${green("0")}` + dim("  (bridge used direct snapshot)"));
+	console.log(
+		`  Items from catalog fallback:    ${green("0")}` +
+			dim("  (bridge used direct snapshot)"),
+	);
 
 	console.log();
 	if (diagRecipeRefs > 0 && itemsCount > 0 && missingFoodRefs === 0) {
 		console.log(green("  ✓ Excel → Hub path is fully connected."));
 		console.log(green("  ✓ Imported recipes will appear in Nutrition Hub."));
-		console.log(green("  ✓ Ingredient quantities and macros preserved from Excel."));
+		console.log(
+			green("  ✓ Ingredient quantities and macros preserved from Excel."),
+		);
 	} else {
-		if (diagRecipeRefs === 0) console.log(red("  ✗ No recipeId references — bridge may not have populated recipeId."));
-		if (itemsCount === 0) console.log(red("  ✗ No ingredient data in plan — meals have empty items[]."));
-		if (missingFoodRefs > 0) console.log(yellow(`  ⚠ ${missingFoodRefs} ingredient(s) have no foodId link.`));
+		if (diagRecipeRefs === 0)
+			console.log(
+				red(
+					"  ✗ No recipeId references — bridge may not have populated recipeId.",
+				),
+			);
+		if (itemsCount === 0)
+			console.log(
+				red("  ✗ No ingredient data in plan — meals have empty items[]."),
+			);
+		if (missingFoodRefs > 0)
+			console.log(
+				yellow(`  ⚠ ${missingFoodRefs} ingredient(s) have no foodId link.`),
+			);
 	}
 
 	console.log(hr("═"));
@@ -544,10 +631,10 @@ async function main() {
 	console.log(bold("Next steps:"));
 	console.log(
 		`  1. Verify via API (as Rahul):\n` +
-		`       GET /nutrition/my/plans\n` +
-		`       GET /nutrition/my/plans/${(newPlan as { _id: unknown })._id}\n` +
-		`  2. Re-run full diagnostic:\n` +
-		`       bun run scripts/diagnose-nutrition-hub.ts ${emailArg}`,
+			`       GET /nutrition/my/plans\n` +
+			`       GET /nutrition/my/plans/${(newPlan as { _id: unknown })._id}\n` +
+			`  2. Re-run full diagnostic:\n` +
+			`       bun run scripts/diagnose-nutrition-hub.ts ${emailArg}`,
 	);
 
 	await mongoose.disconnect();

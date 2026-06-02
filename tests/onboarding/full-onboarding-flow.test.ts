@@ -1,11 +1,12 @@
-import mongoose from "mongoose";
 import { config } from "dotenv";
-import User from "../../src/models/User";
-import HealthMarkers from "../../src/models/HealthMarkers";
-import HealthGoals from "../../src/models/HealthGoals";
+import mongoose from "mongoose";
 import ConsentForm from "../../src/models/ConsentForm";
-import MedicalReport from "../../src/models/MedicalReport";
+import type { Gender } from "../../src/models/Enums";
 import ExpertAppointment from "../../src/models/ExpertAppointment";
+import HealthGoals from "../../src/models/HealthGoals";
+import HealthMarkers from "../../src/models/HealthMarkers";
+import MedicalReport from "../../src/models/MedicalReport";
+import User from "../../src/models/User";
 import { hashPassword } from "../../src/utils/password";
 
 // Load environment variables from .env
@@ -15,9 +16,9 @@ const API_BASE = `http://localhost:${process.env.PORT || 3000}`;
 const TEST_EMAIL = "man@fitflix.in";
 const TEST_PASSWORD = "man123";
 
-let executionStart = Date.now();
-let createdAppointmentIds: string[] = [];
-let createdReportIds: string[] = [];
+const executionStart = Date.now();
+const createdAppointmentIds: string[] = [];
+const createdReportIds: string[] = [];
 let finalPass = false;
 let authToken = "";
 
@@ -25,7 +26,7 @@ async function callApi(
 	stepName: string,
 	method: string,
 	path: string,
-	body?: any,
+	body?: unknown,
 	token?: string,
 ) {
 	const url = `${API_BASE}${path}`;
@@ -33,7 +34,7 @@ async function callApi(
 		"Content-Type": "application/json",
 	};
 	if (token) {
-		headers["Authorization"] = `Bearer ${token}`;
+		headers.Authorization = `Bearer ${token}`;
 	}
 
 	console.log(`\n---`);
@@ -63,10 +64,11 @@ async function callApi(
 		} catch {
 			responseData = responseText;
 		}
-	} catch (err: any) {
+	} catch (err: unknown) {
+		const message = err instanceof Error ? err.message : String(err);
 		const duration = Date.now() - startTime;
 		console.error(`\n[ERROR] Network / Execution Error during ${stepName}:`);
-		console.error(err.stack || err.message || err);
+		console.error(message);
 		console.log(`Timing: ${duration}ms`);
 		console.log(`\nFAIL`);
 		process.exit(1);
@@ -80,7 +82,9 @@ async function callApi(
 
 	if (!response.ok) {
 		console.log(`\nFAIL`);
-		console.error(`\nError at step [${stepName}]: Request failed with status ${response.status}`);
+		console.error(
+			`\nError at step [${stepName}]: Request failed with status ${response.status}`,
+		);
 		console.error(`Error details: ${JSON.stringify(responseData, null, 2)}`);
 		process.exit(1);
 	}
@@ -89,9 +93,15 @@ async function callApi(
 }
 
 async function run() {
-	console.log("================================================================================");
-	console.log("             FITFLIX BACKEND: INTEGRATION TEST (ONBOARDING FLOW)                ");
-	console.log("================================================================================");
+	console.log(
+		"================================================================================",
+	);
+	console.log(
+		"             FITFLIX BACKEND: INTEGRATION TEST (ONBOARDING FLOW)                ",
+	);
+	console.log(
+		"================================================================================",
+	);
 
 	try {
 		// ──────────────────────────────────────────────────────────────────────────
@@ -102,21 +112,25 @@ async function run() {
 			throw new Error("MONGODB_URL is not configured in .env");
 		}
 
-		console.log(`Connecting to MongoDB at: ${mongoUrl.replace(/\/\/.*@/, "//***:***@")}`);
+		console.log(
+			`Connecting to MongoDB at: ${mongoUrl.replace(/\/\/.*@/, "//***:***@")}`,
+		);
 		await mongoose.connect(mongoUrl);
 		console.log("Database connection successful.");
 
 		// Find or bootstrap the test user
 		let testUser = await User.findOne({ email: TEST_EMAIL });
 		if (!testUser) {
-			console.log(`Test user not found. Creating test user with email ${TEST_EMAIL}...`);
+			console.log(
+				`Test user not found. Creating test user with email ${TEST_EMAIL}...`,
+			);
 			const passwordHash = await hashPassword(TEST_PASSWORD);
 			testUser = await User.create({
 				username: "Man User",
 				phone: "+15555550123",
 				email: TEST_EMAIL,
 				age: 29,
-				gender: "Male",
+				gender: "Male" as Gender,
 				passwordHash,
 				onboarded: false,
 			});
@@ -145,7 +159,9 @@ async function run() {
 		});
 
 		// Clear pre-existing documents to prevent unique key / constraint errors
-		console.log("Clearing pre-existing onboarding data documents for test user...");
+		console.log(
+			"Clearing pre-existing onboarding data documents for test user...",
+		);
 		await Promise.all([
 			HealthMarkers.deleteMany({ userId }),
 			HealthGoals.deleteMany({ userId }),
@@ -173,8 +189,16 @@ async function run() {
 		// ──────────────────────────────────────────────────────────────────────────
 		// STEP 2: FETCH CURRENT ONBOARDING STATUS
 		// ──────────────────────────────────────────────────────────────────────────
-		const statusRes1 = await callApi("STEP 2: FETCH CURRENT ONBOARDING STATUS", "GET", "/onboarding/status", undefined, authToken);
-		console.log(`Current Onboarding State: ${JSON.stringify(statusRes1.data, null, 2)}`);
+		const statusRes1 = await callApi(
+			"STEP 2: FETCH CURRENT ONBOARDING STATUS",
+			"GET",
+			"/onboarding/status",
+			undefined,
+			authToken,
+		);
+		console.log(
+			`Current Onboarding State: ${JSON.stringify(statusRes1.data, null, 2)}`,
+		);
 
 		// ──────────────────────────────────────────────────────────────────────────
 		// STEP 3: SUBMIT HEALTH MARKERS
@@ -188,12 +212,24 @@ async function run() {
 			sleepHours: 8,
 			activityLevel: "Moderate",
 		};
-		const markersRes = await callApi("STEP 3: SUBMIT HEALTH MARKERS", "POST", "/onboarding/health-markers", markersPayload, authToken);
+		const markersRes = await callApi(
+			"STEP 3: SUBMIT HEALTH MARKERS",
+			"POST",
+			"/onboarding/health-markers",
+			markersPayload,
+			authToken,
+		);
 		const calculatedBmi = markersRes.data.healthMarkers?.bmi;
 		console.log(`Calculated BMI: ${calculatedBmi}`);
 
 		// Fetch step transition
-		const statusRes2 = await callApi("STATE TRANSITION CHECK", "GET", "/onboarding/status", undefined, authToken);
+		const statusRes2 = await callApi(
+			"STATE TRANSITION CHECK",
+			"GET",
+			"/onboarding/status",
+			undefined,
+			authToken,
+		);
 		console.log(`Next onboarding step: ${statusRes2.data.currentStep}`);
 
 		// ──────────────────────────────────────────────────────────────────────────
@@ -206,11 +242,25 @@ async function run() {
 			workoutExperience: "Intermediate",
 			foodPreferences: ["Veg"],
 		};
-		const goalsRes = await callApi("STEP 4: SUBMIT HEALTH GOALS", "POST", "/onboarding/health-goals", goalsPayload, authToken);
-		console.log(`Stored Goals: ${JSON.stringify(goalsRes.data.healthGoals?.goals, null, 2)}`);
+		const goalsRes = await callApi(
+			"STEP 4: SUBMIT HEALTH GOALS",
+			"POST",
+			"/onboarding/health-goals",
+			goalsPayload,
+			authToken,
+		);
+		console.log(
+			`Stored Goals: ${JSON.stringify(goalsRes.data.healthGoals?.goals, null, 2)}`,
+		);
 
 		// Fetch step transition
-		const statusRes3 = await callApi("STATE TRANSITION CHECK", "GET", "/onboarding/status", undefined, authToken);
+		const statusRes3 = await callApi(
+			"STATE TRANSITION CHECK",
+			"GET",
+			"/onboarding/status",
+			undefined,
+			authToken,
+		);
 		console.log(`Next onboarding step: ${statusRes3.data.currentStep}`);
 
 		// ──────────────────────────────────────────────────────────────────────────
@@ -232,10 +282,22 @@ async function run() {
 				},
 			],
 		};
-		await callApi("STEP 5: SUBMIT CONSENT", "POST", "/onboarding/consent", consentPayload, authToken);
+		await callApi(
+			"STEP 5: SUBMIT CONSENT",
+			"POST",
+			"/onboarding/consent",
+			consentPayload,
+			authToken,
+		);
 
 		// Fetch step transition
-		const statusRes4 = await callApi("STATE TRANSITION CHECK", "GET", "/onboarding/status", undefined, authToken);
+		const statusRes4 = await callApi(
+			"STATE TRANSITION CHECK",
+			"GET",
+			"/onboarding/status",
+			undefined,
+			authToken,
+		);
 		console.log(`Next onboarding step: ${statusRes4.data.currentStep}`);
 
 		// ──────────────────────────────────────────────────────────────────────────
@@ -246,7 +308,13 @@ async function run() {
 			reportType: "Lab Report",
 			reportUrl: "http://example.com/initial-blood-work.pdf",
 		};
-		const reportRes = await callApi("STEP 6: UPLOAD TEST REPORT", "POST", "/onboarding/reports", reportPayload, authToken);
+		const reportRes = await callApi(
+			"STEP 6: UPLOAD TEST REPORT",
+			"POST",
+			"/onboarding/reports",
+			reportPayload,
+			authToken,
+		);
 		const reportId = reportRes.data.report?._id;
 		if (reportId) {
 			createdReportIds.push(reportId);
@@ -254,7 +322,13 @@ async function run() {
 		console.log(`Uploaded Report ID: ${reportId}`);
 
 		// Fetch step transition
-		const statusRes5 = await callApi("STATE TRANSITION CHECK", "GET", "/onboarding/status", undefined, authToken);
+		const statusRes5 = await callApi(
+			"STATE TRANSITION CHECK",
+			"GET",
+			"/onboarding/status",
+			undefined,
+			authToken,
+		);
 		console.log(`Next onboarding step: ${statusRes5.data.currentStep}`);
 
 		// ──────────────────────────────────────────────────────────────────────────
@@ -266,7 +340,13 @@ async function run() {
 			meetingLink: "http://meet.google.com/abc-defg-hij",
 			calComBookingId: "ss-booking-123",
 		};
-		const sportsScientistRes = await callApi("STEP 7: BOOK SPORTS SCIENTIST APPOINTMENT", "POST", "/onboarding/appointments", sportsScientistPayload, authToken);
+		const sportsScientistRes = await callApi(
+			"STEP 7: BOOK SPORTS SCIENTIST APPOINTMENT",
+			"POST",
+			"/onboarding/appointments",
+			sportsScientistPayload,
+			authToken,
+		);
 		const ssAppointmentId = sportsScientistRes.data.appointment?._id;
 		if (ssAppointmentId) {
 			createdAppointmentIds.push(ssAppointmentId);
@@ -274,7 +354,13 @@ async function run() {
 		console.log(`Sports Scientist Appointment ID: ${ssAppointmentId}`);
 
 		// Fetch step transition
-		const statusRes6 = await callApi("STATE TRANSITION CHECK", "GET", "/onboarding/status", undefined, authToken);
+		const statusRes6 = await callApi(
+			"STATE TRANSITION CHECK",
+			"GET",
+			"/onboarding/status",
+			undefined,
+			authToken,
+		);
 		console.log(`Next onboarding step: ${statusRes6.data.currentStep}`);
 
 		// ──────────────────────────────────────────────────────────────────────────
@@ -282,11 +368,19 @@ async function run() {
 		// ──────────────────────────────────────────────────────────────────────────
 		const nutritionistPayload = {
 			expertType: "nutritionist",
-			appointmentDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), // Day after tomorrow
+			appointmentDate: new Date(
+				Date.now() + 2 * 24 * 60 * 60 * 1000,
+			).toISOString(), // Day after tomorrow
 			meetingLink: "http://meet.google.com/xyz-uvwx-yza",
 			calComBookingId: "nut-booking-456",
 		};
-		const nutritionistRes = await callApi("STEP 8: BOOK NUTRITIONIST APPOINTMENT", "POST", "/onboarding/appointments", nutritionistPayload, authToken);
+		const nutritionistRes = await callApi(
+			"STEP 8: BOOK NUTRITIONIST APPOINTMENT",
+			"POST",
+			"/onboarding/appointments",
+			nutritionistPayload,
+			authToken,
+		);
 		const nutAppointmentId = nutritionistRes.data.appointment?._id;
 		if (nutAppointmentId) {
 			createdAppointmentIds.push(nutAppointmentId);
@@ -294,20 +388,40 @@ async function run() {
 		console.log(`Nutritionist Appointment ID: ${nutAppointmentId}`);
 
 		// Fetch step transition
-		const statusRes7 = await callApi("STATE TRANSITION CHECK", "GET", "/onboarding/status", undefined, authToken);
+		const statusRes7 = await callApi(
+			"STATE TRANSITION CHECK",
+			"GET",
+			"/onboarding/status",
+			undefined,
+			authToken,
+		);
 		console.log(`Next onboarding step: ${statusRes7.data.currentStep}`);
 
 		// ──────────────────────────────────────────────────────────────────────────
 		// STEP 9: COMPLETE ONBOARDING
 		// ──────────────────────────────────────────────────────────────────────────
-		const completeRes = await callApi("STEP 9: COMPLETE ONBOARDING", "POST", "/onboarding/complete", undefined, authToken);
+		const completeRes = await callApi(
+			"STEP 9: COMPLETE ONBOARDING",
+			"POST",
+			"/onboarding/complete",
+			undefined,
+			authToken,
+		);
 		console.log(`Completed At Timestamp: ${completeRes.data.completedAt}`);
 
 		// ──────────────────────────────────────────────────────────────────────────
 		// STEP 10: VALIDATE FINAL STATE
 		// ──────────────────────────────────────────────────────────────────────────
-		const finalStatusRes = await callApi("STEP 10: VALIDATE FINAL STATE", "GET", "/onboarding/status", undefined, authToken);
-		console.log(`Final Onboarding State: ${JSON.stringify(finalStatusRes.data, null, 2)}`);
+		const finalStatusRes = await callApi(
+			"STEP 10: VALIDATE FINAL STATE",
+			"GET",
+			"/onboarding/status",
+			undefined,
+			authToken,
+		);
+		console.log(
+			`Final Onboarding State: ${JSON.stringify(finalStatusRes.data, null, 2)}`,
+		);
 
 		// ──────────────────────────────────────────────────────────────────────────
 		// STEP 11: BOOKING & DATABASE VERIFICATION
@@ -318,36 +432,63 @@ async function run() {
 		// Fetch updated user from DB directly
 		const updatedUser = await User.findById(userId);
 		if (!updatedUser) {
-			throw new Error("Unable to retrieve user document from database for verification");
+			throw new Error(
+				"Unable to retrieve user document from database for verification",
+			);
 		}
 
 		console.log(`\nVerifying user database flags...`);
-		console.log(`- user.onboarded flag: ${updatedUser.onboarded} (Expected: true)`);
-		console.log(`- onboardingCompleted: ${updatedUser.onboardingStatus?.onboardingCompleted} (Expected: true)`);
-		console.log(`- healthMarkersCompleted: ${updatedUser.onboardingStatus?.healthMarkersCompleted} (Expected: true)`);
-		console.log(`- healthGoalsCompleted: ${updatedUser.onboardingStatus?.healthGoalsCompleted} (Expected: true)`);
-		console.log(`- consentCompleted: ${updatedUser.onboardingStatus?.consentCompleted} (Expected: true)`);
-		console.log(`- reportsUploaded: ${updatedUser.onboardingStatus?.reportsUploaded} (Expected: true)`);
-		console.log(`- sportsScientistBooked: ${updatedUser.onboardingStatus?.sportsScientistBooked} (Expected: true)`);
-		console.log(`- nutritionistBooked: ${updatedUser.onboardingStatus?.nutritionistBooked} (Expected: true)`);
+		console.log(
+			`- user.onboarded flag: ${updatedUser.onboarded} (Expected: true)`,
+		);
+		console.log(
+			`- onboardingCompleted: ${updatedUser.onboardingStatus?.onboardingCompleted} (Expected: true)`,
+		);
+		console.log(
+			`- healthMarkersCompleted: ${updatedUser.onboardingStatus?.healthMarkersCompleted} (Expected: true)`,
+		);
+		console.log(
+			`- healthGoalsCompleted: ${updatedUser.onboardingStatus?.healthGoalsCompleted} (Expected: true)`,
+		);
+		console.log(
+			`- consentCompleted: ${updatedUser.onboardingStatus?.consentCompleted} (Expected: true)`,
+		);
+		console.log(
+			`- reportsUploaded: ${updatedUser.onboardingStatus?.reportsUploaded} (Expected: true)`,
+		);
+		console.log(
+			`- sportsScientistBooked: ${updatedUser.onboardingStatus?.sportsScientistBooked} (Expected: true)`,
+		);
+		console.log(
+			`- nutritionistBooked: ${updatedUser.onboardingStatus?.nutritionistBooked} (Expected: true)`,
+		);
 
 		// Verify database collections
 		const appointments = await ExpertAppointment.find({ userId });
 		console.log(`\nVerifying created database records...`);
-		console.log(`- Created appointments found in DB: ${appointments.length} (Expected: 2)`);
+		console.log(
+			`- Created appointments found in DB: ${appointments.length} (Expected: 2)`,
+		);
 		for (const app of appointments) {
-			console.log(`  * ${app.expertType} appointment booked on ${app.appointmentDate?.toISOString()} (Status: ${app.bookingStatus})`);
+			console.log(
+				`  * ${app.expertType} appointment booked on ${app.appointmentDate?.toISOString()} (Status: ${app.bookingStatus})`,
+			);
 		}
 
 		const reports = await MedicalReport.find({ userId });
-		console.log(`- Created medical reports found in DB: ${reports.length} (Expected: 1)`);
+		console.log(
+			`- Created medical reports found in DB: ${reports.length} (Expected: 1)`,
+		);
 		for (const rep of reports) {
-			console.log(`  * Report: ${rep.reportName} (${rep.reportType}) -> S3Key/Url: ${rep.reportUrl}`);
+			console.log(
+				`  * Report: ${rep.reportName} (${rep.reportType}) -> S3Key/Url: ${rep.reportUrl}`,
+			);
 		}
 
 		// Final validations
 		const userOnboardedSuccess = updatedUser.onboarded === true;
-		const statusOnboardedSuccess = finalStatusRes.data.onboardingCompleted === true;
+		const statusOnboardedSuccess =
+			finalStatusRes.data.onboardingCompleted === true;
 
 		if (
 			userOnboardedSuccess &&
@@ -357,10 +498,10 @@ async function run() {
 		) {
 			finalPass = true;
 		}
-
-	} catch (error: any) {
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
 		console.error("\n[CRITICAL ERROR] Execution interrupted:");
-		console.error(error.stack || error.message || error);
+		console.error(message);
 		console.log(`\nFAIL`);
 		process.exit(1);
 	} finally {
@@ -372,14 +513,24 @@ async function run() {
 		// FINAL SUMMARY
 		// ──────────────────────────────────────────────────────────────────────────
 		const totalExecutionTime = Date.now() - executionStart;
-		console.log("\n================================================================================");
+		console.log(
+			"\n================================================================================",
+		);
 		console.log(`FINAL RESULT: ${finalPass ? "PASS" : "FAIL"}`);
-		console.log(`Completed Steps: ${finalPass ? "All steps (HEALTH_MARKERS -> HEALTH_GOALS -> CONSENT -> REPORT_UPLOAD -> NUTRITIONIST_BOOKING -> COMPLETED)" : "Incomplete"}`);
-		console.log(`Created Appointment IDs: ${JSON.stringify(createdAppointmentIds)}`);
+		console.log(
+			`Completed Steps: ${finalPass ? "All steps (HEALTH_MARKERS -> HEALTH_GOALS -> CONSENT -> REPORT_UPLOAD -> NUTRITIONIST_BOOKING -> COMPLETED)" : "Incomplete"}`,
+		);
+		console.log(
+			`Created Appointment IDs: ${JSON.stringify(createdAppointmentIds)}`,
+		);
 		console.log(`Created Report IDs: ${JSON.stringify(createdReportIds)}`);
 		console.log(`Total Execution Time: ${totalExecutionTime}ms`);
-		console.log(`Onboarding Completion Status: ${finalPass ? "COMPLETED" : "FAILED"}`);
-		console.log("================================================================================");
+		console.log(
+			`Onboarding Completion Status: ${finalPass ? "COMPLETED" : "FAILED"}`,
+		);
+		console.log(
+			"================================================================================",
+		);
 
 		if (!finalPass) {
 			process.exit(1);

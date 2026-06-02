@@ -42,7 +42,9 @@ export const rescheduleAppointmentSchema = z.object({
 	reason: z.string().trim().max(500).optional(),
 });
 
-export type RescheduleAppointmentBody = z.infer<typeof rescheduleAppointmentSchema>;
+export type RescheduleAppointmentBody = z.infer<
+	typeof rescheduleAppointmentSchema
+>;
 
 // ─── Cancel ───────────────────────────────────────────────────────────────────
 

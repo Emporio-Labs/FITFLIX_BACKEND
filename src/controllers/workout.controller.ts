@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import { type ExerciseSection, WorkoutSessionStatus } from "../models/Enums";
 import Exercise from "../models/Exercise";
-import { WorkoutSessionStatus } from "../models/Enums";
 import SetLog from "../models/SetLog";
 import WorkoutExercise from "../models/WorkoutExercise";
 import WorkoutSession from "../models/WorkoutSession";
@@ -44,9 +44,7 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 
 	const exerciseIds = workoutExercises.map((we) => we.exerciseId);
 	const exercises = await Exercise.find({ _id: { $in: exerciseIds } }).lean();
-	const exerciseMap = new Map(
-		exercises.map((e) => [e._id.toString(), e]),
-	);
+	const exerciseMap = new Map(exercises.map((e) => [e._id.toString(), e]));
 
 	const workoutExerciseIds = workoutExercises.map((we) => we._id);
 	const setLogs = await SetLog.find({
@@ -214,13 +212,17 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			status: WorkoutSessionStatus.Active,
 			startedAt: new Date(),
 			notes: parsed.data.notes || null,
-			planId: parsed.data.planId ? new mongoose.Types.ObjectId(parsed.data.planId) : null,
+			planId: parsed.data.planId
+				? new mongoose.Types.ObjectId(parsed.data.planId)
+				: null,
 		});
 
 		let exercisesToAdd = parsed.data.exercises;
 
 		if (parsed.data.planId) {
-			const plan = await mongoose.model("WorkoutPlan").findById(parsed.data.planId);
+			const plan = await mongoose
+				.model("WorkoutPlan")
+				.findById(parsed.data.planId);
 			if (!plan) {
 				res.status(404).json({ error: "Plan not found" });
 				return;
@@ -229,7 +231,8 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			const isAssigned = (plan as any).assignedUsers.some(
 				(id: any) => id.toString() === userId.toString(),
 			);
-			const isCreator = (plan as any).createdBy.toString() === userId.toString();
+			const isCreator =
+				(plan as any).createdBy.toString() === userId.toString();
 
 			if (!isAssigned && !isCreator) {
 				res.status(403).json({ error: "Not authorized to use this plan" });
@@ -254,9 +257,7 @@ export const createSession: RequestHandler = async (req, res, next) => {
 				_id: { $in: exerciseIds },
 				$or: [{ isSystem: true }, { createdBy: userId }],
 			});
-			const validIds = new Set(
-				validExercises.map((e) => e._id.toString()),
-			);
+			const validIds = new Set(validExercises.map((e) => e._id.toString()));
 
 			const workoutExercises = exercisesToAdd
 				.filter((e) => validIds.has(e.exerciseId))
@@ -264,7 +265,7 @@ export const createSession: RequestHandler = async (req, res, next) => {
 					sessionId: session._id,
 					exerciseId: new mongoose.Types.ObjectId(e.exerciseId),
 					orderIndex: index,
-					section: e.section,
+					section: e.section as ExerciseSection,
 					targetSets: e.targetSets,
 					targetReps: e.targetReps,
 					targetWeightKg: e.targetWeightKg ?? null,
@@ -318,7 +319,9 @@ export const updateSession: RequestHandler = async (req, res, next) => {
 			session.status === WorkoutSessionStatus.Completed &&
 			parsed.data.status === WorkoutSessionStatus.Active
 		) {
-			res.status(409).json({ message: "Cannot reactivate a completed session" });
+			res
+				.status(409)
+				.json({ message: "Cannot reactivate a completed session" });
 			return;
 		}
 
@@ -445,7 +448,7 @@ export const addExerciseToSession: RequestHandler = async (req, res, next) => {
 			sessionId: session._id,
 			exerciseId: exercise._id,
 			orderIndex: maxOrder ? maxOrder.orderIndex + 1 : 0,
-			section: parsed.data.section,
+			section: parsed.data.section as ExerciseSection,
 			targetSets: parsed.data.targetSets,
 			targetReps: parsed.data.targetReps,
 			targetWeightKg: parsed.data.targetWeightKg ?? null,
@@ -858,10 +861,7 @@ export const getMyStats: RequestHandler = async (req, res, next) => {
 		);
 
 		const exerciseIdByWorkoutExercise = new Map(
-			weekExercises.map((we) => [
-				we._id.toString(),
-				we.exerciseId.toString(),
-			]),
+			weekExercises.map((we) => [we._id.toString(), we.exerciseId.toString()]),
 		);
 
 		let caloriesBurnedWeek = 0;
@@ -1017,7 +1017,10 @@ export const getMyHistory: RequestHandler = async (req, res, next) => {
 
 		const hasMore = sessions.length > limit;
 		const page = sessions.slice(0, limit);
-		const nextCursor = hasMore && page[page.length - 1] ? page[page.length - 1]!._id.toString() : null;
+		const nextCursor =
+			hasMore && page[page.length - 1]
+				? page[page.length - 1]!._id.toString()
+				: null;
 
 		// Lightweight summary — no exercises or set data
 		const workouts = page.map((session) => {

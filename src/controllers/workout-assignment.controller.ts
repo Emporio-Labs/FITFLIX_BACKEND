@@ -1,31 +1,41 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Exercise from "../models/Exercise";
-import WorkoutPlan from "../models/WorkoutPlan";
 import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
+import { createAssignmentForUser } from "../services/planAssignment.service";
+import {
+	advancePastMissedDays,
+	completeDayAndShift,
+	initializeSchedule,
+} from "../utils/workoutProgression";
 import {
 	assignPlanBodySchema,
 	completePlanDayBodySchema,
 	scheduleQuerySchema,
 	updateAssignmentDayBodySchema,
 } from "../validators/workout-assignment.validator";
-import {
-	advancePastMissedDays,
-	completeDayAndShift,
-	initializeSchedule,
-} from "../utils/workoutProgression";
-import { createAssignmentForUser } from "../services/planAssignment.service";
 
 const normalizeToUtcDate = (value: Date): Date =>
 	new Date(
 		Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
 	);
 
+const getRequesterId = (req: Parameters<RequestHandler>[0]): string | null => {
+	const userId = req.user?.id;
+	return typeof userId === "string" ? userId : null;
+};
+
 // ── GET /workout-plans/assignments/mine ───────────────────────────────────────
 
 export const getMyAssignment: RequestHandler = async (req, res, next) => {
 	try {
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const requesterId = getRequesterId(req);
+		if (!requesterId) {
+			res.status(403).json({ error: "Unauthorized" });
+			return;
+		}
+
+		const userId = new mongoose.Types.ObjectId(requesterId);
 		const assignment = await WorkoutPlanAssignment.findOne({
 			userId,
 			status: "active",
@@ -59,7 +69,13 @@ export const getAssignmentSchedule: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const requesterId = getRequesterId(req);
+		if (!requesterId) {
+			res.status(403).json({ error: "Unauthorized" });
+			return;
+		}
+
+		const userId = new mongoose.Types.ObjectId(requesterId);
 		const now = new Date();
 		const from = parsed.data.from || new Date(now.getTime() - 30 * 86400000);
 		const to = parsed.data.to || new Date(now.getTime() + 90 * 86400000);
@@ -95,10 +111,14 @@ export const getAssignmentSchedule: RequestHandler = async (req, res, next) => {
 				return sd >= fromUtc && sd <= toUtc;
 			})
 			.map((d) => {
-				const userDay = assignment.userDays.find((ud) => ud.dayNumber === d.dayNumber);
+				const userDay = assignment.userDays.find(
+					(ud) => ud.dayNumber === d.dayNumber,
+				);
 				const isRest = userDay?.isRestDay ?? false;
 				return {
-					date: normalizeToUtcDate(d.scheduledDate).toISOString().substring(0, 10),
+					date: normalizeToUtcDate(d.scheduledDate)
+						.toISOString()
+						.substring(0, 10),
 					dayNumber: d.dayNumber,
 					dayName: dayNameMap.get(d.dayNumber) ?? `Day ${d.dayNumber}`,
 					status: isRest ? "rest" : d.status,
@@ -121,9 +141,19 @@ export const getAssignmentSchedule: RequestHandler = async (req, res, next) => {
 
 // ── GET /workout-plans/assignments/mine/today ─────────────────────────────────
 
-export const getTodayAssignedWorkout: RequestHandler = async (req, res, next) => {
+export const getTodayAssignedWorkout: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
 	try {
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const requesterId = getRequesterId(req);
+		if (!requesterId) {
+			res.status(403).json({ error: "Unauthorized" });
+			return;
+		}
+
+		const userId = new mongoose.Types.ObjectId(requesterId);
 		const today = normalizeToUtcDate(new Date());
 
 		const assignment = await WorkoutPlanAssignment.findOne({
@@ -161,7 +191,11 @@ export const getTodayAssignedWorkout: RequestHandler = async (req, res, next) =>
 
 // ── GET /workout-plans/assignments/mine/days/:dayNumber ───────────────────────
 
-export const getAssignedWorkoutForDay: RequestHandler = async (req, res, next) => {
+export const getAssignedWorkoutForDay: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
 	try {
 		const dayNumber = parseInt(String(req.params.dayNumber), 10);
 		if (isNaN(dayNumber) || dayNumber < 1) {
@@ -169,7 +203,13 @@ export const getAssignedWorkoutForDay: RequestHandler = async (req, res, next) =
 			return;
 		}
 
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const requesterId = getRequesterId(req);
+		if (!requesterId) {
+			res.status(403).json({ error: "Unauthorized" });
+			return;
+		}
+
+		const userId = new mongoose.Types.ObjectId(requesterId);
 		const assignment = await WorkoutPlanAssignment.findOne({
 			userId,
 			status: "active",
@@ -192,7 +232,10 @@ export const getAssignedWorkoutForDay: RequestHandler = async (req, res, next) =
 export const assignPlan: RequestHandler = async (req, res, next) => {
 	try {
 		const planId = req.params.planId;
-		if (typeof planId !== "string" || !mongoose.Types.ObjectId.isValid(planId)) {
+		if (
+			typeof planId !== "string" ||
+			!mongoose.Types.ObjectId.isValid(planId)
+		) {
 			res.status(400).json({ error: "Invalid plan ID" });
 			return;
 		}
@@ -210,8 +253,8 @@ export const assignPlan: RequestHandler = async (req, res, next) => {
 		try {
 			const { assignment } = await createAssignmentForUser({
 				planId,
-				userId: req.user!.id,
-				assignedBy: req.user!.id,
+				userId: req.user?.id ?? "",
+				assignedBy: req.user?.id ?? "",
 				startDate: parsed.data.startDate,
 			});
 			res.status(201).json(assignment);
@@ -242,7 +285,13 @@ export const completePlanDay: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const requesterId = getRequesterId(req);
+		if (!requesterId) {
+			res.status(403).json({ error: "Unauthorized" });
+			return;
+		}
+
+		const userId = new mongoose.Types.ObjectId(requesterId);
 		const assignment = await WorkoutPlanAssignment.findOne({
 			userId,
 			status: "active",
@@ -255,7 +304,9 @@ export const completePlanDay: RequestHandler = async (req, res, next) => {
 		}
 
 		const { dayNumber, sessionId } = parsed.data;
-		const target = assignment.dayProgress.find((d) => d.dayNumber === dayNumber);
+		const target = assignment.dayProgress.find(
+			(d) => d.dayNumber === dayNumber,
+		);
 		if (!target || target.status === "completed") {
 			res.status(400).json({ error: "Day not found or already completed" });
 			return;
@@ -308,14 +359,22 @@ export const updateMyDayExercises: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const dayIdx = assignment.userDays.findIndex((d) => d.dayNumber === dayNumber);
+		const dayIdx = assignment.userDays.findIndex(
+			(d) => d.dayNumber === dayNumber,
+		);
 		if (dayIdx < 0) {
 			res.status(404).json({ error: "Day not found in assignment" });
 			return;
 		}
 
+		const userDay = assignment.userDays[dayIdx];
+		if (!userDay) {
+			res.status(404).json({ error: "Day not found in assignment" });
+			return;
+		}
+
 		// Replace exercises on user's private copy only (template untouched)
-		(assignment.userDays[dayIdx] as any).exercises = parsed.data.exercises;
+		userDay.exercises = parsed.data.exercises as any;
 		assignment.markModified("userDays");
 		await assignment.save();
 
@@ -328,7 +387,7 @@ export const updateMyDayExercises: RequestHandler = async (req, res, next) => {
 // ── Internal helper ───────────────────────────────────────────────────────────
 
 async function _respondWithDayDetail(
-	res: any,
+	res: Parameters<RequestHandler>[1],
 	assignment: Awaited<ReturnType<typeof WorkoutPlanAssignment.findOne>>,
 	dayNumber: number,
 ): Promise<void> {
@@ -343,7 +402,9 @@ async function _respondWithDayDetail(
 		return;
 	}
 
-	const progress = assignment.dayProgress.find((d) => d.dayNumber === dayNumber);
+	const progress = assignment.dayProgress.find(
+		(d) => d.dayNumber === dayNumber,
+	);
 
 	// Populate exercise details
 	const exerciseIds = userDay.exercises.map((e) => e.exerciseId);
@@ -377,7 +438,9 @@ async function _respondWithDayDetail(
 		isRestDay: userDay.isRestDay,
 		exercises,
 		scheduledDate: progress
-			? normalizeToUtcDate(progress.scheduledDate).toISOString().substring(0, 10)
+			? normalizeToUtcDate(progress.scheduledDate)
+					.toISOString()
+					.substring(0, 10)
 			: null,
 		status: progress?.status ?? "pending",
 	});

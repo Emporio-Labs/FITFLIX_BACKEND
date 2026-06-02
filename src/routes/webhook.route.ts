@@ -1,11 +1,11 @@
 import type { Request, Response } from "express";
 import { Router } from "express";
 import mongoose from "mongoose";
-import HpodMetric from "../models/HpodMetric";
-import { HpodReport } from "../models/Hpodreport.model";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 import { verifyWebhookSecret } from "../middleware/webhook-auth.middleware";
+import HpodMetric from "../models/HpodMetric";
+import { HpodReport } from "../models/Hpodreport.model";
 import {
 	fetchEmailById,
 	getMessageIdsFromHistory,
@@ -32,10 +32,7 @@ const findUserByEmail = async (
 	return user ? user._id : null;
 };
 
-const resolveRecordedAt = (
-	reportDate: string | null,
-	fallback: Date,
-): Date => {
+const resolveRecordedAt = (reportDate: string | null, fallback: Date): Date => {
 	if (!reportDate) return fallback;
 	const parsed = new Date(reportDate);
 	return Number.isNaN(parsed.getTime()) ? fallback : parsed;
@@ -101,139 +98,157 @@ const buildHpodMetricPayload = (
 	source: "hpod",
 });
 
-router.post("/email", verifyWebhookSecret, async (req: Request, res: Response) => {
-	try {
-		const message = req.body?.message;
-		if (!message?.data) {
-			return res.status(400).json({ error: "No message data" });
-		}
-
-		const decoded = Buffer.from(message.data, "base64").toString("utf-8");
-		const notification = JSON.parse(decoded);
-		const historyId: string = notification.historyId;
-
-		if (!historyId) {
-			return res.status(200).json({ status: "no historyId" });
-		}
-
-		const messageIds = await getMessageIdsFromHistory(historyId);
-		console.log(`Processing ${messageIds.length} new message(s)`);
-
-		for (const msgId of messageIds) {
-			const email = await fetchEmailById(msgId);
-			if (!email) continue;
-
-			const senderEmail = extractEmail(email.sender);
-
-			// only process emails from hPod
-			if (senderEmail.toLowerCase() !== ALLOWED_SENDER) {
-				console.log(`Skipped - not from HPOD (${senderEmail})`);
-				continue;
+router.post(
+	"/email",
+	verifyWebhookSecret,
+	async (req: Request, res: Response) => {
+		try {
+			const message = req.body?.message;
+			if (!message?.data) {
+				return res.status(400).json({ error: "No message data" });
 			}
 
-			// look up patient by email extracted from PDF
-			let userId: mongoose.Types.ObjectId | null = null;
-			let userEmail = "unknown";
+			const decoded = Buffer.from(message.data, "base64").toString("utf-8");
+			const notification = JSON.parse(decoded);
+			const historyId: string = notification.historyId;
 
-			if (email.patientEmail) {
-				userEmail = email.patientEmail;
-				userId = await findUserByEmail(email.patientEmail);
-				console.log(
-					`Patient email from PDF: ${email.patientEmail} -> userId: ${userId}`,
-				);
-			} else {
-				console.log("No patient email found in PDF");
+			if (!historyId) {
+				return res.status(200).json({ status: "no historyId" });
 			}
 
-			// call GPT to extract structured summary from PDF text
-			let aiSummary: HpodSummary | null = null;
-			let summaryGeneratedAt: Date | null = null;
+			const messageIds = await getMessageIdsFromHistory(historyId);
+			console.log(`Processing ${messageIds.length} new message(s)`);
 
-			if (email.pdfText) {
-				console.log("Sending PDF to GPT for summary...");
-				aiSummary = await generateHpodSummary(email.pdfText);
-				summaryGeneratedAt = aiSummary ? new Date() : null;
-				console.log(`Summary generated: ${Boolean(aiSummary)}`);
+			for (const msgId of messageIds) {
+				const email = await fetchEmailById(msgId);
+				if (!email) continue;
 
-				// if GPT extracted patient email and we did not get it from regex
-				const gptPatientEmail = aiSummary?.patientEmail;
-				if (!userId && typeof gptPatientEmail === "string" && gptPatientEmail) {
-					userEmail = gptPatientEmail;
-					userId = await findUserByEmail(gptPatientEmail);
+				const senderEmail = extractEmail(email.sender);
+
+				// only process emails from hPod
+				if (senderEmail.toLowerCase() !== ALLOWED_SENDER) {
+					console.log(`Skipped - not from HPOD (${senderEmail})`);
+					continue;
+				}
+
+				// look up patient by email extracted from PDF
+				let userId: mongoose.Types.ObjectId | null = null;
+				let userEmail = "unknown";
+
+				if (email.patientEmail) {
+					userEmail = email.patientEmail;
+					userId = await findUserByEmail(email.patientEmail);
 					console.log(
-						`Patient email from GPT: ${gptPatientEmail} -> userId: ${userId}`,
+						`Patient email from PDF: ${email.patientEmail} -> userId: ${userId}`,
+					);
+				} else {
+					console.log("No patient email found in PDF");
+				}
+
+				// call GPT to extract structured summary from PDF text
+				let aiSummary: HpodSummary | null = null;
+				let summaryGeneratedAt: Date | null = null;
+
+				if (email.pdfText) {
+					console.log("Sending PDF to GPT for summary...");
+					aiSummary = await generateHpodSummary(email.pdfText);
+					summaryGeneratedAt = aiSummary ? new Date() : null;
+					console.log(`Summary generated: ${Boolean(aiSummary)}`);
+
+					// if GPT extracted patient email and we did not get it from regex
+					const gptPatientEmail = aiSummary?.patientEmail;
+					if (
+						!userId &&
+						typeof gptPatientEmail === "string" &&
+						gptPatientEmail
+					) {
+						userEmail = gptPatientEmail;
+						userId = await findUserByEmail(gptPatientEmail);
+						console.log(
+							`Patient email from GPT: ${gptPatientEmail} -> userId: ${userId}`,
+						);
+					}
+				} else {
+					console.log("No PDF text found - skipping LLM");
+				}
+
+				// save to MongoDB
+				const report = await HpodReport.findOneAndUpdate(
+					{ gmailMessageId: email.gmailMessageId },
+					{
+						$setOnInsert: {
+							userId,
+							userEmail,
+							gmailMessageId: email.gmailMessageId,
+							subject: email.subject,
+							sender: email.sender,
+							rawBody: email.body,
+							hasPdf: email.hasPdf,
+							aiSummary,
+							summaryGeneratedAt,
+							receivedAt: new Date(),
+						},
+					},
+					{ upsert: true, returnDocument: "after" },
+				);
+
+				if (report && aiSummary && userId) {
+					const receivedAt = report.receivedAt ?? new Date();
+					const metricPayload = buildHpodMetricPayload(aiSummary, {
+						userId,
+						reportId: report._id,
+						gmailMessageId: email.gmailMessageId,
+						receivedAt,
+					});
+
+					await HpodMetric.findOneAndUpdate(
+						{ gmailMessageId: email.gmailMessageId },
+						{ $setOnInsert: metricPayload },
+						{ upsert: true },
 					);
 				}
-			} else {
-				console.log("No PDF text found - skipping LLM");
-			}
 
-			// save to MongoDB
-			const report = await HpodReport.findOneAndUpdate(
-				{ gmailMessageId: email.gmailMessageId },
-				{
-					$setOnInsert: {
-						userId,
-						userEmail,
-						gmailMessageId: email.gmailMessageId,
-						subject: email.subject,
-						sender: email.sender,
-						rawBody: email.body,
-						hasPdf: email.hasPdf,
-						aiSummary,
-						summaryGeneratedAt,
-						receivedAt: new Date(),
-					},
-				},
-				{ upsert: true, returnDocument: "after" },
-			);
-
-			if (report && aiSummary && userId) {
-				const receivedAt = report.receivedAt ?? new Date();
-				const metricPayload = buildHpodMetricPayload(aiSummary, {
-					userId,
-					reportId: report._id,
-					gmailMessageId: email.gmailMessageId,
-					receivedAt,
-				});
-
-				await HpodMetric.findOneAndUpdate(
-					{ gmailMessageId: email.gmailMessageId },
-					{ $setOnInsert: metricPayload },
-					{ upsert: true },
+				console.log(
+					`Saved HPOD report - patient: ${userEmail}, userId: ${userId}`,
 				);
 			}
 
-			console.log(
-				`Saved HPOD report - patient: ${userEmail}, userId: ${userId}`,
-			);
+			return res
+				.status(200)
+				.json({ status: "ok", processed: messageIds.length });
+		} catch (err) {
+			console.error("Webhook error:", err);
+			return res.status(500).json({ error: "Internal server error" });
 		}
-
-		return res.status(200).json({ status: "ok", processed: messageIds.length });
-	} catch (err) {
-		console.error("Webhook error:", err);
-		return res.status(500).json({ error: "Internal server error" });
-	}
-});
+	},
+);
 
 router.use(authenticateToken);
 
 // GET /webhook/reports/me — user can read their own reports
-router.get("/reports/me", authorize(["user"]), async (req: Request, res: Response) => {
-	const userId = (req as Request & { user?: { id: string } }).user?.id;
-	if (!userId) {
-		return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
-	}
-	try {
-		const reports = await HpodReport.find({ userId })
-			.sort({ receivedAt: -1 })
-			.select("-rawBody");
-		return res.json({ reports });
-	} catch (err) {
-		console.error("[WEBHOOK] GET /reports/me failed:", err);
-		return res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
-	}
-});
+router.get(
+	"/reports/me",
+	authorize(["user"]),
+	async (req: Request, res: Response) => {
+		const userId = (req as Request & { user?: { id: string } }).user?.id;
+		if (!userId) {
+			return res
+				.status(401)
+				.json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		}
+		try {
+			const reports = await HpodReport.find({ userId })
+				.sort({ receivedAt: -1 })
+				.select("-rawBody");
+			return res.json({ reports });
+		} catch (err) {
+			console.error("[WEBHOOK] GET /reports/me failed:", err);
+			return res
+				.status(500)
+				.json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+		}
+	},
+);
 
 router.use(authorize(["admin"]));
 
@@ -247,15 +262,19 @@ router.get("/reports", async (_req: Request, res: Response) => {
 		return res.json({ reports });
 	} catch (err) {
 		console.error("[WEBHOOK] GET /reports failed:", err);
-		return res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+		return res
+			.status(500)
+			.json({ error: "Internal server error", code: "INTERNAL_ERROR" });
 	}
 });
 
 // GET /webhook/reports/user/:userId — all reports for a specific user (admin only)
 router.get("/reports/user/:userId", async (req: Request, res: Response) => {
 	const { userId } = req.params;
-	if (!mongoose.Types.ObjectId.isValid(userId)) {
-		return res.status(400).json({ error: "Invalid user ID", code: "BAD_REQUEST" });
+	if (typeof userId !== "string" || !mongoose.Types.ObjectId.isValid(userId)) {
+		return res
+			.status(400)
+			.json({ error: "Invalid user ID", code: "BAD_REQUEST" });
 	}
 	try {
 		const reports = await HpodReport.find({ userId })
@@ -264,25 +283,33 @@ router.get("/reports/user/:userId", async (req: Request, res: Response) => {
 		return res.json({ reports });
 	} catch (err) {
 		console.error("[WEBHOOK] GET /reports/user/:userId failed:", err);
-		return res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+		return res
+			.status(500)
+			.json({ error: "Internal server error", code: "INTERNAL_ERROR" });
 	}
 });
 
 // GET /webhook/reports/:id — single report (admin only)
 router.get("/reports/:id", async (req: Request, res: Response) => {
-	if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-		return res.status(400).json({ error: "Invalid report ID", code: "BAD_REQUEST" });
+	const { id } = req.params;
+	if (typeof id !== "string" || !mongoose.Types.ObjectId.isValid(id)) {
+		return res
+			.status(400)
+			.json({ error: "Invalid report ID", code: "BAD_REQUEST" });
 	}
 	try {
 		const report = await HpodReport.findById(req.params.id).populate(
 			"userId",
 			"username email age gender healthGoals",
 		);
-		if (!report) return res.status(404).json({ error: "Not found", code: "NOT_FOUND" });
+		if (!report)
+			return res.status(404).json({ error: "Not found", code: "NOT_FOUND" });
 		return res.json(report);
 	} catch (err) {
 		console.error("[WEBHOOK] GET /reports/:id failed:", err);
-		return res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+		return res
+			.status(500)
+			.json({ error: "Internal server error", code: "INTERNAL_ERROR" });
 	}
 });
 

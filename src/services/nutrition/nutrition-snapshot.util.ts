@@ -119,7 +119,10 @@ export const resolveDaysToSnapshots = async (days: DayInput[]) => {
 				mealType: meal.mealType,
 				name: meal.name,
 				// suggestedTime is a validator-layer alias for timeOfDay
-				timeOfDay: meal.timeOfDay ?? (meal as { suggestedTime?: string | null }).suggestedTime ?? null,
+				timeOfDay:
+					meal.timeOfDay ??
+					(meal as { suggestedTime?: string | null }).suggestedTime ??
+					null,
 				notes: meal.notes ?? "",
 				items,
 				options,

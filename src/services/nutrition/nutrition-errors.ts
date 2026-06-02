@@ -36,10 +36,7 @@ export const requireIdParam = (
 	value: string | string[] | undefined,
 	message: string,
 ): string => {
-	if (
-		typeof value !== "string" ||
-		!mongoose.Types.ObjectId.isValid(value)
-	) {
+	if (typeof value !== "string" || !mongoose.Types.ObjectId.isValid(value)) {
 		throw new NutritionServiceError("NOT_FOUND", message);
 	}
 	return value;

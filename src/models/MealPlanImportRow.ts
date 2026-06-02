@@ -108,7 +108,8 @@ export type MealPlanImportRowDocument = mongoose.InferSchemaType<
 >;
 
 const MealPlanImportRow =
-	(mongoose.models.MealPlanImportRow as mongoose.Model<MealPlanImportRowDocument>) ||
+	(mongoose.models
+		.MealPlanImportRow as mongoose.Model<MealPlanImportRowDocument>) ||
 	mongoose.model<MealPlanImportRowDocument>(
 		"MealPlanImportRow",
 		mealPlanImportRowSchema,

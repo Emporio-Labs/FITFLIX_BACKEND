@@ -85,7 +85,10 @@ const workoutPlanAssignmentSchema = new mongoose.Schema(
 workoutPlanAssignmentSchema.index({ userId: 1, status: 1 });
 workoutPlanAssignmentSchema.index({ planId: 1 });
 workoutPlanAssignmentSchema.index({ userId: 1, updatedAt: -1 });
-workoutPlanAssignmentSchema.index({ userId: 1, "dayProgress.scheduledDate": 1 });
+workoutPlanAssignmentSchema.index({
+	userId: 1,
+	"dayProgress.scheduledDate": 1,
+});
 
 export type WorkoutPlanAssignmentDocument = mongoose.InferSchemaType<
 	typeof workoutPlanAssignmentSchema

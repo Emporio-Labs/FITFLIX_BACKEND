@@ -1,11 +1,22 @@
 {
-  "version": "0.0.1",
-  "configurations": [
-    {
-      "name": "frontend",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd", "/d", "C:\\yugaas\\frontdesk-fitflix", "&&", "npx", "next", "dev", "-p", "3002"],
-      "port": 3002
-    }
-  ]
+	"version": "0.0.1",
+	"configurations": [
+		{
+			"name": "frontend",
+			"runtimeExecutable": "cmd",
+			"runtimeArgs": [
+				"/c",
+				"cd",
+				"/d",
+				"C:\\yugaas\\frontdesk-fitflix",
+				"&&",
+				"npx",
+				"next",
+				"dev",
+				"-p",
+				"3002"
+			],
+			"port": 3002
+		}
+	]
 }

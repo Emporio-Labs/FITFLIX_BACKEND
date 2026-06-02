@@ -90,7 +90,9 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 	try {
 		const membership = await Membership.create({
 			...rest,
-			status: rest.status as import("../models/Enums").MembershipStatus | undefined,
+			status: rest.status as
+				| import("../models/Enums").MembershipStatus
+				| undefined,
 			creditsIncluded,
 			creditsRemaining: creditsIncluded,
 			user: userId,

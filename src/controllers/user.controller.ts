@@ -1,6 +1,12 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import ConsentForm from "../models/ConsentForm";
+import {
+	AppointmentBookingStatus,
+	ExpertType,
+	type Gender,
+	OnboardingStep,
+} from "../models/Enums";
 import ExpertAppointment from "../models/ExpertAppointment";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
@@ -8,15 +14,14 @@ import HpodMetric from "../models/HpodMetric";
 import { HpodReport } from "../models/Hpodreport.model";
 import MedicalReport from "../models/MedicalReport";
 import User from "../models/User";
-import { AppointmentBookingStatus, ExpertType } from "../models/Enums";
 import { buildApiErrorEnvelope } from "../utils/api-error";
-import { generateSignedUrl } from "../utils/s3.service";
 import { hashPassword, verifyPassword } from "../utils/password";
+import { generateSignedUrl } from "../utils/s3.service";
 import {
 	createUserBodySchema,
+	listUsersQuerySchema,
 	updateMyPasswordBodySchema,
 	updateUserBodySchema,
-	listUsersQuerySchema,
 } from "../validators/user.validator";
 
 const canOnboard = (
@@ -159,12 +164,13 @@ export const createUser: RequestHandler = async (req, res, next) => {
 
 		const user = await User.create({
 			...rest,
+			gender: rest.gender as Gender,
 			onboarded,
 			passwordHash,
 			// Explicitly initialise onboardingStatus so the sub-document is
 			// always present when the user first hits GET /onboarding/status.
 			onboardingStatus: {
-				currentStep: "HEALTH_MARKERS",
+				currentStep: OnboardingStep.HEALTH_MARKERS,
 				completedSteps: [],
 				healthMarkersCompleted: false,
 				healthGoalsCompleted: false,
@@ -243,10 +249,7 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 			{
 				$addFields: {
 					bookingStatus: {
-						$arrayElemAt: [
-							"$latestNutritionistAppointment.bookingStatus",
-							0,
-						],
+						$arrayElemAt: ["$latestNutritionistAppointment.bookingStatus", 0],
 					},
 				},
 			},
@@ -312,8 +315,12 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					gender: 1,
 					onboardingStatus: {
 						currentStep: "$onboardingStatus.currentStep",
-						completedSteps: { $ifNull: ["$onboardingStatus.completedSteps", []] },
-						isCompleted: { $ifNull: ["$onboardingStatus.onboardingCompleted", false] },
+						completedSteps: {
+							$ifNull: ["$onboardingStatus.completedSteps", []],
+						},
+						isCompleted: {
+							$ifNull: ["$onboardingStatus.onboardingCompleted", false],
+						},
 					},
 					bookingStatus: 1,
 					// Shape healthMarkers: merge first lookup element with targetWeight from healthGoals
@@ -398,7 +405,11 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 
 	if (!id) {
 		if (process.env.NODE_ENV !== "production") {
-			console.warn("[getUserById] invalid id", { raw: req.params.id, role: req.user?.role, requestingUser: req.user?.id });
+			console.warn("[getUserById] invalid id", {
+				raw: req.params.id,
+				role: req.user?.role,
+				requestingUser: req.user?.id,
+			});
 		}
 		res.status(400).json({
 			error: "Validation failed",
@@ -413,7 +424,11 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 
 		if (!user) {
 			if (process.env.NODE_ENV !== "production") {
-				console.warn("[getUserById] user not found", { id, role: req.user?.role, requestingUser: req.user?.id });
+				console.warn("[getUserById] user not found", {
+					id,
+					role: req.user?.role,
+					requestingUser: req.user?.id,
+				});
 			}
 			res.status(404).json({
 				error: "User not found",
@@ -429,9 +444,18 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 		]);
 
 		let computedBmi = healthMarkersRaw?.bmi;
-		if (healthMarkersRaw && !computedBmi && healthMarkersRaw.weight && healthMarkersRaw.height) {
+		if (
+			healthMarkersRaw &&
+			!computedBmi &&
+			healthMarkersRaw.weight &&
+			healthMarkersRaw.height
+		) {
 			const heightInMeters = healthMarkersRaw.height / 100;
-			computedBmi = Number((healthMarkersRaw.weight / (heightInMeters * heightInMeters)).toFixed(1));
+			computedBmi = Number(
+				(healthMarkersRaw.weight / (heightInMeters * heightInMeters)).toFixed(
+					1,
+				),
+			);
 		}
 
 		res.status(200).json({
@@ -440,20 +464,26 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 				user,
 				onboarding: user.onboardingStatus ?? null,
 				healthMarkers: {
-					weight: healthMarkersRaw?.weight ? `${healthMarkersRaw.weight}kg` : null,
-					height: healthMarkersRaw?.height ? `${healthMarkersRaw.height}cm` : null,
+					weight: healthMarkersRaw?.weight
+						? `${healthMarkersRaw.weight}kg`
+						: null,
+					height: healthMarkersRaw?.height
+						? `${healthMarkersRaw.height}cm`
+						: null,
 					age: user.age ?? null,
 					goal: healthGoals?.goals?.[0] ?? null,
 					gender: user.gender ?? null,
 					bmi: computedBmi ?? null,
 					activityLevel: healthMarkersRaw?.activityLevel ?? null,
-					targetWeight: healthGoals?.targetWeight ? `${healthGoals.targetWeight}kg` : null,
+					targetWeight: healthGoals?.targetWeight
+						? `${healthGoals.targetWeight}kg`
+						: null,
 					bodyFatPct: healthMarkersRaw?.bodyFatPercentage ?? null,
 					bodyFatPercentage: healthMarkersRaw?.bodyFatPercentage ?? null,
 				},
 				goals: healthGoals?.goals ?? [],
 				reports,
-			}
+			},
 		});
 	} catch (error) {
 		next(error);
@@ -519,7 +549,10 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 					try {
 						r.reportUrl = await generateSignedUrl(r.s3Key, 900, r.mimeType);
 					} catch (err) {
-						console.error(`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${r.s3Key} in getOnboardingProfile:`, err);
+						console.error(
+							`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${r.s3Key} in getOnboardingProfile:`,
+							err,
+						);
 						r.reportUrl = undefined;
 					}
 				}
@@ -861,7 +894,10 @@ export const getMyUserReports: RequestHandler = async (req, res, next) => {
 							report.mimeType,
 						);
 					} catch (err) {
-						console.error(`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${report.s3Key} in getMyUserReports:`, err);
+						console.error(
+							`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${report.s3Key} in getMyUserReports:`,
+							err,
+						);
 						reportUrl = undefined;
 					}
 				}
@@ -921,7 +957,10 @@ export const getMyMedicalReports: RequestHandler = async (req, res, next) => {
 					try {
 						r.reportUrl = await generateSignedUrl(r.s3Key, 900, r.mimeType);
 					} catch (err) {
-						console.error(`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${r.s3Key} in getMyMedicalReports:`, err);
+						console.error(
+							`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${r.s3Key} in getMyMedicalReports:`,
+							err,
+						);
 						r.reportUrl = undefined;
 					}
 				}
@@ -1009,4 +1048,3 @@ export const getMyUserReportPdf: RequestHandler = async (req, res, next) => {
 		next(error);
 	}
 };
-

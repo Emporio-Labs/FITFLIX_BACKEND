@@ -63,5 +63,7 @@ export const templateFilterBodySchema = z
 export type CreateTemplateBody = z.infer<typeof createTemplateBodySchema>;
 export type UpdateTemplateBody = z.infer<typeof updateTemplateBodySchema>;
 export type TemplateListQuery = z.infer<typeof templateListQuerySchema>;
-export type TemplateRecommendQuery = z.infer<typeof templateRecommendQuerySchema>;
+export type TemplateRecommendQuery = z.infer<
+	typeof templateRecommendQuerySchema
+>;
 export type TemplateFilterBody = z.infer<typeof templateFilterBodySchema>;

@@ -68,8 +68,6 @@ export const rebuildAdherenceBodySchema = z.object({
 });
 
 export type LogMealBody = z.infer<typeof logMealBodySchema>;
-export type MarkMealCompletedBody = z.infer<
-	typeof markMealCompletedBodySchema
->;
+export type MarkMealCompletedBody = z.infer<typeof markMealCompletedBodySchema>;
 export type UpdateMealLogBody = z.infer<typeof updateMealLogBodySchema>;
 export type ListMealLogsQuery = z.infer<typeof listMealLogsQuerySchema>;

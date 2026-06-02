@@ -37,5 +37,6 @@ type HealthMarkersDocument = mongoose.InferSchemaType<
 	typeof healthMarkersSchema
 >;
 
-export default (mongoose.models.HealthMarkers as mongoose.Model<HealthMarkersDocument>) ||
+export default (mongoose.models
+	.HealthMarkers as mongoose.Model<HealthMarkersDocument>) ||
 	mongoose.model<HealthMarkersDocument>("HealthMarkers", healthMarkersSchema);

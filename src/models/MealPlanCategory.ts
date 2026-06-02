@@ -38,7 +38,8 @@ export type MealPlanCategoryDocument = mongoose.InferSchemaType<
 >;
 
 const MealPlanCategory =
-	(mongoose.models.MealPlanCategory as mongoose.Model<MealPlanCategoryDocument>) ||
+	(mongoose.models
+		.MealPlanCategory as mongoose.Model<MealPlanCategoryDocument>) ||
 	mongoose.model<MealPlanCategoryDocument>(
 		"MealPlanCategory",
 		mealPlanCategorySchema,

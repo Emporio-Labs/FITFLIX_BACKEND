@@ -186,7 +186,9 @@ export const listUsersQuerySchema = z.object({
 		.transform((v) => (v === "all" ? undefined : v)),
 	page: z.coerce.number().int().min(1).default(1),
 	limit: z.coerce.number().int().min(1).max(100).default(20),
-	sort: z.enum(["username", "email", "phone", "createdAt"]).default("createdAt"),
+	sort: z
+		.enum(["username", "email", "phone", "createdAt"])
+		.default("createdAt"),
 	order: z.enum(["asc", "desc"]).default("desc"),
 });
 

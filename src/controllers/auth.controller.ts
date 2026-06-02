@@ -1,16 +1,11 @@
 import type { RequestHandler } from "express";
 import Admin from "../models/Admin";
 import Doctor from "../models/Doctor";
+import { type Gender, LeadStatus, OnboardingStep } from "../models/Enums";
 import Lead from "../models/Lead";
+import TokenBlacklist from "../models/TokenBlacklist";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
-import TokenBlacklist from "../models/TokenBlacklist";
-import { LeadStatus } from "../models/Enums";
-import {
-	hashPassword,
-	isHashedPassword,
-	verifyPassword,
-} from "../utils/password";
 import {
 	getJwtConfig,
 	getJwtRefreshConfig,
@@ -18,6 +13,11 @@ import {
 	signRefreshToken,
 	verifyRefreshToken,
 } from "../utils/jwt";
+import {
+	hashPassword,
+	isHashedPassword,
+	verifyPassword,
+} from "../utils/password";
 import {
 	loginBodySchema,
 	refreshTokenBodySchema,
@@ -101,8 +101,7 @@ export const signup: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { username, phone, email, age, gender, password } =
-		parsedBody.data;
+	const { username, phone, email, age, gender, password } = parsedBody.data;
 
 	try {
 		const passwordHash = await hashPassword(password);
@@ -119,11 +118,11 @@ export const signup: RequestHandler = async (req, res, next) => {
 			phone,
 			email,
 			age,
-			gender,
+			gender: gender as Gender,
 			onboarded: false,
 			passwordHash,
 			onboardingStatus: {
-				currentStep: "HEALTH_MARKERS",
+				currentStep: OnboardingStep.HEALTH_MARKERS,
 				completedSteps: [],
 				healthMarkersCompleted: false,
 				healthGoalsCompleted: false,
@@ -155,7 +154,10 @@ export const signup: RequestHandler = async (req, res, next) => {
 			);
 		} catch (err) {
 			// Non-fatal: user account exists; CRM sync can be retried manually.
-			console.error("[AUTH][SIGNUP] Lead upsert failed — signup still succeeded:", err);
+			console.error(
+				"[AUTH][SIGNUP] Lead upsert failed — signup still succeeded:",
+				err,
+			);
 		}
 
 		res.status(201).json({
@@ -319,7 +321,8 @@ export const refreshAccessToken: RequestHandler = async (req, res, next) => {
 export const logout: RequestHandler = async (req, res, next) => {
 	const authorization = req.header("authorization");
 	const parts = authorization?.split(" ") ?? [];
-	const token = parts[0] === "Bearer" && parts[1]?.trim() ? parts[1].trim() : null;
+	const token =
+		parts[0] === "Bearer" && parts[1]?.trim() ? parts[1].trim() : null;
 
 	if (!token) {
 		res.status(400).json({ message: "Missing Bearer token" });
@@ -354,10 +357,15 @@ function parseExpiryMs(value: string): number {
 	const amount = parseInt(value.slice(0, -1), 10);
 	if (Number.isNaN(amount)) return 12 * 60 * 60 * 1000; // fallback: 12h
 	switch (unit) {
-		case "s": return amount * 1000;
-		case "m": return amount * 60 * 1000;
-		case "h": return amount * 60 * 60 * 1000;
-		case "d": return amount * 24 * 60 * 60 * 1000;
-		default:  return 12 * 60 * 60 * 1000;
+		case "s":
+			return amount * 1000;
+		case "m":
+			return amount * 60 * 1000;
+		case "h":
+			return amount * 60 * 60 * 1000;
+		case "d":
+			return amount * 24 * 60 * 60 * 1000;
+		default:
+			return 12 * 60 * 60 * 1000;
 	}
 }

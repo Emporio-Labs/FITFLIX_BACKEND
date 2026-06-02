@@ -52,9 +52,7 @@ export const updatePlanBodySchema = z
 			.enum(Object.values(ExerciseDifficulty) as [string, ...string[]])
 			.optional(),
 		duration: z.coerce.number().int().min(1).max(52).optional(),
-		goal: z
-			.enum(Object.values(PlanGoal) as [string, ...string[]])
-			.optional(),
+		goal: z.enum(Object.values(PlanGoal) as [string, ...string[]]).optional(),
 		splitType: z
 			.enum(Object.values(SplitType) as [string, ...string[]])
 			.optional(),
@@ -78,11 +76,21 @@ const optionalEnumPreprocess = (value: unknown): unknown => {
 
 export const listPlansQuerySchema = z.object({
 	page: z.preprocess(
-		(v) => (v === undefined || v === null || (typeof v === "string" && v.trim() === "") ? undefined : v),
+		(v) =>
+			v === undefined ||
+			v === null ||
+			(typeof v === "string" && v.trim() === "")
+				? undefined
+				: v,
 		z.coerce.number().int().min(1).default(1),
 	),
 	limit: z.preprocess(
-		(v) => (v === undefined || v === null || (typeof v === "string" && v.trim() === "") ? undefined : v),
+		(v) =>
+			v === undefined ||
+			v === null ||
+			(typeof v === "string" && v.trim() === "")
+				? undefined
+				: v,
 		z.coerce.number().int().min(1).max(100).default(20),
 	),
 	status: z.preprocess(
@@ -95,7 +103,9 @@ export const listPlansQuerySchema = z.object({
 	),
 	difficulty: z.preprocess(
 		optionalEnumPreprocess,
-		z.enum(Object.values(ExerciseDifficulty) as [string, ...string[]]).optional(),
+		z
+			.enum(Object.values(ExerciseDifficulty) as [string, ...string[]])
+			.optional(),
 	),
 });
 

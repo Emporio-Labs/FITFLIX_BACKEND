@@ -8,12 +8,13 @@ import Service from "../models/Service";
 import Slot from "../models/Slots";
 
 void HpodReport;
+
 import type { AuthenticatedUser } from "../types/auth";
 import {
-	consumeCredits,
-	refundCreditsBySource,
 	CreditServiceError,
+	consumeCredits,
 	mapCreditServiceError,
+	refundCreditsBySource,
 } from "../utils/credit.service";
 import {
 	changeAppointmentStatusBodySchema,
@@ -31,8 +32,6 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 
 	return idParam;
 };
-
-
 
 const getRequiredAuthenticatedUser = (
 	req: Parameters<RequestHandler>[0] & { user?: AuthenticatedUser },

@@ -1,16 +1,16 @@
 import type { RequestHandler } from "express";
 import { NutritionFoodSource } from "../models/Enums";
 import {
+	getValidationDetails,
+	handleNutritionError,
+	requireIdParam,
+} from "../services/nutrition/nutrition-errors";
+import {
 	createFood,
 	deactivateFood,
 	searchFoods,
 	updateFood,
 } from "../services/nutrition/nutrition-food.service";
-import {
-	getValidationDetails,
-	handleNutritionError,
-	requireIdParam,
-} from "../services/nutrition/nutrition-errors";
 import {
 	createFoodBodySchema,
 	foodSearchQuerySchema,
@@ -18,6 +18,12 @@ import {
 } from "../validators/nutrition-food.validator";
 
 export const createCustomFood: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = createFoodBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -31,7 +37,7 @@ export const createCustomFood: RequestHandler = async (req, res, next) => {
 	try {
 		const food = await createFood(
 			parsed.data,
-			req.user!.id,
+			requester.id,
 			NutritionFoodSource.Custom,
 		);
 		res.status(201).json({ message: "Food created", food });
@@ -41,6 +47,12 @@ export const createCustomFood: RequestHandler = async (req, res, next) => {
 };
 
 export const createSystemFood: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = createFoodBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -54,7 +66,7 @@ export const createSystemFood: RequestHandler = async (req, res, next) => {
 	try {
 		const food = await createFood(
 			parsed.data,
-			req.user!.id,
+			requester.id,
 			NutritionFoodSource.System,
 		);
 		res.status(201).json({ message: "System food created", food });
@@ -64,6 +76,12 @@ export const createSystemFood: RequestHandler = async (req, res, next) => {
 };
 
 export const listFoods: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = foodSearchQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -75,7 +93,7 @@ export const listFoods: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const role = req.user!.role;
+		const role = requester.role;
 		const result = await searchFoods({
 			query: parsed.data.query,
 			page: parsed.data.page,
@@ -84,7 +102,7 @@ export const listFoods: RequestHandler = async (req, res, next) => {
 			// their own custom foods.
 			...(role === "user"
 				? { source: NutritionFoodSource.System }
-				: { systemAndOwner: req.user!.id }),
+				: { systemAndOwner: requester.id }),
 		});
 		res.status(200).json(result);
 	} catch (error) {
@@ -93,6 +111,12 @@ export const listFoods: RequestHandler = async (req, res, next) => {
 };
 
 export const patchFood: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = updateFoodBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -105,7 +129,7 @@ export const patchFood: RequestHandler = async (req, res, next) => {
 
 	try {
 		const id = requireIdParam(req.params.id, "Food not found");
-		const food = await updateFood(id, parsed.data, req.user!);
+		const food = await updateFood(id, parsed.data, requester);
 		res.status(200).json({ message: "Food updated", food });
 	} catch (error) {
 		handleNutritionError(error, res, next);
@@ -113,9 +137,15 @@ export const patchFood: RequestHandler = async (req, res, next) => {
 };
 
 export const removeFood: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const id = requireIdParam(req.params.id, "Food not found");
-		await deactivateFood(id, req.user!);
+		await deactivateFood(id, requester);
 		res.status(200).json({ message: "Food deactivated" });
 	} catch (error) {
 		handleNutritionError(error, res, next);

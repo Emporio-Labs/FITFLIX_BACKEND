@@ -1,7 +1,4 @@
-import {
-	NotificationChannel,
-	NotificationKind,
-} from "../models/Enums";
+import { NotificationChannel, NotificationKind } from "../models/Enums";
 import Notification from "../models/Notification";
 import { sendPushToUser } from "./fcm.service";
 import {
@@ -98,7 +95,11 @@ export function fanOutToAdmin(
 
 	if (nutritionistId) {
 		try {
-			emitToNutritionist(nutritionistId, "appointment_added" as NutritionistEvent, data);
+			emitToNutritionist(
+				nutritionistId,
+				"appointment_added" as NutritionistEvent,
+				data,
+			);
 		} catch (err) {
 			console.error("[fanOutToAdmin] Nutritionist emit failed", err);
 		}

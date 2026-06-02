@@ -20,7 +20,10 @@ export type FilterResult<T> = {
 	excluded: Array<{ food: T; reason: string }>;
 };
 
-const LOW_CARB_GOALS = new Set<string>([NutritionGoal.WeightLoss, NutritionGoal.Medical]);
+const LOW_CARB_GOALS = new Set<string>([
+	NutritionGoal.WeightLoss,
+	NutritionGoal.Medical,
+]);
 const norm = (s: string) => s.trim().toLowerCase();
 
 // Pure, synchronous, rules-based filter engine. No AI.

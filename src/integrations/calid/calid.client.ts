@@ -1,16 +1,16 @@
 import {
-	CalIdError,
-	CalIdSlotUnavailableError,
-	CalIdTimeoutError,
 	type CalIdBookingListResponse,
 	type CalIdBookingResponse,
 	type CalIdCancelParams,
 	type CalIdCreateBookingParams,
+	CalIdError,
 	type CalIdEventTypeResponse,
 	type CalIdListBookingsQuery,
 	type CalIdRescheduleParams,
 	type CalIdScheduleListResponse,
 	type CalIdScheduleResponse,
+	CalIdSlotUnavailableError,
+	CalIdTimeoutError,
 } from "./calid.types";
 import { withRetry } from "./calid.utils";
 
@@ -38,7 +38,8 @@ async function calFetch<T>(
 
 	try {
 		const url = `${baseUrl}${path}`;
-		const isRescheduleRequest = method === "PATCH" && path.endsWith("/reschedule");
+		const isRescheduleRequest =
+			method === "PATCH" && path.endsWith("/reschedule");
 
 		const b = body as Record<string, unknown> | undefined;
 		const att = (b?.attendee ?? {}) as { email?: string };
@@ -46,7 +47,9 @@ async function calFetch<T>(
 			`[CALID REQ] method=${method} url=${url} path=${path} bodyKeys=${b ? Object.keys(b).join(",") : "-"} body.eventTypeId=${b?.eventTypeId} body.start=${b?.start} body.attendee.email=${att?.email}`,
 		);
 		if (isRescheduleRequest && b) {
-			console.log(`[CALID RESCHEDULE REQ] url=${url} body=${JSON.stringify(b)}`);
+			console.log(
+				`[CALID RESCHEDULE REQ] url=${url} body=${JSON.stringify(b)}`,
+			);
 		}
 
 		const res = await fetch(url, {
@@ -61,9 +64,15 @@ async function calFetch<T>(
 
 		const text = await res.text();
 		if (isRescheduleRequest) {
-			console.log(`[CALID RESCHEDULE RES] status=${res.status} url=${url} path=${path}`);
-			console.log(`[CALID RESCHEDULE RES] headers=${JSON.stringify(Object.fromEntries(res.headers.entries()))}`);
-			console.log(`[CALID RESCHEDULE RES] body=${text.length > 0 ? text : "<empty>"}`);
+			console.log(
+				`[CALID RESCHEDULE RES] status=${res.status} url=${url} path=${path}`,
+			);
+			console.log(
+				`[CALID RESCHEDULE RES] headers=${JSON.stringify(Object.fromEntries(res.headers.entries()))}`,
+			);
+			console.log(
+				`[CALID RESCHEDULE RES] body=${text.length > 0 ? text : "<empty>"}`,
+			);
 		}
 		let json: unknown = {};
 		if (text.length > 0) {
@@ -89,7 +98,9 @@ async function calFetch<T>(
 			const d = j?.data;
 			if (d && !Array.isArray(d)) {
 				const hostsStr = d?.hosts
-					? d.hosts.map((h) => `{email:${h.email},username:${h.username}}`).join(",")
+					? d.hosts
+							.map((h) => `{email:${h.email},username:${h.username}}`)
+							.join(",")
 					: "-";
 				console.log(
 					`[CALID RES] status=${res.status} data.id=${d?.id} data.uid=${d?.uid} data.eventTypeId=${d?.eventTypeId} data.eventType.id=${d?.eventType?.id} data.eventType.slug=${d?.eventType?.slug} data.hosts=[${hostsStr}] data.attendees[0].email=${d?.attendees?.[0]?.email} data.meetingUrl=${d?.meetingUrl}`,
@@ -106,7 +117,8 @@ async function calFetch<T>(
 				throw new CalIdSlotUnavailableError();
 			}
 			const message =
-				(json as { message?: string }).message ?? `Cal ID API error ${res.status}`;
+				(json as { message?: string }).message ??
+				`Cal ID API error ${res.status}`;
 			throw new CalIdError(message, res.status, json);
 		}
 
@@ -131,12 +143,17 @@ export async function getEventType(
 	eventTypeId: string | number,
 ): Promise<CalIdEventTypeResponse> {
 	return withRetry(() =>
-		calFetch<CalIdEventTypeResponse>("GET", `/event-types/${encodeURIComponent(String(eventTypeId))}`),
+		calFetch<CalIdEventTypeResponse>(
+			"GET",
+			`/event-types/${encodeURIComponent(String(eventTypeId))}`,
+		),
 	);
 }
 
 export async function listSchedules(): Promise<CalIdScheduleListResponse> {
-	return withRetry(() => calFetch<CalIdScheduleListResponse>("GET", "/schedule/"));
+	return withRetry(() =>
+		calFetch<CalIdScheduleListResponse>("GET", "/schedule/"),
+	);
 }
 
 export async function getSchedule(

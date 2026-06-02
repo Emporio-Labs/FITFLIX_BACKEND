@@ -9,7 +9,9 @@ function getApp(): admin.app.App | null {
 
 	const encoded = process.env.FCM_SERVICE_ACCOUNT_JSON;
 	if (!encoded) {
-		console.warn("[fcm] FCM_SERVICE_ACCOUNT_JSON not set — push notifications disabled");
+		console.warn(
+			"[fcm] FCM_SERVICE_ACCOUNT_JSON not set — push notifications disabled",
+		);
 		return null;
 	}
 
@@ -59,7 +61,14 @@ export async function sendPushToUser(
 		notification: { title: message.title, body: message.body },
 		data: message.data,
 		android: { priority: "high" },
-		apns: { payload: { aps: { alert: { title: message.title, body: message.body }, sound: "default" } } },
+		apns: {
+			payload: {
+				aps: {
+					alert: { title: message.title, body: message.body },
+					sound: "default",
+				},
+			},
+		},
 	});
 
 	// Prune dead tokens

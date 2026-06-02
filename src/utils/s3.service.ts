@@ -1,7 +1,7 @@
 import {
+	DeleteObjectCommand,
 	GetObjectCommand,
 	PutObjectCommand,
-	DeleteObjectCommand,
 	S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -72,11 +72,7 @@ export const deleteFromS3 = async (key: string): Promise<void> => {
 	);
 };
 
-const SAFE_MIME_TYPES = [
-	"application/pdf",
-	"image/jpeg",
-	"image/png",
-];
+const SAFE_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png"];
 
 export const generateSignedUrl = async (
 	s3Key: string,

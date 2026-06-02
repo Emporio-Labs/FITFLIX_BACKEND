@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
-import { MembershipStatus } from "./Enums";
 import { applyIdTransform } from "../utils/mongoose-serialization";
+import { MembershipStatus } from "./Enums";
 
 const membershipSchema = new mongoose.Schema(
 	{

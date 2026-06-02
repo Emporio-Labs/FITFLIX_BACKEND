@@ -1,7 +1,17 @@
 import { config } from "dotenv";
+import type mongoose from "mongoose";
 import { OnboardingStep } from "../src/models/Enums";
 import User from "../src/models/User";
 import connectDB from "../src/utils/db";
+
+type LegacyUserOnboarding = {
+	_id: mongoose.Types.ObjectId;
+	onboarded?: boolean | null;
+	onboardingStatus?: {
+		currentStep?: OnboardingStep;
+	} | null;
+	updatedAt?: Date;
+};
 
 config();
 
@@ -29,8 +39,8 @@ async function main() {
 		let updatedCount = 0;
 		let skippedCount = 0;
 
-		for (const user of users) {
-			if ((user as any).onboardingStatus?.currentStep) {
+		for (const user of users as LegacyUserOnboarding[]) {
+			if (user.onboardingStatus?.currentStep) {
 				skippedCount++;
 				continue;
 			}
@@ -49,13 +59,12 @@ async function main() {
 							"onboardingStatus.sportsScientistBooked": true,
 							"onboardingStatus.nutritionistBooked": true,
 							"onboardingStatus.onboardingCompleted": true,
-							"onboardingStatus.completedAt": (user as any).updatedAt ?? new Date(),
+							"onboardingStatus.completedAt": user.updatedAt ?? new Date(),
 						},
 					}
 				: {
 						$set: {
-							"onboardingStatus.currentStep":
-								OnboardingStep.HEALTH_MARKERS,
+							"onboardingStatus.currentStep": OnboardingStep.HEALTH_MARKERS,
 							"onboardingStatus.completedSteps": [],
 							"onboardingStatus.healthMarkersCompleted": false,
 							"onboardingStatus.healthGoalsCompleted": false,

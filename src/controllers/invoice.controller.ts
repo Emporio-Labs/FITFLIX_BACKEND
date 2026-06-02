@@ -3,19 +3,19 @@ import mongoose from "mongoose";
 import { InvoicePaymentStatus } from "../models/Enums";
 import Lead from "../models/Lead";
 import {
-	createInvoiceBodySchema,
-	isValidStatusTransition,
-	listInvoicesQuerySchema,
-	updateInvoiceStatusBodySchema,
-} from "../validators/invoice.validator";
-import { buildInvoicePdf } from "../utils/invoice-pdf";
-import {
 	createInvoice,
 	getInvoiceById,
 	getInvoiceForPdf,
 	listInvoices,
 	transitionInvoiceStatus,
 } from "../utils/invoice.service";
+import { buildInvoicePdf } from "../utils/invoice-pdf";
+import {
+	createInvoiceBodySchema,
+	isValidStatusTransition,
+	listInvoicesQuerySchema,
+	updateInvoiceStatusBodySchema,
+} from "../validators/invoice.validator";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -45,7 +45,10 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	if (parsed.data.userId && !mongoose.Types.ObjectId.isValid(parsed.data.userId)) {
+	if (
+		parsed.data.userId &&
+		!mongoose.Types.ObjectId.isValid(parsed.data.userId)
+	) {
 		res.status(400).json({ error: "Invalid userId", code: "BAD_REQUEST" });
 		return;
 	}
@@ -58,8 +61,13 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	if (parsed.data.issuedAt && Number.isNaN(new Date(parsed.data.issuedAt).getTime())) {
-		res.status(400).json({ error: "Invalid issuedAt date", code: "BAD_REQUEST" });
+	if (
+		parsed.data.issuedAt &&
+		Number.isNaN(new Date(parsed.data.issuedAt).getTime())
+	) {
+		res
+			.status(400)
+			.json({ error: "Invalid issuedAt date", code: "BAD_REQUEST" });
 		return;
 	}
 
@@ -67,12 +75,16 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 	let resolvedUserId = parsed.data.userId;
 	if (!resolvedUserId && parsed.data.leadId) {
 		try {
-			const lead = await Lead.findById(parsed.data.leadId).select("convertedUser");
+			const lead = await Lead.findById(parsed.data.leadId).select(
+				"convertedUser",
+			);
 			if (!lead) {
 				res.status(404).json({ error: "Lead not found", code: "NOT_FOUND" });
 				return;
 			}
-			resolvedUserId = lead.convertedUser ? String(lead.convertedUser) : undefined;
+			resolvedUserId = lead.convertedUser
+				? String(lead.convertedUser)
+				: undefined;
 		} catch (error) {
 			next(error);
 			return;
@@ -90,7 +102,7 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 	try {
 		const invoice = await createInvoice(
 			{ ...parsed.data, userId: resolvedUserId },
-			req.user!.id,
+			req.user?.id ?? "",
 		);
 		res.status(201).json({ message: "Invoice created", invoice });
 	} catch (error) {
@@ -135,7 +147,11 @@ export const getInvoiceByIdHandler: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const updateInvoiceStatusHandler: RequestHandler = async (req, res, next) => {
+export const updateInvoiceStatusHandler: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
 	const id = getIdParam(req.params.id);
 	if (!id) {
 		res.status(400).json({ error: "Invalid invoice id", code: "BAD_REQUEST" });
@@ -185,7 +201,9 @@ export const updateInvoiceStatusHandler: RequestHandler = async (req, res, next)
 		const result = await transitionInvoiceStatus(
 			id,
 			newStatus as InvoicePaymentStatus,
-			parsed.data.paymentMethod as Parameters<typeof transitionInvoiceStatus>[2],
+			parsed.data.paymentMethod as Parameters<
+				typeof transitionInvoiceStatus
+			>[2],
 		);
 
 		if (!result.invoice) {
@@ -230,7 +248,9 @@ export const getInvoicePdfHandler: RequestHandler = async (req, res, next) => {
 			`attachment; filename="${invoice.invoiceNumber}.pdf"`,
 		);
 
-		const doc = buildInvoicePdf(invoice as Parameters<typeof buildInvoicePdf>[0]);
+		const doc = buildInvoicePdf(
+			invoice as Parameters<typeof buildInvoicePdf>[0],
+		);
 		doc.pipe(res);
 	} catch (error) {
 		next(error);

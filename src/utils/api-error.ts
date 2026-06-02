@@ -107,16 +107,16 @@ const normalizeDetails = (value: unknown): unknown => {
 	return Object.keys(details).length > 0 ? details : value;
 };
 
-const buildDebugDetails = (error: Error, fallbackMessage: string): DebugDetails => ({
+const buildDebugDetails = (
+	error: Error,
+	fallbackMessage: string,
+): DebugDetails => ({
 	name: error.name || RESPONSE_ERROR_NAME,
 	message: error.message || fallbackMessage,
 	stack: error.stack,
 });
 
-const mergeDebugDetails = (
-	details: unknown,
-	debug: DebugDetails,
-): unknown => {
+const mergeDebugDetails = (details: unknown, debug: DebugDetails): unknown => {
 	if (!details) {
 		return { debug };
 	}
@@ -280,7 +280,10 @@ const isJsonParseError = (error: unknown): boolean => {
 
 const isDuplicateKeyError = (
 	error: unknown,
-): { keyValue?: Record<string, unknown>; keyPattern?: Record<string, unknown> } | null => {
+): {
+	keyValue?: Record<string, unknown>;
+	keyPattern?: Record<string, unknown>;
+} | null => {
 	if (!isPlainObject(error)) {
 		return null;
 	}
@@ -318,7 +321,10 @@ const mapCreditServiceError = (
 	}
 };
 
-const mapError = (error: unknown, fallbackMessage?: string): NormalizedError => {
+const mapError = (
+	error: unknown,
+	fallbackMessage?: string,
+): NormalizedError => {
 	if (error instanceof ZodError) {
 		const details = normalizeIssueDetails(error.issues);
 		return {
@@ -391,8 +397,7 @@ const mapError = (error: unknown, fallbackMessage?: string): NormalizedError => 
 		(status >= 500 ? "Internal server error" : "Request failed");
 	return {
 		status,
-		error:
-			status < 500 && messageFromError ? messageFromError : baseMessage,
+		error: status < 500 && messageFromError ? messageFromError : baseMessage,
 		details,
 	};
 };
@@ -426,7 +431,11 @@ export const normalizeErrorResponse = (
 			normalizedDetails === input.body.details
 				? input.body
 				: { ...input.body, details: normalizedDetails };
-		return attachDebugDetails(envelope, input.error ?? input.body, input.verbose);
+		return attachDebugDetails(
+			envelope,
+			input.error ?? input.body,
+			input.verbose,
+		);
 	}
 
 	if (input.body instanceof Error) {
@@ -442,9 +451,7 @@ export const normalizeErrorResponse = (
 	}
 
 	if (isPlainObject(input.body)) {
-		const details = normalizeDetails(
-			input.body.details ?? input.body.errors,
-		);
+		const details = normalizeDetails(input.body.details ?? input.body.errors);
 		const message =
 			typeof input.body.error === "string"
 				? input.body.error
@@ -461,7 +468,11 @@ export const normalizeErrorResponse = (
 			code,
 			details,
 		});
-		return attachDebugDetails(envelope, input.error ?? input.body, input.verbose);
+		return attachDebugDetails(
+			envelope,
+			input.error ?? input.body,
+			input.verbose,
+		);
 	}
 
 	const message =

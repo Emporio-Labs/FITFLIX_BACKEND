@@ -14,15 +14,26 @@ import {
 	submitSportsScientistAppointment,
 } from "../controllers/onboarding.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
-import { uploadMiddleware, uploadRateLimiter } from "../middleware/upload.middleware";
 import { authorize } from "../middleware/rbac.middleware";
+import {
+	uploadMiddleware,
+	uploadRateLimiter,
+} from "../middleware/upload.middleware";
 
 const onboardingRouter = Router();
 
 onboardingRouter.use(authenticateToken);
 onboardingRouter.get("/status", authorize(["user"]), getStatus);
-onboardingRouter.get("/status/:userId", authorize(["admin", "frontdesk"]), getStatusByUserId);
-onboardingRouter.post("/health-markers", authorize(["user"]), submitHealthMarkers);
+onboardingRouter.get(
+	"/status/:userId",
+	authorize(["admin", "frontdesk"]),
+	getStatusByUserId,
+);
+onboardingRouter.post(
+	"/health-markers",
+	authorize(["user"]),
+	submitHealthMarkers,
+);
 onboardingRouter.post("/health-goals", authorize(["user"]), submitHealthGoals);
 onboardingRouter.post("/consent", authorize(["user"]), submitConsent);
 onboardingRouter.post(

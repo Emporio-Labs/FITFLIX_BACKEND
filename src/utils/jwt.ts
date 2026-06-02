@@ -1,5 +1,5 @@
-import * as jwt from "jsonwebtoken";
 import type { JwtPayload, SignOptions, VerifyOptions } from "jsonwebtoken";
+import * as jwt from "jsonwebtoken";
 import type { AppUserRole, AuthenticatedUser } from "../types/auth";
 
 export type JwtConfig = {
@@ -56,7 +56,9 @@ export const getJwtRefreshConfig = (): JwtConfig | null => {
 };
 
 const buildSignOptions = (config: JwtConfig): SignOptions => {
-	const options: SignOptions = { expiresIn: config.expiresIn as unknown as number };
+	const options: SignOptions = {
+		expiresIn: config.expiresIn as unknown as number,
+	};
 
 	if (config.issuer) {
 		options.issuer = config.issuer;

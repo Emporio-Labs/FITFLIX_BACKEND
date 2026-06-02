@@ -1,13 +1,5 @@
 import { Router } from "express";
 import {
-	assignUsers,
-	createPlan,
-	deletePlan,
-	getPlan,
-	listPlans,
-	updatePlan,
-} from "../controllers/workout-plan.controller";
-import {
 	assignPlan,
 	completePlanDay,
 	getAssignedWorkoutForDay,
@@ -16,6 +8,14 @@ import {
 	getTodayAssignedWorkout,
 	updateMyDayExercises,
 } from "../controllers/workout-assignment.controller";
+import {
+	assignUsers,
+	createPlan,
+	deletePlan,
+	getPlan,
+	listPlans,
+	updatePlan,
+} from "../controllers/workout-plan.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 

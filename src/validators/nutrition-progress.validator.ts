@@ -1,15 +1,7 @@
 import z from "zod";
-import {
-	objectIdString,
-	optionalDate,
-} from "./nutrition-shared.validator";
+import { objectIdString, optionalDate } from "./nutrition-shared.validator";
 
-const nullableNumber = z.coerce
-	.number()
-	.min(0)
-	.max(1000)
-	.nullable()
-	.optional();
+const nullableNumber = z.coerce.number().min(0).max(1000).nullable().optional();
 
 export const progressBodySchema = z
 	.object({

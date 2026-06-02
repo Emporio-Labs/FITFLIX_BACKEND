@@ -19,8 +19,7 @@ export const bookNutritionistBodySchema = z.object({
 export const listNutritionistBookingsQuerySchema = z.object({
 	status: z
 		.preprocess(
-			(v) =>
-				typeof v === "string" ? v.toUpperCase() : v,
+			(v) => (typeof v === "string" ? v.toUpperCase() : v),
 			z.nativeEnum(NutritionistBookingStatus).optional(),
 		)
 		.optional(),

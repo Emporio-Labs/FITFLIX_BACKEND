@@ -1,8 +1,8 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Notification from "../models/Notification";
-import type { AuthenticatedUser } from "../types/auth";
 import { registerFcmToken } from "../services/fcm.service";
+import type { AuthenticatedUser } from "../types/auth";
 
 const getIdParam = (v: unknown): string | null => {
 	if (typeof v !== "string" || !mongoose.Types.ObjectId.isValid(v)) return null;
@@ -50,7 +50,9 @@ export const markNotificationRead: RequestHandler = async (req, res, next) => {
 
 	const id = getIdParam(req.params.id);
 	if (!id) {
-		res.status(400).json({ error: "Invalid notification ID", code: "BAD_REQUEST" });
+		res
+			.status(400)
+			.json({ error: "Invalid notification ID", code: "BAD_REQUEST" });
 		return;
 	}
 
@@ -62,7 +64,9 @@ export const markNotificationRead: RequestHandler = async (req, res, next) => {
 		);
 
 		if (!notification) {
-			res.status(404).json({ error: "Notification not found", code: "NOT_FOUND" });
+			res
+				.status(404)
+				.json({ error: "Notification not found", code: "NOT_FOUND" });
 			return;
 		}
 

@@ -32,4 +32,7 @@ adminRouter.get("/", adminListAppointments);
 adminRouter.get("/:id", adminGetAppointment);
 adminRouter.patch("/:id/cancel", adminCancelAppointment);
 
-export { userRouter as expertAppointmentRouter, adminRouter as adminExpertAppointmentRouter };
+export {
+	adminRouter as adminExpertAppointmentRouter,
+	userRouter as expertAppointmentRouter,
+};

@@ -72,11 +72,7 @@ export const recomputeDay = async (
 		throw new NutritionServiceError("NOT_FOUND", "Plan not found");
 	}
 
-	const dayNumber = computeDayNumber(
-		plan.startDate,
-		plan.durationDays,
-		day,
-	);
+	const dayNumber = computeDayNumber(plan.startDate, plan.durationDays, day);
 
 	const planDay =
 		dayNumber === null
@@ -96,9 +92,7 @@ export const recomputeDay = async (
 	});
 
 	const loggedMeals = logs.length;
-	const completedMeals = logs.filter(
-		(l) => l.status !== "Skipped",
-	).length;
+	const completedMeals = logs.filter((l) => l.status !== "Skipped").length;
 
 	const consumedMacros = sumMacros(
 		logs.map((l) => ({
@@ -114,9 +108,7 @@ export const recomputeDay = async (
 
 	const mealAdherencePct =
 		plannedMeals > 0
-			? Math.round(
-					Math.min(1, completedMeals / plannedMeals) * 100,
-				)
+			? Math.round(Math.min(1, completedMeals / plannedMeals) * 100)
 			: 0;
 	const calorieAdherencePct = closenessPct(
 		plannedCaloriesKcal,
@@ -251,7 +243,9 @@ export const getWeeklyAdherence = async (
 	}
 
 	const avg = (arr: number[]) =>
-		arr.length === 0 ? 0 : Math.round(arr.reduce((s, v) => s + v, 0) / arr.length);
+		arr.length === 0
+			? 0
+			: Math.round(arr.reduce((s, v) => s + v, 0) / arr.length);
 
 	const weeks: WeekBucket[] = [];
 	for (const [weekIndex, { entries }] of Array.from(buckets.entries()).sort(
@@ -266,11 +260,19 @@ export const getWeeklyAdherence = async (
 			days: entries.length,
 			avgMealPct: avg(entries.map((e) => e.mealAdherencePct)),
 			avgCaloriePct: avg(entries.map((e) => e.calorieAdherencePct)),
-			avgProteinPct: avg(entries.map((e) => (e as { proteinAdherencePct?: number }).proteinAdherencePct ?? 0)),
+			avgProteinPct: avg(
+				entries.map(
+					(e) =>
+						(e as { proteinAdherencePct?: number }).proteinAdherencePct ?? 0,
+				),
+			),
 			avgWaterPct: avg(
 				entries.map((e) =>
 					e.hydrationGoalMl > 0
-						? Math.min(100, Math.round((e.hydrationMl / e.hydrationGoalMl) * 100))
+						? Math.min(
+								100,
+								Math.round((e.hydrationMl / e.hydrationGoalMl) * 100),
+							)
 						: 0,
 				),
 			),
@@ -301,11 +303,7 @@ export const rebuildAdherence = async (planId: string): Promise<number> => {
 	]);
 
 	for (const entry of distinct) {
-		await recomputeDay(
-			entry._id.userId,
-			planObjectId,
-			entry._id.logDate,
-		);
+		await recomputeDay(entry._id.userId, planObjectId, entry._id.logDate);
 	}
 
 	return distinct.length;

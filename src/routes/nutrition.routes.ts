@@ -1,18 +1,23 @@
 import { Router } from "express";
 import {
-	createCustomFood,
-	createSystemFood,
-	listFoods,
-	patchFood,
-	removeFood,
-} from "../controllers/nutrition-food.controller";
-import {
 	getMyAdherence,
 	getMyWeeklyAdherence,
 	getPlanAdherence,
 	getPlanWeeklyAdherence,
 	rebuildPlanAdherence,
 } from "../controllers/nutrition-adherence.controller";
+import {
+	members as dashboardMembers,
+	stats as dashboardStats,
+	userDashboard,
+} from "../controllers/nutrition-dashboard.controller";
+import {
+	createCustomFood,
+	createSystemFood,
+	listFoods,
+	patchFood,
+	removeFood,
+} from "../controllers/nutrition-food.controller";
 import {
 	addHydrationIntake,
 	getMyHydration,
@@ -25,12 +30,6 @@ import {
 	patchMealLog,
 	removeMealLog,
 } from "../controllers/nutrition-meal-log.controller";
-import {
-	addMyProgress,
-	addPlanProgressEntry,
-	listMyProgress,
-	listPlanProgress,
-} from "../controllers/nutrition-progress.controller";
 import {
 	assignTemplate,
 	changePlanStatus,
@@ -46,24 +45,18 @@ import {
 	patchPlan,
 } from "../controllers/nutrition-plan.controller";
 import {
-	stats as dashboardStats,
-	members as dashboardMembers,
-	userDashboard,
-} from "../controllers/nutrition-dashboard.controller";
-import {
-	createNutritionTemplate,
-	deleteNutritionTemplate,
-	getNutritionTemplate,
-	listNutritionTemplates,
-	updateNutritionTemplate,
-} from "../controllers/nutrition-template.controller";
-import {
 	createProfileHandler,
 	deleteProfileHandler,
 	getMyProfileHandler,
 	getProfileByUserHandler,
 	updateProfileHandler,
 } from "../controllers/nutrition-profile.controller";
+import {
+	addMyProgress,
+	addPlanProgressEntry,
+	listMyProgress,
+	listPlanProgress,
+} from "../controllers/nutrition-progress.controller";
 import {
 	buildTemplateFromCategoryHandler,
 	buildTemplateFromRecipeHandler,
@@ -72,6 +65,13 @@ import {
 	listRecipesByCategoryHandler,
 	listRecipesHandler,
 } from "../controllers/nutrition-recipe.controller";
+import {
+	createNutritionTemplate,
+	deleteNutritionTemplate,
+	getNutritionTemplate,
+	listNutritionTemplates,
+	updateNutritionTemplate,
+} from "../controllers/nutrition-template.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
@@ -93,11 +93,7 @@ nutritionRouter.delete("/profiles/:userId", STAFF, deleteProfileHandler);
 
 // ---- Admin ----
 nutritionRouter.post("/admin/foods", ADMIN, createSystemFood);
-nutritionRouter.post(
-	"/admin/adherence/rebuild",
-	ADMIN,
-	rebuildPlanAdherence,
-);
+nutritionRouter.post("/admin/adherence/rebuild", ADMIN, rebuildPlanAdherence);
 
 // ---- Food catalog ----
 // Static/specific routes before parameterized ones.
@@ -157,11 +153,7 @@ nutritionRouter.get("/members", STAFF, dashboardMembers);
 nutritionRouter.get("/my/plans", USER, listMyPlans);
 nutritionRouter.get("/my/plans/:id", USER, getMyPlanById);
 nutritionRouter.get("/my/plans/:id/pdf", USER, getPlanPdfHandler);
-nutritionRouter.post(
-	"/my/plans/:id/meals/complete",
-	USER,
-	completePlanMeal,
-);
+nutritionRouter.post("/my/plans/:id/meals/complete", USER, completePlanMeal);
 
 // ---- User meal logging ----
 nutritionRouter.post("/my/meal-logs", USER, createMealLog);
@@ -172,16 +164,32 @@ nutritionRouter.delete("/my/meal-logs/:id", USER, removeMealLog);
 // ---- User hydration ----
 nutritionRouter.post("/my/hydration", USER, addHydrationIntake);
 nutritionRouter.patch("/my/hydration/goal", USER, updateHydrationGoal);
-nutritionRouter.get("/my/hydration", authorize(["user", "nutritionist", "admin"]), getMyHydration);
+nutritionRouter.get(
+	"/my/hydration",
+	authorize(["user", "nutritionist", "admin"]),
+	getMyHydration,
+);
 
 // ---- User progress ----
 nutritionRouter.post("/my/progress", USER, addMyProgress);
-nutritionRouter.get("/my/progress", authorize(["user", "nutritionist", "admin"]), listMyProgress);
+nutritionRouter.get(
+	"/my/progress",
+	authorize(["user", "nutritionist", "admin"]),
+	listMyProgress,
+);
 
 // ---- Adherence ----
 // /my/adherence/weekly before /my/adherence to avoid partial match.
-nutritionRouter.get("/my/adherence/weekly", authorize(["user", "nutritionist", "admin"]), getMyWeeklyAdherence);
-nutritionRouter.get("/my/adherence", authorize(["user", "nutritionist", "admin"]), getMyAdherence);
+nutritionRouter.get(
+	"/my/adherence/weekly",
+	authorize(["user", "nutritionist", "admin"]),
+	getMyWeeklyAdherence,
+);
+nutritionRouter.get(
+	"/my/adherence",
+	authorize(["user", "nutritionist", "admin"]),
+	getMyAdherence,
+);
 
 nutritionRouter.post("/plans", STAFF, createPlan);
 nutritionRouter.get("/plans", STAFF, listManagedPlans);
@@ -191,7 +199,11 @@ nutritionRouter.delete("/plans/:id", STAFF, deletePlanHandler);
 nutritionRouter.patch("/plans/:id/status", STAFF, changePlanStatus);
 nutritionRouter.post("/plans/:id/pdf", STAFF, generatePlanPdfHandler);
 nutritionRouter.post("/plans/:id/duplicate", STAFF, duplicatePlanHandler);
-nutritionRouter.get("/plans/:id/adherence/weekly", STAFF, getPlanWeeklyAdherence);
+nutritionRouter.get(
+	"/plans/:id/adherence/weekly",
+	STAFF,
+	getPlanWeeklyAdherence,
+);
 nutritionRouter.get("/plans/:id/adherence", STAFF, getPlanAdherence);
 nutritionRouter.get("/plans/:id/progress", STAFF, listPlanProgress);
 nutritionRouter.post("/plans/:id/progress", STAFF, addPlanProgressEntry);

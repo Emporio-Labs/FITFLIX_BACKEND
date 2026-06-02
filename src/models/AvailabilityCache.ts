@@ -28,7 +28,10 @@ const availabilityCacheSchema = new mongoose.Schema(
 	{ timestamps: false },
 );
 
-availabilityCacheSchema.index({ expertType: 1, dateKey: 1, timezone: 1 }, { unique: true });
+availabilityCacheSchema.index(
+	{ expertType: 1, dateKey: 1, timezone: 1 },
+	{ unique: true },
+);
 // TTL index — entries expire 60 seconds after expiresAt
 availabilityCacheSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 

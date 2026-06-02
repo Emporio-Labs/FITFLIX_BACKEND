@@ -16,9 +16,15 @@ import {
 	progressListQuerySchema,
 } from "../validators/nutrition-progress.validator";
 
-const serializeProgress = (entry: any) => {
+const serializeProgress = (entry: unknown) => {
 	if (!entry) return entry;
-	const obj = typeof entry.toObject === "function" ? entry.toObject() : { ...entry };
+	const typedEntry = entry as Record<string, unknown> & {
+		toObject?: () => Record<string, unknown>;
+	};
+	const obj =
+		typedEntry.toObject && typeof typedEntry.toObject === "function"
+			? typedEntry.toObject()
+			: { ...typedEntry };
 	const { recordedAt, weightKg, note, ...rest } = obj;
 	return {
 		...rest,
@@ -29,6 +35,12 @@ const serializeProgress = (entry: any) => {
 };
 
 export const addMyProgress: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = progressBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -42,16 +54,24 @@ export const addMyProgress: RequestHandler = async (req, res, next) => {
 	try {
 		const entry = await addProgressEntry(
 			parsed.data,
-			req.user!.id,
+			requester.id,
 			ProgressRecordedBy.User,
 		);
-		res.status(201).json({ message: "Progress recorded", entry: serializeProgress(entry) });
+		res
+			.status(201)
+			.json({ message: "Progress recorded", entry: serializeProgress(entry) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}
 };
 
 export const listMyProgress: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = progressListQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -63,8 +83,9 @@ export const listMyProgress: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const isStaff = ["nutritionist", "admin"].includes(req.user!.role);
-		const targetUserId = (isStaff && parsed.data.userId) ? parsed.data.userId : req.user!.id;
+		const isStaff = ["nutritionist", "admin"].includes(requester.role);
+		const targetUserId =
+			isStaff && parsed.data.userId ? parsed.data.userId : requester.id;
 		const entries = await listProgress(targetUserId, parsed.data);
 		res.status(200).json({ entries: entries.map(serializeProgress) });
 	} catch (error) {
@@ -73,20 +94,28 @@ export const listMyProgress: RequestHandler = async (req, res, next) => {
 };
 
 export const listPlanProgress: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
-		const entries = await getPlanProgress(planId, req.user!);
+		const entries = await getPlanProgress(planId, requester);
 		res.status(200).json({ entries: entries.map(serializeProgress) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}
 };
 
-export const addPlanProgressEntry: RequestHandler = async (
-	req,
-	res,
-	next,
-) => {
+export const addPlanProgressEntry: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = progressBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -99,8 +128,10 @@ export const addPlanProgressEntry: RequestHandler = async (
 
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
-		const entry = await addPlanProgress(planId, parsed.data, req.user!);
-		res.status(201).json({ message: "Progress recorded", entry: serializeProgress(entry) });
+		const entry = await addPlanProgress(planId, parsed.data, requester);
+		res
+			.status(201)
+			.json({ message: "Progress recorded", entry: serializeProgress(entry) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}

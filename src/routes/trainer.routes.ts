@@ -3,9 +3,9 @@ import {
 	createTrainer,
 	deleteTrainerById,
 	getAllTrainers,
-	getTrainerById,
 	getPublicTrainerById,
 	getPublicTrainers,
+	getTrainerById,
 	updateTrainerById,
 } from "../controllers/trainer.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";

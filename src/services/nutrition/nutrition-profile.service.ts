@@ -44,10 +44,9 @@ const prefillFromOnboarding = async (userId: string) => {
 
 		return {
 			allergies: (markers?.allergies as string[] | undefined) ?? [],
-			medicalConditions:
-				((markers?.diseaseHistory as string[] | undefined) ?? []).concat(
-					(markers?.medications as string[] | undefined) ?? [],
-				),
+			medicalConditions: (
+				(markers?.diseaseHistory as string[] | undefined) ?? []
+			).concat((markers?.medications as string[] | undefined) ?? []),
 			preferredFoods: (goals?.foodPreferences as string[] | undefined) ?? [],
 		};
 	} catch {
@@ -89,7 +88,11 @@ export const createProfile = async (
 	input: CreateProfileInput,
 	nutritionistId: string,
 ) => {
-	const userObjectId = toObjectId(input.userId, "BAD_REQUEST", "Invalid user ID");
+	const userObjectId = toObjectId(
+		input.userId,
+		"BAD_REQUEST",
+		"Invalid user ID",
+	);
 
 	const existing = await NutritionProfile.findOne({ userId: userObjectId });
 	if (existing) {
@@ -180,10 +183,7 @@ export const getMyProfile = async (actor: NutritionActor) => {
 	return addWaterLiters(profile.toObject());
 };
 
-export const deleteProfile = async (
-	userId: string,
-	actor: NutritionActor,
-) => {
+export const deleteProfile = async (userId: string, actor: NutritionActor) => {
 	if (actor.role === "user") {
 		throw new NutritionServiceError(
 			"FORBIDDEN",

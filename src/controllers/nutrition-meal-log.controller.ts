@@ -20,6 +20,12 @@ import {
 } from "../validators/nutrition-meal-log.validator";
 
 export const createMealLog: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = logMealBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -37,7 +43,7 @@ export const createMealLog: RequestHandler = async (req, res, next) => {
 				status: parsed.data.status as MealLogStatus | undefined,
 				source: parsed.data.source as MealLogSource | undefined,
 			},
-			req.user!.id,
+			requester.id,
 		);
 		res.status(201).json({ message: "Meal logged", mealLog: log });
 	} catch (error) {
@@ -46,6 +52,12 @@ export const createMealLog: RequestHandler = async (req, res, next) => {
 };
 
 export const completePlanMeal: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = markMealCompletedBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -62,7 +74,7 @@ export const completePlanMeal: RequestHandler = async (req, res, next) => {
 			planId,
 			parsed.data.dayNumber,
 			parsed.data.mealIndex,
-			req.user!.id,
+			requester.id,
 			parsed.data.date,
 			parsed.data.completedOptionId ?? null,
 		);
@@ -73,6 +85,12 @@ export const completePlanMeal: RequestHandler = async (req, res, next) => {
 };
 
 export const listMyMealLogs: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = listMealLogsQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -84,7 +102,7 @@ export const listMyMealLogs: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const result = await listLogs(req.user!.id, parsed.data);
+		const result = await listLogs(requester.id, parsed.data);
 		res.status(200).json(result);
 	} catch (error) {
 		handleNutritionError(error, res, next);
@@ -92,6 +110,12 @@ export const listMyMealLogs: RequestHandler = async (req, res, next) => {
 };
 
 export const patchMealLog: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = updateMealLogBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -110,7 +134,7 @@ export const patchMealLog: RequestHandler = async (req, res, next) => {
 				...parsed.data,
 				status: parsed.data.status as MealLogStatus | undefined,
 			},
-			req.user!.id,
+			requester.id,
 		);
 		res.status(200).json({ message: "Meal log updated", mealLog: log });
 	} catch (error) {
@@ -119,9 +143,15 @@ export const patchMealLog: RequestHandler = async (req, res, next) => {
 };
 
 export const removeMealLog: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const logId = requireIdParam(req.params.id, "Meal log not found");
-		await deleteMealLog(logId, req.user!.id);
+		await deleteMealLog(logId, requester.id);
 		res.status(200).json({ message: "Meal log deleted" });
 	} catch (error) {
 		handleNutritionError(error, res, next);

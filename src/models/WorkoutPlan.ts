@@ -1,10 +1,5 @@
 import mongoose from "mongoose";
-import {
-	ExerciseDifficulty,
-	PlanGoal,
-	PlanStatus,
-	SplitType,
-} from "./Enums";
+import { ExerciseDifficulty, PlanGoal, PlanStatus, SplitType } from "./Enums";
 
 const planExerciseSchema = new mongoose.Schema(
 	{

@@ -1,16 +1,20 @@
-import mongoose from "mongoose";
-import { MealType, NutritionGoal, NutritionPlanStatus } from "../../models/Enums";
+import type mongoose from "mongoose";
+import {
+	MealType,
+	type NutritionGoal,
+	NutritionPlanStatus,
+} from "../../models/Enums";
 import MealPlanCategory, {
 	type MealPlanCategoryDocument,
 } from "../../models/MealPlanCategory";
+import NutritionTemplate from "../../models/nutrition-template.model";
 import Recipe, { type RecipeDocument } from "../../models/Recipe";
 import RecipeIngredient, {
 	type RecipeIngredientDocument,
 } from "../../models/RecipeIngredient";
-import NutritionTemplate from "../../models/nutrition-template.model";
+import type { MacroTotals } from "../../types/nutrition";
 import { NutritionServiceError, toObjectId } from "./nutrition-errors";
 import { sumMacros } from "./nutrition-macro.util";
-import type { MacroTotals } from "../../types/nutrition";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -289,7 +293,11 @@ export const listRecipes = async (
 	const { page = 1, limit = 50, isVeg, categoryId } = opts;
 	const filter: Record<string, unknown> = { isActive: true };
 	if (categoryId) {
-		filter.categoryId = toObjectId(categoryId, "BAD_REQUEST", "Invalid category ID");
+		filter.categoryId = toObjectId(
+			categoryId,
+			"BAD_REQUEST",
+			"Invalid category ID",
+		);
 	}
 	if (isVeg !== undefined) filter.isVeg = isVeg;
 
@@ -306,7 +314,10 @@ export const listRecipes = async (
 
 export const getRecipeWithIngredients = async (
 	recipeId: string,
-): Promise<{ recipe: RecipeDocument; ingredients: RecipeIngredientDocument[] }> => {
+): Promise<{
+	recipe: RecipeDocument;
+	ingredients: RecipeIngredientDocument[];
+}> => {
 	const id = toObjectId(recipeId, "NOT_FOUND", "Recipe not found");
 	const recipe = await Recipe.findOne({ _id: id, isActive: true }).lean();
 	if (!recipe) {

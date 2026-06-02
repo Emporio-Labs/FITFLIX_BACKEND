@@ -1,10 +1,20 @@
 import z from "zod";
-import { ExerciseDifficulty, ExerciseSection, MuscleGroup } from "../models/Enums";
+import {
+	ExerciseDifficulty,
+	ExerciseSection,
+	MuscleGroup,
+} from "../models/Enums";
 
 export const listExercisesQuerySchema = z.object({
-	muscleGroup: z.enum(Object.values(MuscleGroup) as [string, ...string[]]).optional(),
-	difficulty: z.enum(Object.values(ExerciseDifficulty) as [string, ...string[]]).optional(),
-	section: z.enum(Object.values(ExerciseSection) as [string, ...string[]]).optional(),
+	muscleGroup: z
+		.enum(Object.values(MuscleGroup) as [string, ...string[]])
+		.optional(),
+	difficulty: z
+		.enum(Object.values(ExerciseDifficulty) as [string, ...string[]])
+		.optional(),
+	section: z
+		.enum(Object.values(ExerciseSection) as [string, ...string[]])
+		.optional(),
 	equipment: z.string().optional(),
 	search: z.string().optional(),
 	isSystem: z
@@ -27,7 +37,9 @@ export const createExerciseBodySchema = z.object({
 		.max(10)
 		.optional()
 		.default([]),
-	difficulty: z.enum(Object.values(ExerciseDifficulty) as [string, ...string[]]),
+	difficulty: z.enum(
+		Object.values(ExerciseDifficulty) as [string, ...string[]],
+	),
 	equipment: z.string().trim().min(1).max(200).optional().default(""),
 	instructions: z.string().trim().max(5000).optional().default(""),
 	commonMistakes: z
@@ -35,12 +47,14 @@ export const createExerciseBodySchema = z.object({
 		.max(20)
 		.optional()
 		.default([]),
-	tips: z
-		.array(z.string().trim().max(500))
-		.max(20)
+	tips: z.array(z.string().trim().max(500)).max(20).optional().default([]),
+	caloriesPerSet: z.coerce
+		.number()
+		.int()
+		.min(1)
+		.max(1000)
 		.optional()
-		.default([]),
-	caloriesPerSet: z.coerce.number().int().min(1).max(1000).optional().default(0),
+		.default(0),
 	sectionTypes: z
 		.array(z.enum(Object.values(ExerciseSection) as [string, ...string[]]))
 		.min(1)

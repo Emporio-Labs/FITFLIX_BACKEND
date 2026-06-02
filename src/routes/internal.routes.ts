@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from "express";
+import { type Request, type Response, Router } from "express";
 import { processReminders } from "../services/reminder.service";
 
 const router = Router();
@@ -8,7 +8,10 @@ function verifyInternalSecret(req: Request, res: Response): boolean {
 	const secret = process.env.REMINDER_TICK_SECRET;
 	if (!secret) {
 		// If no secret configured, reject all calls
-		res.status(503).json({ error: "Internal routes not configured", code: "NOT_CONFIGURED" });
+		res.status(503).json({
+			error: "Internal routes not configured",
+			code: "NOT_CONFIGURED",
+		});
 		return false;
 	}
 
@@ -37,7 +40,9 @@ router.post("/reminders/tick", async (req: Request, res: Response) => {
 		res.status(200).json({ ok: true, ...result });
 	} catch (err) {
 		console.error("[internal/reminders/tick] Error", err);
-		res.status(500).json({ error: "Reminder processing failed", code: "INTERNAL_ERROR" });
+		res
+			.status(500)
+			.json({ error: "Reminder processing failed", code: "INTERNAL_ERROR" });
 	}
 });
 

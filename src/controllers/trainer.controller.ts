@@ -68,9 +68,7 @@ export const getPublicTrainers: RequestHandler = async (_req, res, next) => {
 		const trainers = await Trainer.find().select(
 			"trainerName description specialities",
 		);
-		res
-			.status(200)
-			.json({ trainers: trainers.map(toPublicTrainerResponse) });
+		res.status(200).json({ trainers: trainers.map(toPublicTrainerResponse) });
 	} catch (error) {
 		next(error);
 	}

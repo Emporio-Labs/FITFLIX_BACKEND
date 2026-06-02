@@ -6,6 +6,25 @@ import mongoose from "mongoose";
 import Admin from "../src/models/Admin";
 import MedicalReport from "../src/models/MedicalReport";
 
+type ApiReportSummary = {
+	id?: string;
+	_id?: string;
+	type?: string;
+	reportType?: string;
+	pdf_url?: string;
+	reportUrl?: string;
+	s3Key?: string;
+};
+
+type ApiResponseEnvelope = {
+	userId?: string;
+	accessToken?: string;
+	report?: ApiReportSummary;
+	reports?: ApiReportSummary[];
+	expiresIn?: number;
+	url?: string;
+};
+
 const PORT = 3000;
 const BASE_URL = `http://localhost:${PORT}`;
 
@@ -45,7 +64,7 @@ async function runTests() {
 		throw new Error(`Signup failed: ${signupRes.status} - ${errText}`);
 	}
 
-	const signupJson = (await signupRes.json()) as any;
+	const signupJson = (await signupRes.json()) as ApiResponseEnvelope;
 	const userId = signupJson.userId;
 	console.log(`User created successfully. User ID: ${userId}`);
 
@@ -64,7 +83,7 @@ async function runTests() {
 		throw new Error(`Login failed: ${loginRes.status}`);
 	}
 
-	const loginJson = (await loginRes.json()) as any;
+	const loginJson = (await loginRes.json()) as ApiResponseEnvelope;
 	const userToken = loginJson.accessToken;
 	console.log("Login successful. Got Access Token.");
 
@@ -172,7 +191,7 @@ async function runTests() {
 		throw new Error(`Admin login failed: ${adminLoginRes.status}`);
 	}
 
-	const adminLoginJson = (await adminLoginRes.json()) as any;
+	const adminLoginJson = (await adminLoginRes.json()) as ApiResponseEnvelope;
 	const adminToken = adminLoginJson.accessToken;
 	console.log("Admin logged in successfully.");
 
@@ -356,14 +375,14 @@ async function runTests() {
 		throw new Error(`Failed to fetch user reports: ${userReportsRes.status}`);
 	}
 
-	const userReportsJson = (await userReportsRes.json()) as any;
+	const userReportsJson = (await userReportsRes.json()) as ApiResponseEnvelope;
 	console.log(
 		"User Unified Reports Payload:",
 		JSON.stringify(userReportsJson.reports, null, 2),
 	);
 
-	const userReportItem = userReportsJson.reports.find(
-		(r: any) => r.id === reportId,
+	const userReportItem = userReportsJson.reports?.find(
+		(report) => report.id === reportId,
 	);
 	if (!userReportItem) {
 		throw new Error(
@@ -375,10 +394,7 @@ async function runTests() {
 			`FAIL: Unified report item type is "${userReportItem.type}", expected "Blood Test"`,
 		);
 	}
-	if (
-		!userReportItem.pdf_url ||
-		!userReportItem.pdf_url.includes("X-Amz-Expires=900")
-	) {
+	if (!userReportItem.pdf_url?.includes("X-Amz-Expires=900")) {
 		throw new Error(
 			`FAIL: Unified report item returned invalid or unsigned PDF URL: ${userReportItem.pdf_url}`,
 		);
@@ -404,14 +420,15 @@ async function runTests() {
 		);
 	}
 
-	const userMedReportsJson = (await userMedReportsRes.json()) as any;
+	const userMedReportsJson =
+		(await userMedReportsRes.json()) as ApiResponseEnvelope;
 	console.log(
 		"User Medical Reports Payload:",
 		JSON.stringify(userMedReportsJson.reports, null, 2),
 	);
 
-	const userMedReportItem = userMedReportsJson.reports.find(
-		(r: any) => r._id === reportId,
+	const userMedReportItem = userMedReportsJson.reports?.find(
+		(report) => report._id === reportId,
 	);
 	if (!userMedReportItem) {
 		throw new Error(
@@ -423,10 +440,7 @@ async function runTests() {
 			`FAIL: Medical report item type is "${userMedReportItem.reportType}", expected "Blood Test"`,
 		);
 	}
-	if (
-		!userMedReportItem.reportUrl ||
-		!userMedReportItem.reportUrl.includes("X-Amz-Expires=900")
-	) {
+	if (!userMedReportItem.reportUrl?.includes("X-Amz-Expires=900")) {
 		throw new Error(
 			`FAIL: Medical report item returned invalid or unsigned URL: ${userMedReportItem.reportUrl}`,
 		);

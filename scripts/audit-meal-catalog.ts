@@ -13,30 +13,31 @@
 
 import { config } from "dotenv";
 import mongoose from "mongoose";
-
-import connectDB from "../src/utils/db";
-import MealPlanImportRow from "../src/models/MealPlanImportRow";
 import MealPlanCategory from "../src/models/MealPlanCategory";
-import Recipe from "../src/models/Recipe";
-import RecipeIngredient from "../src/models/RecipeIngredient";
+import MealPlanImportRow from "../src/models/MealPlanImportRow";
 import NutritionFood from "../src/models/nutrition-food.model";
 import NutritionTemplate from "../src/models/nutrition-template.model";
+import Recipe from "../src/models/Recipe";
+import RecipeIngredient from "../src/models/RecipeIngredient";
+import connectDB from "../src/utils/db";
 
 config();
 
 const BAR = "══════════════════════════════";
 const DIVIDER = "-".repeat(75);
 
-const fmt = (v: unknown): string => (v === null || v === undefined ? "null" : String(v));
+const fmt = (v: unknown): string =>
+	v === null || v === undefined ? "null" : String(v);
 
 const n = (v: number | null | undefined, decimals = 1): string => {
 	if (v === null || v === undefined) return "null";
-	const s = Number.isInteger(v) ? String(v) : v.toFixed(decimals).replace(/\.?0+$/, "");
+	const s = Number.isInteger(v)
+		? String(v)
+		: v.toFixed(decimals).replace(/\.?0+$/, "");
 	return s;
 };
 
 const pad = (s: string, w: number): string => s.padEnd(w);
-const padL = (s: string, w: number): string => s.padStart(w);
 
 const section = (title: string) => {
 	console.log("");
@@ -76,7 +77,9 @@ async function main() {
 
 	// ─── CATEGORIES ─────────────────────────────────────────────────────────
 	section("CATEGORIES");
-	const categories = await MealPlanCategory.find().sort({ sortOrder: 1 }).lean();
+	const categories = await MealPlanCategory.find()
+		.sort({ sortOrder: 1 })
+		.lean();
 	const recipesPerCategory = new Map<string, number>();
 	for (const cat of categories) {
 		const count = await Recipe.countDocuments({ categoryId: cat._id });
@@ -121,12 +124,18 @@ async function main() {
 		if (ingredients.length === 0) recipesWithZeroIngredients.push(r.name);
 
 		console.log(`Recipe: ${r.name}`);
-		console.log(`Category: ${catName}   Id: ${r._id}   Ingredients: ${ingredients.length}`);
+		console.log(
+			`Category: ${catName}   Id: ${r._id}   Ingredients: ${ingredients.length}`,
+		);
 		console.log("");
 		console.log(tableHeader);
 		console.log(DIVIDER);
 
-		let sumCal = 0, sumPro = 0, sumCarb = 0, sumFat = 0, sumFib = 0;
+		let sumCal = 0,
+			sumPro = 0,
+			sumCarb = 0,
+			sumFat = 0,
+			sumFib = 0;
 
 		if (ingredients.length === 0) {
 			console.log("  (none)");
@@ -138,48 +147,50 @@ async function main() {
 						: fmt(ing.rawQuantityStr);
 				console.log(
 					pad(ing.rawIngredientName, C.ing) +
-					pad(qty, C.qty) +
-					pad(n(ing.caloriesKcal), C.cal) +
-					pad(n(ing.proteinG), C.pro) +
-					pad(n(ing.carbsG), C.carb) +
-					pad(n(ing.fatG), C.fat) +
-					n(ing.fiberG),
+						pad(qty, C.qty) +
+						pad(n(ing.caloriesKcal), C.cal) +
+						pad(n(ing.proteinG), C.pro) +
+						pad(n(ing.carbsG), C.carb) +
+						pad(n(ing.fatG), C.fat) +
+						n(ing.fiberG),
 				);
-				sumCal  += ing.caloriesKcal  ?? 0;
-				sumPro  += ing.proteinG      ?? 0;
-				sumCarb += ing.carbsG        ?? 0;
-				sumFat  += ing.fatG          ?? 0;
-				sumFib  += ing.fiberG        ?? 0;
+				sumCal += ing.caloriesKcal ?? 0;
+				sumPro += ing.proteinG ?? 0;
+				sumCarb += ing.carbsG ?? 0;
+				sumFat += ing.fatG ?? 0;
+				sumFib += ing.fiberG ?? 0;
 			}
 		}
 
 		console.log(DIVIDER);
 		console.log(
 			pad("TOTAL", C.ing + C.qty) +
-			pad(n(sumCal), C.cal) +
-			pad(n(sumPro), C.pro) +
-			pad(n(sumCarb), C.carb) +
-			pad(n(sumFat), C.fat) +
-			n(sumFib),
+				pad(n(sumCal), C.cal) +
+				pad(n(sumPro), C.pro) +
+				pad(n(sumCarb), C.carb) +
+				pad(n(sumFat), C.fat) +
+				n(sumFib),
 		);
 
 		// Verify computed totals match stored recipe.totals
 		const eps = 0.15;
-		const storedCal  = t.caloriesKcal ?? 0;
-		const storedPro  = t.proteinG     ?? 0;
-		const storedCarb = t.carbsG       ?? 0;
-		const storedFat  = t.fatG         ?? 0;
+		const storedCal = t.caloriesKcal ?? 0;
+		const storedPro = t.proteinG ?? 0;
+		const storedCarb = t.carbsG ?? 0;
+		const storedFat = t.fatG ?? 0;
 		const totalMatch =
-			Math.abs(sumCal  - storedCal)  <= eps &&
-			Math.abs(sumPro  - storedPro)  <= eps &&
+			Math.abs(sumCal - storedCal) <= eps &&
+			Math.abs(sumPro - storedPro) <= eps &&
 			Math.abs(sumCarb - storedCarb) <= eps &&
-			Math.abs(sumFat  - storedFat)  <= eps;
+			Math.abs(sumFat - storedFat) <= eps;
 		if (totalMatch) {
-			console.log(`Totals: PASS (stored: ${n(storedCal)} kcal / ${n(storedPro)}P / ${n(storedCarb)}C / ${n(storedFat)}F)`);
+			console.log(
+				`Totals: PASS (stored: ${n(storedCal)} kcal / ${n(storedPro)}P / ${n(storedCarb)}C / ${n(storedFat)}F)`,
+			);
 		} else {
 			console.log(
 				`Totals: FAIL — stored ${n(storedCal)} kcal / ${n(storedPro)}P / ${n(storedCarb)}C / ${n(storedFat)}F` +
-				`  vs  computed ${n(sumCal)} / ${n(sumPro)}P / ${n(sumCarb)}C / ${n(sumFat)}F`,
+					`  vs  computed ${n(sumCal)} / ${n(sumPro)}P / ${n(sumCarb)}C / ${n(sumFat)}F`,
 			);
 		}
 		console.log("");
@@ -255,7 +266,12 @@ async function main() {
 	);
 
 	const dupRecipes = await Recipe.aggregate([
-		{ $group: { _id: { name: "$name", categoryId: "$categoryId" }, count: { $sum: 1 } } },
+		{
+			$group: {
+				_id: { name: "$name", categoryId: "$categoryId" },
+				count: { $sum: 1 },
+			},
+		},
 		{ $match: { count: { $gt: 1 } } },
 	]);
 	console.log(

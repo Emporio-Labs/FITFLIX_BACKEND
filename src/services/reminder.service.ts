@@ -1,4 +1,5 @@
-import mongoose, { Types } from "mongoose";
+import type mongoose from "mongoose";
+import { Types } from "mongoose";
 import {
 	NotificationChannel,
 	NotificationKind,
@@ -33,7 +34,10 @@ export async function scheduleReminders(
 	session?: mongoose.ClientSession,
 ): Promise<void> {
 	const now = new Date();
-	const aId = typeof appointmentId === "string" ? new Types.ObjectId(appointmentId) : appointmentId;
+	const aId =
+		typeof appointmentId === "string"
+			? new Types.ObjectId(appointmentId)
+			: appointmentId;
 	const uId = typeof userId === "string" ? new Types.ObjectId(userId) : userId;
 
 	const reminders = Object.entries(REMINDER_OFFSETS_MS)
@@ -90,7 +94,10 @@ export async function cancelReminders(
  * Atomically claims each row before firing to prevent duplicate sends.
  * Safe to call from multiple instances concurrently.
  */
-export async function processReminders(): Promise<{ fired: number; failed: number }> {
+export async function processReminders(): Promise<{
+	fired: number;
+	failed: number;
+}> {
 	const now = new Date();
 	let fired = 0;
 	let failed = 0;
@@ -130,7 +137,10 @@ export async function processReminders(): Promise<{ fired: number; failed: numbe
 
 			fired++;
 		} catch (err) {
-			console.error(`[reminder] Failed to fire reminder ${String(reminder._id)}`, err);
+			console.error(
+				`[reminder] Failed to fire reminder ${String(reminder._id)}`,
+				err,
+			);
 
 			await ScheduledReminder.findByIdAndUpdate(reminder._id, {
 				$set: {

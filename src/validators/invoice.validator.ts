@@ -1,8 +1,14 @@
 import z from "zod";
 import { InvoicePaymentMethod, InvoicePaymentStatus } from "../models/Enums";
 
-const paymentStatusValues = Object.values(InvoicePaymentStatus) as [string, ...string[]];
-const paymentMethodValues = Object.values(InvoicePaymentMethod) as [string, ...string[]];
+const paymentStatusValues = Object.values(InvoicePaymentStatus) as [
+	string,
+	...string[],
+];
+const paymentMethodValues = Object.values(InvoicePaymentMethod) as [
+	string,
+	...string[],
+];
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
 	[InvoicePaymentStatus.DRAFT]: [
@@ -65,5 +71,7 @@ export const listInvoicesQuerySchema = z.object({
 });
 
 export type CreateInvoiceBody = z.infer<typeof createInvoiceBodySchema>;
-export type UpdateInvoiceStatusBody = z.infer<typeof updateInvoiceStatusBodySchema>;
+export type UpdateInvoiceStatusBody = z.infer<
+	typeof updateInvoiceStatusBodySchema
+>;
 export type ListInvoicesQuery = z.infer<typeof listInvoicesQuerySchema>;

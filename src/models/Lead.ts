@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
-import { LeadStatus } from "./Enums";
 import { applyIdTransform } from "../utils/mongoose-serialization";
+import { LeadStatus } from "./Enums";
 
 const leadSchema = new mongoose.Schema(
 	{
@@ -30,7 +30,6 @@ const leadSchema = new mongoose.Schema(
 );
 
 applyIdTransform(leadSchema);
-
 
 type LeadDocument = mongoose.InferSchemaType<typeof leadSchema>;
 

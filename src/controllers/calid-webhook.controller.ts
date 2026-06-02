@@ -1,9 +1,9 @@
 import type { Request, RequestHandler, Response } from "express";
+import type { CalIdWebhookPayload } from "../integrations/calid/calid.types";
 import {
 	handleCalIdWebhook,
 	verifyCalIdSignature,
 } from "../integrations/calid/calid.webhook";
-import type { CalIdWebhookPayload } from "../integrations/calid/calid.types";
 
 export const handleCalIdWebhookRequest: RequestHandler = async (
 	req: Request & { rawBody?: Buffer },
@@ -15,14 +15,18 @@ export const handleCalIdWebhookRequest: RequestHandler = async (
 	const signature = req.headers["x-cal-signature-256"] as string | undefined;
 
 	if (!verifyCalIdSignature(rawBody, signature)) {
-		res.status(401).json({ error: "Invalid webhook signature", code: "UNAUTHORIZED" });
+		res
+			.status(401)
+			.json({ error: "Invalid webhook signature", code: "UNAUTHORIZED" });
 		return;
 	}
 
 	const payload = req.body as CalIdWebhookPayload;
 
 	if (!payload?.triggerEvent || !payload?.payload) {
-		res.status(400).json({ error: "Invalid webhook payload", code: "BAD_REQUEST" });
+		res
+			.status(400)
+			.json({ error: "Invalid webhook payload", code: "BAD_REQUEST" });
 		return;
 	}
 
@@ -35,6 +39,8 @@ export const handleCalIdWebhookRequest: RequestHandler = async (
 		res.status(200).json({ received: true });
 	} catch (err) {
 		console.error("[calid-webhook] Handler error", err);
-		res.status(500).json({ error: "Webhook processing failed", code: "INTERNAL_ERROR" });
+		res
+			.status(500)
+			.json({ error: "Webhook processing failed", code: "INTERNAL_ERROR" });
 	}
 };

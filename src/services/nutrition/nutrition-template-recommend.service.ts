@@ -1,8 +1,8 @@
 import mongoose from "mongoose";
+import { NutritionPlanStatus } from "../../models/Enums";
 import NutritionFood from "../../models/nutrition-food.model";
 import NutritionProfile from "../../models/nutrition-profile.model";
 import NutritionTemplate from "../../models/nutrition-template.model";
-import { NutritionPlanStatus } from "../../models/Enums";
 import type { NutritionActor } from "../../types/nutrition";
 import { NutritionServiceError, toObjectId } from "./nutrition-errors";
 import {
@@ -32,7 +32,10 @@ export const recommendTemplatesForUser = async (
 	}).sort({ updatedAt: -1 });
 
 	return {
-		profile: { goal: profile.goal, dietaryPreference: profile.dietaryPreference },
+		profile: {
+			goal: profile.goal,
+			dietaryPreference: profile.dietaryPreference,
+		},
 		matchedOn: ["goal"],
 		templates,
 	};
@@ -60,7 +63,13 @@ export const filterTemplateFoods = async (
 			for (const item of meal.items ?? []) {
 				foodIdSet.add(item.foodId.toString());
 			}
-			for (const opt of (meal as { options?: Array<{ foods?: Array<{ foodId: mongoose.Types.ObjectId }> }> }).options ?? []) {
+			for (const opt of (
+				meal as {
+					options?: Array<{
+						foods?: Array<{ foodId: mongoose.Types.ObjectId }>;
+					}>;
+				}
+			).options ?? []) {
 				for (const item of opt.foods ?? []) {
 					foodIdSet.add(item.foodId.toString());
 				}

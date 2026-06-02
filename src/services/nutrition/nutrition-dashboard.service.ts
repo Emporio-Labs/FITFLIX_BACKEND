@@ -11,10 +11,10 @@ import ExpertAppointment from "../../models/ExpertAppointment";
 import HealthGoals from "../../models/HealthGoals";
 import HealthMarkers from "../../models/HealthMarkers";
 import NutritionistBooking from "../../models/NutritionistBooking";
-import NutritionProfile from "../../models/nutrition-profile.model";
 import NutritionHydrationLog from "../../models/nutrition-hydration.model";
-import UserNutritionPlan from "../../models/nutrition-plan.model";
 import NutritionMealLog from "../../models/nutrition-meal-log.model";
+import UserNutritionPlan from "../../models/nutrition-plan.model";
+import NutritionProfile from "../../models/nutrition-profile.model";
 import User from "../../models/User";
 import { getEffectiveMealItems, sumMacros } from "./nutrition-macro.util";
 
@@ -51,8 +51,7 @@ export const getDashboardStats = async () => {
 // Dashboard member roster  (powers Bookings tab + /nutrition/members alias)
 // ---------------------------------------------------------------------------
 
-const escapeRegex = (s: string) =>
-	s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export const getDashboardMembers = async (options: {
 	search?: string;
@@ -102,10 +101,7 @@ export const getDashboardMembers = async (options: {
 						$filter: {
 							input: "$nutritionPlans",
 							cond: {
-								$eq: [
-									"$$this.status",
-									NutritionPlanStatus.Active,
-								],
+								$eq: ["$$this.status", NutritionPlanStatus.Active],
 							},
 						},
 					},
@@ -115,10 +111,7 @@ export const getDashboardMembers = async (options: {
 						$filter: {
 							input: "$nutritionPlans",
 							cond: {
-								$eq: [
-									"$$this.status",
-									NutritionPlanStatus.Completed,
-								],
+								$eq: ["$$this.status", NutritionPlanStatus.Completed],
 							},
 						},
 					},
@@ -126,10 +119,7 @@ export const getDashboardMembers = async (options: {
 				appointmentStatus: {
 					$ifNull: [
 						{
-							$arrayElemAt: [
-								"$nutritionistAppointments.bookingStatus",
-								0,
-							],
+							$arrayElemAt: ["$nutritionistAppointments.bookingStatus", 0],
 						},
 						null,
 					],
@@ -160,10 +150,7 @@ export const getDashboardMembers = async (options: {
 							},
 							{
 								case: {
-									$eq: [
-										"$appointmentStatus",
-										AppointmentBookingStatus.Pending,
-									],
+									$eq: ["$appointmentStatus", AppointmentBookingStatus.Pending],
 								},
 								then: "pending",
 							},
@@ -181,10 +168,7 @@ export const getDashboardMembers = async (options: {
 										$filter: {
 											input: "$nutritionPlans",
 											cond: {
-												$eq: [
-													"$$this.status",
-													NutritionPlanStatus.Active,
-												],
+												$eq: ["$$this.status", NutritionPlanStatus.Active],
 											},
 										},
 									},
@@ -258,11 +242,9 @@ export const getDashboardMembers = async (options: {
 						{
 							_id: "$nutritionProfileDoc._id",
 							goal: "$nutritionProfileDoc.goal",
-							dietaryPreference:
-								"$nutritionProfileDoc.dietaryPreference",
+							dietaryPreference: "$nutritionProfileDoc.dietaryPreference",
 							allergies: "$nutritionProfileDoc.allergies",
-							targetCaloriesKcal:
-								"$nutritionProfileDoc.targetCaloriesKcal",
+							targetCaloriesKcal: "$nutritionProfileDoc.targetCaloriesKcal",
 							targetMacros: "$nutritionProfileDoc.targetMacros",
 							assignedNutritionistId:
 								"$nutritionProfileDoc.createdByNutritionist",
@@ -351,7 +333,9 @@ export const getDashboardMembers = async (options: {
 				onboardingStatus: {
 					currentStep: "$onboardingStatus.currentStep",
 					completedSteps: { $ifNull: ["$onboardingStatus.completedSteps", []] },
-					isCompleted: { $ifNull: ["$onboardingStatus.onboardingCompleted", false] },
+					isCompleted: {
+						$ifNull: ["$onboardingStatus.onboardingCompleted", false],
+					},
 				},
 				nutritionBookingStatus: 1,
 				nutritionStatus: 1,
@@ -360,7 +344,9 @@ export const getDashboardMembers = async (options: {
 				assignedNutritionist: 1,
 				assignedPlans: 1,
 				createdAt: 1,
-				membershipStartDate: { $arrayElemAt: ["$_membershipDocs.startDate", 0] },
+				membershipStartDate: {
+					$arrayElemAt: ["$_membershipDocs.startDate", 0],
+				},
 				onboardingCompletedAt: "$onboardingStatus.completedAt",
 				joinedAt: {
 					$ifNull: [
@@ -538,7 +524,13 @@ const GOAL_PROTEIN_MULTIPLIERS: Record<string, number> = {
 };
 
 // Target source type — mirrors what the frontend uses for banners
-export type TargetSource = "plan" | "assessment" | "profile" | "weight_only" | "default" | "none";
+export type TargetSource =
+	| "plan"
+	| "assessment"
+	| "profile"
+	| "weight_only"
+	| "default"
+	| "none";
 
 interface MacroTargetResult {
 	calories: number;
@@ -597,7 +589,8 @@ const resolveNutritionTargets = (
 			targetCalories != null
 		) {
 			const weight = healthMarkers?.weight ?? 70;
-			const waterTarget = nutritionProfile.waterTargetMl ?? Math.round(weight * 40);
+			const waterTarget =
+				nutritionProfile.waterTargetMl ?? Math.round(weight * 40);
 			return {
 				calories: targetCalories,
 				protein: proteinG,
@@ -774,14 +767,10 @@ const determineMealStatus = (
 		return MealLogStatus.Pending;
 	}
 
-	const allCompleted = logs.every(
-		(log) => log.status === MealLogStatus.Logged,
-	);
+	const allCompleted = logs.every((log) => log.status === MealLogStatus.Logged);
 	if (allCompleted) return MealLogStatus.Logged;
 
-	const someCompleted = logs.some(
-		(log) => log.status === MealLogStatus.Logged,
-	);
+	const someCompleted = logs.some((log) => log.status === MealLogStatus.Logged);
 	if (someCompleted) return MealLogStatus.Partial;
 
 	return MealLogStatus.Skipped;
@@ -976,10 +965,14 @@ export const getUserNutritionDashboard = async (
 		nutritionistBooking,
 	] = await Promise.all([
 		User.findById(userId)
-			.select("_id username email phone age gender healthGoals onboardingStatus onboarded")
+			.select(
+				"_id username email phone age gender healthGoals onboardingStatus onboarded",
+			)
 			.lean(),
 		HealthMarkers.findOne({ userId })
-			.select("weight height bmi activityLevel allergies medications diseaseHistory sleepHours bodyFatPercentage")
+			.select(
+				"weight height bmi activityLevel allergies medications diseaseHistory sleepHours bodyFatPercentage",
+			)
 			.lean(),
 		HealthGoals.findOne({ userId })
 			.select("goals targetWeight timeline workoutExperience foodPreferences")
@@ -1010,7 +1003,9 @@ export const getUserNutritionDashboard = async (
 			.select("totalMl goalMl")
 			.lean(),
 		NutritionistBooking.findOne({ user: userId })
-			.select("bookingStatus date startTime endTime appointmentMode meetingLink calBookingId nutritionistApprovalStatus acceptedAt createdAt")
+			.select(
+				"bookingStatus date startTime endTime appointmentMode meetingLink calBookingId nutritionistApprovalStatus acceptedAt createdAt",
+			)
 			.sort({ createdAt: -1 })
 			.lean(),
 	]);
@@ -1022,9 +1017,17 @@ export const getUserNutritionDashboard = async (
 	// ── Goal resolution ─────────────────────────────────────────────────────
 	// Priority: active plan goal → nutrition profile goal → health goals → Maintenance
 	let resolvedGoal: NutritionGoal;
-	if (activePlan?.goal && Object.values(NutritionGoal).includes(activePlan.goal as NutritionGoal)) {
+	if (
+		activePlan?.goal &&
+		Object.values(NutritionGoal).includes(activePlan.goal as NutritionGoal)
+	) {
 		resolvedGoal = activePlan.goal as NutritionGoal;
-	} else if (nutritionProfile?.goal && Object.values(NutritionGoal).includes(nutritionProfile.goal as NutritionGoal)) {
+	} else if (
+		nutritionProfile?.goal &&
+		Object.values(NutritionGoal).includes(
+			nutritionProfile.goal as NutritionGoal,
+		)
+	) {
 		resolvedGoal = nutritionProfile.goal as NutritionGoal;
 	} else {
 		resolvedGoal = inferNutritionGoal(healthGoals?.goals ?? []);
@@ -1058,7 +1061,7 @@ export const getUserNutritionDashboard = async (
 		);
 		const durationDays = activePlan.durationDays || 7;
 		// Cycle within plan duration. Min 1.
-		todayDayNumber = ((daysDiff % durationDays) + 1) || 1;
+		todayDayNumber = (daysDiff % durationDays) + 1 || 1;
 	}
 
 	// Locate today's day in the plan — match on dayNumber only (1-indexed)
@@ -1113,21 +1116,14 @@ export const getUserNutritionDashboard = async (
 		// For display totals: use logged if any logs present, else show planned
 		const displayTotals = {
 			calories:
-				mealLogs.length > 0
-					? logTotals.caloriesKcal
-					: mealTotals.caloriesKcal,
-			protein:
-				mealLogs.length > 0 ? logTotals.proteinG : mealTotals.proteinG,
-			carbs:
-				mealLogs.length > 0 ? logTotals.carbsG : mealTotals.carbsG,
+				mealLogs.length > 0 ? logTotals.caloriesKcal : mealTotals.caloriesKcal,
+			protein: mealLogs.length > 0 ? logTotals.proteinG : mealTotals.proteinG,
+			carbs: mealLogs.length > 0 ? logTotals.carbsG : mealTotals.carbsG,
 			fat: mealLogs.length > 0 ? logTotals.fatG : mealTotals.fatG,
 		};
 
 		// Only count toward consumed totals if meal is actually logged (not pending/skipped)
-		if (
-			status === MealLogStatus.Logged ||
-			status === MealLogStatus.Partial
-		) {
+		if (status === MealLogStatus.Logged || status === MealLogStatus.Partial) {
 			consumedTotals.calories += logTotals.caloriesKcal;
 			consumedTotals.protein += logTotals.proteinG;
 			consumedTotals.carbs += logTotals.carbsG;
@@ -1208,7 +1204,9 @@ export const getUserNutritionDashboard = async (
 	const obs = (user as any).onboardingStatus;
 	const onboardingProgress = {
 		currentStep: obs?.currentStep ?? "HEALTH_MARKERS",
-		completedSteps: Array.isArray(obs?.completedSteps) ? obs.completedSteps : [],
+		completedSteps: Array.isArray(obs?.completedSteps)
+			? obs.completedSteps
+			: [],
 		isCompleted: obs?.onboardingCompleted ?? false,
 		healthMarkersCompleted: obs?.healthMarkersCompleted ?? false,
 		healthGoalsCompleted: obs?.healthGoalsCompleted ?? false,
@@ -1231,7 +1229,8 @@ export const getUserNutritionDashboard = async (
 				endTime: (nutritionistBooking as any).endTime ?? undefined,
 				meetingLink: (nutritionistBooking as any).meetingLink ?? undefined,
 				calBookingId: (nutritionistBooking as any).calBookingId ?? undefined,
-				nutritionistApprovalStatus: (nutritionistBooking as any).nutritionistApprovalStatus,
+				nutritionistApprovalStatus: (nutritionistBooking as any)
+					.nutritionistApprovalStatus,
 				acceptedAt: (nutritionistBooking as any).acceptedAt ?? undefined,
 			}
 		: null;
@@ -1251,11 +1250,13 @@ export const getUserNutritionDashboard = async (
 			// ── Fields required by My Nutrition profile header cards ──
 			age: typeof user.age === "number" ? user.age : null,
 			gender: (user.gender as string) || undefined,
-			healthGoals: Array.isArray(healthGoals?.goals) && healthGoals.goals.length > 0
-				? healthGoals.goals
-				: Array.isArray((user as any).healthGoals) && (user as any).healthGoals.length > 0
-					? (user as any).healthGoals
-					: [],
+			healthGoals:
+				Array.isArray(healthGoals?.goals) && healthGoals.goals.length > 0
+					? healthGoals.goals
+					: Array.isArray((user as any).healthGoals) &&
+							(user as any).healthGoals.length > 0
+						? (user as any).healthGoals
+						: [],
 			healthMarkers: {
 				weight: healthMarkers?.weight,
 				height: healthMarkers?.height,
@@ -1267,7 +1268,8 @@ export const getUserNutritionDashboard = async (
 				medications: healthMarkers?.medications,
 				diseaseHistory: healthMarkers?.diseaseHistory,
 				sleepHours: healthMarkers?.sleepHours ?? undefined,
-				bodyFatPercentage: (healthMarkers as any)?.bodyFatPercentage ?? undefined,
+				bodyFatPercentage:
+					(healthMarkers as any)?.bodyFatPercentage ?? undefined,
 			},
 		},
 		onboardingProgress,

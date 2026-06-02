@@ -5,11 +5,19 @@ type UserDay = WorkoutPlanAssignmentDocument["userDays"][number];
 
 /** Adds `days` calendar days to `date` (UTC-safe). */
 const addDays = (date: Date, days: number): Date =>
-	new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + days));
+	new Date(
+		Date.UTC(
+			date.getUTCFullYear(),
+			date.getUTCMonth(),
+			date.getUTCDate() + days,
+		),
+	);
 
 /** Returns UTC midnight for `date`. */
 const utcMidnight = (date: Date): Date =>
-	new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+	new Date(
+		Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+	);
 
 /**
  * Build the initial `dayProgress` array from plan days + assignment start date.
@@ -56,7 +64,8 @@ export function completeDayAndShift(
 	const nextPending = assignment.dayProgress.findIndex(
 		(d) => d.status === "pending",
 	);
-	assignment.currentDayIndex = nextPending >= 0 ? nextPending : assignment.dayProgress.length;
+	assignment.currentDayIndex =
+		nextPending >= 0 ? nextPending : assignment.dayProgress.length;
 
 	// Reschedule only remaining PENDING days (never touch completed entries)
 	let nextDate = addDays(completedUtc, 1);

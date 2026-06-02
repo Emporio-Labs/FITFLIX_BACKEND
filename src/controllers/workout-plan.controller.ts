@@ -1,18 +1,22 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import fs from "fs";
-import path from "path";
-import WorkoutPlan from "../models/WorkoutPlan";
 import { PlanStatus } from "../models/Enums";
+import WorkoutPlan from "../models/WorkoutPlan";
+import { createAssignmentForUser } from "../services/planAssignment.service";
 import {
 	assignUsersBodySchema,
 	createPlanBodySchema,
 	listPlansQuerySchema,
 	updatePlanBodySchema,
 } from "../validators/workout-plan.validator";
-import { createAssignmentForUser } from "../services/planAssignment.service";
 
-const logValidationError = (endpoint: string, body: any, issues: any) => {
+const logValidationError = (
+	endpoint: string,
+	body: unknown,
+	issues: unknown,
+) => {
 	try {
 		const logPath = path.join(process.cwd(), "validation-errors.log");
 		const logMessage = `[${new Date().toISOString()}] Endpoint: ${endpoint}\nBody: ${JSON.stringify(body, null, 2)}\nIssues: ${JSON.stringify(issues, null, 2)}\n\n`;
@@ -47,14 +51,20 @@ export const createPlan: RequestHandler = async (req, res, next) => {
 		}
 
 		const authReq = req as unknown as { user?: { id: string } };
+		const createdBy = authReq.user?.id;
+		if (!createdBy) {
+			res.status(403).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+			return;
+		}
 
 		const plan = await WorkoutPlan.create({
 			...parsed.data,
 			goal: parsed.data.goal as import("../models/Enums").PlanGoal,
 			status: parsed.data.status as import("../models/Enums").PlanStatus,
-			difficulty: parsed.data.difficulty as import("../models/Enums").ExerciseDifficulty,
+			difficulty: parsed.data
+				.difficulty as import("../models/Enums").ExerciseDifficulty,
 			splitType: parsed.data.splitType as import("../models/Enums").SplitType,
-			createdBy: authReq.user!.id,
+			createdBy,
 		});
 
 		res.status(201).json(plan);
@@ -121,7 +131,10 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 		const plan = await WorkoutPlan.findById(id)
 			.populate("createdBy", "name email")
 			.populate("assignedUsers", "name email")
-			.populate("days.exercises.exerciseId", "name muscleGroup difficulty equipment caloriesPerSet")
+			.populate(
+				"days.exercises.exerciseId",
+				"name muscleGroup difficulty equipment caloriesPerSet",
+			)
 			.lean();
 
 		if (!plan) {
@@ -130,22 +143,39 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 		}
 
 		// Transform populated exercises into { exerciseId: string, exercise: {...} } shape
+		type ExerciseRef = {
+			exerciseId: unknown;
+			[key: string]: unknown;
+		};
+		type PlanDay = {
+			exercises: ExerciseRef[];
+			[key: string]: unknown;
+		};
+		const planWithDays = plan as typeof plan & { days: PlanDay[] };
 		const transformed = {
 			...plan,
-			days: (plan as any).days.map((day: any) => ({
+			days: planWithDays.days.map((day) => ({
 				...day,
-				exercises: day.exercises.map((ex: any) => {
-					const populated = ex.exerciseId;
+				exercises: day.exercises.map((ex) => {
+					const populated = ex.exerciseId as any;
 					if (populated && typeof populated === "object" && populated._id) {
+						const exercise = populated as {
+							_id: { toString(): string };
+							name: string;
+							muscleGroup: unknown;
+							difficulty: unknown;
+							equipment: unknown;
+							caloriesPerSet: unknown;
+						};
 						return {
 							...ex,
-							exerciseId: populated._id.toString(),
+							exerciseId: exercise._id.toString(),
 							exercise: {
-								name: populated.name,
-								muscleGroup: populated.muscleGroup,
-								difficulty: populated.difficulty,
-								equipment: populated.equipment,
-								caloriesPerSet: populated.caloriesPerSet,
+								name: exercise.name,
+								muscleGroup: exercise.muscleGroup,
+								difficulty: exercise.difficulty,
+								equipment: exercise.equipment,
+								caloriesPerSet: exercise.caloriesPerSet,
 							},
 						};
 					}
@@ -173,7 +203,11 @@ export const updatePlan: RequestHandler = async (req, res, next) => {
 
 		const parsed = updatePlanBodySchema.safeParse(req.body);
 		if (!parsed.success) {
-			logValidationError(`PATCH /workout-plans/${id}`, req.body, parsed.error.issues);
+			logValidationError(
+				`PATCH /workout-plans/${id}`,
+				req.body,
+				parsed.error.issues,
+			);
 			res.status(400).json({
 				error: "Validation failed",
 				code: "VALIDATION_ERROR",
@@ -246,7 +280,11 @@ export const assignUsers: RequestHandler = async (req, res, next) => {
 
 		const parsed = assignUsersBodySchema.safeParse(req.body);
 		if (!parsed.success) {
-			logValidationError(`POST /workout-plans/${id}/assign`, req.body, parsed.error.issues);
+			logValidationError(
+				`POST /workout-plans/${id}/assign`,
+				req.body,
+				parsed.error.issues,
+			);
 			res.status(400).json({
 				error: "Validation failed",
 				code: "VALIDATION_ERROR",
@@ -264,7 +302,11 @@ export const assignUsers: RequestHandler = async (req, res, next) => {
 		const startDate = parsed.data.startDate
 			? new Date(parsed.data.startDate)
 			: new Date();
-		const adminId = req.user!.id;
+		const adminId = req.user?.id;
+		if (!adminId) {
+			res.status(403).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+			return;
+		}
 
 		const results = await Promise.allSettled(
 			parsed.data.userIds.map((uid) =>
@@ -288,7 +330,8 @@ export const assignUsers: RequestHandler = async (req, res, next) => {
 				if (r.value.created) created.push(uid);
 				else skipped.push(uid);
 			} else {
-				const err = r.reason instanceof Error ? r.reason.message : String(r.reason);
+				const err =
+					r.reason instanceof Error ? r.reason.message : String(r.reason);
 				console.error(`assignUsers failed for ${uid}:`, err);
 				failed.push({ userId: uid, error: err });
 			}

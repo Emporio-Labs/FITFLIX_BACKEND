@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import type mongoose from "mongoose";
 import { MealLogSource, MealLogStatus } from "../../models/Enums";
 import NutritionMealLog from "../../models/nutrition-meal-log.model";
 import UserNutritionPlan from "../../models/nutrition-plan.model";
@@ -57,17 +57,9 @@ export const logMeal = async (input: LogMealInput, userId: string) => {
 	let dayNumber: number | null = null;
 
 	if (input.planId) {
-		planObjectId = toObjectId(
-			input.planId,
-			"NOT_FOUND",
-			"Plan not found",
-		);
+		planObjectId = toObjectId(input.planId, "NOT_FOUND", "Plan not found");
 		const plan = await assertPlanOwnedByUser(planObjectId, userId);
-		dayNumber = computeDayNumber(
-			plan.startDate,
-			plan.durationDays,
-			logDate,
-		);
+		dayNumber = computeDayNumber(plan.startDate, plan.durationDays, logDate);
 	}
 
 	const items = await resolveItemsToSnapshots(input.items);
@@ -110,10 +102,7 @@ export const markMealCompleted = async (
 	const planDay = plan.days.find((d) => d.dayNumber === dayNumber);
 	const meal = planDay?.meals?.[mealIndex];
 	if (!meal) {
-		throw new NutritionServiceError(
-			"NOT_FOUND",
-			"Prescribed meal not found",
-		);
+		throw new NutritionServiceError("NOT_FOUND", "Prescribed meal not found");
 	}
 
 	// Prefer the explicitly chosen option; fall back to the default
@@ -177,10 +166,7 @@ const loadOwnLog = async (logId: string, userId: string) => {
 		throw new NutritionServiceError("NOT_FOUND", "Meal log not found");
 	}
 	if (log.userId.toString() !== userId) {
-		throw new NutritionServiceError(
-			"FORBIDDEN",
-			"This meal log is not yours",
-		);
+		throw new NutritionServiceError("FORBIDDEN", "This meal log is not yours");
 	}
 	return log;
 };
@@ -240,10 +226,7 @@ export type ListLogsFilters = {
 	limit?: number;
 };
 
-export const listLogs = async (
-	userId: string,
-	filters: ListLogsFilters,
-) => {
+export const listLogs = async (userId: string, filters: ListLogsFilters) => {
 	const page = Math.max(1, filters.page ?? 1);
 	const limit = Math.min(200, Math.max(1, filters.limit ?? 50));
 

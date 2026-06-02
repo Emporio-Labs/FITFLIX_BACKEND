@@ -2,7 +2,11 @@ import mongoose from "mongoose";
 
 const hpodMetricSchema = new mongoose.Schema(
 	{
-		userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+		userId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "User",
+			required: true,
+		},
 		reportId: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "HpodReport",

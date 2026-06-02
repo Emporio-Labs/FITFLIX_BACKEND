@@ -1,7 +1,7 @@
 import type { NutritionActor } from "../../types/nutrition";
 import { getPlan } from "./nutrition-assignment.service";
 import { NutritionServiceError } from "./nutrition-errors";
-import { type PdfDeps, defaultPdfDeps } from "./nutrition-pdf.seam";
+import { defaultPdfDeps, type PdfDeps } from "./nutrition-pdf.seam";
 
 // Generates (and "stores") a PDF for an assigned plan, then persists only
 // metadata on the plan. With the default Noop renderer this throws a
@@ -32,10 +32,7 @@ export const generatePlanPdf = async (
 	};
 };
 
-export const getPlanPdf = async (
-	planId: string,
-	actor: NutritionActor,
-) => {
+export const getPlanPdf = async (planId: string, actor: NutritionActor) => {
 	const plan = await getPlan(planId, actor);
 
 	if (!plan.hasPdf || !plan.pdfUrl) {

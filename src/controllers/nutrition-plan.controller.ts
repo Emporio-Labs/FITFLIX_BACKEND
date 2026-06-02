@@ -49,6 +49,12 @@ const withMember = (plan: any) => {
 };
 
 export const assignTemplate: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = assignTemplateBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		if (process.env.NODE_ENV !== "production") {
@@ -67,14 +73,11 @@ export const assignTemplate: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const templateId = requireIdParam(
-			req.params.id,
-			"Template not found",
-		);
+		const templateId = requireIdParam(req.params.id, "Template not found");
 		const { plan, warnings } = await assignTemplateToUser(
 			templateId,
 			parsed.data.userId,
-			req.user!,
+			requester,
 			{
 				startDate: parsed.data.startDate,
 				endDate: parsed.data.endDate ?? null,
@@ -91,6 +94,12 @@ export const assignTemplate: RequestHandler = async (req, res, next) => {
 };
 
 export const createPlan: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = createAdHocPlanBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		if (process.env.NODE_ENV !== "production") {
@@ -117,7 +126,7 @@ export const createPlan: RequestHandler = async (req, res, next) => {
 				days: days as DayInput[],
 			},
 			userId,
-			req.user!.id,
+			requester.id,
 		);
 		res.status(201).json({
 			message: "Plan created",
@@ -130,6 +139,12 @@ export const createPlan: RequestHandler = async (req, res, next) => {
 };
 
 export const listManagedPlans: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = planListQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -141,7 +156,7 @@ export const listManagedPlans: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const plans = await listNutritionistPlans(req.user!.id, {
+		const plans = await listNutritionistPlans(requester.id, {
 			status: parsed.data.status as NutritionPlanStatus | undefined,
 		});
 		res.status(200).json({ plans: plans.map(withMember) });
@@ -151,9 +166,15 @@ export const listManagedPlans: RequestHandler = async (req, res, next) => {
 };
 
 export const getPlanById: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
-		const plan = await getPlan(planId, req.user!);
+		const plan = await getPlan(planId, requester);
 		res.status(200).json({ plan: withMember(plan) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
@@ -161,6 +182,12 @@ export const getPlanById: RequestHandler = async (req, res, next) => {
 };
 
 export const patchPlan: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = updatePlanBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -181,7 +208,7 @@ export const patchPlan: RequestHandler = async (req, res, next) => {
 				goal: goal as NutritionGoal | undefined,
 				days: days as DayInput[] | undefined,
 			},
-			req.user!,
+			requester,
 		);
 		res.status(200).json({ message: "Plan updated", plan: withMember(plan) });
 	} catch (error) {
@@ -190,6 +217,12 @@ export const patchPlan: RequestHandler = async (req, res, next) => {
 };
 
 export const changePlanStatus: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = planStatusBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -205,15 +238,23 @@ export const changePlanStatus: RequestHandler = async (req, res, next) => {
 		const plan = await setPlanStatus(
 			planId,
 			parsed.data.status as NutritionPlanStatus,
-			req.user!,
+			requester,
 		);
-		res.status(200).json({ message: "Plan status updated", plan: withMember(plan) });
+		res
+			.status(200)
+			.json({ message: "Plan status updated", plan: withMember(plan) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}
 };
 
 export const listMyPlans: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = planListQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -225,7 +266,7 @@ export const listMyPlans: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const plans = await listUserPlans(req.user!.id, {
+		const plans = await listUserPlans(requester.id, {
 			status: parsed.data.status as NutritionPlanStatus | undefined,
 		});
 		res.status(200).json({ plans: plans.map(withMember) });
@@ -235,9 +276,15 @@ export const listMyPlans: RequestHandler = async (req, res, next) => {
 };
 
 export const getMyPlanById: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
-		const plan = await getPlan(planId, req.user!);
+		const plan = await getPlan(planId, requester);
 		res.status(200).json({ plan: withMember(plan) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
@@ -249,9 +296,15 @@ export const generatePlanPdfHandler: RequestHandler = async (
 	res,
 	next,
 ) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
-		const result = await generatePlanPdf(planId, req.user!);
+		const result = await generatePlanPdf(planId, requester);
 		res.status(200).json({ message: "Plan PDF generated", ...result });
 	} catch (error) {
 		handleNutritionError(error, res, next);
@@ -259,9 +312,15 @@ export const generatePlanPdfHandler: RequestHandler = async (
 };
 
 export const getPlanPdfHandler: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
-		const result = await getPlanPdf(planId, req.user!);
+		const result = await getPlanPdf(planId, requester);
 		res.status(200).json(result);
 	} catch (error) {
 		handleNutritionError(error, res, next);
@@ -269,6 +328,12 @@ export const getPlanPdfHandler: RequestHandler = async (req, res, next) => {
 };
 
 export const duplicatePlanHandler: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = duplicatePlanBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -281,17 +346,25 @@ export const duplicatePlanHandler: RequestHandler = async (req, res, next) => {
 
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
-		const plan = await duplicatePlan(planId, req.user!, parsed.data);
-		res.status(201).json({ message: "Plan duplicated", plan: withMember(plan) });
+		const plan = await duplicatePlan(planId, requester, parsed.data);
+		res
+			.status(201)
+			.json({ message: "Plan duplicated", plan: withMember(plan) });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}
 };
 
 export const deletePlanHandler: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const planId = requireIdParam(req.params.id, "Plan not found");
-		await deletePlan(planId, req.user!);
+		await deletePlan(planId, requester);
 		res.status(200).json({ message: "Plan removed" });
 	} catch (error) {
 		handleNutritionError(error, res, next);

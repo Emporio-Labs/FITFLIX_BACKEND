@@ -12,6 +12,4 @@ export const dashboardMembersQuerySchema = z.object({
 	limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-export type DashboardMembersQuery = z.infer<
-	typeof dashboardMembersQuerySchema
->;
+export type DashboardMembersQuery = z.infer<typeof dashboardMembersQuerySchema>;

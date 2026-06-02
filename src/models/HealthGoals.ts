@@ -30,5 +30,6 @@ const healthGoalsSchema = new mongoose.Schema(
 
 type HealthGoalsDocument = mongoose.InferSchemaType<typeof healthGoalsSchema>;
 
-export default (mongoose.models.HealthGoals as mongoose.Model<HealthGoalsDocument>) ||
+export default (mongoose.models
+	.HealthGoals as mongoose.Model<HealthGoalsDocument>) ||
 	mongoose.model<HealthGoalsDocument>("HealthGoals", healthGoalsSchema);

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
-import { InvoicePaymentMethod, InvoicePaymentStatus } from "./Enums";
 import { applyIdTransform } from "../utils/mongoose-serialization";
+import { InvoicePaymentMethod, InvoicePaymentStatus } from "./Enums";
 
 const invoiceItemSchema = new mongoose.Schema(
 	{

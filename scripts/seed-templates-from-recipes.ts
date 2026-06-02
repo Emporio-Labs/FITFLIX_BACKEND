@@ -18,18 +18,15 @@
 
 import { config } from "dotenv";
 import mongoose from "mongoose";
-
-import connectDB from "../src/utils/db";
-import User from "../src/models/User";
 import Admin from "../src/models/Admin";
+import { NutritionGoal, NutritionPlanStatus } from "../src/models/Enums";
 import MealPlanCategory from "../src/models/MealPlanCategory";
 import NutritionTemplate from "../src/models/nutrition-template.model";
 import Recipe from "../src/models/Recipe";
-import { NutritionGoal } from "../src/models/Enums";
-import {
-	buildTemplateDaysFromCategory,
-} from "../src/services/nutrition/nutrition-recipe.service";
+import User from "../src/models/User";
 import { sumMacros } from "../src/services/nutrition/nutrition-macro.util";
+import { buildTemplateDaysFromCategory } from "../src/services/nutrition/nutrition-recipe.service";
+import connectDB from "../src/utils/db";
 
 config();
 
@@ -70,31 +67,50 @@ async function resolveCreatedBy(): Promise<mongoose.Types.ObjectId> {
 
 	// Fall back to Admin collection — NutritionTemplate.createdBy is a User ref
 	// so if we only have an Admin doc, we need a User with admin role.
-	const admin = await Admin.findOne({ email: adminEmail }).select("_id email").lean();
+	const admin = await Admin.findOne({ email: adminEmail })
+		.select("_id email")
+		.lean();
 	if (admin) {
-		console.log(yellow(`⚠ Found Admin account but NutritionTemplate.createdBy requires a User ref.`));
-		console.log(yellow(`  Searching for any User with admin role as fallback…`));
+		console.log(
+			yellow(
+				`⚠ Found Admin account but NutritionTemplate.createdBy requires a User ref.`,
+			),
+		);
+		console.log(
+			yellow(`  Searching for any User with admin role as fallback…`),
+		);
 	}
 
 	// Last resort: use any admin-role User
-	const fallback = await User.findOne({ role: "admin" } as Record<string, unknown>)
+	const fallback = await User.findOne({ role: "admin" } as Record<
+		string,
+		unknown
+	>)
 		.select("_id email")
 		.lean();
 	if (fallback) {
-		console.log(yellow(`⚠ Using fallback admin User: ${(fallback as { email: string }).email} (${fallback._id})`));
+		console.log(
+			yellow(
+				`⚠ Using fallback admin User: ${(fallback as { email: string }).email} (${fallback._id})`,
+			),
+		);
 		return fallback._id as mongoose.Types.ObjectId;
 	}
 
 	// Use any user at all (template seeding should not fail on this)
 	const anyUser = await User.findOne().select("_id email").lean();
 	if (anyUser) {
-		console.log(yellow(`⚠ No admin User found. Using first available User: ${(anyUser as { email: string }).email} (${anyUser._id})`));
+		console.log(
+			yellow(
+				`⚠ No admin User found. Using first available User: ${(anyUser as { email: string }).email} (${anyUser._id})`,
+			),
+		);
 		return anyUser._id as mongoose.Types.ObjectId;
 	}
 
 	throw new Error(
 		`No User found in DB. Cannot set createdBy for templates.\n` +
-		`Create a user first: bun run scripts/create-admin.ts`,
+			`Create a user first: bun run scripts/create-admin.ts`,
 	);
 }
 
@@ -112,9 +128,13 @@ async function main() {
 
 	const createdBy = await resolveCreatedBy();
 
-	const categories = await MealPlanCategory.find().sort({ sortOrder: 1 }).lean();
+	const categories = await MealPlanCategory.find()
+		.sort({ sortOrder: 1 })
+		.lean();
 	if (categories.length === 0) {
-		console.log(red("✗ No MealPlanCategory documents found. Run the Excel import first:"));
+		console.log(
+			red("✗ No MealPlanCategory documents found. Run the Excel import first:"),
+		);
 		console.log(dim("  bun run scripts/import-meal-plan.ts"));
 		await mongoose.disconnect();
 		process.exit(1);
@@ -138,7 +158,9 @@ async function main() {
 			isActive: true,
 		});
 
-		process.stdout.write(`  ${bold(category.name)}  (${recipeCount} recipes) … `);
+		process.stdout.write(
+			`  ${bold(category.name)}  (${recipeCount} recipes) … `,
+		);
 
 		// Idempotency check
 		const existing = await NutritionTemplate.findOne({ name: templateName })
@@ -169,10 +191,13 @@ async function main() {
 		}
 
 		try {
-			const { days, skippedIngredients, recipeCount: built } =
-				await buildTemplateDaysFromCategory(
-					(category._id as mongoose.Types.ObjectId).toString(),
-				);
+			const {
+				days,
+				skippedIngredients,
+				recipeCount: built,
+			} = await buildTemplateDaysFromCategory(
+				(category._id as mongoose.Types.ObjectId).toString(),
+			);
 
 			const allItems = (days[0]?.meals ?? []).flatMap((m) => m.items);
 			const totals = sumMacros(allItems);
@@ -183,9 +208,10 @@ async function main() {
 					description: `Auto-generated from ${category.name} recipe catalog`,
 					createdBy,
 					goal: NutritionGoal.Maintenance,
-					status: "Draft",
+					status: NutritionPlanStatus.Draft,
 					tags: [category.slug],
-					targetCaloriesKcal: totals.caloriesKcal > 0 ? totals.caloriesKcal : null,
+					targetCaloriesKcal:
+						totals.caloriesKcal > 0 ? totals.caloriesKcal : null,
 					targetMacros: {
 						proteinG: totals.proteinG > 0 ? totals.proteinG : null,
 						carbsG: totals.carbsG > 0 ? totals.carbsG : null,
@@ -198,8 +224,10 @@ async function main() {
 					lifestyleRecommendations: [],
 				});
 
-				console.log(green(`created ${template._id}`) +
-					dim(`  recipes=${built}  skipped=${skippedIngredients.length}`));
+				console.log(
+					green(`created ${template._id}`) +
+						dim(`  recipes=${built}  skipped=${skippedIngredients.length}`),
+				);
 				summary.push({
 					category: category.name,
 					status: "created",
@@ -208,10 +236,14 @@ async function main() {
 					skippedIngredients: skippedIngredients.length,
 				});
 			} else {
-				console.log(yellow(`[dry-run] would create`) +
-					dim(`  recipes=${built}  skipped=${skippedIngredients.length}`));
+				console.log(
+					yellow(`[dry-run] would create`) +
+						dim(`  recipes=${built}  skipped=${skippedIngredients.length}`),
+				);
 				if (skippedIngredients.length > 0) {
-					console.log(dim(`    Skipped ingredients: ${skippedIngredients.join(", ")}`));
+					console.log(
+						dim(`    Skipped ingredients: ${skippedIngredients.join(", ")}`),
+					);
 				}
 				summary.push({
 					category: category.name,
@@ -255,16 +287,18 @@ async function main() {
 	console.log("─".repeat(72));
 	const created = summary.filter((r) => r.status === "created").length;
 	const skipped = summary.filter((r) => r.status === "skipped").length;
-	console.log(`Created: ${created}  Skipped: ${skipped}  Errors: ${summary.filter((r) => r.status === "error").length}`);
+	console.log(
+		`Created: ${created}  Skipped: ${skipped}  Errors: ${summary.filter((r) => r.status === "error").length}`,
+	);
 
 	if (created > 0 && !isDryRun) {
 		console.log();
 		console.log(bold("Next steps:"));
 		console.log(
 			"  1. Assign a template to a user:\n" +
-			"     POST /nutrition/templates/:id/assign  { userId, startDate }\n" +
-			"  2. Verify the plan has ingredient-level data:\n" +
-			"     bun run scripts/diagnose-nutrition-hub.ts <email>",
+				"     POST /nutrition/templates/:id/assign  { userId, startDate }\n" +
+				"  2. Verify the plan has ingredient-level data:\n" +
+				"     bun run scripts/diagnose-nutrition-hub.ts <email>",
 		);
 	}
 

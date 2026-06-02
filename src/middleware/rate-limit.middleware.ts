@@ -59,7 +59,9 @@ const cleanupExpiredBuckets = (
 	}
 };
 
-export const createRateLimiter = (config: RateLimiterConfig): RequestHandler => {
+export const createRateLimiter = (
+	config: RateLimiterConfig,
+): RequestHandler => {
 	const buckets = new Map<string, RateLimitBucket>();
 
 	return (req, res, next) => {

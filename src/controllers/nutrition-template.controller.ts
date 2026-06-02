@@ -30,6 +30,12 @@ export const createNutritionTemplate: RequestHandler = async (
 	res,
 	next,
 ) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = createTemplateBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -48,7 +54,7 @@ export const createNutritionTemplate: RequestHandler = async (
 				status: parsed.data.status as NutritionPlanStatus | undefined,
 				days: parsed.data.days as DayInput[],
 			},
-			req.user!.id,
+			requester.id,
 		);
 		res.status(201).json({ message: "Template created", template });
 	} catch (error) {
@@ -61,6 +67,12 @@ export const listNutritionTemplates: RequestHandler = async (
 	res,
 	next,
 ) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = templateListQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -72,7 +84,7 @@ export const listNutritionTemplates: RequestHandler = async (
 	}
 
 	try {
-		const templates = await listTemplates(req.user!.id, {
+		const templates = await listTemplates(requester.id, {
 			status: parsed.data.status as NutritionPlanStatus | undefined,
 			goal: parsed.data.goal as NutritionGoal | undefined,
 			tag: parsed.data.tag,
@@ -83,14 +95,16 @@ export const listNutritionTemplates: RequestHandler = async (
 	}
 };
 
-export const getNutritionTemplate: RequestHandler = async (
-	req,
-	res,
-	next,
-) => {
+export const getNutritionTemplate: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const id = requireIdParam(req.params.id, "Template not found");
-		const template = await getTemplate(id, req.user!);
+		const template = await getTemplate(id, requester);
 		res.status(200).json({ template });
 	} catch (error) {
 		handleNutritionError(error, res, next);
@@ -102,6 +116,12 @@ export const updateNutritionTemplate: RequestHandler = async (
 	res,
 	next,
 ) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = updateTemplateBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -122,7 +142,7 @@ export const updateNutritionTemplate: RequestHandler = async (
 				status: parsed.data.status as NutritionPlanStatus | undefined,
 				days: parsed.data.days as DayInput[] | undefined,
 			},
-			req.user!,
+			requester,
 		);
 		res.status(200).json({ message: "Template updated", template });
 	} catch (error) {
@@ -135,9 +155,15 @@ export const deleteNutritionTemplate: RequestHandler = async (
 	res,
 	next,
 ) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	try {
 		const id = requireIdParam(req.params.id, "Template not found");
-		await deleteTemplate(id, req.user!);
+		await deleteTemplate(id, requester);
 		res.status(200).json({ message: "Template deleted" });
 	} catch (error) {
 		handleNutritionError(error, res, next);
@@ -149,6 +175,12 @@ export const recommendTemplatesHandler: RequestHandler = async (
 	res,
 	next,
 ) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = templateRecommendQuerySchema.safeParse(req.query);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -162,7 +194,7 @@ export const recommendTemplatesHandler: RequestHandler = async (
 	try {
 		const result = await recommendTemplatesForUser(
 			parsed.data.userId,
-			req.user!,
+			requester,
 		);
 		res.status(200).json(result);
 	} catch (error) {
@@ -171,6 +203,12 @@ export const recommendTemplatesHandler: RequestHandler = async (
 };
 
 export const filterTemplateHandler: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = templateFilterBodySchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -183,7 +221,7 @@ export const filterTemplateHandler: RequestHandler = async (req, res, next) => {
 
 	try {
 		const templateId = requireIdParam(req.params.id, "Template not found");
-		const result = await filterTemplateFoods(templateId, req.user!, {
+		const result = await filterTemplateFoods(templateId, requester, {
 			userId: parsed.data.userId,
 			profile: parsed.data.profile,
 		});

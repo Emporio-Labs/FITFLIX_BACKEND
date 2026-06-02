@@ -6,7 +6,9 @@ const WEBHOOK_HEADER = "x-webhook-secret";
 export const verifyWebhookSecret: RequestHandler = (req, res, next) => {
 	const configuredSecret = process.env.WEBHOOK_SECRET?.trim();
 	if (!configuredSecret) {
-		res.status(503).json({ message: "Webhook authentication is not configured" });
+		res
+			.status(503)
+			.json({ message: "Webhook authentication is not configured" });
 		return;
 	}
 
@@ -16,8 +18,7 @@ export const verifyWebhookSecret: RequestHandler = (req, res, next) => {
 	const expected = Buffer.from(configuredSecret, "utf8");
 	const provided = Buffer.from(providedSecret, "utf8");
 	const secretsMatch =
-		provided.length === expected.length &&
-		timingSafeEqual(provided, expected);
+		provided.length === expected.length && timingSafeEqual(provided, expected);
 
 	if (!secretsMatch) {
 		res.status(401).json({ message: "Invalid webhook secret" });

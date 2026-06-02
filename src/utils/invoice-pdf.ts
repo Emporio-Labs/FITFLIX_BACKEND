@@ -57,8 +57,16 @@ export const buildInvoicePdf = (invoice: InvoiceData): PDFKit.PDFDocument => {
 	const LINE = "#e5e7eb";
 
 	// ── Header ────────────────────────────────────────────────────────────────
-	doc.fontSize(24).fillColor(ACCENT).font("Helvetica-Bold").text("FITFLIX", 50, 50);
-	doc.fontSize(9).fillColor(GRAY).font("Helvetica").text("Health & Fitness Platform", 50, 78);
+	doc
+		.fontSize(24)
+		.fillColor(ACCENT)
+		.font("Helvetica-Bold")
+		.text("FITFLIX", 50, 50);
+	doc
+		.fontSize(9)
+		.fillColor(GRAY)
+		.font("Helvetica")
+		.text("Health & Fitness Platform", 50, 78);
 
 	doc
 		.fontSize(20)
@@ -77,8 +85,16 @@ export const buildInvoicePdf = (invoice: InvoiceData): PDFKit.PDFDocument => {
 	const col2 = 350;
 	let y = 115;
 
-	doc.fontSize(8).fillColor(GRAY).font("Helvetica-Bold").text("BILLED TO", 50, y);
-	doc.fontSize(8).fillColor(GRAY).font("Helvetica-Bold").text("INVOICE DETAILS", col2, y);
+	doc
+		.fontSize(8)
+		.fillColor(GRAY)
+		.font("Helvetica-Bold")
+		.text("BILLED TO", 50, y);
+	doc
+		.fontSize(8)
+		.fillColor(GRAY)
+		.font("Helvetica-Bold")
+		.text("INVOICE DETAILS", col2, y);
 
 	y += 14;
 	doc
@@ -86,17 +102,33 @@ export const buildInvoicePdf = (invoice: InvoiceData): PDFKit.PDFDocument => {
 		.fillColor(DARK)
 		.font("Helvetica-Bold")
 		.text(user?.username ?? "—", 50, y);
-	doc.fontSize(9).fillColor(DARK).font("Helvetica").text(`Plan: ${invoice.planSnapshot.name}`, col2, y);
+	doc
+		.fontSize(9)
+		.fillColor(DARK)
+		.font("Helvetica")
+		.text(`Plan: ${invoice.planSnapshot.name}`, col2, y);
 
 	y += 14;
-	doc.fontSize(9).fillColor(GRAY).font("Helvetica").text(user?.email ?? "—", 50, y);
-	doc.fontSize(9).fillColor(GRAY).font("Helvetica").text(`Issued: ${formatDate(invoice.issuedAt)}`, col2, y);
+	doc
+		.fontSize(9)
+		.fillColor(GRAY)
+		.font("Helvetica")
+		.text(user?.email ?? "—", 50, y);
+	doc
+		.fontSize(9)
+		.fillColor(GRAY)
+		.font("Helvetica")
+		.text(`Issued: ${formatDate(invoice.issuedAt)}`, col2, y);
 
 	y += 13;
 	if (user?.phone) {
 		doc.fontSize(9).fillColor(GRAY).font("Helvetica").text(user.phone, 50, y);
 	}
-	doc.fontSize(9).fillColor(GRAY).font("Helvetica").text(`Paid: ${formatDate(invoice.paidAt)}`, col2, y);
+	doc
+		.fontSize(9)
+		.fillColor(GRAY)
+		.font("Helvetica")
+		.text(`Paid: ${formatDate(invoice.paidAt)}`, col2, y);
 
 	y += 13;
 	doc
@@ -139,31 +171,51 @@ export const buildInvoicePdf = (invoice: InvoiceData): PDFKit.PDFDocument => {
 			.text(fmt(lineTotal), 490, y, { width: 50, align: "right" });
 
 		y += 18;
-		doc.moveTo(50, y - 2).lineTo(545, y - 2).strokeColor(LINE).lineWidth(0.3).stroke();
+		doc
+			.moveTo(50, y - 2)
+			.lineTo(545, y - 2)
+			.strokeColor(LINE)
+			.lineWidth(0.3)
+			.stroke();
 	}
 
 	// ── Totals ────────────────────────────────────────────────────────────────
 	y += 8;
 	const totalsX = 380;
 
-	const addTotalRow = (label: string, value: string, bold = false, color = DARK) => {
+	const addTotalRow = (
+		label: string,
+		value: string,
+		bold = false,
+		color = DARK,
+	) => {
 		doc
 			.fontSize(9)
 			.fillColor(GRAY)
 			.font(bold ? "Helvetica-Bold" : "Helvetica")
 			.text(label, totalsX, y, { width: 100 });
-		doc.fontSize(9).fillColor(color).font(bold ? "Helvetica-Bold" : "Helvetica").text(value, 490, y, {
-			width: 50,
-			align: "right",
-		});
+		doc
+			.fontSize(9)
+			.fillColor(color)
+			.font(bold ? "Helvetica-Bold" : "Helvetica")
+			.text(value, 490, y, {
+				width: 50,
+				align: "right",
+			});
 		y += 16;
 	};
 
 	addTotalRow("Subtotal", fmt(invoice.subtotal));
 	if (invoice.tax > 0) addTotalRow("Tax", fmt(invoice.tax));
-	if (invoice.discount > 0) addTotalRow("Discount", `-${fmt(invoice.discount)}`);
+	if (invoice.discount > 0)
+		addTotalRow("Discount", `-${fmt(invoice.discount)}`);
 
-	doc.moveTo(totalsX, y - 4).lineTo(545, y - 4).strokeColor(LINE).lineWidth(0.5).stroke();
+	doc
+		.moveTo(totalsX, y - 4)
+		.lineTo(545, y - 4)
+		.strokeColor(LINE)
+		.lineWidth(0.5)
+		.stroke();
 	addTotalRow("TOTAL", fmt(invoice.total), true, ACCENT);
 
 	// ── Payment Info ──────────────────────────────────────────────────────────
@@ -171,7 +223,11 @@ export const buildInvoicePdf = (invoice: InvoiceData): PDFKit.PDFDocument => {
 	doc.moveTo(50, y).lineTo(545, y).strokeColor(LINE).lineWidth(0.5).stroke();
 	y += 12;
 
-	doc.fontSize(8).fillColor(GRAY).font("Helvetica-Bold").text("PAYMENT INFORMATION", 50, y);
+	doc
+		.fontSize(8)
+		.fillColor(GRAY)
+		.font("Helvetica-Bold")
+		.text("PAYMENT INFORMATION", 50, y);
 	y += 14;
 
 	const statusColor =
@@ -179,12 +235,17 @@ export const buildInvoicePdf = (invoice: InvoiceData): PDFKit.PDFDocument => {
 			? "#16a34a"
 			: invoice.paymentStatus === "PENDING"
 				? "#d97706"
-				: invoice.paymentStatus === "CANCELLED" || invoice.paymentStatus === "FAILED"
+				: invoice.paymentStatus === "CANCELLED" ||
+						invoice.paymentStatus === "FAILED"
 					? "#dc2626"
 					: GRAY;
 
 	doc.fontSize(9).fillColor(GRAY).font("Helvetica").text("Status:", 50, y);
-	doc.fontSize(9).fillColor(statusColor).font("Helvetica-Bold").text(invoice.paymentStatus, 110, y);
+	doc
+		.fontSize(9)
+		.fillColor(statusColor)
+		.font("Helvetica-Bold")
+		.text(invoice.paymentStatus, 110, y);
 
 	doc.fontSize(9).fillColor(GRAY).font("Helvetica").text("Method:", col2, y);
 	doc
@@ -198,8 +259,14 @@ export const buildInvoicePdf = (invoice: InvoiceData): PDFKit.PDFDocument => {
 		.fontSize(8)
 		.fillColor(GRAY)
 		.font("Helvetica")
-		.text("Thank you for choosing Fitflix.", 50, 760, { align: "center", width: 495 })
-		.text("For queries, contact support@fitflix.in", 50, 772, { align: "center", width: 495 });
+		.text("Thank you for choosing Fitflix.", 50, 760, {
+			align: "center",
+			width: 495,
+		})
+		.text("For queries, contact support@fitflix.in", 50, 772, {
+			align: "center",
+			width: 495,
+		});
 
 	doc.end();
 	return doc;

@@ -47,7 +47,7 @@ export const createFood = async (
 
 export const searchFoods = async (options: FoodSearchOptions) => {
 	const page = Math.max(1, options.page ?? 1);
-	const limit = Math.min(100, Math.max(1, options.limit ?? 20));
+	const limit = Math.min(1000, Math.max(1, options.limit ?? 20));
 
 	const filter: Record<string, unknown> = { isActive: true };
 
@@ -127,10 +127,7 @@ export const updateFood = async (
 	return food;
 };
 
-export const deactivateFood = async (
-	foodId: string,
-	actor: NutritionActor,
-) => {
+export const deactivateFood = async (foodId: string, actor: NutritionActor) => {
 	const food = await loadOwnedFood(foodId, actor);
 	food.set({ isActive: false });
 	await food.save();

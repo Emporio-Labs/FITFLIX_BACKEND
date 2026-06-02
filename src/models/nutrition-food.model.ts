@@ -50,9 +50,6 @@ export type NutritionFoodDocument = mongoose.InferSchemaType<
 
 const NutritionFood =
 	(mongoose.models.NutritionFood as mongoose.Model<NutritionFoodDocument>) ||
-	mongoose.model<NutritionFoodDocument>(
-		"NutritionFood",
-		nutritionFoodSchema,
-	);
+	mongoose.model<NutritionFoodDocument>("NutritionFood", nutritionFoodSchema);
 
 export default NutritionFood;

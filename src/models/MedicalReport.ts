@@ -23,5 +23,6 @@ type MedicalReportDocument = mongoose.InferSchemaType<
 	typeof medicalReportSchema
 >;
 
-export default (mongoose.models.MedicalReport as mongoose.Model<MedicalReportDocument>) ||
+export default (mongoose.models
+	.MedicalReport as mongoose.Model<MedicalReportDocument>) ||
 	mongoose.model<MedicalReportDocument>("MedicalReport", medicalReportSchema);

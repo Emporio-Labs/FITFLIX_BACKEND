@@ -1,11 +1,10 @@
 import type { RequestHandler } from "express";
 import { z } from "zod";
-import { NutritionGoal } from "../models/Enums";
 import {
-	buildTemplateFromCategoryBody,
-	buildTemplateFromRecipeBody,
-	recipeBrowseQuerySchema,
-} from "../validators/nutrition-recipe.validator";
+	getValidationDetails,
+	handleNutritionError,
+	requireIdParam,
+} from "../services/nutrition/nutrition-errors";
 import {
 	createTemplateFromCategory,
 	createTemplateFromRecipe,
@@ -15,16 +14,20 @@ import {
 	listRecipesByCategory,
 } from "../services/nutrition/nutrition-recipe.service";
 import {
-	getValidationDetails,
-	handleNutritionError,
-	requireIdParam,
-} from "../services/nutrition/nutrition-errors";
+	buildTemplateFromCategoryBody,
+	buildTemplateFromRecipeBody,
+	recipeBrowseQuerySchema,
+} from "../validators/nutrition-recipe.validator";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Browse
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const listCategoriesHandler: RequestHandler = async (_req, res, next) => {
+export const listCategoriesHandler: RequestHandler = async (
+	_req,
+	res,
+	next,
+) => {
 	try {
 		const categories = await listCategories();
 		res.status(200).json({ categories });
@@ -100,6 +103,12 @@ export const buildTemplateFromCategoryHandler: RequestHandler = async (
 	res,
 	next,
 ) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = buildTemplateFromCategoryBody.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -116,11 +125,7 @@ export const buildTemplateFromCategoryHandler: RequestHandler = async (
 			"Category not found",
 		);
 		const { template, skippedIngredients, recipeCount } =
-			await createTemplateFromCategory(
-				categoryId,
-				parsed.data,
-				req.user!.id,
-			);
+			await createTemplateFromCategory(categoryId, parsed.data, requester.id);
 		res.status(201).json({
 			message: "Template created from category",
 			template,
@@ -137,6 +142,12 @@ export const buildTemplateFromRecipeHandler: RequestHandler = async (
 	res,
 	next,
 ) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
 	const parsed = buildTemplateFromRecipeBody.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({
@@ -150,7 +161,7 @@ export const buildTemplateFromRecipeHandler: RequestHandler = async (
 	try {
 		const recipeId = requireIdParam(req.params.recipeId, "Recipe not found");
 		const { template, totals, skippedIngredients } =
-			await createTemplateFromRecipe(recipeId, parsed.data, req.user!.id);
+			await createTemplateFromRecipe(recipeId, parsed.data, requester.id);
 		res.status(201).json({
 			message: "Template created from recipe",
 			template,

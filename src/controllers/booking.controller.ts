@@ -7,10 +7,8 @@ import Service from "../models/Service";
 import Slot from "../models/Slots";
 
 void HpodReport;
-import {
-	consumeCredits,
-	refundCreditsBySource,
-} from "../utils/credit.service";
+
+import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
 import {
 	changeBookingStatusBodySchema,
 	createBookingBodySchema,
@@ -514,8 +512,7 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 				endTime: concreteSlot.endTime,
 			};
 
-			const shouldReserveSlot =
-				newSlotId !== existingBooking.slot.toString();
+			const shouldReserveSlot = newSlotId !== existingBooking.slot.toString();
 
 			if (shouldReserveSlot) {
 				// Reserve the new slot
@@ -569,8 +566,8 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 			{ _id: id, status: nonCancelledBookingStatusFilter },
 			updatePayload,
 			{
-			returnDocument: "after",
-			runValidators: true,
+				returnDocument: "after",
+				runValidators: true,
 			},
 		);
 
@@ -629,7 +626,8 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 	try {
 		const session = await mongoose.startSession();
 		try {
-			let response: any = null;
+			let response: { status: number; body: Record<string, unknown> } | null =
+				null;
 
 			await session.withTransaction(async () => {
 				const existingBooking = await Booking.findById(id).session(session);
@@ -683,7 +681,10 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 			});
 
 			if (response) {
-				const { status, body } = response as { status: number; body: Record<string, unknown> };
+				const { status, body } = response as {
+					status: number;
+					body: Record<string, unknown>;
+				};
 				res.status(status).json(body);
 				return;
 			}
@@ -726,7 +727,8 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 		if (isCancelledBookingStatus(parsedBody.data.status)) {
 			const session = await mongoose.startSession();
 			try {
-				let response: any = null;
+				let response: { status: number; body: Record<string, unknown> } | null =
+					null;
 
 				await session.withTransaction(async () => {
 					const transitionedBooking = await Booking.findOneAndUpdate(
@@ -783,8 +785,11 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 				});
 
 				if (response) {
-				const { status, body } = response as { status: number; body: Record<string, unknown> };
-				res.status(status).json(body);
+					const { status, body } = response as {
+						status: number;
+						body: Record<string, unknown>;
+					};
+					res.status(status).json(body);
 				}
 
 				res.status(500).json({ message: "Booking cancellation failed" });

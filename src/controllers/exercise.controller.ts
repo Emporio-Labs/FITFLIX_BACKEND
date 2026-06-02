@@ -19,6 +19,12 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 
 export const listExercises: RequestHandler = async (req, res, next) => {
 	try {
+		const requester = req.user;
+		if (!requester) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
 		const parsed = listExercisesQuerySchema.safeParse(req.query);
 		if (!parsed.success) {
 			res.status(400).json({
@@ -47,12 +53,12 @@ export const listExercises: RequestHandler = async (req, res, next) => {
 				filter.isSystem = true;
 			} else {
 				filter.isSystem = false;
-				filter.createdBy = new mongoose.Types.ObjectId(req.user!.id);
+				filter.createdBy = new mongoose.Types.ObjectId(requester.id);
 			}
 		} else {
 			filter.$or = [
 				{ isSystem: true },
-				{ createdBy: new mongoose.Types.ObjectId(req.user!.id) },
+				{ createdBy: new mongoose.Types.ObjectId(requester.id) },
 			];
 		}
 
@@ -87,6 +93,12 @@ export const listExercises: RequestHandler = async (req, res, next) => {
 
 export const getExerciseById: RequestHandler = async (req, res, next) => {
 	try {
+		const requester = req.user;
+		if (!requester) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
 		const id = getIdParam(req.params.id);
 		if (!id) {
 			res.status(400).json({ message: "Invalid exercise ID" });
@@ -99,10 +111,7 @@ export const getExerciseById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		if (
-			!exercise.isSystem &&
-			exercise.createdBy?.toString() !== req.user!.id
-		) {
+		if (!exercise.isSystem && exercise.createdBy?.toString() !== requester.id) {
 			res.status(404).json({ message: "Exercise not found" });
 			return;
 		}
@@ -115,6 +124,12 @@ export const getExerciseById: RequestHandler = async (req, res, next) => {
 
 export const createExercise: RequestHandler = async (req, res, next) => {
 	try {
+		const requester = req.user;
+		if (!requester) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
 		const parsed = createExerciseBodySchema.safeParse(req.body);
 		if (!parsed.success) {
 			res.status(400).json({
@@ -127,10 +142,13 @@ export const createExercise: RequestHandler = async (req, res, next) => {
 
 		const exercise = await Exercise.create({
 			...parsed.data,
-			muscleGroup: parsed.data.muscleGroup as import("../models/Enums").MuscleGroup,
-			difficulty: parsed.data.difficulty as import("../models/Enums").ExerciseDifficulty,
-			isSystem: req.user!.role === "admin",
-			createdBy: new mongoose.Types.ObjectId(req.user!.id),
+			muscleGroup: parsed.data
+				.muscleGroup as import("../models/Enums").MuscleGroup,
+			difficulty: parsed.data
+				.difficulty as import("../models/Enums").ExerciseDifficulty,
+			sectionTypes: parsed.data.sectionTypes as any,
+			isSystem: requester.role === "admin",
+			createdBy: new mongoose.Types.ObjectId(requester.id),
 		});
 
 		res.status(201).json(exercise);
@@ -141,6 +159,12 @@ export const createExercise: RequestHandler = async (req, res, next) => {
 
 export const updateExercise: RequestHandler = async (req, res, next) => {
 	try {
+		const requester = req.user;
+		if (!requester) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
 		const id = getIdParam(req.params.id);
 		if (!id) {
 			res.status(400).json({ message: "Invalid exercise ID" });
@@ -168,8 +192,10 @@ export const updateExercise: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		if (exercise.createdBy?.toString() !== req.user!.id) {
-			res.status(403).json({ message: "Not authorized to modify this exercise" });
+		if (exercise.createdBy?.toString() !== requester.id) {
+			res
+				.status(403)
+				.json({ message: "Not authorized to modify this exercise" });
 			return;
 		}
 
@@ -185,6 +211,12 @@ export const updateExercise: RequestHandler = async (req, res, next) => {
 
 export const deleteExercise: RequestHandler = async (req, res, next) => {
 	try {
+		const requester = req.user;
+		if (!requester) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
 		const id = getIdParam(req.params.id);
 		if (!id) {
 			res.status(400).json({ message: "Invalid exercise ID" });
@@ -202,7 +234,7 @@ export const deleteExercise: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		if (exercise.createdBy?.toString() !== req.user!.id) {
+		if (exercise.createdBy?.toString() !== requester.id) {
 			res.status(403).json({
 				message: "Not authorized to delete this exercise",
 			});

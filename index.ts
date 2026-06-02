@@ -1,12 +1,12 @@
 import { createServer } from "node:http";
 import app from "./src/app";
+import { initSocketIO } from "./src/services/realtime.service";
+import { startReminderPoller } from "./src/services/reminder.service";
 import connectDB from "./src/utils/db";
 import {
 	hasGmailWatchCredentials,
 	registerGmailWatch,
 } from "./src/utils/email.service";
-import { initSocketIO } from "./src/services/realtime.service";
-import { startReminderPoller } from "./src/services/reminder.service";
 
 // --- Startup environment validation ---
 const REQUIRED_ENV_VARS = ["MONGODB_URL", "JWT_SECRET"] as const;

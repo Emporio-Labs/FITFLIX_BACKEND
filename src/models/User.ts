@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
-import { Gender, OnboardingStep } from "./Enums";
 import { applyIdTransform } from "../utils/mongoose-serialization";
+import { Gender, OnboardingStep } from "./Enums";
 
 const userSchema = new mongoose.Schema(
 	{
@@ -32,9 +32,7 @@ const userSchema = new mongoose.Schema(
 				enum: Object.values(OnboardingStep),
 				default: OnboardingStep.HEALTH_MARKERS,
 			},
-			completedSteps: [
-				{ type: String, enum: Object.values(OnboardingStep) },
-			],
+			completedSteps: [{ type: String, enum: Object.values(OnboardingStep) }],
 			healthMarkersCompleted: { type: Boolean, default: false },
 			healthGoalsCompleted: { type: Boolean, default: false },
 			consentCompleted: { type: Boolean, default: false },

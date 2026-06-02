@@ -6,6 +6,10 @@ import { authorize } from "../middleware/rbac.middleware";
 const dashboardRouter = Router();
 
 dashboardRouter.use(authenticateToken);
-dashboardRouter.get("/metrics", authorize(["admin", "frontdesk"]), getDashboardMetrics);
+dashboardRouter.get(
+	"/metrics",
+	authorize(["admin", "frontdesk"]),
+	getDashboardMetrics,
+);
 
 export default dashboardRouter;

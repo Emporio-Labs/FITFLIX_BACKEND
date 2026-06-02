@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import { LeadStatus } from "../models/Enums";
+import { type Gender, LeadStatus } from "../models/Enums";
 import Lead from "../models/Lead";
 import User from "../models/User";
 import { calculateHealthScore } from "../utils/health-score";
@@ -73,7 +73,9 @@ export const createLead: RequestHandler = async (req, res, next) => {
 	try {
 		const lead = await Lead.create({
 			...leadData,
-			status: leadData.status as import("../models/Enums").LeadStatus | undefined,
+			status: leadData.status as
+				| import("../models/Enums").LeadStatus
+				| undefined,
 			...(followUpDateValue ? { followUpDate: followUpDateValue } : {}),
 			...(ownerId ? { owner: ownerId } : {}),
 		});
@@ -192,24 +194,24 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 		callback:
 			submissionFormType === "callback"
 				? {
-					name: resolvedLeadName,
-					email: resolvedEmail,
-					phone: resolvedPhone ?? null,
-					interests: normalizedCallbackInterests,
-				}
+						name: resolvedLeadName,
+						email: resolvedEmail,
+						phone: resolvedPhone ?? null,
+						interests: normalizedCallbackInterests,
+					}
 				: null,
 		personalDetails: personalDetails ?? null,
 		assessment:
 			assessment && scoreResult
 				? {
-					version: assessment.version,
-					answers: assessment.answers,
-					totalScore: scoreResult.totalScore,
-					maxScore: scoreResult.maxScore,
-					overallScore: scoreResult.overallScore,
-					categoryScores: scoreResult.categoryScores,
-					brandTier: scoreResult.brandTier,
-				}
+						version: assessment.version,
+						answers: assessment.answers,
+						totalScore: scoreResult.totalScore,
+						maxScore: scoreResult.maxScore,
+						overallScore: scoreResult.overallScore,
+						categoryScores: scoreResult.categoryScores,
+						brandTier: scoreResult.brandTier,
+					}
 				: null,
 		submittedAt: new Date(),
 	};
@@ -260,7 +262,12 @@ export const getAllLeads: RequestHandler = async (req, res, next) => {
 			filter.status = status;
 		}
 		if (typeof tags === "string" && tags) {
-			filter.tags = { $in: tags.split(",").map((t) => t.trim()).filter(Boolean) };
+			filter.tags = {
+				$in: tags
+					.split(",")
+					.map((t) => t.trim())
+					.filter(Boolean),
+			};
 		}
 
 		const leads = await Lead.find(filter).populate(
@@ -491,7 +498,7 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			phone,
 			email: lead.email,
 			age: Number(age),
-			gender,
+			gender: gender as Gender,
 			healthGoals,
 			passwordHash,
 		});

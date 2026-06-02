@@ -1,6 +1,7 @@
+import { promises as fs } from "node:fs";
 import type { Request, RequestHandler } from "express";
 import mongoose from "mongoose";
-
+import { validateFileSignature } from "../middleware/upload.middleware";
 import ConsentForm from "../models/ConsentForm";
 import { ConsentType, ExpertType, OnboardingStep } from "../models/Enums";
 import ExpertAppointment from "../models/ExpertAppointment";
@@ -16,9 +17,11 @@ import {
 	OnboardingServiceError,
 	validateStepAllowed,
 } from "../utils/onboarding.service";
-import { promises as fs } from "fs";
-import { deleteFromS3, generateSignedUrl, uploadStreamToS3 } from "../utils/s3.service";
-import { validateFileSignature } from "../middleware/upload.middleware";
+import {
+	deleteFromS3,
+	generateSignedUrl,
+	uploadStreamToS3,
+} from "../utils/s3.service";
 import {
 	appointmentBodySchema,
 	consentBodySchema,
@@ -204,7 +207,8 @@ export const submitConsent = async (
 	res: Parameters<RequestHandler>[1],
 	next: Parameters<RequestHandler>[2],
 ) => {
-	if (!req.user || req.user.role !== "user") {
+	const requester = req.user;
+	if (!requester || requester.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
 			code: "FORBIDDEN",
@@ -218,7 +222,7 @@ export const submitConsent = async (
 		? null
 		: legacyConsentBodySchema.safeParse(req.body);
 
-	if (!parsedNew.success && (!parsedLegacy || !parsedLegacy.success)) {
+	if (!parsedNew.success && !parsedLegacy?.success) {
 		res.status(400).json({
 			error: "Validation failed",
 			code: "VALIDATION_ERROR",
@@ -228,7 +232,7 @@ export const submitConsent = async (
 	}
 
 	try {
-		await validateStepAllowed(req.user.id, OnboardingStep.CONSENT);
+		await validateStepAllowed(requester.id, OnboardingStep.CONSENT);
 
 		const ipAddress =
 			(req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ??
@@ -282,16 +286,16 @@ export const submitConsent = async (
 		}
 
 		const consentForm = await ConsentForm.findOneAndUpdate(
-			{ userId: req.user.id },
+			{ userId: requester.id },
 			{
-				userId: req.user.id,
+				userId: requester.id,
 				consents: consentsData,
 				ipAddress,
 			},
 			{ upsert: true, returnDocument: "after", runValidators: true },
 		);
 
-		await advanceStep(req.user.id, OnboardingStep.CONSENT);
+		await advanceStep(requester.id, OnboardingStep.CONSENT);
 
 		res.status(201).json({
 			message: "Consent submitted",
@@ -305,9 +309,10 @@ export const submitConsent = async (
 export const submitReport = async (
 	req: RequestWithUser,
 	res: Parameters<RequestHandler>[1],
-	next: Parameters<RequestHandler>[2],
+	_next: Parameters<RequestHandler>[2],
 ) => {
-	if (!req.user || req.user.role !== "user") {
+	const requester = req.user;
+	if (!requester || requester.role !== "user") {
 		res.status(403).json({
 			error: "Access Denied",
 			code: "FORBIDDEN",
@@ -332,13 +337,13 @@ export const submitReport = async (
 	let wasUploadedToS3 = false;
 
 	try {
-		const status = await getOnboardingStatus(req.user.id);
+		const status = await getOnboardingStatus(requester.id);
 
 		if (
 			status.currentStep !== OnboardingStep.REPORT_UPLOAD &&
 			!status.completedSteps.includes(OnboardingStep.REPORT_UPLOAD)
 		) {
-			await validateStepAllowed(req.user.id, OnboardingStep.REPORT_UPLOAD);
+			await validateStepAllowed(requester.id, OnboardingStep.REPORT_UPLOAD);
 		}
 
 		if (req.file) {
@@ -349,7 +354,9 @@ export const submitReport = async (
 			// Validate file content signature (magic numbers) on disk
 			const isValidSignature = await validateFileSignature(filePath, mimeType);
 			if (!isValidSignature) {
-				console.error(`[SECURITY] File signature validation failed for user ${req.user.id}. File path: ${filePath}, Expected: ${mimeType}`);
+				console.error(
+					`[SECURITY] File signature validation failed for user ${requester.id}. File path: ${filePath}, Expected: ${mimeType}`,
+				);
 				res.status(400).json({
 					error: "Invalid file contents",
 					code: "VALIDATION_ERROR",
@@ -358,8 +365,8 @@ export const submitReport = async (
 			}
 
 			const ext = req.file.originalname.split(".").pop() ?? "bin";
-			const key = `medical-reports/${req.user.id}/${Date.now()}-${new mongoose.Types.ObjectId().toString()}.${ext}`;
-			
+			const key = `medical-reports/${requester.id}/${Date.now()}-${new mongoose.Types.ObjectId().toString()}.${ext}`;
+
 			// Stream file directly to S3
 			const result = await uploadStreamToS3(key, filePath, mimeType, fileSize);
 			s3Key = result.s3Key;
@@ -367,7 +374,7 @@ export const submitReport = async (
 		}
 
 		// Save record in MongoDB, clean up S3 on failure
-		let report;
+		let report: any = null;
 		try {
 			let reportUrl = parsedBody.data.reportUrl;
 			if (
@@ -379,7 +386,7 @@ export const submitReport = async (
 			}
 
 			report = new MedicalReport({
-				userId: req.user.id,
+				userId: requester.id,
 				reportName: parsedBody.data.reportName,
 				reportType: parsedBody.data.reportType,
 				reportUrl,
@@ -389,13 +396,21 @@ export const submitReport = async (
 			});
 			await report.save();
 		} catch (dbError) {
-			console.error(`[DATABASE_ERROR] MongoDB save failed for user ${req.user.id}:`, dbError);
+			console.error(
+				`[DATABASE_ERROR] MongoDB save failed for user ${requester.id}:`,
+				dbError,
+			);
 			if (s3Key && wasUploadedToS3) {
 				try {
 					await deleteFromS3(s3Key);
-					console.log(`[CLEANUP] Successfully removed orphaned S3 object: ${s3Key}`);
+					console.log(
+						`[CLEANUP] Successfully removed orphaned S3 object: ${s3Key}`,
+					);
 				} catch (s3Error) {
-					console.error(`[CLEANUP_ERROR] Failed to delete orphaned S3 object ${s3Key}:`, s3Error);
+					console.error(
+						`[CLEANUP_ERROR] Failed to delete orphaned S3 object ${s3Key}:`,
+						s3Error,
+					);
 				}
 			}
 			res.status(500).json({
@@ -406,7 +421,7 @@ export const submitReport = async (
 		}
 
 		if (!status.completedSteps.includes(OnboardingStep.REPORT_UPLOAD)) {
-			await advanceStep(req.user.id, OnboardingStep.REPORT_UPLOAD);
+			await advanceStep(requester.id, OnboardingStep.REPORT_UPLOAD);
 		}
 
 		// Generate a short-lived presigned URL for the response payload safely
@@ -415,7 +430,10 @@ export const submitReport = async (
 			try {
 				reportObj.reportUrl = await generateSignedUrl(s3Key, 900, mimeType);
 			} catch (s3SignError) {
-				console.error(`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${s3Key}:`, s3SignError);
+				console.error(
+					`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${s3Key}:`,
+					s3SignError,
+				);
 				reportObj.reportUrl = undefined; // Proceed without crashing the response
 			}
 		}
@@ -425,18 +443,24 @@ export const submitReport = async (
 			report: reportObj,
 		});
 	} catch (error) {
-		console.error(`[UPLOAD_FAILED] Failed file ingestion for user ${req.user?.id}:`, error);
+		console.error(
+			`[UPLOAD_FAILED] Failed file ingestion for user ${requester.id}:`,
+			error,
+		);
 		res.status(500).json({
 			error: "An error occurred during report ingestion",
 			code: "INTERNAL_ERROR",
 		});
 	} finally {
 		// Rule 2: Wrap fs.promises.unlink tightly in a finally block so local storage never leaks
-		if (req.file && req.file.path) {
+		if (req.file?.path) {
 			try {
 				await fs.unlink(req.file.path);
 			} catch (unlinkError) {
-				console.error(`[CLEANUP_ERROR] Failed to unlink temp file at ${req.file.path}:`, unlinkError);
+				console.error(
+					`[CLEANUP_ERROR] Failed to unlink temp file at ${req.file.path}:`,
+					unlinkError,
+				);
 			}
 		}
 	}
@@ -448,7 +472,8 @@ const submitAppointmentInternal = async (
 	next: Parameters<RequestHandler>[2],
 	expertTypeOverride?: ExpertType,
 ) => {
-	if (!req.user || req.user.role !== "user") {
+	const requester = req.user;
+	if (!requester || requester.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
 			code: "FORBIDDEN",
@@ -483,12 +508,16 @@ const submitAppointmentInternal = async (
 				? OnboardingStep.SPORTS_SCIENTIST_BOOKING
 				: OnboardingStep.NUTRITIONIST_BOOKING;
 
-		await validateStepAllowed(req.user.id, requiredStep);
+		await validateStepAllowed(requester.id, requiredStep);
 
-		const userObjectId = new mongoose.Types.ObjectId(req.user.id);
+		const userObjectId = new mongoose.Types.ObjectId(requester.id);
 
 		const filter = { userId: userObjectId, expertType };
-		const update: Record<string, unknown> = { userId: userObjectId, expertType, ...appointmentData };
+		const update: Record<string, unknown> = {
+			userId: userObjectId,
+			expertType,
+			...appointmentData,
+		};
 		if (appointmentData.appointmentDate) {
 			update.appointmentStart = appointmentData.appointmentDate;
 		}
@@ -502,7 +531,7 @@ const submitAppointmentInternal = async (
 			{ upsert: true, returnDocument: "after", runValidators: true },
 		);
 
-		await advanceStep(req.user.id, requiredStep);
+		await advanceStep(requester.id, requiredStep);
 
 		res.status(201).json({
 			message: `${expertType === ExpertType.SportsScientist ? "Sports scientist" : "Nutritionist"} appointment booked`,
@@ -529,14 +558,20 @@ export const submitSportsScientistAppointment: RequestHandler = (
 	);
 
 export const submitNutritionistAppointment: RequestHandler = (req, res, next) =>
-	submitAppointmentInternal(req as RequestWithUser, res, next, ExpertType.Nutritionist);
+	submitAppointmentInternal(
+		req as RequestWithUser,
+		res,
+		next,
+		ExpertType.Nutritionist,
+	);
 
 export const deleteNutritionistAppointment = async (
 	req: RequestWithUser,
 	res: Parameters<RequestHandler>[1],
 	next: Parameters<RequestHandler>[2],
 ) => {
-	if (!req.user || req.user.role !== "admin") {
+	const requester = req.user;
+	if (!requester || requester.role !== "admin") {
 		res.status(403).json({
 			error: "Only admins can cancel nutritionist appointments",
 			code: "FORBIDDEN",
@@ -575,7 +610,8 @@ export const submitComplete = async (
 	res: Parameters<RequestHandler>[1],
 	next: Parameters<RequestHandler>[2],
 ) => {
-	if (!req.user || req.user.role !== "user") {
+	const requester = req.user;
+	if (!requester || requester.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
 			code: "FORBIDDEN",
@@ -584,7 +620,7 @@ export const submitComplete = async (
 	}
 
 	try {
-		const completedAt = await completeOnboarding(req.user.id);
+		const completedAt = await completeOnboarding(requester.id);
 
 		res.status(200).json({
 			message: "Onboarding completed",

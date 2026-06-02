@@ -60,10 +60,9 @@ export const mealOptionSchema = z
 		reasoning: z.string().trim().max(2000).optional(),
 		foods: z.array(mealItemSchema).default([]),
 	})
-	.refine(
-		(o) => o.foods.length > 0,
-		{ message: "Each meal option must have at least one food item" },
-	);
+	.refine((o) => o.foods.length > 0, {
+		message: "Each meal option must have at least one food item",
+	});
 
 export const lifestyleRecommendationSchema = z.object({
 	title: z.string().trim().min(1),
@@ -84,10 +83,10 @@ export const mealSchema = z
 		items: z.array(mealItemSchema).default([]),
 		options: z.array(mealOptionSchema).default([]),
 	})
-	.refine(
-		(m) => m.options.filter((o) => o.isDefault).length <= 1,
-		{ message: "At most one meal option may be marked as default", path: ["options"] },
-	);
+	.refine((m) => m.options.filter((o) => o.isDefault).length <= 1, {
+		message: "At most one meal option may be marked as default",
+		path: ["options"],
+	});
 
 export const daySchema = z.object({
 	dayNumber: z.coerce.number().int().min(1).max(366),

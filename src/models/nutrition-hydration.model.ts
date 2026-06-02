@@ -26,10 +26,7 @@ const nutritionHydrationLogSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
-nutritionHydrationLogSchema.index(
-	{ userId: 1, logDate: 1 },
-	{ unique: true },
-);
+nutritionHydrationLogSchema.index({ userId: 1, logDate: 1 }, { unique: true });
 
 export type NutritionHydrationLogDocument = mongoose.InferSchemaType<
 	typeof nutritionHydrationLogSchema

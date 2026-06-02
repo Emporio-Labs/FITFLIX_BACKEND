@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import { CreditTransactionSource } from "../models/Enums";
+import type { CreditTransactionSource } from "../models/Enums";
 import {
 	addCreditsToMembership,
 	CreditServiceError,
@@ -23,8 +23,6 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 
 	return idParam;
 };
-
-
 
 export const getMyCreditBalance: RequestHandler = async (req, res, next) => {
 	if (!req.user || req.user.role !== "user") {

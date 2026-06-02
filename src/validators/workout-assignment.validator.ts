@@ -23,8 +23,19 @@ export const updateAssignmentDayBodySchema = z.object({
 				section: sectionEnum.optional().default("workout"),
 				targetSets: z.coerce.number().int().min(1).max(50),
 				targetReps: z.coerce.number().int().min(1).max(100),
-				targetWeightKg: z.coerce.number().min(0).max(999.99).optional().default(0),
-				restSeconds: z.coerce.number().int().min(0).max(600).optional().default(60),
+				targetWeightKg: z.coerce
+					.number()
+					.min(0)
+					.max(999.99)
+					.optional()
+					.default(0),
+				restSeconds: z.coerce
+					.number()
+					.int()
+					.min(0)
+					.max(600)
+					.optional()
+					.default(60),
 				durationSeconds: z.coerce.number().int().min(1).max(86400).optional(),
 			}),
 		)

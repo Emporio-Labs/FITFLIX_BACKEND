@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import AppointmentAuditLog from "../../models/AppointmentAuditLog";
-import ExpertAppointment from "../../models/ExpertAppointment";
 import {
 	AppointmentBookingStatus,
 	AuditAction,
@@ -9,10 +8,11 @@ import {
 	WebhookEventStatus,
 	WebhookSyncStatus,
 } from "../../models/Enums";
+import ExpertAppointment from "../../models/ExpertAppointment";
 import WebhookEvent from "../../models/WebhookEvent";
 import { fanOutToAdmin, notify } from "../../services/notification.service";
-import { cancelReminders } from "../../services/reminder.service";
 import { emitToFrontDesk, emitToUser } from "../../services/realtime.service";
+import { cancelReminders } from "../../services/reminder.service";
 import { cancelExpertAppointment } from "../../utils/onboarding.service";
 import { withOptionalTransaction } from "../../utils/transaction";
 import { expertTypeFromEventTypeId } from "./calid.mapper";
@@ -29,7 +29,9 @@ export function verifyCalIdSignature(
 ): boolean {
 	const secret = process.env.CALID_WEBHOOK_SECRET;
 	if (!secret) {
-		console.warn("[calid-webhook] CALID_WEBHOOK_SECRET not set — skipping verification");
+		console.warn(
+			"[calid-webhook] CALID_WEBHOOK_SECRET not set — skipping verification",
+		);
 		return true;
 	}
 
@@ -88,7 +90,10 @@ export async function handleCalIdWebhook(
 	}
 
 	const claimed = await WebhookEvent.findOneAndUpdate(
-		{ eventId: deliveryId, status: { $in: [WebhookEventStatus.Received, WebhookEventStatus.Failed] } },
+		{
+			eventId: deliveryId,
+			status: { $in: [WebhookEventStatus.Received, WebhookEventStatus.Failed] },
+		},
 		{ $set: { status: WebhookEventStatus.Processing } },
 		{ returnDocument: "after" },
 	);
@@ -103,7 +108,10 @@ export async function handleCalIdWebhook(
 		});
 	} catch (err) {
 		const attempts = (claimed.attempts ?? 0) + 1;
-		const newStatus = attempts >= MAX_ATTEMPTS ? WebhookEventStatus.DLQ : WebhookEventStatus.Failed;
+		const newStatus =
+			attempts >= MAX_ATTEMPTS
+				? WebhookEventStatus.DLQ
+				: WebhookEventStatus.Failed;
 
 		await WebhookEvent.findByIdAndUpdate(claimed._id, {
 			$set: {
@@ -121,7 +129,9 @@ export async function handleCalIdWebhook(
 
 // ─── Event dispatcher ─────────────────────────────────────────────────────────
 
-async function dispatchWebhookEvent(payload: CalIdWebhookPayload): Promise<void> {
+async function dispatchWebhookEvent(
+	payload: CalIdWebhookPayload,
+): Promise<void> {
 	const { triggerEvent } = payload;
 	const booking = payload.payload;
 
@@ -152,7 +162,9 @@ async function handleBookingConfirmed(
 	});
 
 	if (!appointment) {
-		console.warn(`[calid-webhook] CONFIRMED: no appointment for uid=${booking.uid}`);
+		console.warn(
+			`[calid-webhook] CONFIRMED: no appointment for uid=${booking.uid}`,
+		);
 		return;
 	}
 
@@ -184,7 +196,10 @@ async function handleBookingConfirmed(
 					action: AuditAction.WebhookSync,
 					actor: "webhook",
 					calBookingId: booking.uid,
-					after: { bookingStatus: AppointmentBookingStatus.Confirmed, meetingUrl: booking.meetingUrl },
+					after: {
+						bookingStatus: AppointmentBookingStatus.Confirmed,
+						meetingUrl: booking.meetingUrl,
+					},
 					payload: booking,
 				},
 			],
@@ -209,7 +224,9 @@ async function handleBookingRescheduled(
 	});
 
 	if (!appointment) {
-		console.warn(`[calid-webhook] RESCHEDULED: no appointment for uid=${booking.uid}`);
+		console.warn(
+			`[calid-webhook] RESCHEDULED: no appointment for uid=${booking.uid}`,
+		);
 		return;
 	}
 
@@ -226,7 +243,10 @@ async function handleBookingRescheduled(
 					appointmentEnd: new Date(booking.endTime),
 					appointmentDate: new Date(booking.startTime), // Mapped for backward compat
 					meetingUrl: booking.meetingUrl ?? appointment.meetingUrl,
-					meetingLink: booking.meetingUrl ?? appointment.meetingUrl ?? appointment.meetingLink, // Mapped for backward compat
+					meetingLink:
+						booking.meetingUrl ??
+						appointment.meetingUrl ??
+						appointment.meetingLink, // Mapped for backward compat
 					webhookSyncStatus: WebhookSyncStatus.Synced,
 					lastSyncedAt: now,
 				},
@@ -253,7 +273,9 @@ async function handleBookingRescheduled(
 
 	await cancelReminders(appointment._id).catch(() => {});
 	if (booking.startTime) {
-		const { scheduleReminders } = await import("../../services/reminder.service");
+		const { scheduleReminders } = await import(
+			"../../services/reminder.service"
+		);
 		await scheduleReminders(
 			appointment._id,
 			appointment.userId,
@@ -267,7 +289,11 @@ async function handleBookingRescheduled(
 		title: "Appointment rescheduled",
 		body: "Your appointment time has been updated.",
 		data: { appointmentId: String(appointment._id) },
-		channels: [NotificationChannel.InApp, NotificationChannel.Push, NotificationChannel.Socket],
+		channels: [
+			NotificationChannel.InApp,
+			NotificationChannel.Push,
+			NotificationChannel.Socket,
+		],
 	}).catch(() => {});
 
 	fanOutToAdmin("appointment_created", {
@@ -285,7 +311,9 @@ async function handleBookingCancelled(
 	});
 
 	if (!appointment) {
-		console.warn(`[calid-webhook] CANCELLED: no appointment for uid=${booking.uid}`);
+		console.warn(
+			`[calid-webhook] CANCELLED: no appointment for uid=${booking.uid}`,
+		);
 		return;
 	}
 
@@ -327,11 +355,12 @@ async function handleBookingCancelled(
 
 	const expertType = expertTypeFromEventTypeId(booking.eventTypeId);
 	if (expertType) {
-		await cancelExpertAppointment(
-			String(appointment.userId),
-			expertType,
-		).catch((err) =>
-			console.error("[calid-webhook] cancelExpertAppointment rewind failed", err),
+		await cancelExpertAppointment(String(appointment.userId), expertType).catch(
+			(err) =>
+				console.error(
+					"[calid-webhook] cancelExpertAppointment rewind failed",
+					err,
+				),
 		);
 	}
 
@@ -343,7 +372,11 @@ async function handleBookingCancelled(
 		title: "Appointment cancelled",
 		body: "Your appointment has been cancelled.",
 		data: { appointmentId: String(appointment._id) },
-		channels: [NotificationChannel.InApp, NotificationChannel.Push, NotificationChannel.Socket],
+		channels: [
+			NotificationChannel.InApp,
+			NotificationChannel.Push,
+			NotificationChannel.Socket,
+		],
 	}).catch(() => {});
 
 	fanOutToAdmin("slot_released", {

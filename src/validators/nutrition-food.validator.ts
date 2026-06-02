@@ -31,7 +31,7 @@ export const foodSearchQuerySchema = z.object({
 	query: optionalNutritionString,
 	source: z.enum(sourceValues).optional(),
 	page: z.coerce.number().int().min(1).optional(),
-	limit: z.coerce.number().int().min(1).max(100).optional(),
+	limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
 export type CreateFoodBody = z.infer<typeof createFoodBodySchema>;

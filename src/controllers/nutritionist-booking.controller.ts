@@ -1,19 +1,23 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import { mapCalBookingToAppointmentFields } from "../integrations/calid/calid.mapper";
+import * as calidService from "../integrations/calid/calid.service";
 import {
+	AppointmentBookingStatus,
+	AppointmentSource,
+	ExpertType,
 	NutritionistApprovalStatus,
 	NutritionistBookingStatus,
 	OnboardingStep,
-	AppointmentBookingStatus,
 	WebhookSyncStatus,
-	ExpertType,
 } from "../models/Enums";
+import ExpertAppointment from "../models/ExpertAppointment";
 import NutritionistBooking from "../models/NutritionistBooking";
 import Slot from "../models/Slots";
 import User from "../models/User";
 import {
-	OnboardingServiceError,
 	advanceStep,
+	OnboardingServiceError,
 } from "../utils/onboarding.service";
 import {
 	acceptBookingBodySchema,
@@ -21,9 +25,6 @@ import {
 	listNutritionistBookingsQuerySchema,
 	rejectBookingBodySchema,
 } from "../validators/nutritionist-booking.validator";
-import * as calidService from "../integrations/calid/calid.service";
-import ExpertAppointment from "../models/ExpertAppointment";
-import { mapCalBookingToAppointmentFields } from "../integrations/calid/calid.mapper";
 
 type ZodIssue = { path: PropertyKey[]; message: string };
 
@@ -192,7 +193,9 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 			}
 
 			// 2. Fetch user details
-			const dbUser = await User.findById(req.user.id).select("username email").lean();
+			const dbUser = await User.findById(req.user.id)
+				.select("username email")
+				.lean();
 			if (!dbUser) {
 				res.status(404).json({ error: "User not found", code: "NOT_FOUND" });
 				return;
@@ -214,7 +217,7 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 				expertType: ExpertType.Nutritionist,
 				bookingStatus: AppointmentBookingStatus.Confirmed,
 				timezone: "Asia/Kolkata",
-				appointmentSource: "USER_APP",
+				appointmentSource: AppointmentSource.UserApp,
 				webhookSyncStatus: WebhookSyncStatus.Pending,
 				...calFields,
 			});
@@ -227,7 +230,10 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 			}
 
 			// Helper to format slot time:
-			const formatToTimeZoneTime = (isoString: string, timeZone: string): string => {
+			const formatToTimeZoneTime = (
+				isoString: string,
+				timeZone: string,
+			): string => {
 				const d = new Date(isoString);
 				const parts = new Intl.DateTimeFormat("en-US", {
 					timeZone,
@@ -245,9 +251,20 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 				_id: appointment._id.toString(),
 				bookingId: appointment._id.toString(),
 				slotId: slotId,
-				date: calFields.appointmentStart || appointment.appointmentStart || date,
-				startTime: calFields.appointmentStart ? formatToTimeZoneTime(calFields.appointmentStart.toISOString(), appointment.timezone) : "",
-				endTime: calFields.appointmentEnd ? formatToTimeZoneTime(calFields.appointmentEnd.toISOString(), appointment.timezone) : "",
+				date:
+					calFields.appointmentStart || appointment.appointmentStart || date,
+				startTime: calFields.appointmentStart
+					? formatToTimeZoneTime(
+							calFields.appointmentStart.toISOString(),
+							appointment.timezone,
+						)
+					: "",
+				endTime: calFields.appointmentEnd
+					? formatToTimeZoneTime(
+							calFields.appointmentEnd.toISOString(),
+							appointment.timezone,
+						)
+					: "",
 				appointmentMode: appointmentMode,
 				bookingStatus: "ACCEPTED",
 				status: "ACCEPTED",
@@ -416,9 +433,7 @@ export const acceptNutritionistBooking: RequestHandler = async (
 
 	const id = getIdParam(req.params.id);
 	if (!id) {
-		res
-			.status(400)
-			.json({ error: "Invalid booking id", code: "BAD_REQUEST" });
+		res.status(400).json({ error: "Invalid booking id", code: "BAD_REQUEST" });
 		return;
 	}
 
@@ -436,9 +451,7 @@ export const acceptNutritionistBooking: RequestHandler = async (
 		const booking = await NutritionistBooking.findById(id);
 
 		if (!booking) {
-			res
-				.status(404)
-				.json({ error: "Booking not found", code: "NOT_FOUND" });
+			res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
 			return;
 		}
 
@@ -501,9 +514,7 @@ export const rejectNutritionistBooking: RequestHandler = async (
 
 	const id = getIdParam(req.params.id);
 	if (!id) {
-		res
-			.status(400)
-			.json({ error: "Invalid booking id", code: "BAD_REQUEST" });
+		res.status(400).json({ error: "Invalid booking id", code: "BAD_REQUEST" });
 		return;
 	}
 
@@ -521,9 +532,7 @@ export const rejectNutritionistBooking: RequestHandler = async (
 		const booking = await NutritionistBooking.findById(id);
 
 		if (!booking) {
-			res
-				.status(404)
-				.json({ error: "Booking not found", code: "NOT_FOUND" });
+			res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
 			return;
 		}
 
@@ -600,10 +609,7 @@ export const getMyNutritionistBooking: RequestHandler = async (
 
 		if (!booking) {
 			const latest = await NutritionistBooking.findOne({ user: req.user.id })
-				.populate(
-					"slot",
-					"date startTime endTime capacity remainingCapacity",
-				)
+				.populate("slot", "date startTime endTime capacity remainingCapacity")
 				.sort({ createdAt: -1 });
 
 			if (!latest) {

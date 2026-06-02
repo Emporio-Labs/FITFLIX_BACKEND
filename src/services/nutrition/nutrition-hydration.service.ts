@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import type mongoose from "mongoose";
 import { NutritionPlanStatus } from "../../models/Enums";
 import NutritionHydrationLog from "../../models/nutrition-hydration.model";
 import UserNutritionPlan from "../../models/nutrition-plan.model";

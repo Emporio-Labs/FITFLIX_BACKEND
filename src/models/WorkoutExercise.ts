@@ -41,7 +41,8 @@ export type WorkoutExerciseDocument = mongoose.InferSchemaType<
 >;
 
 const WorkoutExercise =
-	(mongoose.models.WorkoutExercise as mongoose.Model<WorkoutExerciseDocument>) ||
+	(mongoose.models
+		.WorkoutExercise as mongoose.Model<WorkoutExerciseDocument>) ||
 	mongoose.model<WorkoutExerciseDocument>(
 		"WorkoutExercise",
 		workoutExerciseSchema,
