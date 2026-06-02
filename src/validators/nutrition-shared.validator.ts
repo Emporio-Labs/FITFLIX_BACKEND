@@ -51,6 +51,7 @@ export const macroTargetSchema = z
 export const mealItemSchema = z.object({
 	foodId: objectIdString,
 	quantityG: z.coerce.number().positive().max(10000),
+	recipeSource: z.string().trim().optional(),
 });
 
 export const mealOptionSchema = z
@@ -59,6 +60,8 @@ export const mealOptionSchema = z
 		isDefault: z.boolean().optional(),
 		reasoning: z.string().trim().max(2000).optional(),
 		foods: z.array(mealItemSchema).default([]),
+		recipeId: z.string().trim().optional(),
+		recipeName: z.string().trim().optional(),
 	})
 	.refine((o) => o.foods.length > 0, {
 		message: "Each meal option must have at least one food item",

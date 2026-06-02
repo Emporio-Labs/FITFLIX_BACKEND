@@ -51,6 +51,7 @@ export const mealFoodItemSchema = new mongoose.Schema(
 		fatG: { type: Number, required: true },
 		fiberG: { type: Number, default: null },
 		sugarG: { type: Number, default: null },
+		recipeSource: { type: String, default: null },
 	},
 	{ _id: false },
 );
@@ -67,6 +68,11 @@ export const mealOptionSchema = new mongoose.Schema({
 	reasoning: { type: String, default: "" },
 	cookingDirections: { type: [String], default: [] },
 	prepTimeMinutes: { type: Number, default: null },
+	recipeId: {
+		type: String,
+		default: null,
+	},
+	recipeName: { type: String, default: null },
 });
 
 // Lifestyle recommendation attached at the plan/template level.
