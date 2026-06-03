@@ -1,5 +1,7 @@
 import type { RequestHandler } from "express";
 import type { NutritionGoal, NutritionPlanStatus } from "../models/Enums";
+import UserNutritionPlan from "../models/nutrition-plan.model";
+import NutritionTemplate from "../models/nutrition-template.model";
 import {
 	assignTemplateToUser,
 	createAdHocPlan,
@@ -28,6 +30,7 @@ import {
 	planListQuerySchema,
 	planStatusBodySchema,
 	updatePlanBodySchema,
+	copyDayStructureSchema,
 } from "../validators/nutrition-plan.validator";
 
 // biome-ignore lint/suspicious/noExplicitAny: populated Mongoose docs lose strict typing
@@ -355,6 +358,10 @@ export const duplicatePlanHandler: RequestHandler = async (req, res, next) => {
 	}
 };
 
+export const deletePlanPage: RequestHandler = async (req, res, next) => {
+	// kept for compatibility
+};
+
 export const deletePlanHandler: RequestHandler = async (req, res, next) => {
 	const requester = req.user;
 	if (!requester) {
@@ -366,6 +373,120 @@ export const deletePlanHandler: RequestHandler = async (req, res, next) => {
 		const planId = requireIdParam(req.params.id, "Plan not found");
 		await deletePlan(planId, requester);
 		res.status(200).json({ message: "Plan removed" });
+	} catch (error) {
+		handleNutritionError(error, res, next);
+	}
+};
+
+export const copyPlanDayStructure: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
+	const parsed = copyDayStructureSchema.safeParse(req.body);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
+	try {
+		const { planId, sourceDayOfWeek, targetDaysOfWeek, strategy } = parsed.data;
+		
+		let document: any = await UserNutritionPlan.findById(planId);
+		let isTemplate = false;
+		if (!document) {
+			document = await NutritionTemplate.findById(planId);
+			isTemplate = true;
+		}
+
+		if (!document) {
+			res.status(404).json({ error: "Plan or template not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		const dayOfWeekToNumber = (day: string): number => {
+			const mapping: { [key: string]: number } = {
+				"Sunday": 7,
+				"Monday": 1,
+				"Tuesday": 2,
+				"Wednesday": 3,
+				"Thursday": 4,
+				"Friday": 5,
+				"Saturday": 6,
+			};
+			return mapping[day] ?? 1;
+		};
+
+		const sourceDayNum = dayOfWeekToNumber(sourceDayOfWeek);
+		const sourceDayDoc = document.days.find((d: any) => d.dayNumber === sourceDayNum);
+		if (!sourceDayDoc) {
+			res.status(400).json({ error: `Source day (${sourceDayOfWeek}) not configured in the template/plan.`, code: "BAD_REQUEST" });
+			return;
+		}
+
+		const stripIds = (obj: any): any => {
+			if (Array.isArray(obj)) {
+				return obj.map(stripIds);
+			} else if (obj !== null && typeof obj === "object") {
+				const plainObj = typeof obj.toObject === "function" ? obj.toObject() : { ...obj };
+				delete plainObj._id;
+				delete plainObj.id;
+				for (const key in plainObj) {
+					plainObj[key] = stripIds(plainObj[key]);
+				}
+				return plainObj;
+			}
+			return obj;
+		};
+
+		const sourceMealsPlain = stripIds(sourceDayDoc.meals);
+		let targetDayNums: number[] = targetDaysOfWeek.map(dayOfWeekToNumber);
+
+		if (strategy === "split_week") {
+			const isWeekdaySelected = targetDaysOfWeek.some(d => ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].includes(d));
+			if (isWeekdaySelected) {
+				targetDayNums = [1, 2, 3, 4, 5];
+			} else {
+				targetDayNums = [6, 7];
+			}
+		}
+
+		for (const targetDayNum of targetDayNums) {
+			if (targetDayNum === sourceDayNum) continue;
+
+			let mealsToCopy = JSON.parse(JSON.stringify(sourceMealsPlain));
+			if (strategy === "alternate") {
+				const altDayNum = sourceDayNum === 1 ? 2 : 1;
+				const altDayDoc = document.days.find((d: any) => d.dayNumber === altDayNum);
+				if (altDayDoc && (targetDayNum % 2 !== sourceDayNum % 2)) {
+					mealsToCopy = stripIds(altDayDoc.meals);
+				}
+			}
+
+			let targetDayDoc = document.days.find((d: any) => d.dayNumber === targetDayNum);
+			if (!targetDayDoc) {
+				document.days.push({
+					dayNumber: targetDayNum,
+					meals: mealsToCopy,
+				});
+			} else {
+				targetDayDoc.meals = mealsToCopy;
+			}
+		}
+
+		document.days.sort((a: any, b: any) => a.dayNumber - b.dayNumber);
+		await document.save();
+
+		res.status(200).json({
+			message: `Day structure replicated to target days successfully.`,
+			days: document.days,
+		});
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}

@@ -79,9 +79,17 @@ export const planListQuerySchema = z.object({
 	status: z.enum(statusValues).optional(),
 });
 
+export const copyDayStructureSchema = z.object({
+  planId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid Plan ID"),
+  sourceDayOfWeek: z.enum(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]),
+  targetDaysOfWeek: z.array(z.enum(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"])),
+  strategy: z.enum(["replicate", "alternate", "split_week"])
+});
+
 export type AssignTemplateBody = z.infer<typeof assignTemplateBodySchema>;
 export type CreateAdHocPlanBody = z.infer<typeof createAdHocPlanBodySchema>;
 export type UpdatePlanBody = z.infer<typeof updatePlanBodySchema>;
 export type PlanStatusBody = z.infer<typeof planStatusBodySchema>;
 export type PlanListQuery = z.infer<typeof planListQuerySchema>;
 export type DuplicatePlanBody = z.infer<typeof duplicatePlanBodySchema>;
+export type CopyDayStructureBody = z.infer<typeof copyDayStructureSchema>;

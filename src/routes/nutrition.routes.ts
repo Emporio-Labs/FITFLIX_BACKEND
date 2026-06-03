@@ -43,6 +43,7 @@ import {
 	listManagedPlans,
 	listMyPlans,
 	patchPlan,
+	copyPlanDayStructure,
 } from "../controllers/nutrition-plan.controller";
 import {
 	createProfileHandler,
@@ -131,6 +132,7 @@ nutritionRouter.post(
 	STAFF,
 	buildTemplateFromRecipeHandler,
 );
+nutritionRouter.post("/templates/copy", STAFF, copyPlanDayStructure);
 nutritionRouter.post("/templates", STAFF, createNutritionTemplate);
 nutritionRouter.get("/templates", STAFF, listNutritionTemplates);
 nutritionRouter.get("/templates/:id", STAFF, getNutritionTemplate);
