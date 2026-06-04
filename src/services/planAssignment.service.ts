@@ -48,21 +48,6 @@ export async function createAssignmentForUser(
 	const plan = await WorkoutPlan.findById(planObjId).lean();
 	if (!plan) throw new Error("PLAN_NOT_FOUND");
 
-	// Idempotency: if an active assignment already exists for (user, plan), return it.
-	const existing = await WorkoutPlanAssignment.findOne({
-		userId: userObjId,
-		planId: planObjId,
-		status: "active",
-		isDeleted: { $ne: true },
-	});
-	if (existing) return { assignment: existing, created: false };
-
-	// One-active-per-user: abandon any other active assignment for this user.
-	await WorkoutPlanAssignment.updateMany(
-		{ userId: userObjId, status: "active", isDeleted: { $ne: true } },
-		{ $set: { status: "abandoned" } },
-	);
-
 	const userDays = (plan.days as any[]).map((day) => ({
 		dayNumber: day.dayNumber,
 		name: day.name,
@@ -80,6 +65,47 @@ export async function createAssignmentForUser(
 	}));
 
 	const dayProgress = initializeSchedule(userDays as any, startDate);
+
+	// Idempotency / Reactivation: check if an assignment already exists for (user, plan)
+	const existing = await WorkoutPlanAssignment.findOne({
+		userId: userObjId,
+		planId: planObjId,
+		isDeleted: { $ne: true },
+	});
+
+	if (existing) {
+		// One-active-per-user: abandon any other active assignment for this user.
+		await WorkoutPlanAssignment.updateMany(
+			{
+				userId: userObjId,
+				planId: { $ne: planObjId },
+				status: "active",
+				isDeleted: { $ne: true },
+			},
+			{ $set: { status: "abandoned" } },
+		);
+
+		if (existing.status === "active") {
+			return { assignment: existing, created: false };
+		}
+
+		// Reactivate the existing inactive assignment with fresh status and plan values
+		existing.status = "active";
+		existing.startDate = startDate;
+		existing.currentDayIndex = 0;
+		existing.userDays = userDays;
+		existing.dayProgress = dayProgress;
+		existing.assignedBy = args.assignedBy;
+		await existing.save();
+
+		return { assignment: existing, created: false };
+	}
+
+	// One-active-per-user: abandon any other active assignment for this user.
+	await WorkoutPlanAssignment.updateMany(
+		{ userId: userObjId, status: "active", isDeleted: { $ne: true } },
+		{ $set: { status: "abandoned" } },
+	);
 
 	const assignment = await WorkoutPlanAssignment.create({
 		userId: userObjId,

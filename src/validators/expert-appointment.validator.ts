@@ -20,6 +20,7 @@ export const bookAppointmentSchema = z.object({
 		.min(1)
 		.default(process.env.CAL_DEFAULT_TIMEZONE ?? "Asia/Kolkata"),
 	idempotencyKey: z.string().trim().min(1).optional(),
+	email: z.string().trim().email("Invalid email format").optional(),
 });
 
 export type BookAppointmentBody = z.infer<typeof bookAppointmentSchema>;

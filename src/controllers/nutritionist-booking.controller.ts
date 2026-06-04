@@ -201,12 +201,28 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 				return;
 			}
 
+			let attendeeEmail = dbUser.email;
+			const bodyEmail = parsed.data.email;
+
+			if (bodyEmail) {
+				if (dbUser.email !== bodyEmail) {
+					await User.findByIdAndUpdate(req.user.id, { $set: { email: bodyEmail } });
+				}
+				attendeeEmail = bodyEmail;
+			} else if (!attendeeEmail) {
+				res.status(400).json({
+					error: "Email address is required to book a nutritionist appointment.",
+					code: "EMAIL_REQUIRED",
+				});
+				return;
+			}
+
 			// 3. Create booking on Cal.id
 			const calBooking = await calidService.createBooking({
 				expertType: ExpertType.Nutritionist,
 				slotStart: slotId,
 				timezone: "Asia/Kolkata",
-				attendee: { name: dbUser.username, email: dbUser.email ?? "" },
+				attendee: { name: dbUser.username, email: attendeeEmail },
 				userId: req.user.id,
 			});
 
@@ -448,10 +464,45 @@ export const acceptNutritionistBooking: RequestHandler = async (
 	}
 
 	try {
-		const booking = await NutritionistBooking.findById(id);
+		let booking = await NutritionistBooking.findById(id);
 
 		if (!booking) {
-			res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
+			const appointment = await ExpertAppointment.findOne({ _id: id, expertType: ExpertType.Nutritionist });
+			if (!appointment) {
+				res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
+				return;
+			}
+
+			if (appointment.bookingStatus !== AppointmentBookingStatus.Pending) {
+				res.status(409).json({
+					error: `Cannot accept booking in '${appointment.bookingStatus}' state`,
+					code: "CONFLICT",
+				});
+				return;
+			}
+
+			const updatedAppt = await ExpertAppointment.findByIdAndUpdate(
+				id,
+				{
+					$set: {
+						bookingStatus: AppointmentBookingStatus.Confirmed,
+						lastSyncedAt: new Date(),
+					},
+				},
+				{ new: true },
+			);
+
+			res.status(200).json({
+				message: "Expert nutritionist appointment accepted",
+				booking: {
+					_id: updatedAppt?._id.toString(),
+					userId: updatedAppt?.userId,
+					expertType: "nutritionist",
+					bookingStatus: "Confirmed",
+					appointmentDate: updatedAppt?.appointmentStart,
+					createdAt: updatedAppt?.createdAt,
+				},
+			});
 			return;
 		}
 
@@ -529,10 +580,48 @@ export const rejectNutritionistBooking: RequestHandler = async (
 	}
 
 	try {
-		const booking = await NutritionistBooking.findById(id);
+		let booking = await NutritionistBooking.findById(id);
 
 		if (!booking) {
-			res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
+			const appointment = await ExpertAppointment.findOne({ _id: id, expertType: ExpertType.Nutritionist });
+			if (!appointment) {
+				res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
+				return;
+			}
+
+			if (
+				appointment.bookingStatus === AppointmentBookingStatus.Cancelled ||
+				appointment.bookingStatus === AppointmentBookingStatus.Completed
+			) {
+				res.status(409).json({
+					error: `Cannot reject booking in '${appointment.bookingStatus}' state`,
+					code: "CONFLICT",
+				});
+				return;
+			}
+
+			const updatedAppt = await ExpertAppointment.findByIdAndUpdate(
+				id,
+				{
+					$set: {
+						bookingStatus: AppointmentBookingStatus.Cancelled,
+						lastSyncedAt: new Date(),
+					},
+				},
+				{ new: true },
+			);
+
+			res.status(200).json({
+				message: "Expert nutritionist appointment rejected",
+				booking: {
+					_id: updatedAppt?._id.toString(),
+					userId: updatedAppt?.userId,
+					expertType: "nutritionist",
+					bookingStatus: "Cancelled",
+					appointmentDate: updatedAppt?.appointmentStart,
+					createdAt: updatedAppt?.createdAt,
+				},
+			});
 			return;
 		}
 
@@ -625,6 +714,103 @@ export const getMyNutritionistBooking: RequestHandler = async (
 		}
 
 		res.status(200).json({ booking });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const completeNutritionistBooking: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
+	if (!req.user || req.user.role !== "admin") {
+		res.status(403).json({
+			error: "Only admins/frontdesk can complete nutritionist bookings",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	const id = getIdParam(req.params.id);
+	if (!id) {
+		res.status(400).json({ error: "Invalid booking id", code: "BAD_REQUEST" });
+		return;
+	}
+
+	try {
+		let booking = await NutritionistBooking.findById(id);
+
+		if (!booking) {
+			const appointment = await ExpertAppointment.findOne({ _id: id, expertType: ExpertType.Nutritionist });
+			if (!appointment) {
+				res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
+				return;
+			}
+
+			if (appointment.bookingStatus === AppointmentBookingStatus.Completed) {
+				res.status(200).json({
+					message: "Expert nutritionist appointment already completed",
+					booking: {
+						_id: appointment._id.toString(),
+						userId: appointment.userId,
+						expertType: "nutritionist",
+						bookingStatus: "Completed",
+						appointmentDate: appointment.appointmentStart,
+						createdAt: appointment.createdAt,
+					},
+				});
+				return;
+			}
+
+			const updatedAppt = await ExpertAppointment.findByIdAndUpdate(
+				id,
+				{
+					$set: {
+						bookingStatus: AppointmentBookingStatus.Completed,
+						lastSyncedAt: new Date(),
+					},
+				},
+				{ new: true },
+			);
+
+			res.status(200).json({
+				message: "Expert nutritionist appointment completed",
+				booking: {
+					_id: updatedAppt?._id.toString(),
+					userId: updatedAppt?.userId,
+					expertType: "nutritionist",
+					bookingStatus: "Completed",
+					appointmentDate: updatedAppt?.appointmentStart,
+					createdAt: updatedAppt?.createdAt,
+				},
+			});
+			return;
+		}
+
+		if (booking.bookingStatus === NutritionistBookingStatus.COMPLETED) {
+			res.status(200).json({
+				message: "Booking is already completed",
+				booking,
+			});
+			return;
+		}
+
+		const updated = await NutritionistBooking.findByIdAndUpdate(
+			id,
+			{
+				$set: {
+					bookingStatus: NutritionistBookingStatus.COMPLETED,
+					completedAt: new Date(),
+				},
+			},
+			{ new: true },
+		);
+
+		res.status(200).json({
+			message: "Nutritionist booking completed",
+			booking: updated,
+		});
 	} catch (error) {
 		next(error);
 	}

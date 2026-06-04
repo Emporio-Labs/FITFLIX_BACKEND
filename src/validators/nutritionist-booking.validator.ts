@@ -14,6 +14,7 @@ export const bookNutritionistBodySchema = z.object({
 	date: z.coerce.date(),
 	appointmentMode: z.nativeEnum(AppointmentMode),
 	clinicLocation: z.string().trim().min(1).optional(),
+	email: z.string().trim().email("Invalid email format").optional(),
 });
 
 export const listNutritionistBookingsQuerySchema = z.object({

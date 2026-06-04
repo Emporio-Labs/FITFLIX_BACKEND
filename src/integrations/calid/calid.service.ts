@@ -272,10 +272,12 @@ function windowsForDate(
 					(a) => !a.date && Array.isArray(a.days) && a.days.includes(weekday),
 				);
 
+	const timeZone = schedule?.timeZone || "UTC";
+
 	const windows: DayWindow[] = [];
 	for (const c of candidates) {
-		const start = parseTimeOnDate(dateKey, c.startTime);
-		const end = parseTimeOnDate(dateKey, c.endTime);
+		const start = parseTimeOnDate(dateKey, c.startTime, timeZone);
+		const end = parseTimeOnDate(dateKey, c.endTime, timeZone);
 		if (start !== null && end !== null && end > start) {
 			windows.push({ startMs: start, endMs: end });
 		}
@@ -283,7 +285,8 @@ function windowsForDate(
 	return windows;
 }
 
-function parseTimeOnDate(dateKey: string, timeStr: string): number | null {
+function parseTimeOnDate(dateKey: string, timeStr: string, timeZone: string): number | null {
+	let rawTime = timeStr;
 	// Format 1: ISO timestamp (e.g. "1970-01-01T09:00:00.000Z")
 	if (timeStr.includes("T")) {
 		try {
@@ -292,23 +295,57 @@ function parseTimeOnDate(dateKey: string, timeStr: string): number | null {
 				const hour = d.getUTCHours();
 				const minute = d.getUTCMinutes();
 				const pad = (n: number) => String(n).padStart(2, "0");
-				return new Date(
-					`${dateKey}T${pad(hour)}:${pad(minute)}:00.000Z`,
-				).getTime();
+				rawTime = `${pad(hour)}:${pad(minute)}`;
 			}
 		} catch (_) {}
 	}
 
 	// Format 2: Raw "HH:mm" string
-	const m = /^(\d{2}):(\d{2})$/.exec(timeStr);
+	const m = /^(\d{2}):(\d{2})$/.exec(rawTime);
 	if (!m) return null;
 	const hour = Number(m[1]);
 	const minute = Number(m[2]);
 	if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
-	// Interpreting schedule HH:mm as UTC. If the schedule timezone differs, the
-	// downstream UI display still uses the user-provided timezone; bookings carry
-	// their own UTC start so this remains consistent.
-	return new Date(`${dateKey}T${timeStr}:00.000Z`).getTime();
+
+	// Construct the UTC timestamp corresponding to local hours/minutes in the schedule's timezone
+	try {
+		const utcDate = new Date(`${dateKey}T${rawTime}:00.000Z`);
+		const dtf = new Intl.DateTimeFormat("en-US", {
+			timeZone,
+			year: "numeric",
+			month: "numeric",
+			day: "numeric",
+			hour: "numeric",
+			minute: "numeric",
+			second: "numeric",
+			hour12: false,
+		});
+
+		const parts = dtf.formatToParts(utcDate);
+		const partVal = (type: string) => {
+			const p = parts.find((x) => x.type === type);
+			if (!p) throw new Error(`Missing date part: ${type}`);
+			return parseInt(p.value, 10);
+		};
+
+		const localYear = partVal("year");
+		const localMonth = partVal("month") - 1;
+		const localDay = partVal("day");
+		const localHour = partVal("hour") === 24 ? 0 : partVal("hour");
+		const localMinute = partVal("minute");
+
+		const localTimeMs = Date.UTC(localYear, localMonth, localDay, localHour, localMinute);
+		const targetTimeMs = utcDate.getTime();
+
+		const offsetMs = localTimeMs - targetTimeMs;
+		return targetTimeMs - offsetMs;
+	} catch (e) {
+		console.warn(
+			`[parseTimeOnDate] Timezone formatting fallback for tz=${timeZone}:`,
+			e,
+		);
+		return new Date(`${dateKey}T${rawTime}:00.000Z`).getTime();
+	}
 }
 
 function overlapsBooked(

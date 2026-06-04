@@ -342,6 +342,7 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 						},
 					},
 					bookingStatus: 1,
+					expertAppointments: "$latestNutritionistAppointment",
 					// Shape healthMarkers: merge first lookup element with targetWeight from healthGoals
 					healthMarkers: {
 						$mergeObjects: [
@@ -463,10 +464,11 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const [healthMarkersRaw, healthGoals, reports] = await Promise.all([
+		const [healthMarkersRaw, healthGoals, reports, expertAppointments] = await Promise.all([
 			HealthMarkers.findOne({ userId: id }),
 			HealthGoals.findOne({ userId: id }),
 			MedicalReport.find({ userId: id }).sort({ uploadedAt: -1 }),
+			ExpertAppointment.find({ userId: id }).lean(),
 		]);
 
 		let computedBmi = healthMarkersRaw?.bmi;
@@ -484,10 +486,16 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 			);
 		}
 
+		const userObj = user.toJSON();
+		const userWithAppointments = {
+			...userObj,
+			expertAppointments,
+		};
+
 		res.status(200).json({
 			success: true,
 			data: {
-				user,
+				user: userWithAppointments,
 				onboarding: user.onboardingStatus ?? null,
 				healthMarkers: {
 					weight: healthMarkersRaw?.weight

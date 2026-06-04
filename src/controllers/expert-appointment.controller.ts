@@ -204,6 +204,22 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	let attendeeEmail = dbUser.email;
+	const bodyEmail = parsed.data.email;
+
+	if (bodyEmail) {
+		if (dbUser.email !== bodyEmail) {
+			await User.findByIdAndUpdate(user.id, { $set: { email: bodyEmail } });
+		}
+		attendeeEmail = bodyEmail;
+	} else if (!attendeeEmail) {
+		res.status(400).json({
+			error: "Email address is required to book an appointment.",
+			code: "EMAIL_REQUIRED",
+		});
+		return;
+	}
+
 	// 4. Insert pending appointment as reservation (idempotency key prevents duplicates)
 	let pendingAppointment: (typeof ExpertAppointment extends mongoose.Model<
 		infer D
@@ -247,7 +263,7 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 			expertType: expertType as ExpertType,
 			slotStart,
 			timezone,
-			attendee: { name: dbUser.username, email: dbUser.email ?? "" },
+			attendee: { name: dbUser.username, email: attendeeEmail },
 			userId: user.id,
 		});
 	} catch (err) {
@@ -513,7 +529,7 @@ export const rescheduleAppointment: RequestHandler = async (req, res, next) => {
 			newSlotStart: slotStart,
 			timezone,
 			reason,
-			rescheduledBy: user.email,
+			rescheduledBy: user.email || `user_${user.id}@fitflix.in`,
 		});
 
 		const calFields = mapCalBookingToAppointmentFields(calBooking);

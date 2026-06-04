@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
 	acceptNutritionistBooking,
+	completeNutritionistBooking,
 	getMyNutritionistBooking,
 	listNutritionistBookings,
 	rejectNutritionistBooking,
@@ -34,6 +35,12 @@ nutritionistRouter.patch(
 	"/bookings/:id/reject",
 	authorize(["admin"]),
 	rejectNutritionistBooking,
+);
+
+nutritionistRouter.patch(
+	"/bookings/:id/complete",
+	authorize(["admin"]),
+	completeNutritionistBooking,
 );
 
 export default nutritionistRouter;
