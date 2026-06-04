@@ -14,6 +14,7 @@ import {
 	onboardUser,
 	updateMyPassword,
 	updateUserById,
+	uploadHpodMetrics,
 } from "../controllers/user.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
@@ -31,6 +32,7 @@ userRouter.get("/me", authorize(["user"]), getMyUser);
 userRouter.get("/me/reports", authorize(["user"]), getMyUserReports);
 userRouter.get("/me/medical-reports", authorize(["user"]), getMyMedicalReports);
 userRouter.get("/me/hpod-metrics", authorize(["user"]), getMyUserHpodMetrics);
+userRouter.post("/me/hpod-metrics", authorize(["user"]), uploadHpodMetrics);
 userRouter.get("/me/reports/:id/pdf", authorize(["user"]), getMyUserReportPdf);
 userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
 userRouter.get(

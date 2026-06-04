@@ -394,7 +394,14 @@ export const getMyUser: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		res.status(200).json({ user });
+		const healthMarkers = await HealthMarkers.findOne({ userId: req.user.id });
+		const userObj = user.toJSON();
+		const userWithWeight = {
+			...userObj,
+			weight: healthMarkers?.weight ?? null,
+		};
+
+		res.status(200).json({ user: userWithWeight });
 	} catch (error) {
 		next(error);
 	}
@@ -989,6 +996,83 @@ export const getMyUserHpodMetrics: RequestHandler = async (req, res, next) => {
 			.select("-gmailMessageId -userId -__v");
 
 		res.status(200).json({ history });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const uploadHpodMetrics: RequestHandler = async (req, res, next) => {
+	if (!req.user || req.user.role !== "user") {
+		res.status(403).json({
+			error: "Only users can access this endpoint",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	try {
+		const { weight_kg, body_fat_percent, skeletal_muscle_mass_kg, age } = req.body;
+
+		if (
+			weight_kg === undefined ||
+			body_fat_percent === undefined ||
+			skeletal_muscle_mass_kg === undefined ||
+			age === undefined
+		) {
+			res.status(400).json({
+				error: "All fields (weight_kg, body_fat_percent, skeletal_muscle_mass_kg, age) are required",
+				code: "BAD_REQUEST",
+			});
+			return;
+		}
+
+		const metric = new HpodMetric({
+			userId: req.user.id,
+			recordedAt: new Date(),
+			receivedAt: new Date(),
+			age: age ? age.toString() : null,
+			source: "manual",
+			vitals: {
+				weight_kg: Number(weight_kg),
+				height_cm: null,
+				bmi: null,
+				bmi_category: null,
+				spo2_percent: null,
+				body_temperature_f: null,
+				pulse: null,
+				blood_pressure: null,
+			},
+			bodyComposition: {
+				body_fat_mass_kg: null,
+				body_fat_percent: Number(body_fat_percent),
+				total_body_water_L: null,
+				protein_kg: null,
+				minerals_kg: null,
+				skeletal_muscle_mass_kg: Number(skeletal_muscle_mass_kg),
+				visceral_fat_cm2: null,
+				basal_metabolic_rate_cal: null,
+				intracellular_water_L: null,
+				extracellular_water_L: null,
+			},
+			ecg: {
+				pr_interval: null,
+				qrs_interval: null,
+				qtc_interval: null,
+				heart_rate: null,
+			},
+			idealBodyWeight_kg: null,
+			weightToLose_kg: null,
+			testsNotTaken: [],
+			healthInsight: "",
+			concerns: [],
+		});
+
+		await metric.save();
+
+		res.status(201).json({
+			success: true,
+			metric,
+		});
 	} catch (error) {
 		next(error);
 	}
