@@ -81,6 +81,20 @@ export const refreshTokenBodySchema = z.object({
 	refreshToken: z.string().min(1),
 });
 
+export const phoneVerifyBodySchema = z.object({
+	firebaseIdToken: z.string().trim().min(1),
+});
+
+export const phoneRegisterBodySchema = z.object({
+	firebaseIdToken: z.string().trim().min(1),
+	name: z.string().trim().min(1),
+	goal: z.string().trim().min(1),
+	age: signupAgeSchema,
+	gender: signupGenderSchema,
+});
+
 export type SignupBody = z.infer<typeof signupBodySchema>;
 export type LoginBody = z.infer<typeof loginBodySchema>;
 export type RefreshTokenBody = z.infer<typeof refreshTokenBodySchema>;
+export type PhoneVerifyBody = z.infer<typeof phoneVerifyBodySchema>;
+export type PhoneRegisterBody = z.infer<typeof phoneRegisterBodySchema>;

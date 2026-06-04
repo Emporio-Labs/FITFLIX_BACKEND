@@ -199,6 +199,11 @@ export enum NutritionPlanStatus {
 	Archived = "Archived",
 }
 
+export enum IngredientUnit {
+	Gram = "g",
+	Milliliter = "ml",
+}
+
 export enum MealType {
 	Breakfast = "Breakfast",
 	Lunch = "Lunch",
@@ -210,6 +215,15 @@ export enum MealType {
 	DuringWorkout = "DuringWorkout",
 	EveningSnack = "EveningSnack",
 	Bedtime = "Bedtime",
+}
+
+export enum ImportRowType {
+	CategoryHeader = "CategoryHeader",
+	ColumnHeader = "ColumnHeader",
+	Empty = "Empty",
+	Total = "Total",
+	Recipe = "Recipe",
+	Ingredient = "Ingredient",
 }
 
 export enum DietaryPreference {

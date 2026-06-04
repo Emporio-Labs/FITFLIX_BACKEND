@@ -28,8 +28,10 @@ type AppRole = "user" | "admin" | "doctor" | "trainer";
 
 type AuthDocument = {
 	_id: { toString(): string };
-	email: string;
-	passwordHash: string;
+	// Phone-auth users may have no email/passwordHash; email/password login
+	// still requires both, which is guarded in matchAccount below.
+	email?: string | null;
+	passwordHash?: string | null;
 	save: () => Promise<unknown>;
 	onboarded?: boolean;
 	onboardingStatus?: unknown;
@@ -48,7 +50,7 @@ const matchAccount = async (
 	role: AppRole,
 	account: AuthDocument | null,
 ) => {
-	if (!account) {
+	if (!account || !account.passwordHash) {
 		return null;
 	}
 
@@ -64,7 +66,7 @@ const matchAccount = async (
 
 	return {
 		id: account._id.toString(),
-		email: account.email,
+		email: account.email ?? "",
 		role,
 	} as const;
 };

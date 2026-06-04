@@ -182,7 +182,7 @@ export const convertLeadBodySchema = z.object({
 	age: z.string().trim().min(1),
 	gender: z.enum(genderValues as [string, ...string[]]),
 	healthGoals: z.array(z.string().trim().min(1)).default([]),
-	password: z.string().min(1),
+	password: z.string().min(1).optional(),
 });
 
 export type CreateLeadBody = z.infer<typeof createLeadBodySchema>;

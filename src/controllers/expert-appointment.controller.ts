@@ -247,7 +247,7 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 			expertType: expertType as ExpertType,
 			slotStart,
 			timezone,
-			attendee: { name: dbUser.username, email: dbUser.email },
+			attendee: { name: dbUser.username, email: dbUser.email ?? "" },
 			userId: user.id,
 		});
 	} catch (err) {
