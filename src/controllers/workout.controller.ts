@@ -85,6 +85,34 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 
 // ─── Session Handlers ────────────────────────────────────────────────────────
 
+export const getActiveSession: RequestHandler = async (req, res, next) => {
+	try {
+		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const today = normalizeToUtcDate(new Date());
+
+		const session = await WorkoutSession.findOne({
+			userId,
+			date: today,
+			status: WorkoutSessionStatus.Active,
+		});
+
+		if (!session) {
+			res.status(200).json({ session: null, elapsedSeconds: 0 });
+			return;
+		}
+
+		const detailed = await buildSessionWithDetails(session._id);
+		const elapsedSeconds = Math.max(
+			0,
+			Math.floor((Date.now() - session.startedAt.getTime()) / 1000),
+		);
+
+		res.status(200).json({ session: detailed, elapsedSeconds });
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const getTodaySession: RequestHandler = async (req, res, next) => {
 	try {
 		const today = normalizeToUtcDate(new Date());
@@ -201,6 +229,13 @@ export const createSession: RequestHandler = async (req, res, next) => {
 		});
 
 		if (existing) {
+			const exerciseCount = await WorkoutExercise.countDocuments({
+				sessionId: existing._id,
+			});
+			if (exerciseCount === 0) {
+				existing.startedAt = new Date();
+				await existing.save();
+			}
 			const detailed = await buildSessionWithDetails(existing._id);
 			res.status(200).json(detailed);
 			return;
@@ -443,6 +478,11 @@ export const addExerciseToSession: RequestHandler = async (req, res, next) => {
 			.sort({ orderIndex: -1 })
 			.select("orderIndex")
 			.lean();
+
+		if (!maxOrder) {
+			session.startedAt = new Date();
+			await session.save();
+		}
 
 		const workoutExercise = await WorkoutExercise.create({
 			sessionId: session._id,

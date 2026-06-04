@@ -5,6 +5,7 @@ import {
 	deleteSession,
 	deleteSet,
 	deleteWorkoutExercise,
+	getActiveSession,
 	getMyHistory,
 	getMyStats,
 	getSessionById,
@@ -24,6 +25,7 @@ const workoutRouter = Router();
 workoutRouter.use(authenticateToken);
 
 // Session routes — static paths before parameterized
+workoutRouter.get("/active", authorize(["user"]), getActiveSession);
 workoutRouter.get("/today", authorize(["user"]), getTodaySession);
 workoutRouter.get("/me", authorize(["user"]), listMySessions);
 workoutRouter.get("/me/stats", authorize(["user"]), getMyStats);
