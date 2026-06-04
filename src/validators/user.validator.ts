@@ -130,10 +130,10 @@ const strongPassword = z
 export const createUserBodySchema = z.object({
 	username: requiredString,
 	phone: requiredString,
-	email: z.string().email(),
+	email: z.string().email().optional(),
 	age: requiredAgeNumber,
 	gender: requiredGenderString,
-	password: strongPassword,
+	password: strongPassword.optional(),
 	dateOfBirth: optionalDate,
 	emergencyContact: optionalString,
 	address: optionalString,
@@ -145,12 +145,12 @@ export const updateUserBodySchema = z
 		username: optionalString,
 		phone: optionalString,
 		email: z.preprocess((value) => {
-			if (typeof value === "string" && value.trim() === "") {
+			if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) {
 				return undefined;
 			}
 
 			return value;
-		}, z.string().email().optional()),
+		}, z.string().email().optional().nullable()),
 		age: optionalAgeNumber,
 		gender: optionalGenderString,
 		dateOfBirth: optionalDate,

@@ -125,6 +125,7 @@ export const verifyPhone: RequestHandler = async (req, res, next) => {
 	}
 
 	const { firebaseUid, phoneNumber } = identity;
+	const last10 = phoneNumber.replace(/\D/g, "").slice(-10);
 
 	try {
 		// Prefer the stable Firebase UID; fall back to phone to link pre-existing
@@ -134,7 +135,7 @@ export const verifyPhone: RequestHandler = async (req, res, next) => {
 		);
 
 		if (!user) {
-			user = await User.findOne({ phone: phoneNumber }).select(
+			user = await User.findOne({ phone: { $regex: new RegExp(last10 + "$") } }).select(
 				"email onboarded onboardingStatus firebaseUid",
 			);
 
@@ -142,13 +143,13 @@ export const verifyPhone: RequestHandler = async (req, res, next) => {
 			if (user && !(user as { firebaseUid?: string }).firebaseUid) {
 				await User.updateOne(
 					{ _id: user._id },
-					{ $set: { firebaseUid, phoneVerified: true } },
+					{ $set: { firebaseUid, phoneVerified: true, phone: last10 } },
 				);
 			}
 		}
 
 		if (!user) {
-			res.status(200).json({ isNewUser: true, phoneNumber });
+			res.status(200).json({ isNewUser: true, phoneNumber: last10 });
 			return;
 		}
 
@@ -198,12 +199,13 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 
 	const { firebaseUid, phoneNumber } = identity;
 	const { name, goal, age, gender } = parsed.data;
+	const last10 = phoneNumber.replace(/\D/g, "").slice(-10);
 
 	try {
 		// Idempotency: if the account already exists, return its login response
 		// instead of creating a duplicate.
 		const existing = await User.findOne({
-			$or: [{ firebaseUid }, { phone: phoneNumber }],
+			$or: [{ firebaseUid }, { phone: { $regex: new RegExp(last10 + "$") } }],
 		}).select("email onboarded onboardingStatus");
 
 		if (existing) {
@@ -223,7 +225,7 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 		try {
 			createdUser = await User.create({
 				username: name,
-				phone: phoneNumber,
+				phone: last10,
 				firebaseUid,
 				phoneVerified: true,
 				age,
@@ -235,7 +237,7 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 			// Race: another request created the account between our check and create.
 			if ((error as { code?: number }).code === 11000) {
 				const raced = await User.findOne({
-					$or: [{ firebaseUid }, { phone: phoneNumber }],
+					$or: [{ firebaseUid }, { phone: { $regex: new RegExp(last10 + "$") } }],
 				}).select("email onboarded onboardingStatus");
 				if (raced) {
 					const auth = buildAuthResponse(raced);
@@ -254,11 +256,11 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 		// Non-fatal: a CRM sync failure must not fail account creation.
 		try {
 			await Lead.findOneAndUpdate(
-				{ phone: phoneNumber },
+				{ phone: { $regex: new RegExp(last10 + "$") } },
 				{
 					$set: {
 						leadName: name,
-						phone: phoneNumber,
+						phone: last10,
 						// Lead has no age/gender columns — keep them in the existing
 						// notes field to avoid any Lead schema redesign.
 						notes: `Age: ${age}, Gender: ${gender}`,

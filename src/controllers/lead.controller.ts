@@ -1,8 +1,9 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import { LeadStatus } from "../models/Enums";
+import { LeadStatus, MembershipStatus } from "../models/Enums";
 import Lead from "../models/Lead";
 import User from "../models/User";
+import Membership from "../models/Membership";
 import { calculateHealthScore } from "../utils/health-score";
 import { hashPassword } from "../utils/password";
 import {
@@ -467,51 +468,75 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const existingUser = await User.findOne({ email: lead.email });
+		const { username, phone, age, gender, healthGoals, password } = parsedBody.data;
+		const last10 = phone.replace(/\D/g, "").slice(-10);
 
-		if (existingUser) {
-			lead.status = LeadStatus.Converted;
-			lead.convertedUser = existingUser._id;
-			await lead.save();
-
-			res.status(201).json({
-				message: "Lead converted to user",
-				lead,
-				user: {
-					id: existingUser._id,
-					email: existingUser.email,
-					role: "user" as const,
-				},
-			});
-			return;
+		// Collision Detection Gate: check if a user with this phone or email already exists.
+		const userQuery: any[] = [];
+		if (lead.email && lead.email.trim() !== "") {
+			userQuery.push({ email: lead.email.trim() });
+		}
+		if (last10) {
+			userQuery.push({ phone: { $regex: new RegExp(last10 + "$") } });
 		}
 
-		const { username, phone, age, gender, healthGoals, password } =
-			parsedBody.data;
-		const passwordHash = await hashPassword(password);
+		const existingUser = userQuery.length > 0 ? await User.findOne({ $or: userQuery }) : null;
 
-		const createdUser = await User.create({
-			username: username ?? lead.leadName,
-			phone,
-			email: lead.email,
-			age: Number(age),
-			gender,
-			healthGoals,
-			passwordHash,
+		let targetUserId: mongoose.Types.ObjectId;
+		let userResponsePayload: any;
+
+		if (existingUser) {
+			// Case A: User Exists
+			targetUserId = existingUser._id;
+			userResponsePayload = {
+				id: existingUser._id,
+				email: existingUser.email,
+				role: "user" as const,
+			};
+		} else {
+			// Case B: User is New
+			const passwordHash = password ? await hashPassword(password) : undefined;
+			const sanitizedEmail = (lead.email && typeof lead.email === "string" && lead.email.trim() !== "") ? lead.email.trim() : undefined;
+
+			const createdUser = await User.create({
+				username: username ?? lead.leadName,
+				phone: last10,
+				email: sanitizedEmail,
+				age: Number(age),
+				gender,
+				healthGoals,
+				passwordHash,
+			});
+
+			targetUserId = createdUser._id;
+			userResponsePayload = {
+				id: createdUser._id,
+				email: createdUser.email,
+				role: "user" as const,
+			};
+		}
+
+		// Transactional Membership Allocation: Instantly create and save a new Membership document
+		await Membership.create({
+			user: targetUserId,
+			planName: "Standard Protocol Membership",
+			creditsIncluded: 10,
+			creditsRemaining: 10,
+			status: MembershipStatus.Active,
+			price: 0,
+			startDate: new Date(),
+			endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30-day default limits
 		});
 
+		// Audit Trail Update
 		lead.status = LeadStatus.Converted;
-		lead.convertedUser = createdUser._id;
+		lead.convertedUser = targetUserId;
 		await lead.save();
 
 		res.status(201).json({
 			message: "Lead converted to user",
 			lead,
-			user: {
-				id: createdUser._id,
-				email: createdUser.email,
-				role: "user" as const,
-			},
+			user: userResponsePayload,
 		});
 	} catch (error) {
 		next(error);

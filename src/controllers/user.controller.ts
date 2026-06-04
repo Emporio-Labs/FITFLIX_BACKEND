@@ -140,25 +140,44 @@ export const createUser: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { password, onboarded = false, ...rest } = parsedBody.data;
+	const { password, onboarded = false, email, phone, ...rest } = parsedBody.data;
 
 	try {
-		const passwordHash = await hashPassword(password);
+		const passwordHash = password ? await hashPassword(password) : undefined;
+		const sanitizedEmail = (email && typeof email === "string" && email.trim() !== "") ? email.trim() : undefined;
+		const last10 = phone.replace(/\D/g, "").slice(-10);
 
-		const existingUser = await User.findOne({
-			email: parsedBody.data.email,
+		// Enforce phone number uniqueness:
+		const existingPhoneUser = await User.findOne({
+			phone: { $regex: new RegExp(last10 + "$") },
 		}).select("_id");
 
-		if (existingUser) {
+		if (existingPhoneUser) {
 			res.status(409).json({
-				error: "User with this email already exists",
+				error: "User with this phone number already exists",
 				code: "CONFLICT",
 			});
 			return;
 		}
 
+		if (sanitizedEmail) {
+			const existingUser = await User.findOne({
+				email: sanitizedEmail,
+			}).select("_id");
+
+			if (existingUser) {
+				res.status(409).json({
+					error: "User with this email already exists",
+					code: "CONFLICT",
+				});
+				return;
+			}
+		}
+
 		const user = await User.create({
 			...rest,
+			phone: last10,
+			email: sanitizedEmail,
 			onboarded,
 			passwordHash,
 			// Explicitly initialise onboardingStatus so the sub-document is
@@ -620,9 +639,28 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		if (parsedBody.data.email) {
+		const { password, email, phone, ...rest } = parsedBody.data;
+		const sanitizedEmail = (email && typeof email === "string" && email.trim() !== "") ? email.trim() : undefined;
+		const normalizedPhone = phone ? phone.replace(/\D/g, "").slice(-10) : undefined;
+
+		if (normalizedPhone) {
+			const existingPhoneUser = await User.findOne({
+				phone: { $regex: new RegExp(normalizedPhone + "$") },
+				_id: { $ne: id },
+			}).select("_id");
+
+			if (existingPhoneUser) {
+				res.status(409).json({
+					error: "User with this phone number already exists",
+					code: "CONFLICT",
+				});
+				return;
+			}
+		}
+
+		if (sanitizedEmail) {
 			const existingUser = await User.findOne({
-				email: parsedBody.data.email,
+				email: sanitizedEmail,
 				_id: { $ne: id },
 			}).select("_id");
 
@@ -635,10 +673,11 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 			}
 		}
 
-		const { password, ...rest } = parsedBody.data;
 		const hashedPassword = password ? await hashPassword(password) : null;
 		const updatePayload = {
 			...rest,
+			email: sanitizedEmail,
+			...(normalizedPhone ? { phone: normalizedPhone } : {}),
 			...(hashedPassword ? { passwordHash: hashedPassword } : {}),
 		};
 

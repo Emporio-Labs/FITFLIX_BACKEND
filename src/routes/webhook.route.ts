@@ -26,9 +26,29 @@ const findUserByEmail = async (
 ): Promise<mongoose.Types.ObjectId | null> => {
 	const db = mongoose.connection.db;
 	if (!db) return null;
+
+	const trimmedEmail = email.trim();
+	if (trimmedEmail.endsWith("@fitflix.in")) {
+		const prefix = trimmedEmail.split("@")[0] || "";
+		if (mongoose.Types.ObjectId.isValid(prefix)) {
+			const user = await db
+				.collection("users")
+				.findOne({ _id: new mongoose.Types.ObjectId(prefix) }, { projection: { _id: 1 } });
+			if (user) return user._id;
+		}
+
+		const last10 = prefix.replace(/\D/g, "").slice(-10);
+		if (last10.length >= 10) {
+			const user = await db
+				.collection("users")
+				.findOne({ phone: { $regex: new RegExp(last10 + "$") } }, { projection: { _id: 1 } });
+			if (user) return user._id;
+		}
+	}
+
 	const user = await db
 		.collection("users")
-		.findOne({ email }, { projection: { _id: 1 } });
+		.findOne({ email: trimmedEmail }, { projection: { _id: 1 } });
 	return user ? user._id : null;
 };
 
