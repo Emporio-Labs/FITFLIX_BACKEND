@@ -332,12 +332,32 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					phone: 1,
 					age: 1,
 					gender: 1,
+					createdAt: 1,
+					updatedAt: 1,
 					onboardingStatus: {
 						currentStep: "$onboardingStatus.currentStep",
 						completedSteps: {
 							$ifNull: ["$onboardingStatus.completedSteps", []],
 						},
-						isCompleted: {
+						healthMarkersCompleted: {
+							$ifNull: ["$onboardingStatus.healthMarkersCompleted", false],
+						},
+						healthGoalsCompleted: {
+							$ifNull: ["$onboardingStatus.healthGoalsCompleted", false],
+						},
+						consentCompleted: {
+							$ifNull: ["$onboardingStatus.consentCompleted", false],
+						},
+						reportsUploaded: {
+							$ifNull: ["$onboardingStatus.reportsUploaded", false],
+						},
+						sportsScientistBooked: {
+							$ifNull: ["$onboardingStatus.sportsScientistBooked", false],
+						},
+						nutritionistBooked: {
+							$ifNull: ["$onboardingStatus.nutritionistBooked", false],
+						},
+						onboardingCompleted: {
 							$ifNull: ["$onboardingStatus.onboardingCompleted", false],
 						},
 					},
