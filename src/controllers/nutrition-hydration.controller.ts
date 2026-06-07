@@ -95,7 +95,34 @@ export const getMyHydration: RequestHandler = async (req, res, next) => {
 		const targetUserId =
 			isStaff && parsed.data.userId ? parsed.data.userId : requester.id;
 		const hydration = await getHydration(targetUserId, parsed.data.date);
-		res.status(200).json({ hydration });
+		
+		let items: any[] = [];
+		if (hydration) {
+			if (hydration.entries && hydration.entries.length > 0) {
+				items = hydration.entries.map((entry: any, index: number) => ({
+					_id: `${hydration._id}_${index}`,
+					userId: hydration.userId.toString(),
+					date: hydration.logDate.toISOString(),
+					glasses: entry.amountMl / 250,
+					ml: entry.amountMl,
+					targetMl: hydration.goalMl,
+					loggedAt: entry.at ? entry.at.toISOString() : undefined,
+				}));
+			} else {
+				items = [
+					{
+						_id: hydration._id.toString(),
+						userId: hydration.userId.toString(),
+						date: hydration.logDate.toISOString(),
+						glasses: hydration.totalMl / 250,
+						ml: hydration.totalMl,
+						targetMl: hydration.goalMl,
+						loggedAt: hydration.updatedAt ? hydration.updatedAt.toISOString() : undefined,
+					},
+				];
+			}
+		}
+		res.status(200).json({ hydration, items });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}

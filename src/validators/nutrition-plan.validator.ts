@@ -77,13 +77,36 @@ export const planStatusBodySchema = z.object({
 
 export const planListQuerySchema = z.object({
 	status: z.enum(statusValues).optional(),
+	userId: z
+		.string()
+		.trim()
+		.regex(/^[0-9a-fA-F]{24}$/, "Must be a valid user ID")
+		.optional(),
 });
 
 export const copyDayStructureSchema = z.object({
-  planId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid Plan ID"),
-  sourceDayOfWeek: z.enum(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]),
-  targetDaysOfWeek: z.array(z.enum(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"])),
-  strategy: z.enum(["replicate", "alternate", "split_week"])
+	planId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid Plan ID"),
+	sourceDayOfWeek: z.enum([
+		"Sunday",
+		"Monday",
+		"Tuesday",
+		"Wednesday",
+		"Thursday",
+		"Friday",
+		"Saturday",
+	]),
+	targetDaysOfWeek: z.array(
+		z.enum([
+			"Sunday",
+			"Monday",
+			"Tuesday",
+			"Wednesday",
+			"Thursday",
+			"Friday",
+			"Saturday",
+		]),
+	),
+	strategy: z.enum(["replicate", "alternate", "split_week"]),
 });
 
 export type AssignTemplateBody = z.infer<typeof assignTemplateBodySchema>;

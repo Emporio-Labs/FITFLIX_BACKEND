@@ -131,6 +131,7 @@ export type AdHocPlanInput = {
 
 export type PlanListFilters = {
 	status?: NutritionPlanStatus;
+	userId?: string;
 };
 
 // Deep, value-only copy of the template's embedded days so the assigned
@@ -251,7 +252,17 @@ export const listNutritionistPlans = async (
 		"BAD_REQUEST",
 		"Invalid nutritionist ID",
 	);
-	const filter: Record<string, unknown> = { nutritionistId: id };
+	const filter: Record<string, unknown> = {};
+	if (filters.userId) {
+		filter.userId = toObjectId(
+			filters.userId,
+			"BAD_REQUEST",
+			"Invalid user ID",
+		);
+	} else {
+		filter.nutritionistId = id;
+	}
+
 	if (filters.status) {
 		filter.status = filters.status;
 	}

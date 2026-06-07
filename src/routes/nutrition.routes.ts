@@ -159,7 +159,11 @@ nutritionRouter.post("/my/plans/:id/meals/complete", USER, completePlanMeal);
 
 // ---- User meal logging ----
 nutritionRouter.post("/my/meal-logs", USER, createMealLog);
-nutritionRouter.get("/my/meal-logs", USER, listMyMealLogs);
+nutritionRouter.get(
+	"/my/meal-logs",
+	authorize(["user", "nutritionist", "admin"]),
+	listMyMealLogs,
+);
 nutritionRouter.patch("/my/meal-logs/:id", USER, patchMealLog);
 nutritionRouter.delete("/my/meal-logs/:id", USER, removeMealLog);
 

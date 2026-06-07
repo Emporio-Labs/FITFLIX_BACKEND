@@ -25,12 +25,12 @@ import {
 import type { DayInput } from "../types/nutrition";
 import {
 	assignTemplateBodySchema,
+	copyDayStructureSchema,
 	createAdHocPlanBodySchema,
 	duplicatePlanBodySchema,
 	planListQuerySchema,
 	planStatusBodySchema,
 	updatePlanBodySchema,
-	copyDayStructureSchema,
 } from "../validators/nutrition-plan.validator";
 
 // biome-ignore lint/suspicious/noExplicitAny: populated Mongoose docs lose strict typing
@@ -161,6 +161,7 @@ export const listManagedPlans: RequestHandler = async (req, res, next) => {
 	try {
 		const plans = await listNutritionistPlans(requester.id, {
 			status: parsed.data.status as NutritionPlanStatus | undefined,
+			userId: parsed.data.userId,
 		});
 		res.status(200).json({ plans: plans.map(withMember) });
 	} catch (error) {
@@ -397,7 +398,7 @@ export const copyPlanDayStructure: RequestHandler = async (req, res, next) => {
 
 	try {
 		const { planId, sourceDayOfWeek, targetDaysOfWeek, strategy } = parsed.data;
-		
+
 		let document: any = await UserNutritionPlan.findById(planId);
 		let isTemplate = false;
 		if (!document) {
@@ -406,27 +407,34 @@ export const copyPlanDayStructure: RequestHandler = async (req, res, next) => {
 		}
 
 		if (!document) {
-			res.status(404).json({ error: "Plan or template not found", code: "NOT_FOUND" });
+			res
+				.status(404)
+				.json({ error: "Plan or template not found", code: "NOT_FOUND" });
 			return;
 		}
 
 		const dayOfWeekToNumber = (day: string): number => {
 			const mapping: { [key: string]: number } = {
-				"Sunday": 7,
-				"Monday": 1,
-				"Tuesday": 2,
-				"Wednesday": 3,
-				"Thursday": 4,
-				"Friday": 5,
-				"Saturday": 6,
+				Sunday: 7,
+				Monday: 1,
+				Tuesday: 2,
+				Wednesday: 3,
+				Thursday: 4,
+				Friday: 5,
+				Saturday: 6,
 			};
 			return mapping[day] ?? 1;
 		};
 
 		const sourceDayNum = dayOfWeekToNumber(sourceDayOfWeek);
-		const sourceDayDoc = document.days.find((d: any) => d.dayNumber === sourceDayNum);
+		const sourceDayDoc = document.days.find(
+			(d: any) => d.dayNumber === sourceDayNum,
+		);
 		if (!sourceDayDoc) {
-			res.status(400).json({ error: `Source day (${sourceDayOfWeek}) not configured in the template/plan.`, code: "BAD_REQUEST" });
+			res.status(400).json({
+				error: `Source day (${sourceDayOfWeek}) not configured in the template/plan.`,
+				code: "BAD_REQUEST",
+			});
 			return;
 		}
 
@@ -434,7 +442,8 @@ export const copyPlanDayStructure: RequestHandler = async (req, res, next) => {
 			if (Array.isArray(obj)) {
 				return obj.map(stripIds);
 			} else if (obj !== null && typeof obj === "object") {
-				const plainObj = typeof obj.toObject === "function" ? obj.toObject() : { ...obj };
+				const plainObj =
+					typeof obj.toObject === "function" ? obj.toObject() : { ...obj };
 				delete plainObj._id;
 				delete plainObj.id;
 				for (const key in plainObj) {
@@ -449,7 +458,9 @@ export const copyPlanDayStructure: RequestHandler = async (req, res, next) => {
 		let targetDayNums: number[] = targetDaysOfWeek.map(dayOfWeekToNumber);
 
 		if (strategy === "split_week") {
-			const isWeekdaySelected = targetDaysOfWeek.some(d => ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].includes(d));
+			const isWeekdaySelected = targetDaysOfWeek.some((d) =>
+				["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].includes(d),
+			);
 			if (isWeekdaySelected) {
 				targetDayNums = [1, 2, 3, 4, 5];
 			} else {
@@ -463,13 +474,17 @@ export const copyPlanDayStructure: RequestHandler = async (req, res, next) => {
 			let mealsToCopy = JSON.parse(JSON.stringify(sourceMealsPlain));
 			if (strategy === "alternate") {
 				const altDayNum = sourceDayNum === 1 ? 2 : 1;
-				const altDayDoc = document.days.find((d: any) => d.dayNumber === altDayNum);
-				if (altDayDoc && (targetDayNum % 2 !== sourceDayNum % 2)) {
+				const altDayDoc = document.days.find(
+					(d: any) => d.dayNumber === altDayNum,
+				);
+				if (altDayDoc && targetDayNum % 2 !== sourceDayNum % 2) {
 					mealsToCopy = stripIds(altDayDoc.meals);
 				}
 			}
 
-			let targetDayDoc = document.days.find((d: any) => d.dayNumber === targetDayNum);
+			const targetDayDoc = document.days.find(
+				(d: any) => d.dayNumber === targetDayNum,
+			);
 			if (!targetDayDoc) {
 				document.days.push({
 					dayNumber: targetDayNum,

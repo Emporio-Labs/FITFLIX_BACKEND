@@ -45,6 +45,7 @@ export const updateMealLogBodySchema = z.object({
 
 export const listMealLogsQuerySchema = z.object({
 	planId: objectIdString.optional(),
+	userId: objectIdString.optional(),
 	from: optionalDate,
 	to: optionalDate,
 	page: z.coerce.number().int().min(1).optional(),

@@ -102,7 +102,10 @@ export const listMyMealLogs: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const result = await listLogs(requester.id, parsed.data);
+		const isStaff = ["nutritionist", "admin"].includes(requester.role);
+		const targetUserId =
+			isStaff && parsed.data.userId ? parsed.data.userId : requester.id;
+		const result = await listLogs(targetUserId, parsed.data);
 		res.status(200).json(result);
 	} catch (error) {
 		handleNutritionError(error, res, next);
