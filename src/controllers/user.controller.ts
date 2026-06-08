@@ -266,10 +266,116 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 				},
 			},
 			{
+				$lookup: {
+					from: "nutritionistbookings",
+					let: { uid: "$_id" },
+					pipeline: [
+						{
+							$match: {
+								$expr: {
+									$eq: ["$user", "$$uid"],
+								},
+							},
+						},
+						{ $sort: { createdAt: -1 } },
+						{ $limit: 1 },
+					],
+					as: "latestDirectBooking",
+				},
+			},
+			{
 				$addFields: {
-					bookingStatus: {
-						$arrayElemAt: ["$latestNutritionistAppointment.bookingStatus", 0],
+					latestNutritionAppt: { $arrayElemAt: ["$latestNutritionistAppointment", 0] },
+					latestDirectAppt: { $arrayElemAt: ["$latestDirectBooking", 0] },
+				},
+			},
+			{
+				$addFields: {
+					unifiedAppointment: {
+						$cond: {
+							if: { $and: ["$latestNutritionAppt", "$latestDirectAppt"] },
+							then: {
+								$cond: {
+									if: { $gt: ["$latestNutritionAppt.createdAt", "$latestDirectAppt.createdAt"] },
+									then: "$latestNutritionAppt",
+									else: {
+										_id: "$latestDirectAppt._id",
+										userId: "$latestDirectAppt.user",
+										expertType: "nutritionist",
+										bookingStatus: {
+											$cond: {
+												if: { $eq: ["$latestDirectAppt.bookingStatus", "PENDING"] },
+												then: "Pending",
+												else: {
+													$cond: {
+														if: { $eq: ["$latestDirectAppt.bookingStatus", "ACCEPTED"] },
+														then: "Confirmed",
+														else: {
+															$cond: {
+																if: { $eq: ["$latestDirectAppt.bookingStatus", "COMPLETED"] },
+																then: "Completed",
+																else: "Cancelled",
+															},
+														},
+													},
+												},
+											},
+										},
+										appointmentDate: "$latestDirectAppt.date",
+										appointmentMode: "$latestDirectAppt.appointmentMode",
+										meetingLink: "$latestDirectAppt.meetingLink",
+										createdAt: "$latestDirectAppt.createdAt",
+										updatedAt: "$latestDirectAppt.updatedAt",
+									},
+								},
+							},
+							else: {
+								$ifNull: [
+									"$latestNutritionAppt",
+									{
+										$cond: {
+											if: "$latestDirectAppt",
+											then: {
+												_id: "$latestDirectAppt._id",
+												userId: "$latestDirectAppt.user",
+												expertType: "nutritionist",
+												bookingStatus: {
+													$cond: {
+														if: { $eq: ["$latestDirectAppt.bookingStatus", "PENDING"] },
+														then: "Pending",
+														else: {
+															$cond: {
+																if: { $eq: ["$latestDirectAppt.bookingStatus", "ACCEPTED"] },
+																then: "Confirmed",
+																else: {
+																	$cond: {
+																		if: { $eq: ["$latestDirectAppt.bookingStatus", "COMPLETED"] },
+																		then: "Completed",
+																		else: "Cancelled",
+																	},
+																},
+															},
+														},
+													},
+												},
+												appointmentDate: "$latestDirectAppt.date",
+												appointmentMode: "$latestDirectAppt.appointmentMode",
+												meetingLink: "$latestDirectAppt.meetingLink",
+												createdAt: "$latestDirectAppt.createdAt",
+												updatedAt: "$latestDirectAppt.updatedAt",
+											},
+											else: null,
+										},
+									},
+								],
+							},
+						},
 					},
+				},
+			},
+			{
+				$addFields: {
+					bookingStatus: "$unifiedAppointment.bookingStatus",
 				},
 			},
 		];
@@ -362,7 +468,13 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 						},
 					},
 					bookingStatus: 1,
-					expertAppointments: "$latestNutritionistAppointment",
+					expertAppointments: {
+						$cond: {
+							if: "$unifiedAppointment",
+							then: ["$unifiedAppointment"],
+							else: [],
+						},
+					},
 					// Shape healthMarkers: merge first lookup element with targetWeight from healthGoals
 					healthMarkers: {
 						$mergeObjects: [

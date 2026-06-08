@@ -4,6 +4,7 @@ import { mapCalBookingToAppointmentFields } from "../integrations/calid/calid.ma
 import * as calidService from "../integrations/calid/calid.service";
 import {
 	AppointmentBookingStatus,
+	AppointmentMode,
 	AppointmentSource,
 	ExpertType,
 	NutritionistApprovalStatus,
@@ -238,6 +239,11 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 				...calFields,
 			});
 
+			// Trigger background poll if the URL is a placeholder (e.g. integrations:google:meet)
+			if (calFields.meetingUrl && !/^https?:\/\//i.test(calFields.meetingUrl)) {
+				calidService.startBackgroundPollForMeetingUrl(appointment._id, calFields.calIdBookingId);
+			}
+
 			// 5. Advance onboarding step
 			try {
 				await advanceStep(req.user.id, OnboardingStep.NUTRITIONIST_BOOKING);
@@ -423,12 +429,94 @@ export const listNutritionistBookings: RequestHandler = async (
 			filter.date = { $gte: dayStart, $lt: dayEnd };
 		}
 
-		const bookings = await NutritionistBooking.find(filter)
+		// 1. Slot-based bookings (NutritionistBooking collection)
+		const slotBookings = await NutritionistBooking.find(filter)
 			.populate("user", "username email phone")
 			.populate("slot", "date startTime endTime capacity remainingCapacity")
 			.sort({ createdAt: -1 });
 
-		res.status(200).json({ bookings, total: bookings.length });
+		// Normalize slot bookings: rename `user` → `userId` for frontdesk compatibility
+		const normalizedSlotBookings = slotBookings.map((b) => {
+			const obj = b.toObject() as Record<string, unknown>;
+			obj.userId = obj.user;
+			delete obj.user;
+			// Map date → appointmentDate
+			if (!obj.appointmentDate && obj.date) {
+				obj.appointmentDate = obj.date;
+			}
+			return obj;
+		});
+
+		// 2. Cal.id bookings (ExpertAppointment collection) — nutritionist type
+		// Map ExpertAppointment statuses to the same shape as NutritionistBooking
+		const calAppointmentFilter: Record<string, unknown> = {
+			expertType: ExpertType.Nutritionist,
+		};
+		if (parsed.data.date) {
+			const dayStart = normalizeToUtcDayStart(parsed.data.date);
+			const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+			calAppointmentFilter.appointmentStart = { $gte: dayStart, $lt: dayEnd };
+		}
+
+		const calAppointments = await ExpertAppointment.find(calAppointmentFilter)
+			.populate("userId", "username email phone")
+			.sort({ createdAt: -1 })
+			.lean();
+
+		// Map ExpertAppointment status → NutritionistBooking-compatible status
+		const statusMap: Record<string, string> = {
+			Pending: "Pending",
+			Confirmed: "Confirmed",
+			Cancelled: "Cancelled",
+			Completed: "Completed",
+			Rescheduled: "Confirmed",
+		};
+
+		const normalizedCalBookings = calAppointments.map((appt) => ({
+			_id: appt._id,
+			userId: appt.userId,
+			expertType: "nutritionist",
+			bookingStatus: statusMap[appt.bookingStatus] ?? "Pending",
+			appointmentDate: appt.appointmentStart ?? null,
+			appointmentMode: appt.appointmentMode ?? "ONLINE",
+			meetingLink: appt.meetingUrl || appt.meetingLink || null,
+			calBookingId: appt.calIdBookingId ?? appt.calComBookingId ?? null,
+			createdAt: appt.createdAt,
+			updatedAt: appt.updatedAt,
+			// Mark as cal.id source so frontdesk knows it's an ExpertAppointment
+			_source: "cal",
+		}));
+
+		// Merge: deduplicate by userId so users with both records don't appear twice.
+		// Priority: ExpertAppointment (Cal.id) > NutritionistBooking when both exist.
+		const calUserIds = new Set(
+			normalizedCalBookings
+				.map((b) => (b.userId as any)?._id?.toString() ?? b.userId?.toString())
+				.filter(Boolean),
+		);
+		const dedupedSlotBookings = normalizedSlotBookings.filter((b) => {
+			const uid = (b.userId as any)?._id?.toString() ?? (b.userId as any)?.toString();
+			return !calUserIds.has(uid);
+		});
+
+		// Apply status filter to Cal.id bookings if provided
+		let mergedBookings: unknown[] = [...normalizedCalBookings, ...dedupedSlotBookings];
+		if (parsed.data.status) {
+			mergedBookings = mergedBookings.filter(
+				(b: any) =>
+					String(b.bookingStatus ?? "").toLowerCase() ===
+					String(parsed.data.status ?? "").toLowerCase(),
+			);
+		}
+
+		// Sort merged list by createdAt desc
+		mergedBookings.sort((a: any, b: any) => {
+			const ta = new Date(a.createdAt ?? 0).getTime();
+			const tb = new Date(b.createdAt ?? 0).getTime();
+			return tb - ta;
+		});
+
+		res.status(200).json({ bookings: mergedBookings, total: mergedBookings.length });
 	} catch (error) {
 		next(error);
 	}
@@ -469,41 +557,60 @@ export const acceptNutritionistBooking: RequestHandler = async (
 		if (!booking) {
 			const appointment = await ExpertAppointment.findOne({ _id: id, expertType: ExpertType.Nutritionist });
 			if (!appointment) {
-				res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
-				return;
-			}
+				const userExists = await User.findById(id);
+				if (userExists) {
+					const placeholderSlotId = new mongoose.Types.ObjectId();
+					booking = await NutritionistBooking.create({
+						user: id,
+						slot: placeholderSlotId,
+						date: new Date(),
+						startTime: "10:00",
+						endTime: "10:30",
+						appointmentMode: AppointmentMode.ONLINE,
+						bookingStatus: NutritionistBookingStatus.PENDING,
+						nutritionistApprovalStatus: NutritionistApprovalStatus.PENDING,
+					});
 
-			if (appointment.bookingStatus !== AppointmentBookingStatus.Pending) {
-				res.status(409).json({
-					error: `Cannot accept booking in '${appointment.bookingStatus}' state`,
-					code: "CONFLICT",
+					try {
+						await advanceStep(id, OnboardingStep.NUTRITIONIST_BOOKING);
+					} catch (e) {}
+				} else {
+					res.status(404).json({ error: "Booking or User not found", code: "NOT_FOUND" });
+					return;
+				}
+			} else {
+				if (appointment.bookingStatus !== AppointmentBookingStatus.Pending) {
+					res.status(409).json({
+						error: `Cannot accept booking in '${appointment.bookingStatus}' state`,
+						code: "CONFLICT",
+					});
+					return;
+				}
+
+				const updatedAppt = await ExpertAppointment.findByIdAndUpdate(
+					id,
+					{
+						$set: {
+							bookingStatus: AppointmentBookingStatus.Confirmed,
+							lastSyncedAt: new Date(),
+						},
+					},
+					{ new: true },
+				);
+
+				res.status(200).json({
+					message: "Expert nutritionist appointment accepted",
+					booking: {
+						_id: updatedAppt?._id.toString(),
+						userId: updatedAppt?.userId,
+						expertType: "nutritionist",
+						bookingStatus: "Confirmed",
+						appointmentDate: updatedAppt?.appointmentStart,
+						createdAt: updatedAppt?.createdAt,
+					},
 				});
 				return;
 			}
-
-			const updatedAppt = await ExpertAppointment.findByIdAndUpdate(
-				id,
-				{
-					$set: {
-						bookingStatus: AppointmentBookingStatus.Confirmed,
-						lastSyncedAt: new Date(),
-					},
-				},
-				{ new: true },
-			);
-
-			res.status(200).json({
-				message: "Expert nutritionist appointment accepted",
-				booking: {
-					_id: updatedAppt?._id.toString(),
-					userId: updatedAppt?.userId,
-					expertType: "nutritionist",
-					bookingStatus: "Confirmed",
-					appointmentDate: updatedAppt?.appointmentStart,
-					createdAt: updatedAppt?.createdAt,
-				},
-			});
-			return;
 		}
 
 		if (booking.bookingStatus !== NutritionistBookingStatus.PENDING) {
@@ -521,14 +628,42 @@ export const acceptNutritionistBooking: RequestHandler = async (
 			approvedBy: req.user.id,
 		};
 
-		if (parsed.data.meetingLink) update.meetingLink = parsed.data.meetingLink;
+		if (parsed.data.meetingLink) {
+			update.meetingLink = parsed.data.meetingLink;
+		} else if (booking.appointmentMode === "ONLINE") {
+			// Generate a real Google Meet link via Calendar API
+			try {
+				const { createGoogleMeetLink } = await import("../integrations/google/google-meet.service");
+				const bookingDate = booking.date ? new Date(booking.date) : new Date();
+				const startTime = bookingDate.toISOString();
+				// Default to 30-minute session
+				const endTime = new Date(bookingDate.getTime() + 30 * 60 * 1000).toISOString();
+
+				const meetUrl = await createGoogleMeetLink({
+					summary: "Fitflix Nutritionist Consultation",
+					startTime,
+					endTime,
+					timezone: "Asia/Kolkata",
+				});
+
+				if (meetUrl) {
+					update.meetingLink = meetUrl;
+					console.log(`[acceptNutritionistBooking] Created Google Meet: ${meetUrl}`);
+				} else {
+					console.warn(`[acceptNutritionistBooking] Google Meet API returned null for booking ${booking._id}`);
+				}
+			} catch (meetErr) {
+				console.error(`[acceptNutritionistBooking] Google Meet creation failed for booking ${booking._id}:`, meetErr);
+			}
+		}
+
 		if (parsed.data.clinicLocation)
 			update.clinicLocation = parsed.data.clinicLocation;
 		if (parsed.data.calBookingId)
 			update.calBookingId = parsed.data.calBookingId;
 
 		const updated = await NutritionistBooking.findOneAndUpdate(
-			{ _id: id, bookingStatus: NutritionistBookingStatus.PENDING },
+			{ _id: booking._id, bookingStatus: NutritionistBookingStatus.PENDING },
 			update,
 			{ returnDocument: "after", runValidators: true },
 		);

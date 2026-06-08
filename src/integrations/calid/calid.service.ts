@@ -1,5 +1,6 @@
 import AvailabilityCache from "../../models/AvailabilityCache";
-import { ExpertType } from "../../models/Enums";
+import { ExpertType, WebhookSyncStatus } from "../../models/Enums";
+import ExpertAppointment from "../../models/ExpertAppointment";
 import * as client from "./calid.client";
 import {
 	eventTypeIdForExpert,
@@ -591,6 +592,95 @@ export async function cancelBooking(
 export async function getBooking(uid: string): Promise<CalIdBookingData> {
 	const response = await client.getBooking(uid);
 	return response.data;
+}
+
+export function startBackgroundPollForMeetingUrl(
+	appointmentId: any,
+	bookingUid: string,
+	delayMs = 5000,
+): void {
+	const MAX_ATTEMPTS = 5;
+	const RETRY_INTERVAL_MS = 8000;
+
+	const poll = async (attempt: number): Promise<void> => {
+		try {
+			console.log(`[calid-poll] Polling booking ${bookingUid} for real Google Meet URL (attempt ${attempt}/${MAX_ATTEMPTS})...`);
+			const updatedBooking = await getBooking(bookingUid);
+			const rawUrl = updatedBooking.meetingUrl || updatedBooking.location;
+
+			if (rawUrl && /^https?:\/\//i.test(rawUrl)) {
+				// Got a real URL from Cal.id — save it
+				await ExpertAppointment.findByIdAndUpdate(appointmentId, {
+					$set: {
+						meetingUrl: rawUrl,
+						meetingLink: rawUrl,
+						webhookSyncStatus: WebhookSyncStatus.Synced,
+						lastSyncedAt: new Date(),
+					},
+				});
+				console.log(`[calid-poll] ✅ Saved real Google Meet URL for booking ${bookingUid}: ${rawUrl}`);
+				return;
+			}
+
+			console.log(`[calid-poll] Booking ${bookingUid} still has placeholder: "${rawUrl}" (attempt ${attempt})`);
+
+			if (attempt < MAX_ATTEMPTS) {
+				setTimeout(() => poll(attempt + 1), RETRY_INTERVAL_MS);
+				return;
+			}
+
+			// All Cal.id polls exhausted — create a real Google Meet via Calendar API
+			console.log(`[calid-poll] Cal.id did not return a Meet URL after ${MAX_ATTEMPTS} attempts. Creating Google Meet via Calendar API...`);
+			await createMeetViaCalendarApi(appointmentId, bookingUid, updatedBooking);
+		} catch (pollErr) {
+			console.error(`[calid-poll] Failed to poll booking ${bookingUid} (attempt ${attempt}):`, pollErr);
+			if (attempt < MAX_ATTEMPTS) {
+				setTimeout(() => poll(attempt + 1), RETRY_INTERVAL_MS);
+			} else {
+				// Try Calendar API as last resort
+				try {
+					await createMeetViaCalendarApi(appointmentId, bookingUid, null);
+				} catch (e) {
+					console.error(`[calid-poll] Google Meet Calendar API fallback also failed:`, e);
+				}
+			}
+		}
+	};
+
+	setTimeout(() => poll(1), delayMs);
+}
+
+async function createMeetViaCalendarApi(
+	appointmentId: any,
+	bookingUid: string,
+	calBooking: import("./calid.types").CalIdBookingData | null,
+): Promise<void> {
+	const { createGoogleMeetLink } = await import("../google/google-meet.service");
+
+	const startTime = calBooking?.startTime || calBooking?.start || new Date().toISOString();
+	const endTime = calBooking?.endTime || calBooking?.end ||
+		new Date(new Date(startTime).getTime() + 60 * 60 * 1000).toISOString();
+
+	const meetUrl = await createGoogleMeetLink({
+		summary: "Fitflix Nutritionist Consultation",
+		startTime,
+		endTime,
+		timezone: "Asia/Kolkata",
+	});
+
+	if (meetUrl) {
+		await ExpertAppointment.findByIdAndUpdate(appointmentId, {
+			$set: {
+				meetingUrl: meetUrl,
+				meetingLink: meetUrl,
+				webhookSyncStatus: WebhookSyncStatus.Synced,
+				lastSyncedAt: new Date(),
+			},
+		});
+		console.log(`[calid-poll] ✅ Created Google Meet via Calendar API for booking ${bookingUid}: ${meetUrl}`);
+	} else {
+		console.error(`[calid-poll] ❌ Google Meet Calendar API returned null for booking ${bookingUid}`);
+	}
 }
 
 // ─── Re-exports for callers ───────────────────────────────────────────────────

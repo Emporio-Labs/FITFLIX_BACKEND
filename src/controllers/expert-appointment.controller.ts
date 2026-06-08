@@ -367,6 +367,11 @@ export const bookAppointment: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// Trigger background poll if the URL is a placeholder (e.g. integrations:google:meet)
+	if (calFields.meetingUrl && !/^https?:\/\//i.test(calFields.meetingUrl)) {
+		calidService.startBackgroundPollForMeetingUrl(pendingAppointment._id, calFields.calIdBookingId);
+	}
+
 	// 7. Schedule reminders (best-effort)
 	if (calFields.appointmentStart) {
 		await scheduleReminders(

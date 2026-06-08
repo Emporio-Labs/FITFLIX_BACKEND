@@ -513,16 +513,43 @@ const submitAppointmentInternal = async (
 		const userObjectId = new mongoose.Types.ObjectId(requester.id);
 
 		const filter = { userId: userObjectId, expertType };
+
+		// Build meeting link — only accept real HTTP URLs from the user app
+		let cleanMeetingLink: string | undefined = undefined;
+		if (appointmentData.meetingLink && /^https?:\/\//i.test(appointmentData.meetingLink)) {
+			cleanMeetingLink = appointmentData.meetingLink;
+		}
+
+		// If no valid link from Cal.id yet, generate one via Google Calendar API
+		if (!cleanMeetingLink) {
+			try {
+				const { createGoogleMeetLink } = await import("../integrations/google/google-meet.service");
+				const startIso = appointmentData.appointmentDate
+					? new Date(appointmentData.appointmentDate).toISOString()
+					: new Date().toISOString();
+				const endIso = new Date(new Date(startIso).getTime() + 60 * 60 * 1000).toISOString();
+				cleanMeetingLink = (await createGoogleMeetLink({
+					summary: `Fitflix ${expertType === ExpertType.SportsScientist ? "Sports Scientist" : "Nutritionist"} Consultation`,
+					startTime: startIso,
+					endTime: endIso,
+					timezone: "Asia/Kolkata",
+				})) ?? undefined;
+				if (cleanMeetingLink) {
+					console.log(`[onboarding] Created Google Meet link: ${cleanMeetingLink}`);
+				}
+			} catch (meetErr) {
+				console.error("[onboarding] Google Meet creation failed:", meetErr);
+			}
+		}
+
 		const update: Record<string, unknown> = {
 			userId: userObjectId,
 			expertType,
 			...appointmentData,
+			...(cleanMeetingLink ? { meetingUrl: cleanMeetingLink, meetingLink: cleanMeetingLink } : {}),
 		};
 		if (appointmentData.appointmentDate) {
 			update.appointmentStart = appointmentData.appointmentDate;
-		}
-		if (appointmentData.meetingLink) {
-			update.meetingUrl = appointmentData.meetingLink;
 		}
 
 		const appointment = await ExpertAppointment.findOneAndUpdate(

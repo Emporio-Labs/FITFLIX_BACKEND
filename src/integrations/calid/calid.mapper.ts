@@ -33,21 +33,40 @@ export function extractMeetingUrl(
 	return booking.meetingUrl ?? booking.location ?? undefined;
 }
 
+export function cleanOrFallbackMeetingUrl(
+	meetingUrl: string | undefined,
+	_booking: CalIdBookingData,
+): string | undefined {
+	// If it's already a valid HTTP/HTTPS URL (e.g. real Google Meet), return as-is
+	if (meetingUrl && /^https?:\/\//i.test(meetingUrl)) {
+		return meetingUrl;
+	}
+
+	// Return undefined for placeholders like "integrations:google:meet"
+	// The real Google Meet link will be created asynchronously via the
+	// Google Calendar API (see startBackgroundPollForMeetingUrl in calid.service.ts)
+	return undefined;
+}
+
 export function mapCalBookingToAppointmentFields(booking: CalIdBookingData): {
 	calIdBookingId: string;
 	calIdEventId: string;
 	calIdEventTypeId: string;
 	meetingUrl: string | undefined;
+	meetingLink: string | undefined;
 	appointmentStart: Date;
 	appointmentEnd: Date;
 } {
 	const start = booking.startTime || booking.start || "";
 	const end = booking.endTime || booking.end || "";
+	const rawUrl = extractMeetingUrl(booking);
+	const cleanUrl = cleanOrFallbackMeetingUrl(rawUrl, booking);
 	return {
 		calIdBookingId: booking.uid,
 		calIdEventId: String(booking.id),
 		calIdEventTypeId: String(booking.eventTypeId),
-		meetingUrl: extractMeetingUrl(booking),
+		meetingUrl: cleanUrl,
+		meetingLink: cleanUrl,
 		appointmentStart: new Date(start),
 		appointmentEnd: new Date(end),
 	};

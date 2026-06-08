@@ -15,7 +15,7 @@ import { emitToFrontDesk, emitToUser } from "../../services/realtime.service";
 import { cancelReminders } from "../../services/reminder.service";
 import { cancelExpertAppointment } from "../../utils/onboarding.service";
 import { withOptionalTransaction } from "../../utils/transaction";
-import { expertTypeFromEventTypeId } from "./calid.mapper";
+import { cleanOrFallbackMeetingUrl, expertTypeFromEventTypeId } from "./calid.mapper";
 import type { CalIdWebhookPayload } from "./calid.types";
 
 const MAX_ATTEMPTS = 5;
@@ -171,13 +171,14 @@ async function handleBookingConfirmed(
 	const now = new Date();
 
 	await withOptionalTransaction(async (session) => {
+		const cleanUrl = cleanOrFallbackMeetingUrl(booking.meetingUrl, booking);
 		await ExpertAppointment.findByIdAndUpdate(
 			appointment._id,
 			{
 				$set: {
 					bookingStatus: AppointmentBookingStatus.Confirmed,
-					meetingUrl: booking.meetingUrl,
-					meetingLink: booking.meetingUrl, // Mapped for backward compat
+					meetingUrl: cleanUrl,
+					meetingLink: cleanUrl, // Mapped for backward compat
 					appointmentStart: new Date(booking.startTime),
 					appointmentEnd: new Date(booking.endTime),
 					appointmentDate: new Date(booking.startTime), // Mapped for backward compat
@@ -234,6 +235,8 @@ async function handleBookingRescheduled(
 	const oldStart = appointment.appointmentStart;
 
 	await withOptionalTransaction(async (session) => {
+		const rawUrl = booking.meetingUrl ?? appointment.meetingUrl;
+		const cleanUrl = cleanOrFallbackMeetingUrl(rawUrl, booking);
 		await ExpertAppointment.findByIdAndUpdate(
 			appointment._id,
 			{
@@ -242,11 +245,8 @@ async function handleBookingRescheduled(
 					appointmentStart: new Date(booking.startTime),
 					appointmentEnd: new Date(booking.endTime),
 					appointmentDate: new Date(booking.startTime), // Mapped for backward compat
-					meetingUrl: booking.meetingUrl ?? appointment.meetingUrl,
-					meetingLink:
-						booking.meetingUrl ??
-						appointment.meetingUrl ??
-						appointment.meetingLink, // Mapped for backward compat
+					meetingUrl: cleanUrl,
+					meetingLink: cleanUrl, // Mapped for backward compat
 					webhookSyncStatus: WebhookSyncStatus.Synced,
 					lastSyncedAt: now,
 				},
