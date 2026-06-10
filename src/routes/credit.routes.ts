@@ -17,12 +17,12 @@ creditRouter.get("/me/balance", authorize(["user"]), getMyCreditBalance);
 creditRouter.get("/me/history", authorize(["user"]), getMyCreditHistory);
 creditRouter.get(
 	"/users/:userId/balance",
-	authorize(["admin"]),
+	authorize(["admin", "user"]),
 	getUserCreditBalanceById,
 );
 creditRouter.get(
 	"/users/:userId/history",
-	authorize(["admin"]),
+	authorize(["admin", "user"]),
 	getUserCreditHistoryById,
 );
 creditRouter.post(

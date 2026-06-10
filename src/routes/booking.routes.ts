@@ -18,9 +18,9 @@ bookingRouter.use(authenticateToken);
 bookingRouter.post("/", authorize(["admin", "user"]), createBooking);
 bookingRouter.get("/", authorize(["admin"]), getAllBookings);
 bookingRouter.get("/me", authorize(["user"]), getMyBookings);
-bookingRouter.get("/:id", authorize(["admin"]), getBookingById);
+bookingRouter.get("/:id", authorize(["admin", "user"]), getBookingById);
 bookingRouter.patch("/:id", authorize(["admin", "user"]), updateBookingById);
-bookingRouter.delete("/:id", authorize(["admin"]), deleteBookingById);
-bookingRouter.patch("/:id/status", authorize(["admin"]), changeBookingStatus);
+bookingRouter.delete("/:id", authorize(["admin", "user"]), deleteBookingById);
+bookingRouter.patch("/:id/status", authorize(["admin", "user"]), changeBookingStatus);
 
 export default bookingRouter;

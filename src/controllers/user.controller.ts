@@ -562,6 +562,14 @@ export const getMyUser: RequestHandler = async (req, res, next) => {
 export const getUserById: RequestHandler = async (req, res, next) => {
 	const id = getIdParam(req.params.id);
 
+	if (req.user?.role === "user" && req.user.id !== id) {
+		res.status(403).json({
+			error: "Forbidden",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
 	if (!id) {
 		if (process.env.NODE_ENV !== "production") {
 			console.warn("[getUserById] invalid id", {
@@ -658,6 +666,14 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 
 export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 	const id = getIdParam(req.params.id);
+
+	if (req.user?.role === "user" && req.user.id !== id) {
+		res.status(403).json({
+			error: "Forbidden",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
 
 	if (!id) {
 		res.status(400).json({

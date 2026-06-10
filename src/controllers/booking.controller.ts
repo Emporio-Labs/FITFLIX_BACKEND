@@ -364,6 +364,14 @@ export const getBookingById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		if (
+			req.user?.role === "user" &&
+			((booking.user as any)._id?.toString() || booking.user.toString()) !== req.user.id
+		) {
+			res.status(403).json({ message: "Forbidden" });
+			return;
+		}
+
 		res.status(200).json({ booking });
 	} catch (error) {
 		next(error);
@@ -640,6 +648,17 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 					return;
 				}
 
+				if (
+					requester.role === "user" &&
+					existingBooking.user.toString() !== requester.id
+				) {
+					response = {
+						status: 403,
+						body: { message: "Forbidden" },
+					};
+					return;
+				}
+
 				if (!isCancelledBookingStatus(existingBooking.status)) {
 					const transitionedBooking = await Booking.findOneAndUpdate(
 						{ _id: id, status: nonCancelledBookingStatusFilter },
@@ -724,6 +743,20 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		const existingBooking = await Booking.findById(id);
+
+		if (!existingBooking) {
+			res.status(404).json({ message: "Booking not found" });
+			return;
+		}
+
+		if (
+			requester.role === "user" &&
+			existingBooking.user.toString() !== requester.id
+		) {
+			res.status(403).json({ message: "Forbidden" });
+			return;
+		}
 		if (isCancelledBookingStatus(parsedBody.data.status)) {
 			const session = await mongoose.startSession();
 			try {
@@ -790,6 +823,7 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 						body: Record<string, unknown>;
 					};
 					res.status(status).json(body);
+					return;
 				}
 
 				res.status(500).json({ message: "Booking cancellation failed" });

@@ -37,12 +37,12 @@ userRouter.get("/me/reports/:id/pdf", authorize(["user"]), getMyUserReportPdf);
 userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
 userRouter.get(
 	"/:id",
-	authorize(["admin", "doctor", "nutritionist"]),
+	authorize(["admin", "doctor", "nutritionist", "user"]),
 	getUserById,
 );
 userRouter.get(
 	"/:id/onboarding-profile",
-	authorize(["admin", "doctor", "nutritionist"]),
+	authorize(["admin", "doctor", "nutritionist", "user"]),
 	getOnboardingProfile,
 );
 userRouter.get(

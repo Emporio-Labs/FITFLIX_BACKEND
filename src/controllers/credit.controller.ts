@@ -76,6 +76,11 @@ export const getUserCreditBalanceById: RequestHandler = async (
 		return;
 	}
 
+	if (req.user?.role === "user" && req.user.id !== userId) {
+		res.status(403).json({ message: "Forbidden" });
+		return;
+	}
+
 	try {
 		const balance = await getUserCreditBalance(userId);
 		res.status(200).json(balance);
@@ -92,6 +97,11 @@ export const getUserCreditHistoryById: RequestHandler = async (
 	const userId = getIdParam(req.params.userId);
 	if (!userId) {
 		res.status(400).json({ message: "Invalid userId" });
+		return;
+	}
+
+	if (req.user?.role === "user" && req.user.id !== userId) {
+		res.status(403).json({ message: "Forbidden" });
 		return;
 	}
 
