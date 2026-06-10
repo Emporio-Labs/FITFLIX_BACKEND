@@ -87,7 +87,7 @@ export const getOnboardingStatus = async (
 	const completedSteps = status?.completedSteps ?? [];
 	const onboardingCompleted = status?.onboardingCompleted ?? false;
 
-	// Fetch active nutritionist appointment
+	// Fetch active or completed nutritionist appointment
 	const nutritionistApp = await ExpertAppointment.findOne({
 		userId: userObjectId,
 		expertType: ExpertType.Nutritionist,
@@ -96,6 +96,7 @@ export const getOnboardingStatus = async (
 				AppointmentBookingStatus.Pending,
 				AppointmentBookingStatus.Confirmed,
 				AppointmentBookingStatus.Rescheduled,
+				AppointmentBookingStatus.Completed,
 			],
 		},
 	}).lean();
@@ -158,7 +159,7 @@ export const getOnboardingStatus = async (
 		if (NutritionistBookingModel) {
 			const legacyBooking = await NutritionistBookingModel.findOne({
 				user: userObjectId,
-				bookingStatus: { $in: ["PENDING", "ACCEPTED"] },
+				bookingStatus: { $in: ["PENDING", "ACCEPTED", "COMPLETED"] },
 			})
 				.populate("slot")
 				.lean();

@@ -181,13 +181,14 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 						AppointmentBookingStatus.Pending,
 						AppointmentBookingStatus.Confirmed,
 						AppointmentBookingStatus.Rescheduled,
+						AppointmentBookingStatus.Completed,
 					],
 				},
 			}).lean();
 
 			if (existingActive) {
 				res.status(409).json({
-					error: "You already have an active nutritionist booking.",
+					error: "You already have a nutritionist booking.",
 					code: "CONFLICT",
 				});
 				return;
@@ -229,15 +230,27 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 
 			// 4. Save to ExpertAppointment
 			const calFields = mapCalBookingToAppointmentFields(calBooking);
-			const appointment = await ExpertAppointment.create({
-				userId: req.user.id,
-				expertType: ExpertType.Nutritionist,
-				bookingStatus: AppointmentBookingStatus.Confirmed,
-				timezone: "Asia/Kolkata",
-				appointmentSource: AppointmentSource.UserApp,
-				webhookSyncStatus: WebhookSyncStatus.Pending,
-				...calFields,
-			});
+			let appointment;
+			try {
+				appointment = await ExpertAppointment.create({
+					userId: req.user.id,
+					expertType: ExpertType.Nutritionist,
+					bookingStatus: AppointmentBookingStatus.Confirmed,
+					timezone: "Asia/Kolkata",
+					appointmentSource: AppointmentSource.UserApp,
+					webhookSyncStatus: WebhookSyncStatus.Pending,
+					...calFields,
+				});
+			} catch (err: any) {
+				if (err.code === 11000) {
+					res.status(409).json({
+						error: "You already have a nutritionist booking.",
+						code: "CONFLICT",
+					});
+					return;
+				}
+				throw err;
+			}
 
 			// Trigger background poll if the URL is a placeholder (e.g. integrations:google:meet)
 			if (calFields.meetingUrl && !/^https?:\/\//i.test(calFields.meetingUrl)) {
@@ -319,13 +332,18 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 	try {
 		const existingActive = await NutritionistBooking.findOne({
 			user: req.user.id,
-			bookingStatus: { $in: ACTIVE_BOOKING_STATUSES },
+			bookingStatus: {
+				$in: [
+					NutritionistBookingStatus.PENDING,
+					NutritionistBookingStatus.ACCEPTED,
+					NutritionistBookingStatus.COMPLETED,
+				],
+			},
 		});
 
 		if (existingActive) {
 			res.status(409).json({
-				error:
-					"You already have an active nutritionist booking. Cancel it before booking a new one.",
+				error: "You already have a nutritionist booking.",
 				code: "CONFLICT",
 				bookingId: existingActive._id,
 			});
@@ -363,17 +381,32 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 		const concreteReservedSlotId = reserved._id.toString();
 		reservedSlotId = concreteReservedSlotId;
 
-		const booking = await NutritionistBooking.create({
-			user: req.user.id,
-			slot: concreteReservedSlotId,
-			date: bookingDay,
-			startTime: concrete.startTime,
-			endTime: concrete.endTime,
-			appointmentMode,
-			bookingStatus: NutritionistBookingStatus.PENDING,
-			nutritionistApprovalStatus: NutritionistApprovalStatus.PENDING,
-			...(clinicLocation ? { clinicLocation } : {}),
-		});
+		let booking;
+		try {
+			booking = await NutritionistBooking.create({
+				user: req.user.id,
+				slot: concreteReservedSlotId,
+				date: bookingDay,
+				startTime: concrete.startTime,
+				endTime: concrete.endTime,
+				appointmentMode,
+				bookingStatus: NutritionistBookingStatus.PENDING,
+				nutritionistApprovalStatus: NutritionistApprovalStatus.PENDING,
+				...(clinicLocation ? { clinicLocation } : {}),
+			});
+		} catch (err: any) {
+			if (err.code === 11000) {
+				if (reservedSlotId) {
+					await releaseSlotCapacity(reservedSlotId).catch(() => null);
+				}
+				res.status(409).json({
+					error: "You already have a nutritionist booking.",
+					code: "CONFLICT",
+				});
+				return;
+			}
+			throw err;
+		}
 
 		try {
 			await advanceStep(req.user.id, OnboardingStep.NUTRITIONIST_BOOKING);
