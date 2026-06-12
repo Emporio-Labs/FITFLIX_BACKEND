@@ -105,3 +105,60 @@ export const publicLeadCaptureRateLimit: RequestHandler = (req, res, next) => {
 
 	next();
 };
+
+const deleteBuckets = new Map<string, RateLimitBucket>();
+
+export const publicDeleteAccountRateLimit: RequestHandler = (req, res, next) => {
+	const now = Date.now();
+	if (deleteBuckets.size > MAX_BUCKETS) {
+		for (const [key, b] of deleteBuckets.entries()) {
+			if (b.resetAt <= now) {
+				deleteBuckets.delete(key);
+			}
+		}
+	}
+
+	const key = getClientIp(req);
+	const existingBucket = deleteBuckets.get(key);
+
+	const windowMs = 15 * 60 * 1000; // 15 minutes
+	const maxRequests = 3;
+
+	const bucket =
+		!existingBucket || existingBucket.resetAt <= now
+			? { count: 0, resetAt: now + windowMs }
+			: existingBucket;
+
+	if (bucket.count >= maxRequests) {
+		const secondsUntilReset = Math.max(
+			1,
+			Math.ceil((bucket.resetAt - now) / 1000),
+		);
+
+		res.setHeader("Retry-After", String(secondsUntilReset));
+		res.setHeader("X-RateLimit-Limit", String(maxRequests));
+		res.setHeader("X-RateLimit-Remaining", "0");
+		res.setHeader(
+			"X-RateLimit-Reset",
+			String(Math.floor(bucket.resetAt / 1000)),
+		);
+
+		res.status(429).json({
+			error: "Too many deletion requests. Please try again later.",
+			code: "TOO_MANY_REQUESTS",
+		});
+		return;
+	}
+
+	bucket.count += 1;
+	deleteBuckets.set(key, bucket);
+
+	res.setHeader("X-RateLimit-Limit", String(maxRequests));
+	res.setHeader(
+		"X-RateLimit-Remaining",
+		String(Math.max(0, maxRequests - bucket.count)),
+	);
+	res.setHeader("X-RateLimit-Reset", String(Math.floor(bucket.resetAt / 1000)));
+
+	next();
+};
