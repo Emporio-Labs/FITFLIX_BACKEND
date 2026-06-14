@@ -1,5 +1,5 @@
 import type { JwtPayload, SignOptions, VerifyOptions } from "jsonwebtoken";
-import * as jwt from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import type { AppUserRole, AuthenticatedUser } from "../types/auth";
 
 export type JwtConfig = {
