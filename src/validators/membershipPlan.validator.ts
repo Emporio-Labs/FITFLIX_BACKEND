@@ -9,6 +9,8 @@ export const createMembershipPlanSchema = z.object({
 	features: z.array(z.string().trim().min(1)).default([]),
 	active: z.boolean().optional(),
 	gymId: z.string().trim().min(1),
+	durationMonths: z.coerce.number().int().positive().default(1),
+	benefits: z.record(z.string(), z.any()).default({}),
 });
 
 export const updateMembershipPlanSchema = createMembershipPlanSchema
