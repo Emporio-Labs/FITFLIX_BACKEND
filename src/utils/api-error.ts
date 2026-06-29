@@ -1,4 +1,4 @@
-import * as jwt from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { ZodError } from "zod";
 import { CreditServiceError } from "./credit.service";
