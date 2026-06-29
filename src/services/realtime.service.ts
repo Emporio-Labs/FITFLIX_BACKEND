@@ -13,7 +13,8 @@ export type UserEvent =
 	| "appointment_rescheduled"
 	| "appointment_cancelled"
 	| "appointment_reminder"
-	| "onboarding_step_updated";
+	| "onboarding_step_updated"
+	| "membership_expiry_reminder";
 
 export type NutritionistEvent =
 	| "new_user_assigned"

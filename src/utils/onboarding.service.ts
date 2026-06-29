@@ -140,9 +140,10 @@ export const getOnboardingStatus = async (
 				? formatToTimeZoneTime(nutritionistApp.appointmentEnd.toISOString(), tz)
 				: "",
 			appointmentMode:
-				nutritionistApp.meetingUrl || nutritionistApp.meetingLink
+				nutritionistApp.appointmentMode ||
+				(nutritionistApp.meetingUrl || nutritionistApp.meetingLink
 					? "ONLINE"
-					: "IN_PERSON",
+					: "IN_PERSON"),
 			bookingStatus:
 				nutritionistApp.bookingStatus === AppointmentBookingStatus.Confirmed
 					? "ACCEPTED"

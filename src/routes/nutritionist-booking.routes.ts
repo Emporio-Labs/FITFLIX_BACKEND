@@ -5,6 +5,7 @@ import {
 	getMyNutritionistBooking,
 	listNutritionistBookings,
 	rejectNutritionistBooking,
+	switchToOnlineMeeting,
 } from "../controllers/nutritionist-booking.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
@@ -17,6 +18,12 @@ nutritionistRouter.get(
 	"/my-booking",
 	authorize(["user"]),
 	getMyNutritionistBooking,
+);
+
+nutritionistRouter.patch(
+	"/my-booking/switch-to-online",
+	authorize(["user"]),
+	switchToOnlineMeeting,
 );
 
 nutritionistRouter.get(

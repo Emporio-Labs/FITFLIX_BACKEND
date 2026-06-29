@@ -2249,6 +2249,24 @@ GET /admin/expert-appointments
 
 **Authentication:** ✅ Admin
 
+---
+
+#### 7. Get Expert Appointment by ID
+```
+GET /admin/expert-appointments/:id
+```
+
+**Authentication:** ✅ Admin
+
+---
+
+#### 8. Cancel Expert Appointment
+```
+PATCH /admin/expert-appointments/:id/cancel
+```
+
+**Authentication:** ✅ Admin
+
 **Error Responses:**
 - `402` — Insufficient credits.
 - `403` — No active membership with available credits, or non-admin bypass attempt.
@@ -3579,9 +3597,11 @@ For full field-level schemas and examples, see [docs/API_REFERENCE.md](docs/API_
 ### Base Path: `/nutritionist`
 
 - `GET /nutritionist/my-booking` (User)
+- `PATCH /nutritionist/my-booking/switch-to-online` (User) — body: const {} (switches appointment mode to ONLINE and generates meeting URL)
 - `GET /nutritionist/bookings` (Admin) — query: `status`, `date`
 - `PATCH /nutritionist/bookings/:id/accept` (Admin) — body: `meetingLink`, `clinicLocation`, `calBookingId`
 - `PATCH /nutritionist/bookings/:id/reject` (Admin) — body: `reason`
+- `PATCH /nutritionist/bookings/:id/complete` (Admin) — body: const {} (marks booking as Completed)
 
 ---
 
@@ -3935,13 +3955,13 @@ POST /onboarding/sports-scientist
 ```json
 {
   "appointmentDate": "2026-06-01T10:00:00Z",
-  "meetingLink": "https://cal.com/fitflix/sports-scientist",
+  "meetingLink": "https://cal.id/fitflix/sports-scientist",
   "calComBookingId": "booking_abc123"
 }
 ```
 
 **Validation Notes:**
-- `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.com integration).
+- `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.id integration).
 - Submitting again **upserts** the existing appointment (no duplicates).
 
 **Response (201 Created):**
@@ -3954,7 +3974,7 @@ POST /onboarding/sports-scientist
     "expertType": "sports_scientist",
     "bookingStatus": "Pending",
     "appointmentDate": "2026-06-01T10:00:00Z",
-    "meetingLink": "https://cal.com/fitflix/sports-scientist",
+    "meetingLink": "https://cal.id/fitflix/sports-scientist",
     "calComBookingId": "booking_abc123",
     "createdAt": "2026-05-15T09:20:00Z",
     "updatedAt": "2026-05-15T09:20:00Z"
@@ -4047,7 +4067,7 @@ POST /onboarding/appointments
 {
   "expertType": "sports_scientist",
   "appointmentDate": "2026-06-01T10:00:00Z",
-  "meetingLink": "https://cal.com/fitflix/sports-scientist",
+  "meetingLink": "https://cal.id/fitflix/sports-scientist",
   "calComBookingId": "booking_abc123"
 }
 ```
@@ -4055,7 +4075,7 @@ POST /onboarding/appointments
 **Validation Notes:**
 - `expertType` must be one of: `sports_scientist`, `nutritionist`.
 - Sports scientist **must be booked before** nutritionist — attempting nutritionist first returns `403 STEP_NOT_ALLOWED`.
-- `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.com integration).
+- `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.id integration).
 - Submitting the same `expertType` again **upserts** the existing appointment (no duplicates).
 
 **Error Responses:**

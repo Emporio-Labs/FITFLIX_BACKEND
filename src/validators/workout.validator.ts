@@ -29,6 +29,7 @@ export const updateSessionBodySchema = z
 			.enum(Object.values(WorkoutSessionStatus) as [string, ...string[]])
 			.optional(),
 		notes: z.string().max(1000).optional(),
+		startedAt: z.coerce.date().optional(),
 	})
 	.refine((payload) => Object.keys(payload).length > 0, {
 		message: "At least one field is required",

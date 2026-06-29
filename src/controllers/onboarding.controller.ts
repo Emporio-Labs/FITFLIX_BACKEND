@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import type { Request, RequestHandler } from "express";
 import mongoose from "mongoose";
+import { isValidMeetingUrl } from "../integrations/calid/calid.mapper";
 import { validateFileSignature } from "../middleware/upload.middleware";
 import ConsentForm from "../models/ConsentForm";
 import { ConsentType, ExpertType, OnboardingStep } from "../models/Enums";
@@ -514,9 +515,9 @@ const submitAppointmentInternal = async (
 
 		const filter = { userId: userObjectId, expertType };
 
-		// Build meeting link — only accept real HTTP URLs from the user app
+		// Build meeting link — only accept real HTTP URLs from the user app and skip Jitsi fallbacks
 		let cleanMeetingLink: string | undefined = undefined;
-		if (appointmentData.meetingLink && /^https?:\/\//i.test(appointmentData.meetingLink)) {
+		if (appointmentData.meetingLink && isValidMeetingUrl(appointmentData.meetingLink)) {
 			cleanMeetingLink = appointmentData.meetingLink;
 		}
 

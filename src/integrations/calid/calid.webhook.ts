@@ -235,7 +235,7 @@ async function handleBookingRescheduled(
 	const oldStart = appointment.appointmentStart;
 
 	await withOptionalTransaction(async (session) => {
-		const rawUrl = booking.meetingUrl ?? appointment.meetingUrl;
+		const rawUrl = booking.meetingUrl ?? appointment.meetingUrl ?? undefined;
 		const cleanUrl = cleanOrFallbackMeetingUrl(rawUrl, booking);
 		await ExpertAppointment.findByIdAndUpdate(
 			appointment._id,

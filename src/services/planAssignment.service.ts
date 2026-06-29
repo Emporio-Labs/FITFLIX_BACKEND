@@ -93,9 +93,9 @@ export async function createAssignmentForUser(
 		existing.status = "active";
 		existing.startDate = startDate;
 		existing.currentDayIndex = 0;
-		existing.userDays = userDays;
-		existing.dayProgress = dayProgress;
-		existing.assignedBy = args.assignedBy;
+		existing.userDays = userDays as any;
+		existing.dayProgress = dayProgress as any;
+		existing.assignedBy = new mongoose.Types.ObjectId(args.assignedBy) as any;
 		await existing.save();
 
 		return { assignment: existing, created: false };

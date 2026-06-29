@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import {
 	AppointmentBookingStatus,
+	AppointmentMode,
 	AppointmentSource,
 	ExpertType,
 	WebhookSyncStatus,
@@ -47,6 +48,11 @@ const expertAppointmentSchema = new mongoose.Schema(
 			type: String,
 			enum: Object.values(AppointmentSource),
 			default: AppointmentSource.UserApp,
+		},
+		appointmentMode: {
+			type: String,
+			enum: Object.values(AppointmentMode),
+			default: AppointmentMode.ONLINE,
 		},
 		cancelledAt: { type: Date, default: undefined },
 		cancelReason: { type: String, default: undefined },
