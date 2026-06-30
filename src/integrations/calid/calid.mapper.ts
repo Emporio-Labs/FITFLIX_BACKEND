@@ -27,6 +27,19 @@ export function eventTypeIdForExpert(expertType: ExpertType): string {
 	return nuId;
 }
 
+export function isValidMeetingUrl(url: string | undefined): boolean {
+	if (!url) return false;
+	if (!/^https?:\/\//i.test(url)) return false;
+	if (/jit\.si/i.test(url)) return false;
+
+	if (/meet\.google\.com/i.test(url)) {
+		const path = url.replace(/^https?:\/\/(www\.)?meet\.google\.com\/?/i, "");
+		if (path.trim().length === 0) return false;
+	}
+
+	return true;
+}
+
 export function extractMeetingUrl(
 	booking: CalIdBookingData,
 ): string | undefined {
@@ -37,14 +50,9 @@ export function cleanOrFallbackMeetingUrl(
 	meetingUrl: string | undefined,
 	_booking: CalIdBookingData,
 ): string | undefined {
-	// If it's already a valid HTTP/HTTPS URL (e.g. real Google Meet), return as-is
-	if (meetingUrl && /^https?:\/\//i.test(meetingUrl)) {
+	if (isValidMeetingUrl(meetingUrl)) {
 		return meetingUrl;
 	}
-
-	// Return undefined for placeholders like "integrations:google:meet"
-	// The real Google Meet link will be created asynchronously via the
-	// Google Calendar API (see startBackgroundPollForMeetingUrl in calid.service.ts)
 	return undefined;
 }
 

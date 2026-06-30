@@ -15,7 +15,7 @@ export default async function connectDB(): Promise<void> {
 
 	if (!connectionPromise) {
 		connectionPromise = mongoose.connect(connectionUrl, {
-			serverSelectionTimeoutMS: 5000,
+			serverSelectionTimeoutMS: 30000,
 		});
 	}
 

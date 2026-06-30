@@ -193,6 +193,7 @@ var NotificationKind;
 	NotificationKind["AppointmentCancelled"] = "appointment_cancelled";
 	NotificationKind["AppointmentReminder"] = "appointment_reminder";
 	NotificationKind["OnboardingStepUpdated"] = "onboarding_step_updated";
+	NotificationKind["MembershipExpiryReminder"] = "membership_expiry_reminder";
 })(NotificationKind || (exports.NotificationKind = NotificationKind = {}));
 var ReminderKind;
 ((ReminderKind) => {

@@ -1,5 +1,5 @@
 import z from "zod";
-import { ConsentType, ExpertType } from "../models/Enums";
+import { AppointmentMode, ConsentType, ExpertType } from "../models/Enums";
 import { WorkoutExperience } from "../models/HealthGoals";
 import { ActivityLevel } from "../models/HealthMarkers";
 
@@ -198,6 +198,7 @@ export const appointmentBodySchema = z.object({
 		return value;
 	}, z.date().optional()),
 	meetingLink: optionalString,
+	appointmentMode: z.nativeEnum(AppointmentMode).optional(),
 	calIdBookingId: optionalString,
 	calComBookingId: optionalString,
 });

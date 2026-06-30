@@ -528,6 +528,19 @@ export const updateWorkoutExercise: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		if (parsed.data.isCompleted === true) {
+			const exercises = await WorkoutExercise.find({ sessionId: session._id });
+			const completedExercisesCount = exercises.filter(we => we.isCompleted).length;
+			const exerciseIds = exercises.map(we => we._id);
+			const totalSetLogsInSession = await SetLog.countDocuments({
+				workoutExerciseId: { $in: exerciseIds },
+			});
+			if (totalSetLogsInSession === 0 && completedExercisesCount === 0) {
+				session.startedAt = new Date();
+				await session.save();
+			}
+		}
+
 		const workoutExercise = await WorkoutExercise.findOneAndUpdate(
 			{ _id: id, sessionId: session._id },
 			parsed.data,
@@ -665,6 +678,18 @@ export const logSet: RequestHandler = async (req, res, next) => {
 		if (!workoutExercise) {
 			res.status(404).json({ message: "Workout exercise not found" });
 			return;
+		}
+
+		// Reset startedAt to now if this is the first set/exercise activity
+		const sessionExercises = await WorkoutExercise.find({ sessionId: session._id });
+		const completedExercisesCount = sessionExercises.filter(we => we.isCompleted).length;
+		const exerciseIds = sessionExercises.map(we => we._id);
+		const totalSetLogsInSession = await SetLog.countDocuments({
+			workoutExerciseId: { $in: exerciseIds },
+		});
+		if (totalSetLogsInSession === 0 && completedExercisesCount === 0) {
+			session.startedAt = new Date();
+			await session.save();
 		}
 
 		const currentSetCount = await SetLog.countDocuments({

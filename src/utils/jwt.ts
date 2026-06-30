@@ -9,9 +9,14 @@ export type JwtConfig = {
 	expiresIn: string;
 };
 
+// Default session lifetime: 8 months (~240 days). A device that logs in stays
+// authenticated for the full window without a surprise logout; the session ends
+// only on manual logout (token blacklist), token expiry, or app-data clear.
+const DEFAULT_EXPIRES_IN = "240d";
+
 const parseExpiresIn = (value: string | undefined): string => {
 	const trimmed = value?.trim();
-	return trimmed ? trimmed : "12h";
+	return trimmed ? trimmed : DEFAULT_EXPIRES_IN;
 };
 
 const normalizeOptional = (value: string | undefined): string | undefined => {
@@ -42,7 +47,12 @@ export const getJwtConfig = (): JwtConfig | null => {
 };
 
 export const getJwtRefreshConfig = (): JwtConfig | null => {
-	const secret = process.env.JWT_REFRESH_SECRET?.trim();
+	// Fall back to JWT_SECRET when a dedicated refresh secret isn't configured.
+	// This guarantees a refresh token is ALWAYS issued at login — a missing
+	// JWT_REFRESH_SECRET used to silently drop the refresh token, collapsing the
+	// session down to the access-token lifetime and forcing premature logouts.
+	const secret =
+		process.env.JWT_REFRESH_SECRET?.trim() || process.env.JWT_SECRET?.trim();
 	if (!secret) {
 		return null;
 	}
@@ -51,7 +61,7 @@ export const getJwtRefreshConfig = (): JwtConfig | null => {
 		secret,
 		issuer: normalizeOptional(process.env.JWT_ISSUER),
 		audience: normalizeOptional(process.env.JWT_AUDIENCE),
-		expiresIn: parseExpiresIn(process.env.JWT_REFRESH_EXPIRES_IN ?? "30d"),
+		expiresIn: parseExpiresIn(process.env.JWT_REFRESH_EXPIRES_IN),
 	};
 };
 

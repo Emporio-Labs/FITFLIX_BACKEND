@@ -4,6 +4,7 @@ import ExpertAppointment from "../../models/ExpertAppointment";
 import * as client from "./calid.client";
 import {
 	eventTypeIdForExpert,
+	isValidMeetingUrl,
 	mapCalBookingToAppointmentFields,
 } from "./calid.mapper";
 import type {
@@ -608,7 +609,7 @@ export function startBackgroundPollForMeetingUrl(
 			const updatedBooking = await getBooking(bookingUid);
 			const rawUrl = updatedBooking.meetingUrl || updatedBooking.location;
 
-			if (rawUrl && /^https?:\/\//i.test(rawUrl)) {
+			if (isValidMeetingUrl(rawUrl)) {
 				// Got a real URL from Cal.id — save it
 				await ExpertAppointment.findByIdAndUpdate(appointmentId, {
 					$set: {

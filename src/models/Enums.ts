@@ -134,6 +134,7 @@ export enum NotificationKind {
 	AppointmentCancelled = "appointment_cancelled",
 	AppointmentReminder = "appointment_reminder",
 	OnboardingStepUpdated = "onboarding_step_updated",
+	MembershipExpiryReminder = "membership_expiry_reminder",
 }
 
 export enum ReminderKind {

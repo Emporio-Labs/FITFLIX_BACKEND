@@ -5,8 +5,13 @@ import {
 	NotificationKind,
 	ReminderKind,
 	ReminderStatus,
+	MembershipStatus,
 } from "../models/Enums";
 import ScheduledReminder from "../models/ScheduledReminder";
+import Membership from "../models/Membership";
+import User from "../models/User";
+import Admin from "../models/Admin";
+import Notification from "../models/Notification";
 import { notify } from "./notification.service";
 
 const REMINDER_OFFSETS_MS: Record<ReminderKind, number> = {
@@ -153,7 +158,73 @@ export async function processReminders(): Promise<{
 		}
 	}
 
+	// Run membership expiry checks
+	try {
+		await checkMembershipExpiries();
+	} catch (err) {
+		console.error("[reminder-poller] checkMembershipExpiries failed", err);
+	}
+
 	return { fired, failed };
+}
+
+/**
+ * Scan all active memberships expiring in the next 30 days.
+ * Send daily notifications to all admins about expiring member details.
+ */
+export async function checkMembershipExpiries(): Promise<void> {
+	const now = new Date();
+	const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+	// Find active memberships expiring in the next 30 days
+	const expiringMemberships = await Membership.find({
+		status: MembershipStatus.Active,
+		endDate: { $gt: now, $lte: thirtyDaysFromNow },
+	});
+
+	if (expiringMemberships.length === 0) return;
+
+	// Get all admins
+	const admins = await Admin.find({});
+	if (admins.length === 0) return;
+
+	const startOfToday = new Date();
+	startOfToday.setHours(0, 0, 0, 0);
+
+	for (const membership of expiringMemberships) {
+		// Get member user details
+		const member = await User.findById(membership.user);
+		if (!member) continue;
+
+		const diffTime = membership.endDate!.getTime() - now.getTime();
+		const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+
+		for (const admin of admins) {
+			// Check if alert already sent today for this admin and this membership
+			const exists = await Notification.findOne({
+				userId: admin._id,
+				kind: NotificationKind.MembershipExpiryReminder,
+				"data.membershipId": membership._id.toString(),
+				createdAt: { $gte: startOfToday },
+			});
+
+			if (!exists) {
+				await notify({
+					userId: admin._id.toString(),
+					kind: NotificationKind.MembershipExpiryReminder,
+					title: "Membership Expiring Soon",
+					body: `Member ${member.username} (${member.email || member.phone})'s ${membership.planName} membership is expiring in ${daysRemaining} day${daysRemaining > 1 ? "s" : ""} (on ${new Date(membership.endDate!).toLocaleDateString()}).`,
+					data: {
+						membershipId: membership._id.toString(),
+						userId: member._id.toString(),
+						expiryDate: membership.endDate!.toISOString(),
+						daysRemaining: String(daysRemaining),
+					},
+					channels: [NotificationChannel.InApp, NotificationChannel.Socket],
+				});
+			}
+		}
+	}
 }
 
 // ─── In-process interval (non-serverless) ────────────────────────────────────

@@ -239,6 +239,7 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 					timezone: "Asia/Kolkata",
 					appointmentSource: AppointmentSource.UserApp,
 					webhookSyncStatus: WebhookSyncStatus.Pending,
+					appointmentMode: appointmentMode,
 					...calFields,
 				});
 			} catch (err: any) {
@@ -513,7 +514,7 @@ export const listNutritionistBookings: RequestHandler = async (
 			appointmentDate: appt.appointmentStart ?? null,
 			appointmentMode: appt.appointmentMode ?? "ONLINE",
 			meetingLink: appt.meetingUrl || appt.meetingLink || null,
-			calBookingId: appt.calIdBookingId ?? appt.calComBookingId ?? null,
+			calBookingId: appt.calIdBookingId ?? (appt as any).calComBookingId ?? null,
 			createdAt: appt.createdAt,
 			updatedAt: appt.updatedAt,
 			// Mark as cal.id source so frontdesk knows it's an ExpertAppointment
@@ -668,9 +669,21 @@ export const acceptNutritionistBooking: RequestHandler = async (
 			try {
 				const { createGoogleMeetLink } = await import("../integrations/google/google-meet.service");
 				const bookingDate = booking.date ? new Date(booking.date) : new Date();
-				const startTime = bookingDate.toISOString();
-				// Default to 30-minute session
-				const endTime = new Date(bookingDate.getTime() + 30 * 60 * 1000).toISOString();
+				const startStr = booking.startTime || "10:00";
+				const endStr = booking.endTime || "10:30";
+
+				const buildIsoWithTimezone = (d: Date, tStr: string): string => {
+					const y = d.getUTCFullYear();
+					const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+					const dayStr = String(d.getUTCDate()).padStart(2, "0");
+					const [h, min] = tStr.split(":");
+					const hours = h ?? "10";
+					const minutes = min ?? "00";
+					return `${y}-${m}-${dayStr}T${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}:00+05:30`;
+				};
+
+				const startTime = buildIsoWithTimezone(bookingDate, startStr);
+				const endTime = buildIsoWithTimezone(bookingDate, endStr);
 
 				const meetUrl = await createGoogleMeetLink({
 					summary: "Fitflix Nutritionist Consultation",
@@ -978,6 +991,196 @@ export const completeNutritionistBooking: RequestHandler = async (
 		res.status(200).json({
 			message: "Nutritionist booking completed",
 			booking: updated,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const switchToOnlineMeeting: RequestHandler = async (req, res, next) => {
+	if (!req.user || req.user.role !== "user") {
+		res.status(403).json({
+			error: "Only users can change their own booking mode",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	const userId = new mongoose.Types.ObjectId(req.user.id);
+
+	try {
+		// 1. Try finding an active ExpertAppointment (Cal.id/Onboarding slots)
+		const appointment = await ExpertAppointment.findOne({
+			userId,
+			expertType: ExpertType.Nutritionist,
+			bookingStatus: {
+				$in: [
+					AppointmentBookingStatus.Pending,
+					AppointmentBookingStatus.Confirmed,
+					AppointmentBookingStatus.Rescheduled,
+				],
+			},
+		});
+
+		if (appointment) {
+			const appointmentStart = appointment.appointmentStart || appointment.appointmentDate;
+			if (!appointmentStart) {
+				res.status(400).json({
+					error: "No scheduled date/time found for your appointment.",
+					code: "BAD_REQUEST",
+				});
+				return;
+			}
+
+			const diff = appointmentStart.getTime() - Date.now();
+			if (diff < 1 * 60 * 60 * 1000) {
+				res.status(400).json({
+					error: "Cannot change appointment mode within 1 hour of the scheduled time.",
+					code: "TOO_LATE",
+				});
+				return;
+			}
+
+			if (appointment.appointmentMode === AppointmentMode.ONLINE) {
+				res.status(200).json({
+					message: "Appointment is already online",
+					appointment,
+				});
+				return;
+			}
+
+			appointment.appointmentMode = AppointmentMode.ONLINE;
+
+			// Generate Google Meet link if not present
+			if (!appointment.meetingUrl && !appointment.meetingLink) {
+				try {
+					const { createGoogleMeetLink } = await import(
+						"../integrations/google/google-meet.service"
+					);
+					const startIso = appointmentStart.toISOString();
+					const endIso = new Date(
+						appointmentStart.getTime() + 30 * 60 * 1000,
+					).toISOString();
+					const meetUrl = await createGoogleMeetLink({
+						summary: "Fitflix Nutritionist Consultation",
+						startTime: startIso,
+						endTime: endIso,
+						timezone: "Asia/Kolkata",
+					});
+					if (meetUrl) {
+						appointment.meetingUrl = meetUrl;
+						appointment.meetingLink = meetUrl;
+					}
+				} catch (err) {
+					console.error("[switchToOnline] Google Meet creation failed:", err);
+				}
+			}
+
+			await appointment.save();
+
+			res.status(200).json({
+				message: "Appointment switched to online successfully",
+				appointment,
+			});
+			return;
+		}
+
+		// 2. Try finding a NutritionistBooking (slot-based)
+		const booking = await NutritionistBooking.findOne({
+			user: userId,
+			bookingStatus: {
+				$in: [
+					NutritionistBookingStatus.PENDING,
+					NutritionistBookingStatus.ACCEPTED,
+				],
+			},
+		});
+
+		if (booking) {
+			const bookingDate = booking.date;
+			if (!bookingDate) {
+				res.status(400).json({
+					error: "No scheduled date found for your booking.",
+					code: "BAD_REQUEST",
+				});
+				return;
+			}
+
+			const y = bookingDate.getUTCFullYear();
+			const m = bookingDate.getUTCMonth();
+			const d = bookingDate.getUTCDate();
+			const [hStr, minStr] = (booking.startTime || "10:00").split(":");
+			const hours = parseInt(hStr ?? "10", 10);
+			const minutes = parseInt(minStr ?? "00", 10);
+			// Slot times are scheduled in +05:30 local timezone (India)
+			const appointmentStart = new Date(
+				Date.UTC(y, m, d, hours, minutes) - 5.5 * 60 * 60 * 1000,
+			);
+
+			const diff = appointmentStart.getTime() - Date.now();
+			if (diff < 1 * 60 * 60 * 1000) {
+				res.status(400).json({
+					error: "Cannot change appointment mode within 1 hour of the scheduled time.",
+					code: "TOO_LATE",
+				});
+				return;
+			}
+
+			if (booking.appointmentMode === AppointmentMode.ONLINE) {
+				res.status(200).json({
+					message: "Booking is already online",
+					booking,
+				});
+				return;
+			}
+
+			let meetingLink: string | undefined = booking.meetingLink ?? undefined;
+
+			// Generate Google Meet link if not present
+			if (!meetingLink) {
+				try {
+					const { createGoogleMeetLink } = await import(
+						"../integrations/google/google-meet.service"
+					);
+					const startIso = appointmentStart.toISOString();
+					const endIso = new Date(
+						appointmentStart.getTime() + 30 * 60 * 1000,
+					).toISOString();
+					const meetUrl = await createGoogleMeetLink({
+						summary: "Fitflix Nutritionist Consultation",
+						startTime: startIso,
+						endTime: endIso,
+						timezone: "Asia/Kolkata",
+					});
+					if (meetUrl) {
+						meetingLink = meetUrl;
+					}
+				} catch (err) {
+					console.error("[switchToOnline] Google Meet creation failed:", err);
+				}
+			}
+
+			const updatedBooking = await NutritionistBooking.findByIdAndUpdate(
+				booking._id,
+				{
+					$set: {
+						appointmentMode: AppointmentMode.ONLINE,
+						meetingLink,
+					},
+				},
+				{ new: true },
+			);
+
+			res.status(200).json({
+				message: "Booking switched to online successfully",
+				booking: updatedBooking,
+			});
+			return;
+		}
+
+		res.status(404).json({
+			error: "No active nutritionist booking found",
+			code: "NOT_FOUND",
 		});
 	} catch (error) {
 		next(error);
