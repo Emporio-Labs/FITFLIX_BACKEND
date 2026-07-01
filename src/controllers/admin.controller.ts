@@ -32,14 +32,14 @@ export const createAdmin: RequestHandler = async (req, res, next) => {
 	const { adminName, email, phone, password } = parsedBody.data;
 
 	try {
-		const passwordHash = await hashPassword(password);
-
 		const existingAdmin = await Admin.findOne({ email }).select("_id");
 
 		if (existingAdmin) {
 			res.status(409).json({ message: "Admin with this email already exists" });
 			return;
 		}
+
+		const passwordHash = await hashPassword(password);
 
 		const admin = await Admin.create({
 			adminName,
@@ -104,13 +104,14 @@ export const updateAdminById: RequestHandler = async (req, res, next) => {
 	}
 
 	const { password, ...rest } = parsedBody.data;
-	const hashedPassword = password ? await hashPassword(password) : null;
-	const updatePayload = {
-		...rest,
-		...(hashedPassword ? { passwordHash: hashedPassword } : {}),
-	};
 
 	try {
+		const hashedPassword = password ? await hashPassword(password) : null;
+		const updatePayload = {
+			...rest,
+			...(hashedPassword ? { passwordHash: hashedPassword } : {}),
+		};
+
 		const updatedAdmin = await Admin.findByIdAndUpdate(id, updatePayload, {
 			returnDocument: "after",
 			runValidators: true,

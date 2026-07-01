@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import * as calidService from "../integrations/calid/calid.service";
 import { ExpertType } from "../models/Enums";
 import Slot from "../models/Slots";
+import { AppSettings } from "../models/AppSettings";
+import { buildClassStartTimestamp, checkBookingWindow } from "../utils/booking-window";
 import { availableSlotsQuerySchema } from "../validators/nutritionist-booking.validator";
 import {
 	createSlotBodySchema,
@@ -217,7 +219,21 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 			a.startTime.localeCompare(b.startTime),
 		);
 
-		res.status(200).json({ date: dayStart, slots });
+		const appSettings = await AppSettings.getGlobal();
+		const windowOpenHours = Number(appSettings.bookingWindowOpenHours ?? 72);
+		const nowMs = Date.now();
+
+		const validSlots = slots.filter((s) => {
+			const classStartMs = buildClassStartTimestamp(s.date, s.startTime);
+			const windowCheck = checkBookingWindow(
+				nowMs,
+				classStartMs,
+				windowOpenHours,
+			);
+			return windowCheck.ok;
+		});
+
+		res.status(200).json({ date: dayStart, slots: validSlots });
 	} catch (error) {
 		next(error);
 	}

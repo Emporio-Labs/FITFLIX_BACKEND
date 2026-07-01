@@ -4,8 +4,8 @@
 	"type": "module",
 	"private": true,
 	"scripts": {
-		"dev": "bun run index.ts",
-		"start": "bun run index.ts",
+		"dev": "tsx --watch index.ts",
+		"start": "tsx index.ts",
 		"build": "bun run build:vercel",
 		"build:vercel": "bun build api/index.ts --target=node --format=cjs --outfile=api/index.bundle.cjs && node scripts/postbuild.js",
 		"create:admin": "bun run scripts/create-admin.ts",
@@ -13,6 +13,7 @@
 		"seed:exercises": "bun run scripts/seed-exercises.ts",
 		"import:meal-plan": "bun run scripts/import-meal-plan.ts",
 		"export:meal-plan": "bun run scripts/export-meal-plan.ts",
+		"test:booking-window": "tsx tests/booking/booking-integration.test.ts",
 		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
 		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts"
@@ -24,7 +25,12 @@
 		"@types/multer": "^2.1.0",
 		"@types/node": "^25.9.1",
 		"@types/pdf-parse": "^1.1.5",
-		"@types/pdfkit": "^0.17.6"
+		"@types/pdfkit": "^0.17.6",
+		"@types/sinon": "^22.0.0",
+		"@types/supertest": "^7.2.0",
+		"sinon": "^22.0.0",
+		"supertest": "^7.2.2",
+		"tsx": "^4.19.2"
 	},
 	"peerDependencies": {
 		"typescript": "^5"

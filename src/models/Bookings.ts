@@ -36,8 +36,27 @@ const bookingSchema = new mongoose.Schema(
 			default: false,
 			required: true,
 		},
+		cancelledAt: {
+			type: Date,
+			required: false,
+			default: null,
+		},
 	},
 	{ timestamps: true },
+);
+
+// ---------------------------------------------------------------------------
+// Uniqueness guard: a user cannot have two active (non-cancelled) bookings
+// for the exact same slot. This sparse partial index excludes documents
+// where status === "Cancelled" so that re-bookings after cancellation work.
+// ---------------------------------------------------------------------------
+bookingSchema.index(
+	{ user: 1, slot: 1 },
+	{
+		unique: true,
+		partialFilterExpression: { status: { $ne: BookingStatus.Cancelled } },
+		name: "unique_active_booking_per_user_slot",
+	},
 );
 
 type BookingDocument = mongoose.InferSchemaType<typeof bookingSchema>;

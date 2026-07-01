@@ -8,6 +8,8 @@ export const createBookingBodySchema = z.object({
 	serviceId: z.string().min(1),
 	reportId: z.string().min(1).optional(),
 	bypassCredits: z.coerce.boolean().optional().default(false),
+	/** Admin-only: skip the booking window open/close check. */
+	bypassBookingWindow: z.coerce.boolean().optional().default(false),
 });
 
 export const updateBookingBodySchema = z
@@ -16,6 +18,7 @@ export const updateBookingBodySchema = z
 		slotId: z.string().min(1).optional(),
 		serviceId: z.string().min(1).optional(),
 		reportId: z.string().min(1).optional(),
+		bypassBookingWindow: z.coerce.boolean().optional().default(false),
 	})
 	.refine((payload) => Object.keys(payload).length > 0, {
 		message: "At least one field is required",

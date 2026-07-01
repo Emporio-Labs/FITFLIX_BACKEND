@@ -10,6 +10,7 @@ export const createMembershipPlanSchema = z.object({
 	active: z.boolean().optional(),
 	gymId: z.string().trim().min(1),
 	durationMonths: z.coerce.number().int().positive().default(1),
+	durationDays: z.coerce.number().int().positive().nullable().optional(),
 	benefits: z.record(z.string(), z.any()).default({}),
 });
 

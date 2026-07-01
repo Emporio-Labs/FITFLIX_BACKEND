@@ -173,19 +173,10 @@ export const signup: RequestHandler = async (req, res, next) => {
 };
 
 export const login: RequestHandler = async (req, res, next) => {
-	console.log("[AUTH][LOGIN] Request received", {
-		path: req.originalUrl,
-		method: req.method,
-		hasBody: Boolean(req.body),
-	});
 
 	const parsedBody = loginBodySchema.safeParse(req.body);
 
 	if (!parsedBody.success) {
-		console.log("[AUTH][LOGIN] Validation failed", {
-			errors: parsedBody.error.issues,
-		});
-
 		res.status(400).json({
 			message: "Invalid login data",
 			errors: parsedBody.error.issues,
@@ -196,9 +187,6 @@ export const login: RequestHandler = async (req, res, next) => {
 	const { email, password } = parsedBody.data;
 
 	try {
-		console.log("[AUTH][LOGIN] Looking up user/admin/doctor/trainer", {
-			email,
-		});
 
 		const [user, admin, doctor, trainer] = await Promise.all([
 			User.findOne({ email }).select("+passwordHash"),
@@ -207,13 +195,6 @@ export const login: RequestHandler = async (req, res, next) => {
 			Trainer.findOne({ email }).select("+passwordHash"),
 		]);
 
-		console.log("[AUTH][LOGIN] Model lookups completed", {
-			email,
-			userFound: Boolean(user),
-			adminFound: Boolean(admin),
-			doctorFound: Boolean(doctor),
-			trainerFound: Boolean(trainer),
-		});
 
 		const matchedAccount =
 			(await matchAccount(password, "user", user)) ??
@@ -222,12 +203,6 @@ export const login: RequestHandler = async (req, res, next) => {
 			(await matchAccount(password, "trainer", trainer));
 
 		if (!matchedAccount) {
-			console.log("[AUTH][LOGIN] Invalid credentials", {
-				email,
-				userFound: Boolean(user),
-				adminFound: Boolean(admin),
-			});
-
 			res.status(401).json({ message: "Invalid email or password" });
 			return;
 		}
@@ -248,13 +223,6 @@ export const login: RequestHandler = async (req, res, next) => {
 
 		const userPayload = buildLoginUserPayload(matchedAccount, user);
 
-		console.log("[AUTH][LOGIN] Login successful", {
-			email,
-			userId: req.user.id,
-			role: req.user.role,
-			userPayloadRole: userPayload.role,
-			userPayloadOnboarded: userPayload.onboarded,
-		});
 
 		res.status(200).json({
 			message: "Login successful",

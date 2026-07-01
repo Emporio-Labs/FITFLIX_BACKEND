@@ -5,10 +5,16 @@ import { BookingStatus, CreditTransactionSource } from "../models/Enums";
 import { HpodReport } from "../models/Hpodreport.model";
 import Service from "../models/Service";
 import Slot from "../models/Slots";
+import { AppSettings } from "../models/AppSettings";
+import { withOptionalTransaction } from "../utils/transaction";
 
 void HpodReport;
 
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
+import {
+	buildClassStartTimestamp,
+	checkBookingWindow,
+} from "../utils/booking-window";
 import {
 	changeBookingStatusBodySchema,
 	createBookingBodySchema,
@@ -197,8 +203,15 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { bookingDate, userId, slotId, serviceId, reportId, bypassCredits } =
-		parsedBody.data;
+	const {
+		bookingDate,
+		userId,
+		slotId,
+		serviceId,
+		reportId,
+		bypassCredits,
+		bypassBookingWindow,
+	} = parsedBody.data;
 	const targetUserId = requester.role === "user" ? requester.id : userId;
 
 	if (!targetUserId) {
@@ -220,6 +233,13 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 		res
 			.status(403)
 			.json({ message: "Only admins can bypass credit consumption" });
+		return;
+	}
+
+	if (bypassBookingWindow && requester.role !== "admin") {
+		res
+			.status(403)
+			.json({ message: "Only admins can bypass the booking window check" });
 		return;
 	}
 
@@ -254,6 +274,76 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 
 		if (!concreteSlot) {
 			res.status(409).json({ message: "Slot is full or no longer available" });
+			return;
+		}
+
+		// -----------------------------------------------------------------------
+		// Booking window enforcement
+		// Runs after the concrete slot is resolved (date + startTime are known)
+		// but BEFORE slot capacity is reserved — zero cost on rejection.
+		// -----------------------------------------------------------------------
+		if (!bypassBookingWindow) {
+			const appSettings = await AppSettings.getGlobal();
+			const windowOpenHours = Number(
+				appSettings.bookingWindowOpenHours ?? 72,
+			);
+
+			const slotDate = concreteSlot.date;
+
+			if (!slotDate) {
+				// A concrete slot must always have a resolved date.
+				res.status(409).json({ message: "Slot is full or no longer available" });
+				return;
+			}
+
+			const classStartMs = buildClassStartTimestamp(
+				slotDate,
+				concreteSlot.startTime,
+			);
+
+			const windowCheck = checkBookingWindow(
+				Date.now(),
+				classStartMs,
+				windowOpenHours,
+			);
+
+			if (!windowCheck.ok) {
+				if (windowCheck.code === "BOOKING_WINDOW_NOT_OPEN") {
+					res.status(400).json({
+						error: "Booking window has not opened yet.",
+						code: "BOOKING_WINDOW_NOT_OPEN",
+						details: {
+							opensAt: windowCheck.opensAt.toISOString(),
+							classStartsAt: new Date(classStartMs).toISOString(),
+							windowOpenHours,
+						},
+					});
+					return;
+				}
+
+				// windowCheck.code === "BOOKING_WINDOW_CLOSED"
+				res.status(400).json({
+					error: "Booking window is closed.",
+					code: "BOOKING_WINDOW_CLOSED",
+					details: {
+						startedAt: windowCheck.startedAt.toISOString(),
+					},
+				});
+				return;
+			}
+		}
+
+		const existingBooking = await Booking.findOne({
+			user: targetUserId,
+			slot: concreteSlot._id.toString(),
+			status: nonCancelledBookingStatusFilter,
+		}).lean();
+
+		if (existingBooking) {
+			res.status(409).json({
+				message: "This member already has an active booking for this slot.",
+				code: "DUPLICATE_BOOKING",
+			});
 			return;
 		}
 
@@ -315,6 +405,20 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 	} catch (error) {
 		if (reservedSlotId) {
 			await releaseSlotCapacity(reservedSlotId).catch(() => null);
+		}
+
+		// MongoDB duplicate key — the unique index on (user, slot) fired.
+		if (
+			typeof error === "object" &&
+			error !== null &&
+			"code" in error &&
+			(error as { code: unknown }).code === 11000
+		) {
+			res.status(409).json({
+				message: "This member already has an active booking for this slot.",
+				code: "DUPLICATE_BOOKING",
+			});
+			return;
 		}
 
 		next(error);
@@ -428,7 +532,14 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { bookingDate, slotId, serviceId, reportId } = parsedBody.data;
+	if (parsedBody.data.bypassBookingWindow && requester.role !== "admin") {
+		res
+			.status(403)
+			.json({ message: "Only admins can bypass the booking window check" });
+		return;
+	}
+
+	const { bookingDate, slotId, serviceId, reportId, bypassBookingWindow } = parsedBody.data;
 
 	if (
 		(slotId && !mongoose.Types.ObjectId.isValid(slotId)) ||
@@ -513,6 +624,55 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 					.status(409)
 					.json({ message: "Slot is full or no longer available" });
 				return;
+			}
+
+			if (!bypassBookingWindow) {
+				const appSettings = await AppSettings.getGlobal();
+				const windowOpenHours = Number(
+					appSettings.bookingWindowOpenHours ?? 72,
+				);
+
+				const slotDate = concreteSlot.date;
+
+				if (!slotDate) {
+					res.status(409).json({ message: "Slot is full or no longer available" });
+					return;
+				}
+
+				const classStartMs = buildClassStartTimestamp(
+					slotDate,
+					concreteSlot.startTime,
+				);
+
+				const windowCheck = checkBookingWindow(
+					Date.now(),
+					classStartMs,
+					windowOpenHours,
+				);
+
+				if (!windowCheck.ok) {
+					if (windowCheck.code === "BOOKING_WINDOW_NOT_OPEN") {
+						res.status(400).json({
+							error: "Booking window has not opened yet.",
+							code: "BOOKING_WINDOW_NOT_OPEN",
+							details: {
+								opensAt: windowCheck.opensAt.toISOString(),
+								classStartsAt: new Date(classStartMs).toISOString(),
+								windowOpenHours,
+							},
+						});
+						return;
+					}
+
+					res.status(400).json({
+						error: "Booking window is closed.",
+						code: "BOOKING_WINDOW_CLOSED",
+						details: {
+							startedAt: windowCheck.startedAt.toISOString(),
+						},
+					});
+					return;
+				}
 			}
 
 			rescheduleConcreteSlot = {
@@ -632,87 +792,61 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const session = await mongoose.startSession();
-		try {
-			let response: { status: number; body: Record<string, unknown> } | null =
-				null;
+		const response = await withOptionalTransaction(async (session) => {
+			const existingBooking = await Booking.findById(id).session(session || null);
 
-			await session.withTransaction(async () => {
-				const existingBooking = await Booking.findById(id).session(session);
-
-				if (!existingBooking) {
-					response = {
-						status: 404,
-						body: { message: "Booking not found" },
-					};
-					return;
-				}
-
-				if (
-					requester.role === "user" &&
-					existingBooking.user.toString() !== requester.id
-				) {
-					response = {
-						status: 403,
-						body: { message: "Forbidden" },
-					};
-					return;
-				}
-
-				if (!isCancelledBookingStatus(existingBooking.status)) {
-					const transitionedBooking = await Booking.findOneAndUpdate(
-						{ _id: id, status: nonCancelledBookingStatusFilter },
-						{ status: BookingStatus.Cancelled },
-						{ returnDocument: "after", runValidators: true, session },
-					);
-
-					if (transitionedBooking) {
-						await releaseSlotCapacity(
-							transitionedBooking.slot.toString(),
-							session,
-						);
-
-						await refundCreditsBySource({
-							userId: transitionedBooking.user.toString(),
-							sourceType: CreditTransactionSource.Booking,
-							sourceId: transitionedBooking._id.toString(),
-							actorId: requester.id,
-							actorRole: requester.role,
-							reason: `Booking ${transitionedBooking._id.toString()} deleted`,
-							session,
-						});
-					}
-				}
-
-				const deletedBooking = await Booking.findByIdAndDelete(id, {
-					session,
-				});
-
-				if (!deletedBooking) {
-					response = {
-						status: 404,
-						body: { message: "Booking not found" },
-					};
-					return;
-				}
-
-				response = { status: 200, body: { message: "Booking deleted" } };
-			});
-
-			if (response) {
-				const { status, body } = response as {
-					status: number;
-					body: Record<string, unknown>;
+			if (!existingBooking) {
+				return {
+					status: 404,
+					body: { message: "Booking not found" },
 				};
-				res.status(status).json(body);
-				return;
 			}
 
-			res.status(500).json({ message: "Booking delete failed" });
-		} finally {
-			session.endSession();
-		}
+			if (
+				requester.role === "user" &&
+				existingBooking.user.toString() !== requester.id
+			) {
+				return {
+					status: 403,
+					body: { message: "Forbidden" },
+				};
+			}
+
+			if (!isCancelledBookingStatus(existingBooking.status)) {
+				const transitionedBooking = await Booking.findOneAndUpdate(
+					{ _id: id, status: nonCancelledBookingStatusFilter },
+					{ status: BookingStatus.Cancelled, cancelledAt: new Date() },
+					{ returnDocument: "after", runValidators: true, session: session || null },
+				);
+
+				if (transitionedBooking) {
+					await releaseSlotCapacity(
+						transitionedBooking.slot.toString(),
+						session,
+					);
+
+					await refundCreditsBySource({
+						userId: transitionedBooking.user.toString(),
+						sourceType: CreditTransactionSource.Booking,
+						sourceId: transitionedBooking._id.toString(),
+						actorId: requester.id,
+						actorRole: requester.role,
+						reason: `Booking ${transitionedBooking._id.toString()} cancelled`,
+						session,
+					});
+				}
+			}
+
+			return {
+				status: 200,
+				body: { message: "Booking cancelled successfully" },
+			};
+		});
+
+		res.status(response.status).json(response.body);
 	} catch (error) {
+		console.error("DELETE BOOKING ERROR:", error);
+		require("fs").writeFileSync("d:/FITFLIX_BACKEND/delete-error.log", String(error) + "\n" + (error as Error).stack);
 		next(error);
 	}
 };
@@ -758,79 +892,60 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 			return;
 		}
 		if (isCancelledBookingStatus(parsedBody.data.status)) {
-			const session = await mongoose.startSession();
-			try {
-				let response: { status: number; body: Record<string, unknown> } | null =
-					null;
+			const response = await withOptionalTransaction(async (session) => {
+				const transitionedBooking = await Booking.findOneAndUpdate(
+					{ _id: id, status: nonCancelledBookingStatusFilter },
+					{ status: BookingStatus.Cancelled },
+					{ returnDocument: "after", runValidators: true, session: session || null },
+				);
 
-				await session.withTransaction(async () => {
-					const transitionedBooking = await Booking.findOneAndUpdate(
-						{ _id: id, status: nonCancelledBookingStatusFilter },
-						{ status: BookingStatus.Cancelled },
-						{ returnDocument: "after", runValidators: true, session },
-					);
+				if (!transitionedBooking) {
+					const existingBooking = await Booking.findById(id).session(session || null);
 
-					if (!transitionedBooking) {
-						const existingBooking = await Booking.findById(id).session(session);
-
-						if (!existingBooking) {
-							response = {
-								status: 404,
-								body: { message: "Booking not found" },
-							};
-							return;
-						}
-
-						response = {
-							status: 200,
-							body: {
-								message: "Booking status changed",
-								booking: existingBooking,
-								credits: { refunded: 0 },
-							},
+					if (!existingBooking) {
+						return {
+							status: 404,
+							body: { message: "Booking not found" },
 						};
-						return;
 					}
 
-					await releaseSlotCapacity(
-						transitionedBooking.slot.toString(),
-						session,
-					);
-
-					const refundResult = await refundCreditsBySource({
-						userId: transitionedBooking.user.toString(),
-						sourceType: CreditTransactionSource.Booking,
-						sourceId: transitionedBooking._id.toString(),
-						actorId: requester.id,
-						actorRole: requester.role,
-						reason: `Booking ${transitionedBooking._id.toString()} cancelled`,
-						session,
-					});
-
-					response = {
+					return {
 						status: 200,
 						body: {
 							message: "Booking status changed",
-							booking: transitionedBooking,
-							credits: { refunded: refundResult.refunded },
+							booking: existingBooking,
+							credits: { refunded: 0 },
 						},
 					};
-				});
-
-				if (response) {
-					const { status, body } = response as {
-						status: number;
-						body: Record<string, unknown>;
-					};
-					res.status(status).json(body);
-					return;
 				}
 
-				res.status(500).json({ message: "Booking cancellation failed" });
-				return;
-			} finally {
-				session.endSession();
-			}
+				await releaseSlotCapacity(
+					transitionedBooking.slot.toString(),
+					session,
+				);
+
+				const refundResult = await refundCreditsBySource({
+					userId: transitionedBooking.user.toString(),
+					sourceType: CreditTransactionSource.Booking,
+					sourceId: transitionedBooking._id.toString(),
+					actorId: requester.id,
+					actorRole: requester.role,
+					reason: `Booking ${transitionedBooking._id.toString()} cancelled`,
+					session,
+				});
+
+				return {
+					status: 200,
+					body: {
+						message: "Booking status changed",
+						booking: transitionedBooking,
+						credits: { refunded: refundResult.refunded },
+					},
+				};
+			});
+
+			res.status(response.status).json(response.body);
+			return;
 		}
 
 		const booking = await Booking.findOneAndUpdate(

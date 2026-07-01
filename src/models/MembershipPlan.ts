@@ -11,6 +11,7 @@ const membershipPlanSchema = new mongoose.Schema(
 		active: { type: Boolean, default: true },
 		gymId: { type: String, required: false },
 		durationMonths: { type: Number, required: true, min: 1, default: 1 },
+		durationDays: { type: Number, required: false, min: 1 },
 		benefits: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
 	},
 	{ timestamps: true },
