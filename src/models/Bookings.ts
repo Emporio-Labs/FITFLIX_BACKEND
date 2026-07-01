@@ -19,6 +19,11 @@ const bookingSchema = new mongoose.Schema(
 			ref: "Service",
 			required: true,
 		},
+		class_id: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Class",
+			required: false,
+		},
 		report: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "HpodReport",
