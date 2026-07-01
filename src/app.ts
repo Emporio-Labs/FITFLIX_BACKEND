@@ -27,6 +27,7 @@ import onboardingRouter from "./routes/onboarding.routes";
 import scheduleRouter from "./routes/schedule.routes";
 import serviceRouter from "./routes/service.routes";
 import slotRouter from "./routes/slot.routes";
+import classRouter from "./routes/class.routes";
 import therapyRouter from "./routes/therapy.routes";
 import trainerRouter from "./routes/trainer.routes";
 import userRouter from "./routes/user.routes";
@@ -224,6 +225,7 @@ app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
 app.use("/expert-appointments", expertAppointmentRouter);
 app.use("/admin/expert-appointments", adminExpertAppointmentRouter);
+app.use("/api/v1/classes", classRouter);
 app.use("/notifications", notificationRouter);
 app.use("/internal", internalRouter);
 
