@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 export const ServiceType = {
 	Service: "Service",
 	Therapy: "Therapy",
+	GroupClass: "GroupClass",
 } as const;
 
 export type ServiceTypeValue = (typeof ServiceType)[keyof typeof ServiceType];
@@ -28,6 +29,12 @@ const serviceSchema = new mongoose.Schema(
 				required: true,
 			},
 		],
+		// Group-class-specific fields (only populated when serviceType === 'GroupClass')
+		mode: { type: String, enum: ["online", "offline", "hybrid"], default: null },
+		instructor: { type: String, default: null },
+		maxParticipants: { type: Number, default: null },
+		scheduleInfo: { type: String, default: "" },
+		isActive: { type: Boolean, default: true },
 	},
 	{ timestamps: true },
 );
