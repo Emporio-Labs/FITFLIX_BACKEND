@@ -4,10 +4,11 @@ import { ExerciseDifficulty, ExerciseSection, MuscleGroup } from "./Enums";
 const exerciseSchema = new mongoose.Schema(
 	{
 		name: { type: String, required: true },
-		muscleGroup: {
-			type: String,
+		muscleGroups: {
+			type: [String],
 			enum: Object.values(MuscleGroup),
 			required: true,
+			default: [],
 		},
 		targetedMuscles: { type: [String], default: [] },
 		difficulty: {
@@ -39,7 +40,7 @@ const exerciseSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
-exerciseSchema.index({ muscleGroup: 1 });
+exerciseSchema.index({ muscleGroups: 1 });
 exerciseSchema.index({ createdBy: 1 });
 exerciseSchema.index({ sectionTypes: 1 });
 exerciseSchema.index({ name: "text" });

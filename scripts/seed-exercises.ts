@@ -13,7 +13,7 @@ config();
 const systemExercises = [
 	{
 		name: "Bench Press",
-		muscleGroup: MuscleGroup.Chest,
+		muscleGroups: [MuscleGroup.Chest],
 		targetedMuscles: ["Pectoralis Major", "Anterior Deltoids", "Triceps"],
 		difficulty: ExerciseDifficulty.Intermediate,
 		equipment: "Barbell & Bench",
@@ -35,7 +35,7 @@ const systemExercises = [
 	},
 	{
 		name: "Barbell Squats",
-		muscleGroup: MuscleGroup.Legs,
+		muscleGroups: [MuscleGroup.Legs],
 		targetedMuscles: ["Quadriceps", "Glutes", "Hamstrings", "Core"],
 		difficulty: ExerciseDifficulty.Intermediate,
 		equipment: "Barbell & Squat Rack",
@@ -57,7 +57,7 @@ const systemExercises = [
 	},
 	{
 		name: "Deadlifts",
-		muscleGroup: MuscleGroup.Back,
+		muscleGroups: [MuscleGroup.Back],
 		targetedMuscles: [
 			"Erector Spinae",
 			"Glutes",
@@ -85,7 +85,7 @@ const systemExercises = [
 	},
 	{
 		name: "Overhead Press",
-		muscleGroup: MuscleGroup.Shoulders,
+		muscleGroups: [MuscleGroup.Shoulders],
 		targetedMuscles: [
 			"Anterior Deltoids",
 			"Lateral Deltoids",
@@ -111,7 +111,7 @@ const systemExercises = [
 	},
 	{
 		name: "Pull Ups",
-		muscleGroup: MuscleGroup.Back,
+		muscleGroups: [MuscleGroup.Back],
 		targetedMuscles: [
 			"Latissimus Dorsi",
 			"Biceps",
@@ -137,7 +137,7 @@ const systemExercises = [
 	},
 	{
 		name: "Plank Hold",
-		muscleGroup: MuscleGroup.Core,
+		muscleGroups: [MuscleGroup.Core],
 		targetedMuscles: [
 			"Rectus Abdominis",
 			"Transverse Abdominis",
@@ -164,7 +164,7 @@ const systemExercises = [
 	},
 	{
 		name: "Bicep Curls",
-		muscleGroup: MuscleGroup.Arms,
+		muscleGroups: [MuscleGroup.Arms],
 		targetedMuscles: ["Biceps Brachii", "Brachialis", "Forearms"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "Dumbbells",
@@ -185,7 +185,7 @@ const systemExercises = [
 	},
 	{
 		name: "Dumbbell Flyes",
-		muscleGroup: MuscleGroup.Chest,
+		muscleGroups: [MuscleGroup.Chest],
 		targetedMuscles: ["Pectoralis Major", "Anterior Deltoids"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "Dumbbells & Bench",
@@ -206,7 +206,7 @@ const systemExercises = [
 	},
 	{
 		name: "Leg Press",
-		muscleGroup: MuscleGroup.Legs,
+		muscleGroups: [MuscleGroup.Legs],
 		targetedMuscles: ["Quadriceps", "Glutes", "Hamstrings"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "Leg Press Machine",
@@ -228,7 +228,7 @@ const systemExercises = [
 	},
 	{
 		name: "Russian Twists",
-		muscleGroup: MuscleGroup.Core,
+		muscleGroups: [MuscleGroup.Core],
 		targetedMuscles: ["Obliques", "Rectus Abdominis", "Hip Flexors"],
 		difficulty: ExerciseDifficulty.Intermediate,
 		equipment: "Medicine Ball (optional)",
@@ -255,7 +255,7 @@ const systemExercises = [
 
 	{
 		name: "Jumping Jacks",
-		muscleGroup: MuscleGroup.FullBody,
+		muscleGroups: [MuscleGroup.FullBody],
 		targetedMuscles: ["Shoulders", "Legs", "Core"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "None",
@@ -270,7 +270,7 @@ const systemExercises = [
 
 	{
 		name: "High Knees",
-		muscleGroup: MuscleGroup.Legs,
+		muscleGroups: [MuscleGroup.Legs],
 		targetedMuscles: ["Quadriceps", "Calves", "Core"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "None",
@@ -284,7 +284,7 @@ const systemExercises = [
 
 	{
 		name: "Arm Circles",
-		muscleGroup: MuscleGroup.Shoulders,
+		muscleGroups: [MuscleGroup.Shoulders],
 		targetedMuscles: ["Deltoids", "Rotator Cuff"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "None",
@@ -298,7 +298,7 @@ const systemExercises = [
 
 	{
 		name: "Bodyweight Lunges",
-		muscleGroup: MuscleGroup.Legs,
+		muscleGroups: [MuscleGroup.Legs],
 		targetedMuscles: ["Quadriceps", "Glutes", "Hamstrings"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "None",
@@ -319,7 +319,7 @@ const systemExercises = [
 
 	{
 		name: "Hamstring Stretch",
-		muscleGroup: MuscleGroup.Legs,
+		muscleGroups: [MuscleGroup.Legs],
 		targetedMuscles: ["Hamstrings"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "None",
@@ -334,7 +334,7 @@ const systemExercises = [
 
 	{
 		name: "Quad Stretch",
-		muscleGroup: MuscleGroup.Legs,
+		muscleGroups: [MuscleGroup.Legs],
 		targetedMuscles: ["Quadriceps"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "None",
@@ -349,7 +349,7 @@ const systemExercises = [
 
 	{
 		name: "Child Pose",
-		muscleGroup: MuscleGroup.Back,
+		muscleGroups: [MuscleGroup.Back],
 		targetedMuscles: ["Lower Back", "Shoulders"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "None",
@@ -364,7 +364,7 @@ const systemExercises = [
 
 	{
 		name: "Cobra Stretch",
-		muscleGroup: MuscleGroup.Core,
+		muscleGroups: [MuscleGroup.Core],
 		targetedMuscles: ["Abdominals", "Lower Back"],
 		difficulty: ExerciseDifficulty.Beginner,
 		equipment: "None",

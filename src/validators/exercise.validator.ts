@@ -30,7 +30,7 @@ export const listExercisesQuerySchema = z.object({
 
 export const createExerciseBodySchema = z.object({
 	name: z.string().trim().min(1).max(100),
-	muscleGroup: z.enum(Object.values(MuscleGroup) as [string, ...string[]]),
+	muscleGroups: z.array(z.enum(Object.values(MuscleGroup) as [string, ...string[]])).min(1).default([]),
 	targetedMuscles: z
 		.array(z.string().trim().max(100))
 		.min(1)
@@ -67,8 +67,9 @@ export const createExerciseBodySchema = z.object({
 export const updateExerciseBodySchema = z
 	.object({
 		name: z.string().trim().min(1).max(100).optional(),
-		muscleGroup: z
-			.enum(Object.values(MuscleGroup) as [string, ...string[]])
+		muscleGroups: z
+			.array(z.enum(Object.values(MuscleGroup) as [string, ...string[]]))
+			.min(1)
 			.optional(),
 		targetedMuscles: z
 			.array(z.string().trim().max(100))
