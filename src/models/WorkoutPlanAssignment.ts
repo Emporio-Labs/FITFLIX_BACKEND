@@ -37,6 +37,7 @@ const assignmentExerciseSchema = new mongoose.Schema(
 		targetWeightKg: { type: Number, default: 0 },
 		restSeconds: { type: Number, default: 60 },
 		durationSeconds: { type: Number, default: null },
+		notes: { type: String, default: null },
 	},
 	{ _id: false },
 );

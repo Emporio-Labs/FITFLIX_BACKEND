@@ -428,6 +428,7 @@ async function _respondWithDayDetail(
 			targetWeightKg: ex.targetWeightKg,
 			restSeconds: ex.restSeconds,
 			durationSeconds: ex.durationSeconds ?? null,
+			notes: ex.notes ?? null,
 			orderIndex: ex.orderIndex,
 		};
 	});
