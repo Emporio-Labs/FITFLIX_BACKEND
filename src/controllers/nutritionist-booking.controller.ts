@@ -181,17 +181,20 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 						AppointmentBookingStatus.Pending,
 						AppointmentBookingStatus.Confirmed,
 						AppointmentBookingStatus.Rescheduled,
-						AppointmentBookingStatus.Completed,
 					],
 				},
 			}).lean();
 
 			if (existingActive) {
-				res.status(409).json({
-					error: "You already have a nutritionist booking.",
-					code: "CONFLICT",
-				});
-				return;
+				const bookingDate = existingActive.appointmentEnd || existingActive.appointmentStart || existingActive.appointmentDate || existingActive.createdAt;
+				const hasEnded = bookingDate && new Date(bookingDate).getTime() < Date.now();
+				if (!hasEnded) {
+					res.status(409).json({
+						error: "You already have a nutritionist booking.",
+						code: "CONFLICT",
+					});
+					return;
+				}
 			}
 
 			// 2. Fetch user details
@@ -337,18 +340,20 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 				$in: [
 					NutritionistBookingStatus.PENDING,
 					NutritionistBookingStatus.ACCEPTED,
-					NutritionistBookingStatus.COMPLETED,
 				],
 			},
 		});
 
 		if (existingActive) {
-			res.status(409).json({
-				error: "You already have a nutritionist booking.",
-				code: "CONFLICT",
-				bookingId: existingActive._id,
-			});
-			return;
+			const isPast = existingActive.date && new Date(existingActive.date).getTime() < Date.now() - 24 * 60 * 60 * 1000;
+			if (!isPast) {
+				res.status(409).json({
+					error: "You already have a nutritionist booking.",
+					code: "CONFLICT",
+					bookingId: existingActive._id,
+				});
+				return;
+			}
 		}
 
 		const slot = await Slot.findById(slotId).select(

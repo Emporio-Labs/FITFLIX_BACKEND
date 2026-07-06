@@ -13,7 +13,7 @@ const hpodMetricSchema = new mongoose.Schema(
 			required: false,
 			default: null,
 		},
-		gmailMessageId: { type: String, required: false, unique: true, sparse: true, default: null },
+		gmailMessageId: { type: String, required: false, unique: true, sparse: true },
 		reportDate: { type: String, default: null },
 		recordedAt: { type: Date, required: true },
 		receivedAt: { type: Date, required: true },
