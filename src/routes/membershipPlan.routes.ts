@@ -11,12 +11,9 @@ import { authorize } from "../middleware/rbac.middleware";
 
 const router = Router();
 
+router.get("/", getAllMembershipPlans);
+
 router.use(authenticateToken);
-router.get(
-	"/",
-	authorize(["admin", "user", "doctor", "trainer"]),
-	getAllMembershipPlans,
-);
 router.get(
 	"/:id",
 	authorize(["admin", "user", "doctor", "trainer"]),

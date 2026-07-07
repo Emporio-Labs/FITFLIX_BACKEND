@@ -297,3 +297,9 @@ export enum InvoicePaymentMethod {
 	BANK_TRANSFER = "BANK_TRANSFER",
 	NONE = "NONE",
 }
+
+export enum DeletionRequestStatus {
+	Pending = "Pending",
+	Processed = "Processed",
+	Cancelled = "Cancelled",
+}

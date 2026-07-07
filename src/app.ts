@@ -8,6 +8,7 @@ import bookingRouter from "./routes/booking.routes";
 import calidWebhookRouter from "./routes/calid-webhook.routes";
 import creditRouter from "./routes/credit.routes";
 import dashboardRouter from "./routes/dashboard.routes";
+import deleteAccountRouter from "./routes/delete-account.routes";
 import doctorRouter from "./routes/doctor.routes";
 import exerciseRouter from "./routes/exercise.routes";
 import {
@@ -196,6 +197,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/auth", authRouter);
+app.use("/delete-account", deleteAccountRouter);
 app.use("/admins", adminRouter);
 app.use("/doctors", doctorRouter);
 app.use("/trainers", trainerRouter);

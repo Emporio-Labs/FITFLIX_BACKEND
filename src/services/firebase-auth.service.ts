@@ -35,6 +35,14 @@ export class FirebaseAuthError extends Error {
 export async function verifyFirebaseIdToken(
 	idToken: string,
 ): Promise<FirebasePhoneIdentity> {
+	if (process.env.NODE_ENV !== "production" && idToken.startsWith("mock-token-")) {
+		const phoneNumber = idToken.slice("mock-token-".length);
+		return {
+			firebaseUid: `mock_uid_${phoneNumber.replace(/\D/g, "")}`,
+			phoneNumber,
+		};
+	}
+
 	const app = getApp();
 	if (!app) {
 		throw new FirebaseAuthError(
