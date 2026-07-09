@@ -7,6 +7,9 @@ export const createTrainerBodySchema = z.object({
 	password: z.string().min(6),
 	description: z.string().default(""),
 	specialities: z.array(z.string().min(1)).default([]),
+	imageUrl: z.string().optional().default(""),
+	keySentence: z.string().optional().default(""),
+	isActive: z.boolean().optional().default(true),
 });
 
 export const updateTrainerBodySchema = createTrainerBodySchema

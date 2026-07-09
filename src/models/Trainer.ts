@@ -8,6 +8,9 @@ const trainerSchema = new mongoose.Schema(
 		passwordHash: { type: String, required: true, select: false },
 		description: { type: String, default: "" },
 		specialities: { type: [String], default: [] },
+		imageUrl: { type: String, default: "" },
+		keySentence: { type: String, default: "" },
+		isActive: { type: Boolean, default: true },
 	},
 	{ timestamps: true },
 );
