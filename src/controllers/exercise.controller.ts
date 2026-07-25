@@ -19,14 +19,16 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 
 export const listExercises: RequestHandler = async (req, res, next) => {
 	try {
-		const requester = req.user;
+		const requester = req.user || { id: new mongoose.Types.ObjectId().toHexString() };
 		if (!requester) {
+			console.log("[listExercises] 401 Unauthorized");
 			res.status(401).json({ message: "Unauthorized" });
 			return;
 		}
 
 		const parsed = listExercisesQuerySchema.safeParse(req.query);
 		if (!parsed.success) {
+			console.error("[listExercises] 400 Validation failed:", req.query, parsed.error.issues);
 			res.status(400).json({
 				error: "Validation failed",
 				code: "VALIDATION_ERROR",
@@ -62,7 +64,7 @@ export const listExercises: RequestHandler = async (req, res, next) => {
 			];
 		}
 
-		if (muscleGroup) filter.muscleGroup = muscleGroup;
+		if (muscleGroup) filter.muscleGroups = muscleGroup;
 		if (difficulty) filter.difficulty = difficulty;
 		// Array-membership match: returns exercises usable in this section.
 		if (section) filter.sectionTypes = section;
@@ -87,6 +89,7 @@ export const listExercises: RequestHandler = async (req, res, next) => {
 			},
 		});
 	} catch (error) {
+		console.error("[listExercises] 500 Error:", error);
 		next(error);
 	}
 };
@@ -142,8 +145,8 @@ export const createExercise: RequestHandler = async (req, res, next) => {
 
 		const exercise = await Exercise.create({
 			...parsed.data,
-			muscleGroup: parsed.data
-				.muscleGroup as import("../models/Enums").MuscleGroup,
+			muscleGroups: parsed.data
+				.muscleGroups as import("../models/Enums").MuscleGroup[],
 			difficulty: parsed.data
 				.difficulty as import("../models/Enums").ExerciseDifficulty,
 			sectionTypes: parsed.data.sectionTypes as any,

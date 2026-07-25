@@ -409,7 +409,7 @@ async function _respondWithDayDetail(
 	// Populate exercise details
 	const exerciseIds = userDay.exercises.map((e) => e.exerciseId);
 	const exerciseDocs = await Exercise.find({ _id: { $in: exerciseIds } })
-		.select("_id name muscleGroup difficulty equipment caloriesPerSet")
+		.select("_id name muscleGroups difficulty equipment caloriesPerSet")
 		.lean();
 
 	const exerciseInfoMap = new Map(
@@ -421,7 +421,7 @@ async function _respondWithDayDetail(
 		return {
 			exerciseId: ex.exerciseId,
 			name: info?.name ?? "Unknown",
-			muscleGroup: info?.muscleGroup ?? "FullBody",
+			muscleGroups: info?.muscleGroups ?? ["FullBody"],
 			section: ex.section,
 			targetSets: ex.targetSets,
 			targetReps: ex.targetReps,

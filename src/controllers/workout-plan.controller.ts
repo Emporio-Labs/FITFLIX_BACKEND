@@ -133,7 +133,7 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 			.populate("assignedUsers", "name email")
 			.populate(
 				"days.exercises.exerciseId",
-				"name muscleGroup difficulty equipment caloriesPerSet",
+				"name muscleGroups difficulty equipment caloriesPerSet",
 			)
 			.lean();
 
@@ -162,7 +162,7 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 						const exercise = populated as {
 							_id: { toString(): string };
 							name: string;
-							muscleGroup: unknown;
+							muscleGroups: unknown;
 							difficulty: unknown;
 							equipment: unknown;
 							caloriesPerSet: unknown;
@@ -172,7 +172,7 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 							exerciseId: exercise._id.toString(),
 							exercise: {
 								name: exercise.name,
-								muscleGroup: exercise.muscleGroup,
+								muscleGroups: exercise.muscleGroups,
 								difficulty: exercise.difficulty,
 								equipment: exercise.equipment,
 								caloriesPerSet: exercise.caloriesPerSet,

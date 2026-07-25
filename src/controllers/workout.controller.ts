@@ -69,7 +69,7 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 			exercise: exercise
 				? {
 						name: exercise.name,
-						muscleGroup: exercise.muscleGroup,
+						muscleGroups: exercise.muscleGroups,
 						difficulty: exercise.difficulty,
 						equipment: exercise.equipment,
 						caloriesPerSet: exercise.caloriesPerSet,
