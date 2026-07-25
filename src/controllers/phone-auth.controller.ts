@@ -34,8 +34,6 @@ const defaultOnboardingStatus = () => ({
 	healthGoalsCompleted: false,
 	consentCompleted: false,
 	reportsUploaded: false,
-	sportsScientistBooked: false,
-	nutritionistBooked: false,
 	onboardingCompleted: false,
 	startedAt: new Date(),
 });

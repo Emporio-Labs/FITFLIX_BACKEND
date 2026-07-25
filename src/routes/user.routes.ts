@@ -25,7 +25,7 @@ userRouter.use(authenticateToken);
 userRouter.post("/", authorize(["admin"]), createUser);
 userRouter.get(
 	"/",
-	authorize(["admin", "doctor", "nutritionist"]),
+	authorize(["admin", "nutritionist"]),
 	getAllUsers,
 );
 userRouter.get("/me", authorize(["user"]), getMyUser);
@@ -37,17 +37,17 @@ userRouter.get("/me/reports/:id/pdf", authorize(["user"]), getMyUserReportPdf);
 userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
 userRouter.get(
 	"/:id",
-	authorize(["admin", "doctor", "nutritionist", "user"]),
+	authorize(["admin", "nutritionist", "user"]),
 	getUserById,
 );
 userRouter.get(
 	"/:id/onboarding-profile",
-	authorize(["admin", "doctor", "nutritionist", "user"]),
+	authorize(["admin", "nutritionist", "user"]),
 	getOnboardingProfile,
 );
 userRouter.get(
 	"/:id/reports/:reportId/url",
-	authorize(["admin", "doctor", "nutritionist"]),
+	authorize(["admin", "nutritionist"]),
 	getReportSignedUrl,
 );
 userRouter.patch("/:id/onboard", authorize(["admin", "user"]), onboardUser);

@@ -1,7 +1,6 @@
 export type AppUserRole =
 	| "user"
 	| "admin"
-	| "doctor"
 	| "trainer"
 	| "nutritionist"
 	| "frontdesk";

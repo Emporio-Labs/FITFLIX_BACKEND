@@ -1,9 +1,6 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import * as calidService from "../integrations/calid/calid.service";
-import { ExpertType } from "../models/Enums";
 import Slot from "../models/Slots";
-import { availableSlotsQuerySchema } from "../validators/nutritionist-booking.validator";
 import {
 	createSlotBodySchema,
 	updateSlotBodySchema,
@@ -108,55 +105,21 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 };
 
 export const getAvailableSlots: RequestHandler = async (req, res, next) => {
-	const parsed = availableSlotsQuerySchema.safeParse(req.query);
-
-	if (!parsed.success) {
-		const firstIssue = parsed.error.issues[0];
+	const rawDate = req.query.date as string;
+	if (!rawDate || isNaN(Date.parse(rawDate))) {
 		res.status(400).json({
 			error: "Invalid query parameter: date is required (YYYY-MM-DD)",
 			code: "VALIDATION_ERROR",
-			details: firstIssue
-				? { [String(firstIssue.path[0] ?? "date")]: firstIssue.message }
-				: { date: "Invalid date" },
+			details: { date: "Invalid date" },
 		});
 		return;
 	}
 
 	try {
-		const { date, expertType, timezone } = parsed.data;
+		const parsedDate = new Date(rawDate);
 
-		if (expertType === "nutritionist") {
-			const tz = timezone || "Asia/Kolkata";
-			const dateStr = date.toISOString().slice(0, 10);
-			const days = await calidService.fetchAvailability(
-				ExpertType.Nutritionist,
-				dateStr,
-				dateStr,
-				tz,
-			);
-			const slots = [];
-			const dayStart = date;
-			const targetDay = days.find((d) => d.date === dateStr);
-
-			if (targetDay) {
-				for (const s of targetDay.slots) {
-					slots.push({
-						slotId: s.start,
-						date: dayStart,
-						startTime: formatToTimeZoneTime(s.start, tz),
-						endTime: formatToTimeZoneTime(s.end, tz),
-						capacity: 1,
-						remainingCapacity: 1,
-					});
-				}
-			}
-
-			res.status(200).json({ date: dayStart, slots });
-			return;
-		}
-
-		const dayStart = normalizeToUtcDayStart(parsed.data.date);
-		const dayEnd = normalizeToUtcDayEnd(parsed.data.date);
+		const dayStart = normalizeToUtcDayStart(parsedDate);
+		const dayEnd = normalizeToUtcDayEnd(parsedDate);
 
 		const concreteSlots = await Slot.find({
 			date: { $gte: dayStart, $lt: dayEnd },

@@ -132,8 +132,6 @@ export const deleteAndAnonymizeUserData = async (
 				healthGoalsCompleted: false,
 				consentCompleted: false,
 				reportsUploaded: false,
-				sportsScientistBooked: false,
-				nutritionistBooked: false,
 				onboardingCompleted: false,
 				startedAt: new Date(),
 				completedAt: undefined,

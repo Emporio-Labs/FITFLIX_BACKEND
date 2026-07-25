@@ -19,10 +19,10 @@ trainerRouter.get("/public/:id", getPublicTrainerById);
 trainerRouter.use(authenticateToken);
 trainerRouter.post("/", authorize(["admin"]), createTrainer);
 trainerRouter.get("/", authorize(["admin"]), getAllTrainers);
-trainerRouter.get("/:id", authorize(["admin", "trainer", "doctor"]), getTrainerById);
+trainerRouter.get("/:id", authorize(["admin", "trainer"]), getTrainerById);
 trainerRouter.patch(
 	"/:id",
-	authorize(["admin", "trainer", "doctor"]),
+	authorize(["admin", "trainer"]),
 	updateTrainerById,
 );
 trainerRouter.delete("/:id", authorize(["admin"]), deleteTrainerById);

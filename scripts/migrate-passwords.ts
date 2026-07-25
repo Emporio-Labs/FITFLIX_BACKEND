@@ -20,7 +20,7 @@ config();
 const isDryRun = process.argv.slice(2).includes("--dry-run");
 
 import Admin from "../src/models/Admin";
-import Doctor from "../src/models/Doctor";
+
 import Trainer from "../src/models/Trainer";
 // Import models that have passwordHash fields (select:false — must use +passwordHash)
 import User from "../src/models/User";
@@ -33,7 +33,6 @@ type ModelEntry = {
 const MODELS: ModelEntry[] = [
 	{ name: "User", model: User as mongoose.Model<any> },
 	{ name: "Admin", model: Admin as mongoose.Model<any> },
-	{ name: "Doctor", model: Doctor as mongoose.Model<any> },
 	{ name: "Trainer", model: Trainer as mongoose.Model<any> },
 ];
 

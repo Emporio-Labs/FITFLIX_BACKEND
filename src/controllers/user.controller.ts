@@ -2,12 +2,9 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import ConsentForm from "../models/ConsentForm";
 import {
-	AppointmentBookingStatus,
-	ExpertType,
 	type Gender,
 	OnboardingStep,
 } from "../models/Enums";
-import ExpertAppointment from "../models/ExpertAppointment";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import HpodMetric from "../models/HpodMetric";
@@ -195,8 +192,6 @@ export const createUser: RequestHandler = async (req, res, next) => {
 				healthGoalsCompleted: false,
 				consentCompleted: false,
 				reportsUploaded: false,
-				sportsScientistBooked: false,
-				nutritionistBooked: false,
 				onboardingCompleted: false,
 				startedAt: new Date(),
 			},
@@ -244,149 +239,7 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 
 		const aggregatePipeline: mongoose.PipelineStage[] = [
 			{ $match: filter },
-			{
-				$lookup: {
-					from: "expertappointments",
-					let: { uid: "$_id" },
-					pipeline: [
-						{
-							$match: {
-								$expr: {
-									$and: [
-										{ $eq: ["$userId", "$$uid"] },
-										{ $eq: ["$expertType", ExpertType.Nutritionist] },
-									],
-								},
-							},
-						},
-						{ $sort: { createdAt: -1 } },
-						{ $limit: 1 },
-					],
-					as: "latestNutritionistAppointment",
-				},
-			},
-			{
-				$lookup: {
-					from: "nutritionistbookings",
-					let: { uid: "$_id" },
-					pipeline: [
-						{
-							$match: {
-								$expr: {
-									$eq: ["$user", "$$uid"],
-								},
-							},
-						},
-						{ $sort: { createdAt: -1 } },
-						{ $limit: 1 },
-					],
-					as: "latestDirectBooking",
-				},
-			},
-			{
-				$addFields: {
-					latestNutritionAppt: { $arrayElemAt: ["$latestNutritionistAppointment", 0] },
-					latestDirectAppt: { $arrayElemAt: ["$latestDirectBooking", 0] },
-				},
-			},
-			{
-				$addFields: {
-					unifiedAppointment: {
-						$cond: {
-							if: { $and: ["$latestNutritionAppt", "$latestDirectAppt"] },
-							then: {
-								$cond: {
-									if: { $gt: ["$latestNutritionAppt.createdAt", "$latestDirectAppt.createdAt"] },
-									then: "$latestNutritionAppt",
-									else: {
-										_id: "$latestDirectAppt._id",
-										userId: "$latestDirectAppt.user",
-										expertType: "nutritionist",
-										bookingStatus: {
-											$cond: {
-												if: { $eq: ["$latestDirectAppt.bookingStatus", "PENDING"] },
-												then: "Pending",
-												else: {
-													$cond: {
-														if: { $eq: ["$latestDirectAppt.bookingStatus", "ACCEPTED"] },
-														then: "Confirmed",
-														else: {
-															$cond: {
-																if: { $eq: ["$latestDirectAppt.bookingStatus", "COMPLETED"] },
-																then: "Completed",
-																else: "Cancelled",
-															},
-														},
-													},
-												},
-											},
-										},
-										appointmentDate: "$latestDirectAppt.date",
-										appointmentMode: "$latestDirectAppt.appointmentMode",
-										meetingLink: "$latestDirectAppt.meetingLink",
-										createdAt: "$latestDirectAppt.createdAt",
-										updatedAt: "$latestDirectAppt.updatedAt",
-									},
-								},
-							},
-							else: {
-								$ifNull: [
-									"$latestNutritionAppt",
-									{
-										$cond: {
-											if: "$latestDirectAppt",
-											then: {
-												_id: "$latestDirectAppt._id",
-												userId: "$latestDirectAppt.user",
-												expertType: "nutritionist",
-												bookingStatus: {
-													$cond: {
-														if: { $eq: ["$latestDirectAppt.bookingStatus", "PENDING"] },
-														then: "Pending",
-														else: {
-															$cond: {
-																if: { $eq: ["$latestDirectAppt.bookingStatus", "ACCEPTED"] },
-																then: "Confirmed",
-																else: {
-																	$cond: {
-																		if: { $eq: ["$latestDirectAppt.bookingStatus", "COMPLETED"] },
-																		then: "Completed",
-																		else: "Cancelled",
-																	},
-																},
-															},
-														},
-													},
-												},
-												appointmentDate: "$latestDirectAppt.date",
-												appointmentMode: "$latestDirectAppt.appointmentMode",
-												meetingLink: "$latestDirectAppt.meetingLink",
-												createdAt: "$latestDirectAppt.createdAt",
-												updatedAt: "$latestDirectAppt.updatedAt",
-											},
-											else: null,
-										},
-									},
-								],
-							},
-						},
-					},
-				},
-			},
-			{
-				$addFields: {
-					bookingStatus: "$unifiedAppointment.bookingStatus",
-				},
-			},
 		];
-
-		if (status) {
-			const appointmentStatus =
-				status === "booked"
-					? AppointmentBookingStatus.Confirmed
-					: AppointmentBookingStatus.Pending;
-			aggregatePipeline.push({ $match: { bookingStatus: appointmentStatus } });
-		}
 
 		aggregatePipeline.push(
 			// ── HealthMarkers lookup (one-to-one, userId unique index) ──────────
@@ -457,12 +310,8 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 						reportsUploaded: {
 							$ifNull: ["$onboardingStatus.reportsUploaded", false],
 						},
-						sportsScientistBooked: {
-							$ifNull: ["$onboardingStatus.sportsScientistBooked", false],
-						},
-						nutritionistBooked: {
-							$ifNull: ["$onboardingStatus.nutritionistBooked", false],
-						},
+
+
 						onboardingCompleted: {
 							$ifNull: ["$onboardingStatus.onboardingCompleted", false],
 						},
@@ -604,11 +453,10 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const [healthMarkersRaw, healthGoals, reports, expertAppointments] = await Promise.all([
+		const [healthMarkersRaw, healthGoals, reports] = await Promise.all([
 			HealthMarkers.findOne({ userId: id }),
 			HealthGoals.findOne({ userId: id }),
 			MedicalReport.find({ userId: id }).sort({ uploadedAt: -1 }),
-			ExpertAppointment.find({ userId: id }).lean(),
 		]);
 
 		let computedBmi = healthMarkersRaw?.bmi;
@@ -629,7 +477,7 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 		const userObj = user.toJSON();
 		const userWithAppointments = {
 			...userObj,
-			expertAppointments,
+			expertAppointments: [],
 		};
 
 		res.status(200).json({
@@ -697,16 +545,12 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const [healthMarkers, healthGoals, consent, reports, appointments] =
+		const [healthMarkers, healthGoals, consent, reports] =
 			await Promise.all([
 				HealthMarkers.findOne({ userId: id }),
 				HealthGoals.findOne({ userId: id }),
 				ConsentForm.findOne({ userId: id }),
 				MedicalReport.find({ userId: id }).sort({ uploadedAt: -1 }),
-				ExpertAppointment.find({ userId: id }).populate(
-					"userId",
-					"username email phone",
-				),
 			]);
 
 		const status = user.onboardingStatus;
@@ -749,7 +593,7 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 			healthGoals: healthGoals ?? null,
 			consents: consent?.consents ?? [],
 			reports: reportsWithUrls,
-			appointments,
+			appointments: [],
 		});
 	} catch (error) {
 		next(error);

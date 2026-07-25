@@ -5,7 +5,7 @@ import HealthMarkers from "../src/models/HealthMarkers";
 import HealthGoals from "../src/models/HealthGoals";
 import ConsentForm from "../src/models/ConsentForm";
 import MedicalReport from "../src/models/MedicalReport";
-import ExpertAppointment from "../src/models/ExpertAppointment";
+
 import { HpodReport } from "../src/models/Hpodreport.model";
 import NutritionProfile from "../src/models/nutrition-profile.model";
 import connectDB from "../src/utils/db";
@@ -234,7 +234,6 @@ async function main() {
 			consentForm,
 			medicalReports,
 			hpodReports,
-			expertAppointments,
 			nutritionProfile,
 		] = await Promise.all([
 			HealthMarkers.findOne({ userId }).lean(),
@@ -242,9 +241,9 @@ async function main() {
 			ConsentForm.findOne({ userId }).lean(),
 			MedicalReport.find({ userId }).lean(),
 			HpodReport.find({ userId }).lean(),
-			ExpertAppointment.find({ userId }).lean(),
 			NutritionProfile.findOne({ userId }).lean(),
 		]);
+		const expertAppointments: unknown[] = [];
 
 		console.log(`\n\x1b[35m================================================================================\x1b[0m`);
 		console.log(`\x1b[1m\x1b[37m                     FITFLIX HEALTH PROFILE SCHEMA INSPECTION                   \x1b[0m`);

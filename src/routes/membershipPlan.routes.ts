@@ -16,7 +16,7 @@ router.get("/", getAllMembershipPlans);
 router.use(authenticateToken);
 router.get(
 	"/:id",
-	authorize(["admin", "user", "doctor", "trainer"]),
+	authorize(["admin", "user", "trainer"]),
 	getMembershipPlanById,
 );
 router.post("/", authorize(["admin"]), createMembershipPlan);

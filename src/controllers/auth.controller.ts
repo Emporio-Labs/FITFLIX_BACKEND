@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import Admin from "../models/Admin";
-import Doctor from "../models/Doctor";
+
 import { type Gender, LeadStatus, OnboardingStep } from "../models/Enums";
 import Lead from "../models/Lead";
 import TokenBlacklist from "../models/TokenBlacklist";
@@ -24,7 +24,7 @@ import {
 	signupBodySchema,
 } from "../validators/auth.validator";
 
-type AppRole = "user" | "admin" | "doctor" | "trainer";
+type AppRole = "user" | "admin" | "trainer";
 
 type AuthDocument = {
 	_id: { toString(): string };
@@ -130,8 +130,6 @@ export const signup: RequestHandler = async (req, res, next) => {
 				healthGoalsCompleted: false,
 				consentCompleted: false,
 				reportsUploaded: false,
-				sportsScientistBooked: false,
-				nutritionistBooked: false,
 				onboardingCompleted: false,
 				startedAt: new Date(),
 			},
@@ -200,10 +198,9 @@ export const login: RequestHandler = async (req, res, next) => {
 			email,
 		});
 
-		const [user, admin, doctor, trainer] = await Promise.all([
+		const [user, admin, trainer] = await Promise.all([
 			User.findOne({ email }).select("+passwordHash"),
 			Admin.findOne({ email }).select("+passwordHash"),
-			Doctor.findOne({ email }).select("+passwordHash"),
 			Trainer.findOne({ email }).select("+passwordHash"),
 		]);
 
@@ -211,14 +208,12 @@ export const login: RequestHandler = async (req, res, next) => {
 			email,
 			userFound: Boolean(user),
 			adminFound: Boolean(admin),
-			doctorFound: Boolean(doctor),
 			trainerFound: Boolean(trainer),
 		});
 
 		const matchedAccount =
 			(await matchAccount(password, "user", user)) ??
 			(await matchAccount(password, "admin", admin)) ??
-			(await matchAccount(password, "doctor", doctor)) ??
 			(await matchAccount(password, "trainer", trainer));
 
 		if (!matchedAccount) {

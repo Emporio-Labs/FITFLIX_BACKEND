@@ -2,7 +2,6 @@ import { config } from "dotenv";
 import mongoose from "mongoose";
 import ConsentForm from "../../src/models/ConsentForm";
 import type { Gender } from "../../src/models/Enums";
-import ExpertAppointment from "../../src/models/ExpertAppointment";
 import HealthGoals from "../../src/models/HealthGoals";
 import HealthMarkers from "../../src/models/HealthMarkers";
 import MedicalReport from "../../src/models/MedicalReport";
@@ -167,7 +166,6 @@ async function run() {
 			HealthGoals.deleteMany({ userId }),
 			ConsentForm.deleteMany({ userId }),
 			MedicalReport.deleteMany({ userId }),
-			ExpertAppointment.deleteMany({ userId }),
 		]);
 		console.log("Database successfully initialized to a clean state.");
 
@@ -331,37 +329,7 @@ async function run() {
 		);
 		console.log(`Next onboarding step: ${statusRes5.data.currentStep}`);
 
-		// ──────────────────────────────────────────────────────────────────────────
-		// STEP 7: BOOK SPORTS SCIENTIST APPOINTMENT
-		// ──────────────────────────────────────────────────────────────────────────
-		const sportsScientistPayload = {
-			expertType: "sports_scientist",
-			appointmentDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Tomorrow
-			meetingLink: "http://meet.google.com/abc-defg-hij",
-			calComBookingId: "ss-booking-123",
-		};
-		const sportsScientistRes = await callApi(
-			"STEP 7: BOOK SPORTS SCIENTIST APPOINTMENT",
-			"POST",
-			"/onboarding/appointments",
-			sportsScientistPayload,
-			authToken,
-		);
-		const ssAppointmentId = sportsScientistRes.data.appointment?._id;
-		if (ssAppointmentId) {
-			createdAppointmentIds.push(ssAppointmentId);
-		}
-		console.log(`Sports Scientist Appointment ID: ${ssAppointmentId}`);
 
-		// Fetch step transition
-		const statusRes6 = await callApi(
-			"STATE TRANSITION CHECK",
-			"GET",
-			"/onboarding/status",
-			undefined,
-			authToken,
-		);
-		console.log(`Next onboarding step: ${statusRes6.data.currentStep}`);
 
 		// ──────────────────────────────────────────────────────────────────────────
 		// STEP 8: BOOK NUTRITIONIST APPOINTMENT
@@ -456,24 +424,10 @@ async function run() {
 		console.log(
 			`- reportsUploaded: ${updatedUser.onboardingStatus?.reportsUploaded} (Expected: true)`,
 		);
-		console.log(
-			`- sportsScientistBooked: ${updatedUser.onboardingStatus?.sportsScientistBooked} (Expected: true)`,
-		);
-		console.log(
-			`- nutritionistBooked: ${updatedUser.onboardingStatus?.nutritionistBooked} (Expected: true)`,
-		);
 
-		// Verify database collections
-		const appointments = await ExpertAppointment.find({ userId });
-		console.log(`\nVerifying created database records...`);
-		console.log(
-			`- Created appointments found in DB: ${appointments.length} (Expected: 2)`,
-		);
-		for (const app of appointments) {
-			console.log(
-				`  * ${app.expertType} appointment booked on ${app.appointmentDate?.toISOString()} (Status: ${app.bookingStatus})`,
-			);
-		}
+
+
+		const appointments: any[] = [];
 
 		const reports = await MedicalReport.find({ userId });
 		console.log(
@@ -493,7 +447,6 @@ async function run() {
 		if (
 			userOnboardedSuccess &&
 			statusOnboardedSuccess &&
-			appointments.length === 2 &&
 			reports.length === 1
 		) {
 			finalPass = true;

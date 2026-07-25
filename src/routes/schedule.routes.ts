@@ -21,28 +21,28 @@ scheduleRouter.get("/my-schedule", getMySchedule);
 // Create schedule: User for themselves, Doctor/Trainer/Admin for any user
 scheduleRouter.post(
 	"/",
-	authorize(["user", "doctor", "trainer", "admin"]),
+	authorize(["user", "trainer", "admin"]),
 	createSchedule,
 );
 
 // View schedule: User for themselves, Doctor/Trainer/Admin for any user
 scheduleRouter.get(
 	"/:userId",
-	authorize(["user", "doctor", "trainer", "admin"]),
+	authorize(["user", "trainer", "admin"]),
 	getScheduleByUserId,
 );
 
 // Edit schedule: User for themselves, Doctor/Trainer/Admin for any user
 scheduleRouter.patch(
 	"/:userId",
-	authorize(["user", "doctor", "trainer", "admin"]),
+	authorize(["user", "trainer", "admin"]),
 	updateSchedule,
 );
 
 // Reschedule: User for themselves, Doctor/Trainer/Admin for any user (within 7 days only)
 scheduleRouter.patch(
 	"/:userId/reschedule",
-	authorize(["user", "doctor", "trainer", "admin"]),
+	authorize(["user", "trainer", "admin"]),
 	rescheduleSchedule,
 );
 

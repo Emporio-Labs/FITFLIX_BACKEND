@@ -133,13 +133,11 @@ var OnboardingStep;
 	OnboardingStep["HEALTH_GOALS"] = "HEALTH_GOALS";
 	OnboardingStep["CONSENT"] = "CONSENT";
 	OnboardingStep["REPORT_UPLOAD"] = "REPORT_UPLOAD";
-	OnboardingStep["SPORTS_SCIENTIST_BOOKING"] = "SPORTS_SCIENTIST_BOOKING";
 	OnboardingStep["NUTRITIONIST_BOOKING"] = "NUTRITIONIST_BOOKING";
 	OnboardingStep["COMPLETED"] = "COMPLETED";
 })(OnboardingStep || (exports.OnboardingStep = OnboardingStep = {}));
 var ExpertType;
 ((ExpertType) => {
-	ExpertType["SportsScientist"] = "sports_scientist";
 	ExpertType["Nutritionist"] = "nutritionist";
 })(ExpertType || (exports.ExpertType = ExpertType = {}));
 var AppointmentBookingStatus;

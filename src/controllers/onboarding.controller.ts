@@ -1,18 +1,16 @@
 import { promises as fs } from "node:fs";
 import type { Request, RequestHandler } from "express";
 import mongoose from "mongoose";
-import { isValidMeetingUrl } from "../integrations/calid/calid.mapper";
-import { validateFileSignature } from "../middleware/upload.middleware";
+
 import ConsentForm from "../models/ConsentForm";
-import { ConsentType, ExpertType, OnboardingStep } from "../models/Enums";
-import ExpertAppointment from "../models/ExpertAppointment";
+import { ConsentType, OnboardingStep } from "../models/Enums";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import MedicalReport from "../models/MedicalReport";
+import { validateFileSignature } from "../middleware/upload.middleware";
 import type { AuthenticatedUser } from "../types/auth";
 import {
 	advanceStep,
-	cancelExpertAppointment,
 	completeOnboarding,
 	getOnboardingStatus,
 	OnboardingServiceError,
@@ -24,7 +22,6 @@ import {
 	uploadStreamToS3,
 } from "../utils/s3.service";
 import {
-	appointmentBodySchema,
 	consentBodySchema,
 	healthGoalsBodySchema,
 	healthMarkersBodySchema,
@@ -467,171 +464,7 @@ export const submitReport = async (
 	}
 };
 
-const submitAppointmentInternal = async (
-	req: RequestWithUser,
-	res: Parameters<RequestHandler>[1],
-	next: Parameters<RequestHandler>[2],
-	expertTypeOverride?: ExpertType,
-) => {
-	const requester = req.user;
-	if (!requester || requester.role !== "user") {
-		res.status(403).json({
-			error: "Only users can access this endpoint",
-			code: "FORBIDDEN",
-		});
-		return;
-	}
 
-	const payload = expertTypeOverride
-		? { ...req.body, expertType: expertTypeOverride }
-		: req.body;
-	const parsedBody = appointmentBodySchema.safeParse(payload);
-
-	if (!parsedBody.success) {
-		res.status(400).json({
-			error: "Validation failed",
-			code: "VALIDATION_ERROR",
-			details: getValidationDetails(parsedBody.error.issues),
-		});
-		return;
-	}
-
-	try {
-		const { expertType, ...appointmentData } = parsedBody.data;
-
-		// Map legacy calComBookingId to calIdBookingId for database compatibility
-		if (appointmentData.calComBookingId && !appointmentData.calIdBookingId) {
-			appointmentData.calIdBookingId = appointmentData.calComBookingId;
-		}
-
-		const requiredStep =
-			expertType === ExpertType.SportsScientist
-				? OnboardingStep.SPORTS_SCIENTIST_BOOKING
-				: OnboardingStep.NUTRITIONIST_BOOKING;
-
-		await validateStepAllowed(requester.id, requiredStep);
-
-		const userObjectId = new mongoose.Types.ObjectId(requester.id);
-
-		const filter = { userId: userObjectId, expertType };
-
-		// Build meeting link — only accept real HTTP URLs from the user app and skip Jitsi fallbacks
-		let cleanMeetingLink: string | undefined = undefined;
-		if (appointmentData.meetingLink && isValidMeetingUrl(appointmentData.meetingLink)) {
-			cleanMeetingLink = appointmentData.meetingLink;
-		}
-
-		// If no valid link from Cal.id yet, generate one via Google Calendar API
-		if (!cleanMeetingLink) {
-			try {
-				const { createGoogleMeetLink } = await import("../integrations/google/google-meet.service");
-				const startIso = appointmentData.appointmentDate
-					? new Date(appointmentData.appointmentDate).toISOString()
-					: new Date().toISOString();
-				const endIso = new Date(new Date(startIso).getTime() + 60 * 60 * 1000).toISOString();
-				cleanMeetingLink = (await createGoogleMeetLink({
-					summary: `Fitflix ${expertType === ExpertType.SportsScientist ? "Sports Scientist" : "Nutritionist"} Consultation`,
-					startTime: startIso,
-					endTime: endIso,
-					timezone: "Asia/Kolkata",
-				})) ?? undefined;
-				if (cleanMeetingLink) {
-					console.log(`[onboarding] Created Google Meet link: ${cleanMeetingLink}`);
-				}
-			} catch (meetErr) {
-				console.error("[onboarding] Google Meet creation failed:", meetErr);
-			}
-		}
-
-		const update: Record<string, unknown> = {
-			userId: userObjectId,
-			expertType,
-			...appointmentData,
-			...(cleanMeetingLink ? { meetingUrl: cleanMeetingLink, meetingLink: cleanMeetingLink } : {}),
-		};
-		if (appointmentData.appointmentDate) {
-			update.appointmentStart = appointmentData.appointmentDate;
-		}
-
-		const appointment = await ExpertAppointment.findOneAndUpdate(
-			filter as Record<string, unknown>,
-			update as Record<string, unknown>,
-			{ upsert: true, returnDocument: "after", runValidators: true },
-		);
-
-		await advanceStep(requester.id, requiredStep);
-
-		res.status(201).json({
-			message: `${expertType === ExpertType.SportsScientist ? "Sports scientist" : "Nutritionist"} appointment booked`,
-			appointment,
-		});
-	} catch (error) {
-		handleServiceError(error, res, next);
-	}
-};
-
-export const submitAppointment: RequestHandler = (req, res, next) =>
-	submitAppointmentInternal(req as RequestWithUser, res, next);
-
-export const submitSportsScientistAppointment: RequestHandler = (
-	req,
-	res,
-	next,
-) =>
-	submitAppointmentInternal(
-		req as RequestWithUser,
-		res,
-		next,
-		ExpertType.SportsScientist,
-	);
-
-export const submitNutritionistAppointment: RequestHandler = (req, res, next) =>
-	submitAppointmentInternal(
-		req as RequestWithUser,
-		res,
-		next,
-		ExpertType.Nutritionist,
-	);
-
-export const deleteNutritionistAppointment = async (
-	req: RequestWithUser,
-	res: Parameters<RequestHandler>[1],
-	next: Parameters<RequestHandler>[2],
-) => {
-	const requester = req.user;
-	if (!requester || requester.role !== "admin") {
-		res.status(403).json({
-			error: "Only admins can cancel nutritionist appointments",
-			code: "FORBIDDEN",
-		});
-		return;
-	}
-
-	const { userId } = req.params;
-
-	if (typeof userId !== "string" || !mongoose.Types.ObjectId.isValid(userId)) {
-		res.status(400).json({
-			error: "Invalid user ID",
-			code: "BAD_REQUEST",
-		});
-		return;
-	}
-
-	try {
-		const onboardingStatus = await cancelExpertAppointment(
-			userId,
-			ExpertType.Nutritionist,
-		);
-
-		res.status(200).json({
-			success: true,
-			message: "Nutritionist appointment cancelled successfully",
-			onboardingStatus,
-		});
-	} catch (error) {
-		handleServiceError(error, res, next);
-	}
-};
 
 export const submitComplete = async (
 	req: RequestWithUser,

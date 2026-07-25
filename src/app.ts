@@ -2,19 +2,13 @@ import { config } from "dotenv";
 import express from "express";
 import { apiRateLimit } from "./middleware/rate-limit.middleware";
 import adminRouter from "./routes/admin.routes";
-import appointmentRouter from "./routes/appointment.routes";
 import authRouter from "./routes/auth.routes";
 import bookingRouter from "./routes/booking.routes";
-import calidWebhookRouter from "./routes/calid-webhook.routes";
+
 import creditRouter from "./routes/credit.routes";
 import dashboardRouter from "./routes/dashboard.routes";
 import deleteAccountRouter from "./routes/delete-account.routes";
-import doctorRouter from "./routes/doctor.routes";
 import exerciseRouter from "./routes/exercise.routes";
-import {
-	adminExpertAppointmentRouter,
-	expertAppointmentRouter,
-} from "./routes/expert-appointment.routes";
 import internalRouter from "./routes/internal.routes";
 import invoiceRouter from "./routes/invoice.routes";
 import leadRouter from "./routes/lead.routes";
@@ -22,7 +16,7 @@ import membershipRouter from "./routes/membership.routes";
 import membershipPlanRouter from "./routes/membershipPlan.routes";
 import notificationRouter from "./routes/notification.routes";
 import nutritionRouter from "./routes/nutrition.routes";
-import nutritionistRouter from "./routes/nutritionist-booking.routes";
+
 import onboardingRouter from "./routes/onboarding.routes";
 import scheduleRouter from "./routes/schedule.routes";
 import serviceRouter from "./routes/service.routes";
@@ -156,10 +150,7 @@ app.use((req, res, next) => {
 	next();
 });
 
-// Cal ID webhook MUST be mounted before express.json() — it captures raw body for HMAC
-app.use("/webhooks/cal", calidWebhookRouter);
-// Backwards-compatibility: legacy Cal webhook path used by external integrations
-app.use("/cal/webhook", calidWebhookRouter);
+
 
 app.use(express.json());
 app.use((_req, res, next) => {
@@ -199,7 +190,6 @@ app.use((req, res, next) => {
 app.use("/auth", authRouter);
 app.use("/delete-account", deleteAccountRouter);
 app.use("/admins", adminRouter);
-app.use("/doctors", doctorRouter);
 app.use("/trainers", trainerRouter);
 app.use("/users", userRouter);
 app.use("/memberships", membershipRouter);
@@ -208,7 +198,6 @@ app.use("/services", serviceRouter);
 app.use("/therapies", therapyRouter);
 app.use("/bookings", apiRateLimit, bookingRouter);
 app.use("/credits", apiRateLimit, creditRouter);
-app.use("/appointments", apiRateLimit, appointmentRouter);
 app.use("/schedules", apiRateLimit, scheduleRouter);
 app.use("/exercises", apiRateLimit, exerciseRouter);
 app.use("/leads", apiRateLimit, leadRouter);
@@ -217,13 +206,10 @@ app.use("/api/invoices", apiRateLimit, invoiceRouter);
 app.use("/membership-plans", membershipPlanRouter);
 app.use("/onboarding", onboardingRouter);
 app.use("/nutrition", nutritionRouter);
-app.use("/nutritionist", nutritionistRouter);
 app.use("/dashboard", dashboardRouter);
 app.use("/webhook", webhookRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
-app.use("/expert-appointments", expertAppointmentRouter);
-app.use("/admin/expert-appointments", adminExpertAppointmentRouter);
 app.use("/notifications", notificationRouter);
 app.use("/internal", internalRouter);
 

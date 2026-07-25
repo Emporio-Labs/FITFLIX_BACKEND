@@ -1,16 +1,12 @@
 import mongoose from "mongoose";
 import {
-	AppointmentBookingStatus,
-	ExpertType,
 	MealLogStatus,
 	MealType,
 	NutritionGoal,
 	NutritionPlanStatus,
 } from "../../models/Enums";
-import ExpertAppointment from "../../models/ExpertAppointment";
 import HealthGoals from "../../models/HealthGoals";
 import HealthMarkers from "../../models/HealthMarkers";
-import NutritionistBooking from "../../models/NutritionistBooking";
 import NutritionHydrationLog from "../../models/nutrition-hydration.model";
 import NutritionMealLog from "../../models/nutrition-meal-log.model";
 import UserNutritionPlan from "../../models/nutrition-plan.model";
@@ -23,16 +19,8 @@ import { getEffectiveMealItems, sumMacros } from "./nutrition-macro.util";
 // ---------------------------------------------------------------------------
 
 export const getDashboardStats = async () => {
-	const [pendingBookings, confirmedBookings, distinctMembers, activePlans] =
+	const [distinctMembers, activePlans] =
 		await Promise.all([
-			ExpertAppointment.countDocuments({
-				expertType: ExpertType.Nutritionist,
-				bookingStatus: AppointmentBookingStatus.Pending,
-			}),
-			ExpertAppointment.countDocuments({
-				expertType: ExpertType.Nutritionist,
-				bookingStatus: AppointmentBookingStatus.Confirmed,
-			}),
 			UserNutritionPlan.distinct("userId"),
 			UserNutritionPlan.countDocuments({
 				status: NutritionPlanStatus.Active,
@@ -40,8 +28,8 @@ export const getDashboardStats = async () => {
 		]);
 
 	return {
-		pendingBookings,
-		confirmedBookings,
+		pendingBookings: 0,
+		confirmedBookings: 0,
 		totalMembers: distinctMembers.length,
 		activePlans,
 	};
@@ -71,29 +59,6 @@ export const getDashboardMembers = async (options: {
 			},
 		},
 		{
-			$lookup: {
-				from: "expertappointments",
-				let: { uid: "$_id" },
-				pipeline: [
-					{
-						$match: {
-							$expr: { $eq: ["$userId", "$$uid"] },
-							expertType: ExpertType.Nutritionist,
-						},
-					},
-				],
-				as: "nutritionistAppointments",
-			},
-		},
-		{
-			$match: {
-				$or: [
-					{ "nutritionPlans.0": { $exists: true } },
-					{ "nutritionistAppointments.0": { $exists: true } },
-				],
-			},
-		},
-		{
 			$addFields: {
 				assignedPlans: { $size: "$nutritionPlans" },
 				activePlanCount: {
@@ -116,14 +81,6 @@ export const getDashboardMembers = async (options: {
 						},
 					},
 				},
-				appointmentStatus: {
-					$ifNull: [
-						{
-							$arrayElemAt: ["$nutritionistAppointments.bookingStatus", 0],
-						},
-						null,
-					],
-				},
 			},
 		},
 		{
@@ -139,26 +96,10 @@ export const getDashboardMembers = async (options: {
 								case: { $gt: ["$completedPlanCount", 0] },
 								then: "completed",
 							},
-							{
-								case: {
-									$eq: [
-										"$appointmentStatus",
-										AppointmentBookingStatus.Confirmed,
-									],
-								},
-								then: "booked",
-							},
-							{
-								case: {
-									$eq: ["$appointmentStatus", AppointmentBookingStatus.Pending],
-								},
-								then: "pending",
-							},
 						],
 						default: "pending",
 					},
 				},
-				nutritionBookingStatus: "$appointmentStatus",
 				activeNutritionPlan: {
 					$let: {
 						vars: {
@@ -834,8 +775,6 @@ export interface UserNutritionDashboard {
 		healthGoalsCompleted: boolean;
 		consentCompleted: boolean;
 		reportsUploaded: boolean;
-		sportsScientistBooked: boolean;
-		nutritionistBooked: boolean;
 		startedAt?: Date;
 		completedAt?: Date;
 	};
@@ -962,7 +901,6 @@ export const getUserNutritionDashboard = async (
 		activePlan,
 		todayMealLogs,
 		todayHydration,
-		nutritionistBooking,
 	] = await Promise.all([
 		User.findById(userId)
 			.select(
@@ -1002,13 +940,8 @@ export const getUserNutritionDashboard = async (
 		})
 			.select("totalMl goalMl")
 			.lean(),
-		NutritionistBooking.findOne({ user: userId })
-			.select(
-				"bookingStatus date startTime endTime appointmentMode meetingLink calBookingId nutritionistApprovalStatus acceptedAt createdAt",
-			)
-			.sort({ createdAt: -1 })
-			.lean(),
 	]);
+	const nutritionistBooking = null;
 
 	if (!user) {
 		throw new Error("User not found");
@@ -1212,28 +1145,12 @@ export const getUserNutritionDashboard = async (
 		healthGoalsCompleted: obs?.healthGoalsCompleted ?? false,
 		consentCompleted: obs?.consentCompleted ?? false,
 		reportsUploaded: obs?.reportsUploaded ?? false,
-		sportsScientistBooked: obs?.sportsScientistBooked ?? false,
-		nutritionistBooked: obs?.nutritionistBooked ?? false,
 		startedAt: obs?.startedAt,
 		completedAt: obs?.completedAt,
 	};
 
 	// ── Booking details ──────────────────────────────────────────────────────
-	const bookingDetails = nutritionistBooking
-		? {
-				_id: (nutritionistBooking as any)._id.toString(),
-				bookingStatus: (nutritionistBooking as any).bookingStatus,
-				appointmentMode: (nutritionistBooking as any).appointmentMode,
-				date: (nutritionistBooking as any).date ?? undefined,
-				startTime: (nutritionistBooking as any).startTime ?? undefined,
-				endTime: (nutritionistBooking as any).endTime ?? undefined,
-				meetingLink: (nutritionistBooking as any).meetingLink ?? undefined,
-				calBookingId: (nutritionistBooking as any).calBookingId ?? undefined,
-				nutritionistApprovalStatus: (nutritionistBooking as any)
-					.nutritionistApprovalStatus,
-				acceptedAt: (nutritionistBooking as any).acceptedAt ?? undefined,
-			}
-		: null;
+	const bookingDetails = null;
 
 	// ── Assemble response ───────────────────────────────────────────────────
 	return {

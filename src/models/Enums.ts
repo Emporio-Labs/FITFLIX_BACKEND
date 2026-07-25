@@ -82,13 +82,11 @@ export enum OnboardingStep {
 	HEALTH_GOALS = "HEALTH_GOALS",
 	CONSENT = "CONSENT",
 	REPORT_UPLOAD = "REPORT_UPLOAD",
-	SPORTS_SCIENTIST_BOOKING = "SPORTS_SCIENTIST_BOOKING",
 	NUTRITIONIST_BOOKING = "NUTRITIONIST_BOOKING",
 	COMPLETED = "COMPLETED",
 }
 
 export enum ExpertType {
-	SportsScientist = "sports_scientist",
 	Nutritionist = "nutritionist",
 }
 

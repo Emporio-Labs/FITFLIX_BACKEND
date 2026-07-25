@@ -1,6 +1,5 @@
 import type { RequestHandler } from "express";
 import Admin from "../models/Admin";
-import Doctor from "../models/Doctor";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
 import {
@@ -9,7 +8,7 @@ import {
 	verifyPassword,
 } from "../utils/password";
 
-type AppRole = "admin" | "doctor" | "trainer" | "user";
+type AppRole = "admin" | "trainer" | "user";
 
 type AuthDocument = {
 	_id: { toString(): string };
@@ -69,16 +68,14 @@ export const authenticateBasicCredentials: RequestHandler = async (
 	const { email, password } = credentials;
 
 	try {
-		const [admin, doctor, trainer, user] = await Promise.all([
+		const [admin, trainer, user] = await Promise.all([
 			Admin.findOne({ email }).select("_id email +passwordHash"),
-			Doctor.findOne({ email }).select("_id email +passwordHash"),
 			Trainer.findOne({ email }).select("_id email +passwordHash"),
 			User.findOne({ email }).select("_id email +passwordHash"),
 		]);
 
 		const candidates: Array<{ role: AppRole; account: AuthDocument | null }> = [
 			{ role: "admin", account: admin },
-			{ role: "doctor", account: doctor },
 			{ role: "trainer", account: trainer },
 			{ role: "user", account: user },
 		];

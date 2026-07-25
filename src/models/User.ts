@@ -44,8 +44,6 @@ const userSchema = new mongoose.Schema(
 			healthGoalsCompleted: { type: Boolean, default: false },
 			consentCompleted: { type: Boolean, default: false },
 			reportsUploaded: { type: Boolean, default: false },
-			sportsScientistBooked: { type: Boolean, default: false },
-			nutritionistBooked: { type: Boolean, default: false },
 			onboardingCompleted: { type: Boolean, default: false },
 			startedAt: { type: Date, default: undefined },
 			completedAt: { type: Date, default: undefined },

@@ -27,19 +27,19 @@ leadRouter.use(authenticateToken);
 
 leadRouter.post(
 	"/",
-	authorize(["admin", "frontdesk", "doctor", "trainer"]),
+	authorize(["admin", "frontdesk", "trainer"]),
 	createLead,
 );
 leadRouter.get("/", authorize(["admin", "frontdesk"]), getAllLeads);
 leadRouter.get("/stats", authorize(["admin", "frontdesk"]), getLeadStats);
 leadRouter.get(
 	"/:id",
-	authorize(["admin", "frontdesk", "doctor", "trainer"]),
+	authorize(["admin", "frontdesk", "trainer"]),
 	getLeadById,
 );
 leadRouter.patch(
 	"/:id",
-	authorize(["admin", "frontdesk", "doctor", "trainer"]),
+	authorize(["admin", "frontdesk", "trainer"]),
 	updateLeadById,
 );
 leadRouter.delete("/:id", authorize(["admin", "frontdesk"]), deleteLeadById);

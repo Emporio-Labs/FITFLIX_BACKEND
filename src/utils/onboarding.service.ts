@@ -1,10 +1,5 @@
 import mongoose from "mongoose";
-import {
-	AppointmentBookingStatus,
-	ExpertType,
-	OnboardingStep,
-} from "../models/Enums";
-import ExpertAppointment from "../models/ExpertAppointment";
+import { OnboardingStep } from "../models/Enums";
 import User from "../models/User";
 
 export type OnboardingServiceErrorCode =
@@ -28,8 +23,6 @@ const STEP_ORDER: OnboardingStep[] = [
 	OnboardingStep.HEALTH_GOALS,
 	OnboardingStep.CONSENT,
 	OnboardingStep.REPORT_UPLOAD,
-	OnboardingStep.SPORTS_SCIENTIST_BOOKING,
-	OnboardingStep.NUTRITIONIST_BOOKING,
 	OnboardingStep.COMPLETED,
 ];
 
@@ -38,8 +31,6 @@ const STEP_FLAG_MAP: Record<string, string> = {
 	[OnboardingStep.HEALTH_GOALS]: "healthGoalsCompleted",
 	[OnboardingStep.CONSENT]: "consentCompleted",
 	[OnboardingStep.REPORT_UPLOAD]: "reportsUploaded",
-	[OnboardingStep.SPORTS_SCIENTIST_BOOKING]: "sportsScientistBooked",
-	[OnboardingStep.NUTRITIONIST_BOOKING]: "nutritionistBooked",
 };
 
 const getNextStep = (currentStep: OnboardingStep): OnboardingStep | null => {
@@ -68,7 +59,6 @@ export type OnboardingStatusResponse = {
 	completedSteps: string[];
 	onboardingCompleted: boolean;
 	allowedNextStep: string | null;
-	nutritionistBooking?: any;
 };
 
 export const getOnboardingStatus = async (
@@ -87,110 +77,11 @@ export const getOnboardingStatus = async (
 	const completedSteps = status?.completedSteps ?? [];
 	const onboardingCompleted = status?.onboardingCompleted ?? false;
 
-	// Fetch active or completed nutritionist appointment
-	const nutritionistApp = await ExpertAppointment.findOne({
-		userId: userObjectId,
-		expertType: ExpertType.Nutritionist,
-		bookingStatus: {
-			$in: [
-				AppointmentBookingStatus.Pending,
-				AppointmentBookingStatus.Confirmed,
-				AppointmentBookingStatus.Rescheduled,
-				AppointmentBookingStatus.Completed,
-			],
-		},
-	}).lean();
-
-	// Helper to format timezone times
-	const formatToTimeZoneTime = (
-		isoString: string,
-		timeZone: string,
-	): string => {
-		const d = new Date(isoString);
-		const parts = new Intl.DateTimeFormat("en-US", {
-			timeZone,
-			hour: "2-digit",
-			minute: "2-digit",
-			hour12: false,
-		}).formatToParts(d);
-		const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
-		const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
-		const hh = hour === "24" ? "00" : hour;
-		return `${hh}:${minute}`;
-	};
-
-	let nutritionistBooking: any;
-	if (nutritionistApp) {
-		const tz = nutritionistApp.timezone || "Asia/Kolkata";
-		nutritionistBooking = {
-			_id: nutritionistApp._id.toString(),
-			bookingId: nutritionistApp._id.toString(),
-			slotId: nutritionistApp.calIdBookingId || nutritionistApp._id.toString(),
-			date:
-				nutritionistApp.appointmentStart ||
-				nutritionistApp.appointmentDate ||
-				nutritionistApp.createdAt,
-			startTime: nutritionistApp.appointmentStart
-				? formatToTimeZoneTime(
-						nutritionistApp.appointmentStart.toISOString(),
-						tz,
-					)
-				: "",
-			endTime: nutritionistApp.appointmentEnd
-				? formatToTimeZoneTime(nutritionistApp.appointmentEnd.toISOString(), tz)
-				: "",
-			appointmentMode:
-				nutritionistApp.appointmentMode ||
-				(nutritionistApp.meetingUrl || nutritionistApp.meetingLink
-					? "ONLINE"
-					: "IN_PERSON"),
-			bookingStatus:
-				nutritionistApp.bookingStatus === AppointmentBookingStatus.Confirmed
-					? "ACCEPTED"
-					: nutritionistApp.bookingStatus,
-			status:
-				nutritionistApp.bookingStatus === AppointmentBookingStatus.Confirmed
-					? "ACCEPTED"
-					: nutritionistApp.bookingStatus,
-			meetingLink: nutritionistApp.meetingUrl || nutritionistApp.meetingLink,
-		};
-	} else {
-		// Fallback: check legacy NutritionistBooking table
-		const NutritionistBookingModel = mongoose.models.NutritionistBooking;
-		if (NutritionistBookingModel) {
-			const legacyBooking = await NutritionistBookingModel.findOne({
-				user: userObjectId,
-				bookingStatus: { $in: ["PENDING", "ACCEPTED", "COMPLETED"] },
-			})
-				.populate("slot")
-				.lean();
-
-			if (legacyBooking) {
-				nutritionistBooking = {
-					_id: legacyBooking._id.toString(),
-					bookingId: legacyBooking._id.toString(),
-					slotId:
-						legacyBooking.slot?._id?.toString() ||
-						legacyBooking.slot?.toString() ||
-						"",
-					date: legacyBooking.date,
-					startTime: legacyBooking.startTime || "",
-					endTime: legacyBooking.endTime || "",
-					appointmentMode: legacyBooking.appointmentMode,
-					bookingStatus: legacyBooking.bookingStatus,
-					status: legacyBooking.bookingStatus,
-					meetingLink: legacyBooking.meetingLink,
-				};
-			}
-		}
-	}
-
 	return {
 		currentStep,
 		completedSteps: completedSteps as string[],
 		onboardingCompleted,
 		allowedNextStep: onboardingCompleted ? null : currentStep,
-		nutritionistBooking,
 	};
 };
 
@@ -253,84 +144,6 @@ export const advanceStep = async (
 	await User.findByIdAndUpdate(userObjectId, update);
 };
 
-export const cancelExpertAppointment = async (
-	userId: string,
-	expertType: ExpertType,
-): Promise<OnboardingStatusResponse> => {
-	const userObjectId = toObjectId(userId, "NOT_FOUND", "Invalid user ID");
-
-	const user = await User.findById(userObjectId).select("onboardingStatus");
-
-	if (!user) {
-		throw new OnboardingServiceError("NOT_FOUND", "User not found");
-	}
-
-	const deleted = await ExpertAppointment.findOneAndDelete({
-		userId: userObjectId,
-		expertType,
-	});
-
-	if (!deleted) {
-		throw new OnboardingServiceError(
-			"NOT_FOUND",
-			`${expertType === ExpertType.SportsScientist ? "Sports scientist" : "Nutritionist"} appointment not found for this user`,
-		);
-	}
-
-	// Determine which step to rewind to and which subsequent steps to remove
-	let stepToRewind: OnboardingStep | undefined;
-	let stepsToRemove: OnboardingStep[];
-
-	if (expertType === ExpertType.SportsScientist) {
-		stepToRewind = OnboardingStep.SPORTS_SCIENTIST_BOOKING;
-		stepsToRemove = [
-			OnboardingStep.SPORTS_SCIENTIST_BOOKING,
-			OnboardingStep.NUTRITIONIST_BOOKING,
-			OnboardingStep.COMPLETED,
-		];
-	} else if (expertType === ExpertType.Nutritionist) {
-		stepToRewind = OnboardingStep.NUTRITIONIST_BOOKING;
-		stepsToRemove = [
-			OnboardingStep.NUTRITIONIST_BOOKING,
-			OnboardingStep.COMPLETED,
-		];
-	} else {
-		stepsToRemove = [];
-	}
-
-	if (stepToRewind) {
-		const flagField = STEP_FLAG_MAP[stepToRewind];
-
-		const setFields: Record<string, unknown> = {
-			"onboardingStatus.currentStep": stepToRewind,
-			"onboardingStatus.onboardingCompleted": false,
-			onboarded: false,
-		};
-
-		if (flagField) {
-			setFields[`onboardingStatus.${flagField}`] = false;
-		}
-
-		// When rewinding sports scientist, also clear nutritionist flag
-		if (expertType === ExpertType.SportsScientist) {
-			setFields["onboardingStatus.sportsScientistBooked"] = false;
-			setFields["onboardingStatus.nutritionistBooked"] = false;
-		}
-
-		await User.findByIdAndUpdate(userObjectId, {
-			$set: setFields,
-			$unset: { "onboardingStatus.completedAt": "" },
-			$pull: {
-				"onboardingStatus.completedSteps": {
-					$in: stepsToRemove,
-				},
-			},
-		});
-	}
-
-	return getOnboardingStatus(userId);
-};
-
 export const completeOnboarding = async (userId: string): Promise<Date> => {
 	const userObjectId = toObjectId(userId, "NOT_FOUND", "Invalid user ID");
 
@@ -352,8 +165,6 @@ export const completeOnboarding = async (userId: string): Promise<Date> => {
 		"healthGoalsCompleted",
 		"consentCompleted",
 		"reportsUploaded",
-		"sportsScientistBooked",
-		"nutritionistBooked",
 	] as const;
 
 	const status = user.onboardingStatus;

@@ -15,17 +15,17 @@ const slotRouter = Router();
 slotRouter.use(authenticateToken);
 slotRouter.get(
 	"/",
-	authorize(["admin", "doctor", "trainer", "user"]),
+	authorize(["admin", "trainer", "user"]),
 	getAllSlots,
 );
 slotRouter.get(
 	"/available",
-	authorize(["admin", "doctor", "trainer", "user"]),
+	authorize(["admin", "trainer", "user"]),
 	getAvailableSlots,
 );
 slotRouter.get(
 	"/:id",
-	authorize(["admin", "doctor", "trainer", "user"]),
+	authorize(["admin", "trainer", "user"]),
 	getSlotById,
 );
 slotRouter.post("/", authorize(["admin"]), createSlot);
