@@ -6,7 +6,7 @@ import HealthGoals from "../src/models/HealthGoals";
 import ConsentForm from "../src/models/ConsentForm";
 import MedicalReport from "../src/models/MedicalReport";
 import ExpertAppointment from "../src/models/ExpertAppointment";
-import { HpodReport } from "../src/models/Hpodreport.model";
+import BcaMetric from "../src/models/BcaMetric";
 import NutritionProfile from "../src/models/nutrition-profile.model";
 import connectDB from "../src/utils/db";
 
@@ -233,7 +233,7 @@ async function main() {
 			healthGoals,
 			consentForm,
 			medicalReports,
-			hpodReports,
+			bcaMetrics,
 			expertAppointments,
 			nutritionProfile,
 		] = await Promise.all([
@@ -241,7 +241,7 @@ async function main() {
 			HealthGoals.findOne({ userId }).lean(),
 			ConsentForm.findOne({ userId }).lean(),
 			MedicalReport.find({ userId }).lean(),
-			HpodReport.find({ userId }).lean(),
+			BcaMetric.find({ userId }).lean(),
 			ExpertAppointment.find({ userId }).lean(),
 			NutritionProfile.findOne({ userId }).lean(),
 		]);
@@ -347,9 +347,9 @@ async function main() {
 			}
 		}
 
-		// CATEGORY 8: UPLOADED REPORTS (Other medical reports & HPOD reports)
+		// CATEGORY 8: UPLOADED REPORTS (Other medical reports & BCA metrics)
 		const nonDnaReports = medicalReports.filter((r) => r.reportType?.toUpperCase() !== "DNA");
-		if (nonDnaReports.length > 0 || hpodReports.length > 0) {
+		if (nonDnaReports.length > 0 || bcaMetrics.length > 0) {
 			console.log(`\n\x1b[1m\x1b[36m[CATEGORY: Uploaded Reports]\x1b[0m`);
 			if (nonDnaReports.length > 0) {
 				console.log(`  \x1b[90m(Medical Reports from medicalreports collection)\x1b[0m`);
@@ -358,11 +358,11 @@ async function main() {
 					inspectObject(nonDnaReports[i], 4);
 				}
 			}
-			if (hpodReports.length > 0) {
-				console.log(`  \x1b[90m(Gmail Ingested HPOD Reports from hpod_reports collection)\x1b[0m`);
-				for (let i = 0; i < hpodReports.length; i++) {
-					console.log(`  - HPOD Report [${i + 1}]:`);
-					inspectObject(hpodReports[i], 4);
+			if (bcaMetrics.length > 0) {
+				console.log(`  \x1b[90m(ActiveX BCA metrics from bca_metrics collection)\x1b[0m`);
+				for (let i = 0; i < bcaMetrics.length; i++) {
+					console.log(`  - BCA Metric [${i + 1}]:`);
+					inspectObject(bcaMetrics[i], 4);
 				}
 			}
 		}

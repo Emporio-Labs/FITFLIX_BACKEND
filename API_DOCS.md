@@ -106,7 +106,6 @@ The system supports 5 role types:
 | `/nutrition` | Nutrition system | ✅ User + Nutritionist/Admin | 48 endpoints |
 | `/nutritionist` | Nutritionist bookings | ✅ Admin + User | 4 endpoints |
 | `/notifications` | Notifications | ✅ All authenticated | 4 endpoints |
-| `/webhook` | HPOD webhook + reports | ✅ Webhook secret + Admin read | 4 endpoints |
 | `/webhooks/cal` | Cal ID webhook | ✅ Signature header | 1 endpoint |
 | `/internal` | Internal cron hooks | ✅ Internal secret | 1 endpoint |
 | `/onboarding` | Onboarding workflow — health markers, goals, dual-consent, reports, appointments | ✅ User only (+ 1 admin cancel) | 11 endpoints |
@@ -736,7 +735,7 @@ GET /users/me/reports
 
 **Authorization:** User only
 
-Returns a combined, chronological feed of both HPOD optimization reports and user-uploaded medical/DNA documents.
+Returns a chronological feed of user-uploaded medical/DNA documents.
 
 **Response (200 OK):**
 ```json
@@ -752,24 +751,6 @@ Returns a combined, chronological feed of both HPOD optimization reports and use
       "insights": [],
       "generated_date": "2026-05-25T08:49:09.885Z",
       "pdf_url": "https://fitflix-storage.s3.ap-south-1.amazonaws.com/medical-reports/...&response-content-disposition=inline&response-content-type=application%2Fpdf..."
-    },
-    {
-      "id": "report-001",
-      "title": "April Personalized Optimization Report",
-      "type": "HPOD",
-      "summary": "Your recovery markers improved, but sleep consistency needs attention.",
-      "suggestions": [
-        "Maintain 7.5-8 hours sleep window for 14 days.",
-        "Shift caffeine cutoff to 2 PM."
-      ],
-      "recommendations": [
-        "Maintain 7.5-8 hours sleep window for 14 days."
-      ],
-      "insights": [
-        "Shift caffeine cutoff to 2 PM."
-      ],
-      "generated_date": "2026-04-10T08:00:00.000Z",
-      "pdf_url": "http://localhost:3000/users/me/reports/report-001/pdf"
     }
   ]
 }
@@ -808,12 +789,14 @@ Exclusively returns the list of medical and DNA reports uploaded by the user, dy
 
 ---
 
-#### 6. Get My HPOD Metrics History
+#### 6. Get My BCA Metrics History
 ```
-GET /users/me/hpod-metrics
+GET /users/me/bca-metrics
 ```
 
 **Authorization:** User only
+
+Returns cached Body Composition Analysis (BCA) scans, most recent first. Data originates from the ActiveX device and is pulled via the sync endpoint below.
 
 **Response (200 OK):**
 ```json
@@ -821,48 +804,33 @@ GET /users/me/hpod-metrics
   "history": [
     {
       "_id": "507f1f77bcf86cd799439120",
-      "reportId": "507f1f77bcf86cd799439111",
-      "reportDate": "2026-04-10",
       "recordedAt": "2026-04-10T08:00:00.000Z",
       "receivedAt": "2026-04-10T08:05:00.000Z",
-      "patientName": "John Doe",
-      "patientEmail": "john@example.com",
-      "patientPhone": "+1234567890",
-      "age": "28",
-      "gender": "Male",
+      "patientPhone": "+91-7722023597",
+      "age": "26",
+      "gender": "PPUserGenderMale",
       "vitals": {
-        "weight_kg": 76.2,
-        "height_cm": 178.0,
-        "bmi": 24.1,
-        "bmi_category": "Normal",
-        "spo2_percent": 98,
-        "body_temperature_f": 98.6,
-        "pulse": 72,
-        "blood_pressure": "118/76"
+        "weight_kg": 79.09,
+        "height_cm": 182,
+        "bmi": 23.8,
+        "pulse": 115,
+        "heart_rate": 115
       },
       "bodyComposition": {
-        "body_fat_mass_kg": 14.5,
-        "body_fat_percent": 19.0,
-        "total_body_water_L": 41.2,
-        "protein_kg": 10.6,
-        "minerals_kg": 3.6,
-        "skeletal_muscle_mass_kg": 31.8,
-        "visceral_fat_cm2": 82,
-        "basal_metabolic_rate_cal": 1650,
-        "intracellular_water_L": 24.8,
-        "extracellular_water_L": 16.4
+        "body_fat_mass_kg": 17.56,
+        "body_fat_percent": 22.2,
+        "skeletal_muscle_mass_kg": 34.6,
+        "muscle_mass_kg": 57.2,
+        "total_body_water_L": 45.0,
+        "protein_kg": 12.2,
+        "minerals_kg": 4.2,
+        "visceral_fat": 8,
+        "basal_metabolic_rate_cal": 1696,
+        "body_age": 24
       },
-      "ecg": {
-        "pr_interval": "160 ms",
-        "qrs_interval": "90 ms",
-        "qtc_interval": "420 ms",
-        "heart_rate": "72 bpm"
-      },
-      "idealBodyWeight_kg": 72.5,
-      "weightToLose_kg": 4.0,
-      "testsNotTaken": [],
-      "healthInsight": "Overall metrics are within normal range with a slight opportunity to improve body composition.",
-      "concerns": []
+      "idealBodyWeight_kg": 72.9,
+      "weightToLose_kg": -6.1,
+      "source": "activex"
     }
   ]
 }
@@ -870,23 +838,30 @@ GET /users/me/hpod-metrics
 
 ---
 
-#### 7. Get My Report PDF
+#### 7. Sync My BCA Metrics (ActiveX)
 ```
-GET /users/me/reports/:id/pdf
+POST /users/me/bca-metrics/sync
 ```
 
 **Authorization:** User only
 
-**URL Params:**
-- `id` (string, required) — Report ObjectId
+Pulls the latest BCA records from the ActiveX external API (`POST https://api.activex.ai/external/bca`) for the caller's registered phone number, upserts them into `bca_metrics` (deduped by `recordedAt`), and returns the refreshed history.
 
-**Current Behavior:**
-- Endpoint validates ownership and currently returns `501 Not Implemented` while PDF byte storage/streaming is being finalized.
+**Request Body:** none.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "synced": 1,
+  "history": [ /* BcaMetric documents, most recent first */ ]
+}
+```
 
 **Error Responses:**
-- `403` — Report does not belong to authenticated user
-- `404` — Report not found
-- `501` — PDF endpoint not available yet
+- `400 NO_PHONE` — No phone number on the account
+- `500 NOT_CONFIGURED` — `ACTIVEX_API_KEY` env var is not set
+- `502 UNAUTHORIZED` / `502 BAD_REQUEST` / `502 UPSTREAM_ERROR` — ActiveX rejected or failed the request
 
 ---
 

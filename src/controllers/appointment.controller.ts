@@ -3,11 +3,8 @@ import mongoose from "mongoose";
 import Appointment from "../models/Appointment";
 import Doctor from "../models/Doctor";
 import { BookingStatus, CreditTransactionSource } from "../models/Enums";
-import { HpodReport } from "../models/Hpodreport.model";
 import Service from "../models/Service";
 import Slot from "../models/Slots";
-
-void HpodReport;
 
 import type { AuthenticatedUser } from "../types/auth";
 import {
