@@ -21,7 +21,7 @@ const bookingSchema = new mongoose.Schema(
 		},
 		report: {
 			type: mongoose.Schema.Types.ObjectId,
-			ref: "HpodReport",
+			ref: "MedicalReport",
 			default: null,
 			required: false,
 		},

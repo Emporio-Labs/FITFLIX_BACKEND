@@ -68,7 +68,7 @@ async function runVerification() {
   const directCheck = await User.findById(testUserId);
   console.log("Direct findById check:", JSON.stringify(directCheck, null, 2));
 
-  // Verify HPOD webhook lookup stripping @fitflix.in
+  // Verify Cal.id fallback lookup stripping @fitflix.in
   const db = mongoose.connection.db;
   if (!db) throw new Error("Database reference not available");
 
@@ -76,7 +76,7 @@ async function runVerification() {
   const generatedEmail = `${testPhone}@fitflix.in`;
   console.log(`Generated fallback email: ${generatedEmail}`);
 
-  // Test resolve logic from webhook
+  // Test resolve logic from the Cal.id fallback booking loop
   const prefix = generatedEmail.split("@")[0] || "";
   const last10 = prefix.replace(/\D/g, "").slice(-10);
   console.log(`Webhook search regex pattern: ${last10 + "$"}`);
@@ -88,7 +88,7 @@ async function runVerification() {
   console.log("Mongoose findOne result:", JSON.stringify(foundUserMongoose, null, 2));
 
   if (!foundUser || String(foundUser._id) !== String(testUserId)) {
-    throw new Error(`FAIL: HPOD lookup failed to reverse-engineer user ID from email ${generatedEmail}`);
+    throw new Error(`FAIL: Cal.id fallback lookup failed to reverse-engineer user ID from email ${generatedEmail}`);
   }
   console.log(`PASSED: Cal.id Fallback Booking Loop successfully resolved ${generatedEmail} to ${foundUser._id}`);
 

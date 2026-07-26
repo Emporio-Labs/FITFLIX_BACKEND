@@ -591,7 +591,7 @@ const { data } = await axios.get("https://api.example.com/users/me", {
 
 ### GET /users/me/reports
 
-List the authenticated user's HPOD reports (summary form).
+List the authenticated user's uploaded medical/DNA reports (unified feed, summary form).
 
 **Auth:** Bearer (`user`)
 
@@ -606,13 +606,14 @@ curl "https://api.example.com/users/me/reports" -H "Authorization: Bearer $TOKEN
   "reports": [
     {
       "id": "5f1a2b3c4d5e6f7a8b9c0d1e",
-      "title": "HPOD Wellness Report",
-      "summary": "Markers within healthy range overall.",
+      "title": "Blood Panel April 2026",
+      "type": "Blood Test",
+      "summary": "Uploaded Blood Test report",
       "suggestions": [],
       "recommendations": [],
       "insights": [],
       "generated_date": "2026-05-22T08:00:00.000Z",
-      "pdf_url": null
+      "pdf_url": "https://fitflix-storage.s3.ap-south-1.amazonaws.com/..."
     }
   ]
 }
@@ -644,40 +645,34 @@ curl "https://api.example.com/users/me/medical-reports" -H "Authorization: Beare
 ```
 ```
 
-### GET /users/me/hpod-metrics
+### GET /users/me/bca-metrics
 
-Return the authenticated user's HPOD metric history.
+Return the authenticated user's cached BCA (Body Composition Analysis) metric history, most recent first.
 
 **Auth:** Bearer (`user`)
 
 ```bash
-curl "https://api.example.com/users/me/hpod-metrics" -H "Authorization: Bearer $TOKEN"
+curl "https://api.example.com/users/me/bca-metrics" -H "Authorization: Bearer $TOKEN"
 ```
 
-**Success (200):** `{ "history": [ /* HpodMetric documents */ ] }`
+**Success (200):** `{ "history": [ /* BcaMetric documents */ ] }`
 
-### GET /users/me/reports/:id/pdf
+### POST /users/me/bca-metrics/sync
 
-Fetch a report PDF. Currently a stub.
+Pull the latest BCA records from the ActiveX external API for the caller's phone number, upsert them, and return the refreshed history.
 
 **Auth:** Bearer (`user`)
 
-**Path params:** `id` — report ObjectId.
+**Request body:** none.
 
 ```bash
-curl "https://api.example.com/users/me/reports/5f1a2b3c4d5e6f7a8b9c0d1e/pdf" \
+curl -X POST "https://api.example.com/users/me/bca-metrics/sync" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**Response (501):**
+**Success (200):** `{ "success": true, "synced": 1, "history": [ /* BcaMetric documents */ ] }`
 
-```json
-{
-  "error": "Report PDF endpoint is not available yet",
-  "code": "NOT_IMPLEMENTED",
-  "details": { "id": "5f1a2b3c4d5e6f7a8b9c0d1e", "hasPdf": false }
-}
-```
+**Errors:** `400 NO_PHONE`, `500 NOT_CONFIGURED`, `502 UNAUTHORIZED | BAD_REQUEST | UPSTREAM_ERROR`.
 
 ### PATCH /users/me/password
 
@@ -2846,67 +2841,6 @@ curl -X POST "https://api.example.com/leads/5f1a2b3c4d5e6f7a8b9c0d1e/convert" \
   "user": { "id": "5f1a2b3c4d5e6f7a8b9c0d1e", "email": "user@example.com", "role": "user" }
 }
 ```
-
----
-
-## Webhook — `/webhook`
-
-### POST /webhook/email
-
-Gmail Pub/Sub push handler. Decodes the base64 message data to extract `historyId`, fetches new messages from `noreply@hpod.in`, parses the PDF, summarizes with the LLM service, and stores `HpodReport` + `HpodMetric` documents.
-
-**Auth:** Shared webhook secret via header `X-Webhook-Secret`.
-
-**Request body** (Google Pub/Sub push format)
-
-```json
-{
-  "message": { "data": "<base64-encoded { \"historyId\": \"12345\" }>" }
-}
-```
-
-```bash
-curl -X POST "https://api.example.com/webhook/email" \
-  -H "X-Webhook-Secret: $WEBHOOK_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{ "message": { "data": "eyJoaXN0b3J5SWQiOiAiMTIzNDUifQ==" } }'
-```
-
-**Success (200):** `{ "status": "ok", "processed": 2 }` or `{ "status": "no historyId" }`.
-
-**Errors:** 401 invalid secret, 400 malformed payload.
-
-### GET /webhook/reports
-
-**Auth:** Bearer (`admin`)
-
-```bash
-curl "https://api.example.com/webhook/reports" -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** `{ "reports": [ /* HpodReport (without rawBody, userId populated) */ ] }`
-
-### GET /webhook/reports/:id
-
-**Auth:** Bearer (`admin`)
-
-```bash
-curl "https://api.example.com/webhook/reports/5f1a2b3c4d5e6f7a8b9c0d1e" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** full `HpodReport` (userId populated).
-
-### GET /webhook/reports/user/:userId
-
-**Auth:** Bearer (`admin`)
-
-```bash
-curl "https://api.example.com/webhook/reports/user/5f1a2b3c4d5e6f7a8b9c0d1e" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** `{ "reports": [ /* filtered by user */ ] }`
 
 ---
 

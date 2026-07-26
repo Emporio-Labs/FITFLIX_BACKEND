@@ -30,7 +30,6 @@ import slotRouter from "./routes/slot.routes";
 import therapyRouter from "./routes/therapy.routes";
 import trainerRouter from "./routes/trainer.routes";
 import userRouter from "./routes/user.routes";
-import webhookRouter from "./routes/webhook.route";
 import workoutRouter from "./routes/workout.routes";
 import workoutPlanRouter from "./routes/workout-plan.routes";
 import {
@@ -219,7 +218,6 @@ app.use("/onboarding", onboardingRouter);
 app.use("/nutrition", nutritionRouter);
 app.use("/nutritionist", nutritionistRouter);
 app.use("/dashboard", dashboardRouter);
-app.use("/webhook", webhookRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
 app.use("/expert-appointments", expertAppointmentRouter);
