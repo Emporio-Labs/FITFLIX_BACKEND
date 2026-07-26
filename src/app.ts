@@ -4,6 +4,7 @@ import { apiRateLimit } from "./middleware/rate-limit.middleware";
 import adminRouter from "./routes/admin.routes";
 import authRouter from "./routes/auth.routes";
 import bookingRouter from "./routes/booking.routes";
+import classRouter from "./routes/class.routes";
 
 import creditRouter from "./routes/credit.routes";
 import dashboardRouter from "./routes/dashboard.routes";
@@ -27,9 +28,7 @@ import userRouter from "./routes/user.routes";
 import webhookRouter from "./routes/webhook.route";
 import workoutRouter from "./routes/workout.routes";
 import workoutPlanRouter from "./routes/workout-plan.routes";
-import {
-	getApp,
-} from "./services/fcm.service";
+import { getApp } from "./services/fcm.service";
 import {
 	isErrorVerboseEnabled,
 	normalizeErrorResponse,
@@ -150,8 +149,6 @@ app.use((req, res, next) => {
 	next();
 });
 
-
-
 app.use(express.json());
 app.use((_req, res, next) => {
 	const originalJson = res.json.bind(res);
@@ -203,6 +200,7 @@ app.use("/exercises", apiRateLimit, exerciseRouter);
 app.use("/leads", apiRateLimit, leadRouter);
 app.use("/invoices", apiRateLimit, invoiceRouter);
 app.use("/api/invoices", apiRateLimit, invoiceRouter);
+app.use("/api/v1", classRouter);
 app.use("/membership-plans", membershipPlanRouter);
 app.use("/onboarding", onboardingRouter);
 app.use("/nutrition", nutritionRouter);
@@ -219,7 +217,9 @@ app.get("/health", (_req, res) => {
 
 app.post("/test/firebase", (_req, res) => {
 	try {
-		console.log("[test-firebase] POST /test/firebase triggered. Initializing Firebase...");
+		console.log(
+			"[test-firebase] POST /test/firebase triggered. Initializing Firebase...",
+		);
 		const appInstance = getApp();
 		if (appInstance) {
 			res.status(200).json({
@@ -230,7 +230,8 @@ app.post("/test/firebase", (_req, res) => {
 		} else {
 			res.status(500).json({
 				success: false,
-				message: "Firebase Admin initialization failed or was disabled (check server logs)",
+				message:
+					"Firebase Admin initialization failed or was disabled (check server logs)",
 			});
 		}
 	} catch (err: any) {
