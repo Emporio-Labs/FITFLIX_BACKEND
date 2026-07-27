@@ -20,6 +20,7 @@
 		"test:community-engagement": "bun run tests/community/engagement.test.ts",
 		"test:community-moderation": "bun run tests/community/moderation.test.ts",
 		"seed:community": "bun run scripts/seed-community.ts",
+		"community:smoke": "bun run scripts/community-smoke.ts",
 		"community:setup": "bun run scripts/community-setup.ts",
 		"community:teardown": "bun run scripts/community-setup.ts --down",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts"

@@ -7,6 +7,7 @@ import TokenBlacklist from "../models/TokenBlacklist";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
 import {
+	ADMIN_EXPIRES_IN,
 	getJwtConfig,
 	getJwtRefreshConfig,
 	signAdminToken,
@@ -47,6 +48,20 @@ const recordLoginFailure = (email: string): void => {
 };
 const clearLoginFailures = (email: string): void => {
 	loginAttempts.delete(email);
+};
+
+/**
+ * Login logs are the one place a full address would otherwise land in plaintext
+ * application logs. Mask it: enough to correlate a support ticket, not enough to
+ * harvest. `alice@fitflix.com` → `a***e@fitflix.com`.
+ */
+const maskEmail = (email: string): string => {
+	const at = email.indexOf("@");
+	if (at < 1) return "***";
+	const local = email.slice(0, at);
+	const domain = email.slice(at);
+	if (local.length <= 2) return `${local[0]}***${domain}`;
+	return `${local[0]}***${local[local.length - 1]}${domain}`;
 };
 
 type AuthDocument = {
@@ -228,7 +243,7 @@ export const login: RequestHandler = async (req, res, next) => {
 
 	try {
 		console.log("[AUTH][LOGIN] Looking up user/admin/doctor/trainer", {
-			email,
+			email: maskEmail(email),
 		});
 
 		const [user, admin, doctor, trainer] = await Promise.all([
@@ -239,7 +254,7 @@ export const login: RequestHandler = async (req, res, next) => {
 		]);
 
 		console.log("[AUTH][LOGIN] Model lookups completed", {
-			email,
+			email: maskEmail(email),
 			userFound: Boolean(user),
 			adminFound: Boolean(admin),
 			doctorFound: Boolean(doctor),
@@ -255,7 +270,7 @@ export const login: RequestHandler = async (req, res, next) => {
 		if (!matchedAccount) {
 			recordLoginFailure(email);
 			console.log("[AUTH][LOGIN] Invalid credentials", {
-				email,
+				email: maskEmail(email),
 				userFound: Boolean(user),
 				adminFound: Boolean(admin),
 			});
@@ -287,7 +302,7 @@ export const login: RequestHandler = async (req, res, next) => {
 		const userPayload = buildLoginUserPayload(matchedAccount, user);
 
 		console.log("[AUTH][LOGIN] Login successful", {
-			email,
+			email: maskEmail(email),
 			userId: req.user.id,
 			role: req.user.role,
 			userPayloadRole: userPayload.role,
@@ -345,12 +360,18 @@ export const refreshAccessToken: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const accessToken = signAuthToken(user, jwtConfig);
+		// Refresh must not upgrade an admin into a long-lived unscoped session:
+		// without this, a refreshed admin token would outlive (240d vs 30m) and
+		// out-scope the one login issues, silently undoing the admin hardening.
+		const isAdmin = user.role === "admin";
+		const accessToken = isAdmin
+			? signAdminToken(user, jwtConfig)
+			: signAuthToken(user, jwtConfig);
 		res.status(200).json({
 			message: "Token refreshed",
 			accessToken,
 			tokenType: "Bearer",
-			expiresIn: jwtConfig.expiresIn,
+			expiresIn: isAdmin ? ADMIN_EXPIRES_IN : jwtConfig.expiresIn,
 		});
 	} catch (error) {
 		next(error);

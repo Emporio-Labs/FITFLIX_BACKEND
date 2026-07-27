@@ -115,7 +115,8 @@ export const signRefreshToken = (
 
 // Admin session hardening: short-lived, scoped tokens. Members keep the long
 // (240d) session; admins get a 30-minute idle window that forces re-login.
-const ADMIN_EXPIRES_IN = process.env.JWT_ADMIN_EXPIRES_IN?.trim() || "30m";
+export const ADMIN_EXPIRES_IN =
+	process.env.JWT_ADMIN_EXPIRES_IN?.trim() || "30m";
 const STEP_UP_EXPIRES_IN = process.env.JWT_STEP_UP_EXPIRES_IN?.trim() || "5m";
 
 /** Admin login token: role=admin, scope=admin, short TTL. */

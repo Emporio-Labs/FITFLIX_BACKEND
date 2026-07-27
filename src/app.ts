@@ -117,7 +117,7 @@ app.use((req, res, next) => {
 	);
 	res.setHeader(
 		"Access-Control-Allow-Headers",
-		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret",
+		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token",
 	);
 	res.setHeader(
 		"Access-Control-Expose-Headers",
