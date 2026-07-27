@@ -91,6 +91,7 @@ The system supports 5 role types:
 | `/doctors` | Doctor management | ✅ Public list + Admin + role-based | 7 endpoints |
 | `/trainers` | Trainer management | ✅ Public list + Admin + role-based | 7 endpoints |
 | `/slots` | Time slot management | ✅ Authenticated read, Admin write | 6 endpoints |
+| `/api/v1/classes` | Group class & capacity management | ✅ Admin write/read, Member active list | 7 endpoints |
 | `/memberships` | Membership plans per user | ✅ Admin + User (self) | 6 endpoints |
 | `/services` | Catalog of services | ✅ Admin write, all roles read | 5 endpoints |
 | `/therapies` | Catalog of therapies | ✅ Public list + Admin write | 7 endpoints |
@@ -1248,6 +1249,137 @@ DELETE /trainers/:id
 ```
 
 **Authorization:** Admin only
+
+---
+
+## Group Class Routes
+
+### Base Path: `/api/v1`
+
+**Global Requirements:**
+- ✅ JWT Bearer token required for all endpoints
+- ✅ Admin role required for `/admin/classes` CRUD & Publish endpoints
+- ✅ Authenticated members (`user`, `trainer`, `doctor`, `admin`) can view active/published classes
+
+#### 1. Create Group Class
+```
+POST /api/v1/admin/classes
+```
+
+**Authorization:** Admin only
+
+**Request Body:**
+```json
+{
+  "name": "Spinning Class Updated",
+  "description": "High intensity cycling workout",
+  "status": "ACTIVE",
+  "creditCost": 4,
+  "mode": "offline",
+  "instructor": "Jane Doe",
+  "durationMinutes": 60,
+  "maxParticipants": 20,
+  "tags": ["spin", "cardio"],
+  "scheduleInfo": "Weekly: Mon, Wed 07:00 – 08:00",
+  "slots": ["slot_uuid_1", "slot_uuid_2"],
+  "locationAddress": "Room 2B, Main Gym",
+  "enableWaitlist": false,
+  "isPublished": true
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "message": "Class created",
+  "class": {
+    "_id": "010db997-dfd7-4798-9da9-b332765c0670",
+    "name": "Spinning Class Updated",
+    "description": "High intensity cycling workout",
+    "status": "ACTIVE",
+    "creditCost": 4,
+    "isPublished": true,
+    "createdAt": "2026-07-27T10:00:00.000Z",
+    "updatedAt": "2026-07-27T10:00:00.000Z"
+  }
+}
+```
+
+---
+
+#### 2. Get All Group Classes (Admin)
+```
+GET /api/v1/admin/classes
+```
+
+**Authorization:** Admin only  
+**Description:** Retrieves all group classes regardless of status or publish state (includes drafts & retired classes).
+
+---
+
+#### 3. Update Group Class
+```
+PUT /api/v1/admin/classes/:id
+```
+
+**Authorization:** Admin only
+
+**Request Body:**
+```json
+{
+  "name": "HIIT Masterclass",
+  "creditCost": 5,
+  "maxParticipants": 15,
+  "isPublished": true
+}
+```
+
+---
+
+#### 4. Publish / Unpublish Group Class
+```
+PATCH /api/v1/admin/classes/:id/publish
+PATCH /api/v1/admin/classes/schedule/:id/publish
+```
+
+**Authorization:** Admin only  
+**Description:** Toggles the `isPublished` state of a class/schedule session. Setting `isPublished: false` immediately hides the session from member app listings.
+
+**Request Body:**
+```json
+{
+  "isPublished": false
+}
+```
+
+---
+
+#### 5. Soft Delete / Retire Group Class
+```
+DELETE /api/v1/admin/classes/:id
+```
+
+**Authorization:** Admin only  
+**Description:** Marks the class status as `INACTIVE`.
+
+---
+
+#### 6. Get Active & Published Group Classes (Members)
+```
+GET /api/v1/classes
+```
+
+**Authorization:** Authenticated Users (`user`, `trainer`, `doctor`, `admin`)  
+**Description:** Retrieves only active (`status: ACTIVE`) and published (`isPublished: true`) group classes for member display.
+
+---
+
+#### 7. Get Group Class Details by ID
+```
+GET /api/v1/classes/:id
+```
+
+**Authorization:** Authenticated Users
 
 ---
 

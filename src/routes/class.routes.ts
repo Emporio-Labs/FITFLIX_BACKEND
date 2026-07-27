@@ -4,6 +4,7 @@ import {
 	getActiveClassesForMembers,
 	getAllClassesForAdmin,
 	getClassById,
+	publishClassById,
 	softDeleteClassById,
 	updateClassById,
 } from "../controllers/class.controller";
@@ -19,6 +20,16 @@ classRouter.use(authenticateToken);
 classRouter.post("/admin/classes", authorize(["admin"]), createClass);
 classRouter.get("/admin/classes", authorize(["admin"]), getAllClassesForAdmin);
 classRouter.put("/admin/classes/:id", authorize(["admin"]), updateClassById);
+classRouter.patch(
+	"/admin/classes/:id/publish",
+	authorize(["admin"]),
+	publishClassById,
+);
+classRouter.patch(
+	"/admin/classes/schedule/:id/publish",
+	authorize(["admin"]),
+	publishClassById,
+);
 classRouter.delete(
 	"/admin/classes/:id",
 	authorize(["admin"]),

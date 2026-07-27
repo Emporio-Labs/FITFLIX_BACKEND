@@ -21,6 +21,15 @@
 		"test:feature-012": "bun run tests/feature-012-booking-rules-engine.test.ts",
 		"test:feature-013": "bun run tests/feature-013-credits-engine.test.ts",
 		"test:feature-014": "bun run tests/feature-014-registration-engine.test.ts",
+		"test:feature-auth": "bun run tests/feature-class-auth.test.ts",
+		"test:feature-validation": "bun run tests/feature-class-validation.test.ts",
+		"test:feature-002": "bun run tests/feature-002-create-group-class.test.ts",
+		"test:feature-003": "bun run tests/feature-003-update-group-class.test.ts",
+		"test:feature-004": "bun run tests/feature-004-delete-group-class.test.ts",
+		"test:feature-005": "bun run tests/feature-005-schedule-group-class.test.ts",
+		"test:feature-006": "bun run tests/feature-006-manage-class-capacity.test.ts",
+		"test:feature-007": "bun run tests/feature-007-publish-unpublish-class.test.ts",
+		"test:class-all": "bun run tests/run-all-tests.ts",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts"
 	},
 	"devDependencies": {
