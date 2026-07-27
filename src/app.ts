@@ -5,6 +5,7 @@ import adminRouter from "./routes/admin.routes";
 import authRouter from "./routes/auth.routes";
 import bookingRouter from "./routes/booking.routes";
 import classRouter from "./routes/class.routes";
+import classScheduleRouter from "./routes/class-schedule.routes";
 
 import creditRouter from "./routes/credit.routes";
 import dashboardRouter from "./routes/dashboard.routes";
@@ -200,6 +201,7 @@ app.use("/exercises", apiRateLimit, exerciseRouter);
 app.use("/leads", apiRateLimit, leadRouter);
 app.use("/invoices", apiRateLimit, invoiceRouter);
 app.use("/api/invoices", apiRateLimit, invoiceRouter);
+app.use("/api/v1", classScheduleRouter);
 app.use("/api/v1", classRouter);
 app.use("/membership-plans", membershipPlanRouter);
 app.use("/onboarding", onboardingRouter);
