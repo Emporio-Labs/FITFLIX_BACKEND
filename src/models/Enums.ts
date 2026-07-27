@@ -379,15 +379,23 @@ export enum ModerationTargetType {
 }
 
 export enum ModerationActionType {
-	Hide = "hide",
-	Unhide = "unhide",
+	Edit = "edit",
 	Delete = "delete",
+	Restore = "restore",
+	Pin = "pin",
+	Unpin = "unpin",
+	CreateOfficial = "create_official",
+	DeleteComment = "delete_comment",
 	Suspend = "suspend",
 	Unsuspend = "unsuspend",
 	Ban = "ban",
 	Unban = "unban",
-	Pin = "pin",
-	Unpin = "unpin",
+	RoleAssign = "role_assign",
+	RoleRevoke = "role_revoke",
+	Warn = "warn",
 	ResolveReport = "resolve_report",
 	DismissReport = "dismiss_report",
+	// Retained from Day 1.
+	Hide = "hide",
+	Unhide = "unhide",
 }

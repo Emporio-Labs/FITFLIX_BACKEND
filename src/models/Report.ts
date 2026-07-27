@@ -26,6 +26,13 @@ const reportSchema = new mongoose.Schema(
 			default: ReportStatus.Pending,
 			required: true,
 		},
+		// Set when an admin resolves/dismisses the report.
+		resolvedBy: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Admin",
+			default: null,
+		},
+		resolvedAt: { type: Date, default: null },
 	},
 	{ timestamps: true },
 );

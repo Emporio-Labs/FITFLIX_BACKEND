@@ -6,6 +6,7 @@ import appointmentRouter from "./routes/appointment.routes";
 import authRouter from "./routes/auth.routes";
 import bookingRouter from "./routes/booking.routes";
 import calidWebhookRouter from "./routes/calid-webhook.routes";
+import communityAdminRouter from "./routes/community-admin.routes";
 import communityRouter from "./routes/community.routes";
 import creditRouter from "./routes/credit.routes";
 import dashboardRouter from "./routes/dashboard.routes";
@@ -226,6 +227,9 @@ app.use("/workouts", workoutRouter);
 app.use("/expert-appointments", expertAppointmentRouter);
 app.use("/admin/expert-appointments", adminExpertAppointmentRouter);
 app.use("/notifications", notificationRouter);
+// Admin moderation must be mounted BEFORE the member router so /community/admin/*
+// resolves to the admin router, not the member router.
+app.use("/community/admin", communityAdminRouter);
 app.use("/community", communityRouter);
 app.use("/internal", internalRouter);
 

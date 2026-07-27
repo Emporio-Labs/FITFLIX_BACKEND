@@ -9,6 +9,7 @@ import User from "../models/User";
 import {
 	getJwtConfig,
 	getJwtRefreshConfig,
+	signAdminToken,
 	signAuthToken,
 	signRefreshToken,
 	verifyRefreshToken,
@@ -25,6 +26,28 @@ import {
 } from "../validators/auth.validator";
 
 type AppRole = "user" | "admin" | "doctor" | "trainer";
+
+// ── Login lockout (in-memory; staff accounts are the top target) ──────────────
+const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS) || 5;
+const LOGIN_LOCKOUT_MS =
+	(Number(process.env.LOGIN_LOCKOUT_MINUTES) || 15) * 60_000;
+const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
+
+const isLoginLocked = (email: string): boolean => {
+	const entry = loginAttempts.get(email);
+	return entry ? Date.now() < entry.lockedUntil : false;
+};
+const recordLoginFailure = (email: string): void => {
+	const entry = loginAttempts.get(email) ?? { count: 0, lockedUntil: 0 };
+	entry.count += 1;
+	if (entry.count >= LOGIN_MAX_ATTEMPTS) {
+		entry.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+	}
+	loginAttempts.set(email, entry);
+};
+const clearLoginFailures = (email: string): void => {
+	loginAttempts.delete(email);
+};
 
 type AuthDocument = {
 	_id: { toString(): string };
@@ -195,6 +218,14 @@ export const login: RequestHandler = async (req, res, next) => {
 
 	const { email, password } = parsedBody.data;
 
+	if (isLoginLocked(email)) {
+		res.status(429).json({
+			message:
+				"Too many failed login attempts. Please try again in a few minutes.",
+		});
+		return;
+	}
+
 	try {
 		console.log("[AUTH][LOGIN] Looking up user/admin/doctor/trainer", {
 			email,
@@ -222,6 +253,7 @@ export const login: RequestHandler = async (req, res, next) => {
 			(await matchAccount(password, "trainer", trainer));
 
 		if (!matchedAccount) {
+			recordLoginFailure(email);
 			console.log("[AUTH][LOGIN] Invalid credentials", {
 				email,
 				userFound: Boolean(user),
@@ -232,6 +264,7 @@ export const login: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		clearLoginFailures(email);
 		req.user = matchedAccount;
 
 		const jwtConfig = getJwtConfig();
@@ -240,7 +273,12 @@ export const login: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const accessToken = signAuthToken(matchedAccount, jwtConfig);
+		// Admins get a short-lived, scoped session; everyone else keeps the long
+		// (240d) member session.
+		const accessToken =
+			matchedAccount.role === "admin"
+				? signAdminToken(matchedAccount, jwtConfig)
+				: signAuthToken(matchedAccount, jwtConfig);
 		const refreshConfig = getJwtRefreshConfig();
 		const refreshToken = refreshConfig
 			? signRefreshToken(matchedAccount, refreshConfig)

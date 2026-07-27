@@ -62,9 +62,14 @@ export async function resolveCommunityUser(
 	// App member/user path. `.lean()` skips schema defaults, so treat a missing
 	// status (legacy users) as active.
 	const user = await User.findById(authUser.id)
-		.select("status")
-		.lean<{ status?: UserStatus } | null>();
+		.select("status communityRole")
+		.lean<{ status?: UserStatus; communityRole?: string | null } | null>();
 	const status = user?.status ?? UserStatus.Active;
+
+	// An admin-granted community elevation wins over the derived member role.
+	if (user?.communityRole === CommunityRole.Trainer) {
+		return { id: authUser.id, role: CommunityRole.Trainer, status };
+	}
 
 	const role = (await hasActiveMembership(authUser.id))
 		? CommunityRole.Insider

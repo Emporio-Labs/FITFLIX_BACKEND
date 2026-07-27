@@ -113,6 +113,64 @@ export const signRefreshToken = (
 	config: JwtConfig,
 ): string => signAuthToken(user, config);
 
+// Admin session hardening: short-lived, scoped tokens. Members keep the long
+// (240d) session; admins get a 30-minute idle window that forces re-login.
+const ADMIN_EXPIRES_IN = process.env.JWT_ADMIN_EXPIRES_IN?.trim() || "30m";
+const STEP_UP_EXPIRES_IN = process.env.JWT_STEP_UP_EXPIRES_IN?.trim() || "5m";
+
+/** Admin login token: role=admin, scope=admin, short TTL. */
+export const signAdminToken = (
+	user: AuthenticatedUser,
+	config: JwtConfig,
+): string => {
+	const payload = {
+		sub: user.id,
+		email: user.email,
+		role: user.role,
+		scope: "admin",
+	};
+	return jwt.sign(
+		payload,
+		config.secret,
+		buildSignOptions({ ...config, expiresIn: ADMIN_EXPIRES_IN }),
+	);
+};
+
+/** Step-up token minted after an admin re-enters their password. */
+export const signStepUpToken = (adminId: string, config: JwtConfig): string =>
+	jwt.sign(
+		{ sub: adminId, scope: "step_up" },
+		config.secret,
+		buildSignOptions({ ...config, expiresIn: STEP_UP_EXPIRES_IN }),
+	);
+
+export const verifyStepUpToken = (
+	token: string,
+	adminId: string,
+	config: JwtConfig,
+): boolean => {
+	try {
+		const payload = jwt.verify(
+			token,
+			config.secret,
+			buildVerifyOptions(config),
+		) as JwtPayload;
+		return payload.scope === "step_up" && payload.sub === adminId;
+	} catch {
+		return false;
+	}
+};
+
+/** Read the `scope` claim off a token WITHOUT re-verifying (already verified). */
+export const decodeTokenScope = (token: string): string | null => {
+	const decoded = jwt.decode(token);
+	if (decoded && typeof decoded === "object") {
+		const scope = (decoded as JwtPayload & { scope?: unknown }).scope;
+		return typeof scope === "string" ? scope : null;
+	}
+	return null;
+};
+
 export const verifyAuthToken = (
 	token: string,
 	config: JwtConfig,

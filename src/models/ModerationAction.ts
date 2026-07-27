@@ -31,6 +31,8 @@ const moderationActionSchema = new mongoose.Schema(
 			required: true,
 		},
 		reason: { type: String, default: "" },
+		// Free-form context (e.g. { suspendUntil, previousStatus, reportId }).
+		metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
 	},
 	// Append-only: keep createdAt, drop updatedAt (a row is never updated).
 	{ timestamps: { createdAt: true, updatedAt: false } },

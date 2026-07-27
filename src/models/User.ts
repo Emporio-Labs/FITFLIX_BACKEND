@@ -29,6 +29,11 @@ const userSchema = new mongoose.Schema(
 			enum: Object.values(UserStatus),
 			default: UserStatus.Active,
 		},
+		// Suspension end date (set alongside status = suspended).
+		suspendedUntil: { type: Date, default: null },
+		// Admin-granted community elevation ("trainer") — overrides the derived
+		// insider/outsider role in the community feed. NULL for regular members.
+		communityRole: { type: String, default: null },
 		onboarded: { type: Boolean, default: false },
 		fcmTokens: {
 			type: [

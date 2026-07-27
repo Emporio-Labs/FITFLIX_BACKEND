@@ -28,6 +28,7 @@ import {
 } from "../controllers/community-engagement.controller";
 import { attachCommunityContext } from "../middleware/community-context.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
+import { apiRateLimit } from "../middleware/rate-limit.middleware";
 import {
 	uploadMiddleware,
 	uploadRateLimiter,
@@ -35,8 +36,9 @@ import {
 
 const communityRouter = Router();
 
-// Every community route: authenticate, then resolve the effective community role.
-communityRouter.use(authenticateToken, attachCommunityContext);
+// Every community route: authenticate, resolve the effective role, rate limit
+// (post/comment/like/report/share writes + reads). Uploads add their own limiter.
+communityRouter.use(authenticateToken, attachCommunityContext, apiRateLimit);
 
 /**
  * Runs the multer array upload and maps its errors to clean 4xx responses

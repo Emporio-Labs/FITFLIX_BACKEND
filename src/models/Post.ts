@@ -27,6 +27,8 @@ const postSchema = new mongoose.Schema(
 			required: true,
 		},
 		isOfficial: { type: Boolean, default: false },
+		// Marks demo/seed content so it can be listed and removed before prod.
+		isSeed: { type: Boolean, default: false },
 		// Set on the first content edit; drives the public `edited` response flag.
 		editedAt: { type: Date, default: null },
 		pinnedAt: { type: Date, default: null },
