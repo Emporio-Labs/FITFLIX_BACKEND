@@ -50,8 +50,11 @@ export const getActiveClassesForMembers: RequestHandler = async (
 	next,
 ) => {
 	try {
-		// Member-facing listing returns *only* active classes
-		const classes = await Class.find({ status: "ACTIVE" }).sort({
+		// Member-facing listing returns *only* active and published classes
+		const classes = await Class.find({
+			status: "ACTIVE",
+			isPublished: { $ne: false },
+		}).sort({
 			createdAt: -1,
 		});
 		res.status(200).json({ classes });
@@ -144,6 +147,44 @@ export const softDeleteClassById: RequestHandler = async (req, res, next) => {
 		}
 
 		res.status(200).json({ message: "Class retired", class: retiredClass });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const publishClassById: RequestHandler = async (req, res, next) => {
+	const { id } = req.params;
+
+	if (!isValidUuid(id)) {
+		res.status(400).json({
+			message: "Invalid class id format. Must be a valid UUID.",
+		});
+		return;
+	}
+
+	const isPublished =
+		req.body?.isPublished !== undefined
+			? Boolean(req.body.isPublished)
+			: req.body?.is_published !== undefined
+				? Boolean(req.body.is_published)
+				: true;
+
+	try {
+		const updatedClass = await Class.findByIdAndUpdate(
+			id,
+			{ isPublished, status: isPublished ? "ACTIVE" : "INACTIVE" },
+			{ returnDocument: "after" },
+		);
+
+		if (!updatedClass) {
+			res.status(404).json({ message: "Class not found" });
+			return;
+		}
+
+		res.status(200).json({
+			message: isPublished ? "Class published" : "Class unpublished",
+			class: updatedClass,
+		});
 	} catch (error) {
 		next(error);
 	}

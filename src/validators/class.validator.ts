@@ -8,6 +8,7 @@ export const createClassBodySchema = z.object({
 		.number()
 		.int("Credit cost must be an integer")
 		.min(1, "Credit cost must be a positive integer (>= 1)"),
+	isPublished: z.boolean().optional(),
 });
 
 export const updateClassBodySchema = z
@@ -24,6 +25,7 @@ export const updateClassBodySchema = z
 			.int("Credit cost must be an integer")
 			.min(1, "Credit cost must be a positive integer (>= 1)")
 			.optional(),
+		isPublished: z.boolean().optional(),
 	})
 	.refine(
 		(payload) => {

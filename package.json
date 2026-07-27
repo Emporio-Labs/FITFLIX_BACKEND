@@ -15,6 +15,15 @@
 		"export:meal-plan": "bun run scripts/export-meal-plan.ts",
 		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
 		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts",
+		"test:feature-auth": "bun run tests/feature-class-auth.test.ts",
+		"test:feature-validation": "bun run tests/feature-class-validation.test.ts",
+		"test:feature-002": "bun run tests/feature-002-create-group-class.test.ts",
+		"test:feature-003": "bun run tests/feature-003-update-group-class.test.ts",
+		"test:feature-004": "bun run tests/feature-004-delete-group-class.test.ts",
+		"test:feature-005": "bun run tests/feature-005-schedule-group-class.test.ts",
+		"test:feature-006": "bun run tests/feature-006-manage-class-capacity.test.ts",
+		"test:feature-007": "bun run tests/feature-007-publish-unpublish-class.test.ts",
+		"test:class-all": "bun run tests/run-all-tests.ts",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts"
 	},
 	"devDependencies": {

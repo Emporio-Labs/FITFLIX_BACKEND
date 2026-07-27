@@ -29,6 +29,10 @@ const classSchema = new mongoose.Schema(
 			required: true,
 			min: 1,
 		},
+		isPublished: {
+			type: Boolean,
+			default: true,
+		},
 	},
 	{
 		timestamps: true,
