@@ -40,9 +40,21 @@ const scheduledSessionSchema = new mongoose.Schema(
 			min: 1,
 			required: true,
 		},
+		currentBookings: {
+			type: Number,
+			default: 0,
+			min: 0,
+			required: true,
+		},
+		remainingCapacity: {
+			type: Number,
+			default: 20,
+			min: 0,
+			required: true,
+		},
 		status: {
 			type: String,
-			enum: ["SCHEDULED", "CANCELLED", "COMPLETED"],
+			enum: ["SCHEDULED", "FULL", "CANCELLED", "COMPLETED"],
 			default: "SCHEDULED",
 			required: true,
 		},

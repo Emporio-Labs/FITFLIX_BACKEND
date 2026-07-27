@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
+import { updateCapacityAdmin } from "../services/capacity-engine.service";
 import {
 	createClassScheduleSchema,
 	updateClassScheduleSchema,
@@ -298,6 +299,27 @@ export const updateScheduledSession: RequestHandler = async (
 			message: "Scheduled session updated successfully",
 			session,
 		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const updateSessionCapacity: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
+	const { id } = req.params;
+	const { capacity } = req.body;
+
+	if (typeof capacity !== "number" || capacity < 1) {
+		res.status(400).json({ message: "Capacity must be a positive integer" });
+		return;
+	}
+
+	try {
+		const result = await updateCapacityAdmin(id, capacity);
+		res.status(result.status).json(result);
 	} catch (error) {
 		next(error);
 	}
