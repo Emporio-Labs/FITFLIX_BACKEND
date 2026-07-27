@@ -196,6 +196,7 @@ app.use("/services", serviceRouter);
 app.use("/therapies", therapyRouter);
 app.use("/bookings", apiRateLimit, bookingRouter);
 app.use("/credits", apiRateLimit, creditRouter);
+app.use("/api/v1/credits", apiRateLimit, creditRouter);
 app.use("/schedules", apiRateLimit, scheduleRouter);
 app.use("/exercises", apiRateLimit, exerciseRouter);
 app.use("/leads", apiRateLimit, leadRouter);

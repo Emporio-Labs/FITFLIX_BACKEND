@@ -136,6 +136,7 @@ export const getUserCreditBalance = async (userId: string) => {
 		userId,
 		totalIncluded,
 		totalRemaining,
+		availableCredits: totalRemaining,
 		memberships: memberships.map((membership) => ({
 			id: membership._id.toString(),
 			planName: membership.planName,
@@ -535,5 +536,114 @@ export const getUserCreditHistory = async (input: {
 			actorRole: transaction.actorRole ?? null,
 			createdAt: transaction.createdAt,
 		})),
+	};
+};
+
+export const allocatePlanCredits = async (input: {
+	userId: string;
+	creditAmount: number;
+	reason?: string;
+	referenceId?: string;
+}) => {
+	const userObjectId = toObjectId(
+		input.userId,
+		"INVALID_ARGUMENT",
+		"Invalid user id",
+	);
+
+	let membership = await Membership.findOne({
+		user: userObjectId,
+		status: MembershipStatus.Active,
+	});
+
+	if (!membership) {
+		membership = await Membership.create({
+			user: userObjectId,
+			planName: "Default Plan",
+			price: 0,
+			creditsRemaining: 0,
+			creditsTotal: 0,
+			status: MembershipStatus.Active,
+			startDate: new Date(),
+		});
+	}
+
+	membership.creditsRemaining =
+		Number(membership.creditsRemaining ?? 0) + input.creditAmount;
+	membership.creditsTotal =
+		Number(membership.creditsTotal ?? 0) + input.creditAmount;
+	await membership.save();
+
+	const refObjectId = toOptionalObjectId(input.referenceId);
+
+	const transaction = await CreditTransaction.create({
+		user: userObjectId,
+		membership: membership._id,
+		amount: input.creditAmount,
+		type: CreditTransactionType.AdminTopUp,
+		sourceType: CreditTransactionSource.Admin,
+		sourceId: refObjectId || membership._id,
+		reason: input.reason || "PLAN_ASSIGNMENT",
+	});
+
+	return {
+		success: true,
+		transactionId: transaction._id.toString(),
+		creditsRemaining: membership.creditsRemaining,
+	};
+};
+
+export const consumeCreditsAtomic = async (input: {
+	userId: string;
+	amount: number;
+	reason?: string;
+	referenceId?: string;
+}) => {
+	const userObjectId = toObjectId(
+		input.userId,
+		"INVALID_ARGUMENT",
+		"Invalid user id",
+	);
+
+	// Atomic conditional deduction ($gte: amount)
+	const membership = await Membership.findOneAndUpdate(
+		{
+			user: userObjectId,
+			status: MembershipStatus.Active,
+			creditsRemaining: { $gte: input.amount },
+		},
+		{
+			$inc: { creditsRemaining: -input.amount },
+		},
+		{ new: true },
+	);
+
+	if (!membership) {
+		const currentBalance = await getUserCreditBalance(input.userId);
+		return {
+			success: false,
+			statusCode: 402,
+			message: "Insufficient credit balance",
+			code: "INSUFFICIENT_CREDITS",
+			availableCredits: currentBalance.availableCredits,
+		};
+	}
+
+	const refObjectId = toOptionalObjectId(input.referenceId);
+
+	const transaction = await CreditTransaction.create({
+		user: userObjectId,
+		membership: membership._id,
+		amount: -input.amount,
+		type: CreditTransactionType.Consume,
+		sourceType: CreditTransactionSource.Booking,
+		sourceId: refObjectId || membership._id,
+		reason: input.reason || "SERVICE_CONSUMED",
+	});
+
+	return {
+		success: true,
+		transactionId: transaction._id.toString(),
+		creditsRemaining: membership.creditsRemaining,
 	};
 };

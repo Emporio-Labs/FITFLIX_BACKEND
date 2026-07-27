@@ -19,6 +19,7 @@
 		"test:feature-010": "bun run tests/feature-010-class-scheduling.test.ts",
 		"test:feature-011": "bun run tests/feature-011-capacity-management-engine.test.ts",
 		"test:feature-012": "bun run tests/feature-012-booking-rules-engine.test.ts",
+		"test:feature-013": "bun run tests/feature-013-credits-engine.test.ts",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts"
 	},
 	"devDependencies": {

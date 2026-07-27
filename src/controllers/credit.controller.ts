@@ -38,6 +38,49 @@ export const getMyCreditBalance: RequestHandler = async (req, res, next) => {
 	}
 };
 
+export const getCreditsBalance: RequestHandler = async (req, res, next) => {
+	const userId = (req.user as any)?.id || (req.user as any)?.userId;
+	if (!userId) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	try {
+		const balance = await getUserCreditBalance(userId);
+		res.status(200).json(balance);
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getCreditsLedger: RequestHandler = async (req, res, next) => {
+	const userId = (req.user as any)?.id || (req.user as any)?.userId;
+	if (!userId) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	const parsedQuery = creditHistoryQuerySchema.safeParse(req.query);
+	if (!parsedQuery.success) {
+		res.status(400).json({
+			message: "Invalid credit history query",
+			errors: parsedQuery.error.issues,
+		});
+		return;
+	}
+
+	try {
+		const history = await getUserCreditHistory({
+			userId,
+			limit: parsedQuery.data.limit,
+			sourceType: parsedQuery.data.sourceType as CreditTransactionSource,
+		});
+		res.status(200).json(history);
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const getMyCreditHistory: RequestHandler = async (req, res, next) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({ message: "Only users can access this endpoint" });

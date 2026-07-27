@@ -1,5 +1,7 @@
 import { Router } from "express";
 import {
+	getCreditsBalance,
+	getCreditsLedger,
 	getMyCreditBalance,
 	getMyCreditHistory,
 	getUserCreditBalanceById,
@@ -13,6 +15,8 @@ const creditRouter = Router();
 
 creditRouter.use(authenticateToken);
 
+creditRouter.get("/balance", authorize(["user", "admin"]), getCreditsBalance);
+creditRouter.get("/ledger", authorize(["user", "admin"]), getCreditsLedger);
 creditRouter.get("/me/balance", authorize(["user"]), getMyCreditBalance);
 creditRouter.get("/me/history", authorize(["user"]), getMyCreditHistory);
 creditRouter.get(
