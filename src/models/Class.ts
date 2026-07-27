@@ -17,6 +17,46 @@ const classSchema = new mongoose.Schema(
 			default: "",
 			trim: true,
 		},
+		mode: {
+			type: String,
+			enum: ["online", "offline", "hybrid"],
+			default: "offline",
+		},
+		instructor: {
+			type: String,
+			default: "Staff",
+			trim: true,
+		},
+		durationMinutes: {
+			type: Number,
+			default: 60,
+			min: 1,
+		},
+		maxParticipants: {
+			type: Number,
+			default: 20,
+			min: 1,
+		},
+		tags: {
+			type: [String],
+			default: [],
+		},
+		scheduleInfo: {
+			type: String,
+			default: "",
+		},
+		locationAddress: {
+			type: String,
+			default: "",
+		},
+		streamRoomId: {
+			type: String,
+			default: "",
+		},
+		enableWaitlist: {
+			type: Boolean,
+			default: false,
+		},
 		status: {
 			type: String,
 			enum: ["ACTIVE", "INACTIVE"],
