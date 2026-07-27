@@ -28,6 +28,7 @@ import userRouter from "./routes/user.routes";
 import webhookRouter from "./routes/webhook.route";
 import workoutRouter from "./routes/workout.routes";
 import workoutPlanRouter from "./routes/workout-plan.routes";
+import zegocloudRouter from "./routes/zegocloud.routes";
 import { getApp } from "./services/fcm.service";
 import {
 	isErrorVerboseEnabled,
@@ -201,6 +202,7 @@ app.use("/leads", apiRateLimit, leadRouter);
 app.use("/invoices", apiRateLimit, invoiceRouter);
 app.use("/api/invoices", apiRateLimit, invoiceRouter);
 app.use("/api/v1", classRouter);
+app.use("/api/v1/zegocloud", zegocloudRouter);
 app.use("/membership-plans", membershipPlanRouter);
 app.use("/onboarding", onboardingRouter);
 app.use("/nutrition", nutritionRouter);
