@@ -303,3 +303,91 @@ export enum DeletionRequestStatus {
 	Processed = "Processed",
 	Cancelled = "Cancelled",
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Community module
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Account status gate. Insider/outsider is DERIVED from membership, not stored. */
+export enum UserStatus {
+	Active = "active",
+	Suspended = "suspended",
+	Banned = "banned",
+}
+
+/**
+ * Effective community role, resolved per request (never stored on the user and
+ * never placed in the JWT). Precedence: admin > trainer > insider > outsider.
+ * Insider = a User with an unexpired active Membership; outsider = without one.
+ */
+export enum CommunityRole {
+	Outsider = "outsider",
+	Insider = "insider",
+	Trainer = "trainer",
+	Admin = "admin",
+}
+
+export enum PostVisibility {
+	Public = "public",
+	MembersOnly = "members_only",
+}
+
+export enum PostStatus {
+	Draft = "draft",
+	Scheduled = "scheduled",
+	Published = "published",
+	Archived = "archived",
+}
+
+export enum PostMediaKind {
+	Image = "image",
+	Video = "video",
+	Audio = "audio",
+}
+
+export enum LikeTargetType {
+	Post = "post",
+	Comment = "comment",
+}
+
+export enum ShareChannel {
+	Copy = "copy",
+	WhatsApp = "whatsapp",
+	Instagram = "instagram",
+	Facebook = "facebook",
+	Twitter = "twitter",
+	Other = "other",
+}
+
+export enum ReportTargetType {
+	Post = "post",
+	Comment = "comment",
+	User = "user",
+}
+
+export enum ReportStatus {
+	Pending = "pending",
+	Reviewing = "reviewing",
+	Resolved = "resolved",
+	Dismissed = "dismissed",
+}
+
+export enum ModerationTargetType {
+	Post = "post",
+	Comment = "comment",
+	User = "user",
+}
+
+export enum ModerationActionType {
+	Hide = "hide",
+	Unhide = "unhide",
+	Delete = "delete",
+	Suspend = "suspend",
+	Unsuspend = "unsuspend",
+	Ban = "ban",
+	Unban = "unban",
+	Pin = "pin",
+	Unpin = "unpin",
+	ResolveReport = "resolve_report",
+	DismissReport = "dismiss_report",
+}

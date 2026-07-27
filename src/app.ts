@@ -6,6 +6,7 @@ import appointmentRouter from "./routes/appointment.routes";
 import authRouter from "./routes/auth.routes";
 import bookingRouter from "./routes/booking.routes";
 import calidWebhookRouter from "./routes/calid-webhook.routes";
+import communityRouter from "./routes/community.routes";
 import creditRouter from "./routes/credit.routes";
 import dashboardRouter from "./routes/dashboard.routes";
 import deleteAccountRouter from "./routes/delete-account.routes";
@@ -225,6 +226,7 @@ app.use("/workouts", workoutRouter);
 app.use("/expert-appointments", expertAppointmentRouter);
 app.use("/admin/expert-appointments", adminExpertAppointmentRouter);
 app.use("/notifications", notificationRouter);
+app.use("/community", communityRouter);
 app.use("/internal", internalRouter);
 
 app.get("/health", (_req, res) => {

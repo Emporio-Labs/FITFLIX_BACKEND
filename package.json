@@ -15,6 +15,11 @@
 		"export:meal-plan": "bun run scripts/export-meal-plan.ts",
 		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
 		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts",
+		"test:community": "bun run tests/community/community-foundation.test.ts",
+		"test:community-posts": "bun run tests/community/posts-feed.test.ts",
+		"test:community-engagement": "bun run tests/community/engagement.test.ts",
+		"community:setup": "bun run scripts/community-setup.ts",
+		"community:teardown": "bun run scripts/community-setup.ts --down",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts"
 	},
 	"devDependencies": {
@@ -38,6 +43,7 @@
 		"express": "^5.2.1",
 		"firebase-admin": "^13.10.0",
 		"googleapis": "^171.4.0",
+		"jimp": "^1.6.1",
 		"jsonwebtoken": "^9.0.2",
 		"mongoose": "^9.3.1",
 		"multer": "^2.2.0",

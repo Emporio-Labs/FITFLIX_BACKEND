@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { applyIdTransform } from "../utils/mongoose-serialization";
-import { Gender, OnboardingStep } from "./Enums";
+import { Gender, OnboardingStep, UserStatus } from "./Enums";
 
 const userSchema = new mongoose.Schema(
 	{
@@ -21,6 +21,14 @@ const userSchema = new mongoose.Schema(
 		emergencyContact: { type: String, default: undefined },
 		address: { type: String, default: undefined },
 		passwordHash: { type: String, select: false },
+		// Community account gate. Insider/outsider is DERIVED from membership;
+		// this only governs suspend/ban. Legacy users without the field read as
+		// active (default applied on hydration; treat undefined as active in code).
+		status: {
+			type: String,
+			enum: Object.values(UserStatus),
+			default: UserStatus.Active,
+		},
 		onboarded: { type: Boolean, default: false },
 		fcmTokens: {
 			type: [
