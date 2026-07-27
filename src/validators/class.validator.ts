@@ -8,6 +8,8 @@ export const createClassBodySchema = z.object({
 		.number()
 		.int("Credit cost must be an integer")
 		.min(1, "Credit cost must be a positive integer (>= 1)"),
+	bookingWindowValue: z.number().int().positive().optional().default(72),
+	bookingWindowUnit: z.enum(["hours", "days"]).optional().default("hours"),
 });
 
 export const updateClassBodySchema = z
@@ -24,6 +26,8 @@ export const updateClassBodySchema = z
 			.int("Credit cost must be an integer")
 			.min(1, "Credit cost must be a positive integer (>= 1)")
 			.optional(),
+		bookingWindowValue: z.number().int().positive().optional(),
+		bookingWindowUnit: z.enum(["hours", "days"]).optional(),
 	})
 	.refine(
 		(payload) => {

@@ -21,6 +21,13 @@ const userSchema = new mongoose.Schema(
 		emergencyContact: { type: String, default: undefined },
 		address: { type: String, default: undefined },
 		passwordHash: { type: String, select: false },
+		status: {
+			type: String,
+			enum: ["ACTIVE", "INACTIVE", "SUSPENDED", "ARCHIVED"],
+			default: "ACTIVE",
+		},
+		isActive: { type: Boolean, default: true },
+		membershipStatus: { type: String, default: "ACTIVE" },
 		onboarded: { type: Boolean, default: false },
 		fcmTokens: {
 			type: [

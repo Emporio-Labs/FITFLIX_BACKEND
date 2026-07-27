@@ -29,6 +29,16 @@ const classSchema = new mongoose.Schema(
 			required: true,
 			min: 1,
 		},
+		bookingWindowValue: {
+			type: Number,
+			default: 72,
+			min: 1,
+		},
+		bookingWindowUnit: {
+			type: String,
+			enum: ["hours", "days"],
+			default: "hours",
+		},
 	},
 	{
 		timestamps: true,
