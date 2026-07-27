@@ -15,6 +15,10 @@
 		"export:meal-plan": "bun run scripts/export-meal-plan.ts",
 		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
 		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts",
+		"test:feature-008": "bun run tests/feature-008-data-migration-backfill.test.ts",
+		"test:feature-024": "bun run tests/feature-024-zegocloud-integration.test.ts",
+		"migrate:zegocloud-dryrun": "bun run scripts/migrate-zegocloud-rooms.ts --dry-run",
+		"migrate:zegocloud-apply": "bun run scripts/migrate-zegocloud-rooms.ts --apply",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts"
 	},
 	"devDependencies": {
