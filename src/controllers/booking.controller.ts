@@ -8,6 +8,7 @@ import Slot from "../models/Slots";
 
 void HpodReport;
 
+import { registerGroupClassBooking } from "../services/registration-engine.service";
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
 import {
 	changeBookingStatusBodySchema,
@@ -180,6 +181,33 @@ const releaseSlotCapacity = async (
 };
 
 export const createBooking: RequestHandler = async (req, res, next) => {
+	const requester = getRequiredAuthenticatedUser(req);
+
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	if (req.body.sessionId) {
+		const targetUserId =
+			requester.role === "user" ? requester.id : req.body.userId || requester.id;
+		const result = await registerGroupClassBooking({
+			userId: targetUserId,
+			sessionId: req.body.sessionId,
+			classId: req.body.classId,
+		});
+
+		res.status(result.statusCode || 200).json({
+			message: result.message,
+			error: result.message,
+			booking: result.booking,
+			remainingCapacity: result.remainingCapacity,
+			details: result.details,
+			reason: result.reason,
+		});
+		return;
+	}
+
 	const parsedBody = createBookingBodySchema.safeParse(req.body);
 
 	if (!parsedBody.success) {
@@ -187,13 +215,6 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 			message: "Invalid booking payload",
 			errors: parsedBody.error.issues,
 		});
-		return;
-	}
-
-	const requester = getRequiredAuthenticatedUser(req);
-
-	if (!requester) {
-		res.status(401).json({ message: "Unauthorized" });
 		return;
 	}
 

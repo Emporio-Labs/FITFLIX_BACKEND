@@ -8,16 +8,33 @@ const bookingSchema = new mongoose.Schema(
 		endTime: { type: String, required: true },
 		status: {
 			type: String,
-			enum: Object.values(BookingStatus),
+			enum: [...Object.values(BookingStatus), "Confirmed", "Pending", "Consumed"],
 			default: BookingStatus.Booked,
 			required: true,
 		},
 		user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-		slot: { type: mongoose.Schema.Types.ObjectId, ref: "Slot", required: true },
+		slot: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Slot",
+			required: false,
+			default: null,
+		},
 		service: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "Service",
-			required: true,
+			required: false,
+			default: null,
+		},
+		sessionId: {
+			type: String,
+			ref: "ScheduledSession",
+			default: null,
+			index: true,
+		},
+		classId: {
+			type: String,
+			ref: "Class",
+			default: null,
 		},
 		report: {
 			type: mongoose.Schema.Types.ObjectId,
@@ -39,6 +56,8 @@ const bookingSchema = new mongoose.Schema(
 	},
 	{ timestamps: true },
 );
+
+bookingSchema.index({ user: 1, sessionId: 1 });
 
 type BookingDocument = mongoose.InferSchemaType<typeof bookingSchema>;
 
