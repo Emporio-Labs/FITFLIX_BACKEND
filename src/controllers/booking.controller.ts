@@ -8,6 +8,7 @@ import Slot from "../models/Slots";
 
 void HpodReport;
 
+import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
 import {
@@ -884,6 +885,30 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 			booking,
 			credits: { refunded: 0 },
 		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const cancelBookingHandler: RequestHandler = async (req, res, next) => {
+	const requester = getRequiredAuthenticatedUser(req);
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	const { id } = req.params;
+	const adminOverride = req.body?.adminOverride === true;
+
+	try {
+		const result = await cancelBooking({
+			bookingId: id,
+			requesterId: requester.id,
+			requesterRole: requester.role,
+			adminOverride,
+		});
+
+		res.status(result.statusCode || 200).json(result);
 	} catch (error) {
 		next(error);
 	}
