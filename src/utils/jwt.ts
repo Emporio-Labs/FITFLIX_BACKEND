@@ -30,7 +30,11 @@ const isAppUserRole = (value: unknown): value is AppUserRole =>
 	value === "doctor" ||
 	value === "trainer" ||
 	value === "nutritionist" ||
-	value === "frontdesk";
+	value === "frontdesk" ||
+	value === "staff" ||
+	value === "ROLE_FRONT_DESK_STAFF" ||
+	value === "ROLE_FRONT_END_STAFF" ||
+	value === "ROLE_MEMBER";
 
 export const getJwtConfig = (): JwtConfig | null => {
 	const secret = process.env.JWT_SECRET?.trim();
