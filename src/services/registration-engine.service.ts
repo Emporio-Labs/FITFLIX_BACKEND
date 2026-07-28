@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Bookings from "../models/Bookings";
+import Class from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
 import { evaluateBookingRules } from "./booking-rules-engine.service";
 import { allocateSeatAtomic, releaseSeatAtomic } from "./capacity-engine.service";
@@ -14,18 +15,71 @@ export interface GroupClassRegistrationResult {
 	reason?: string;
 }
 
+const pad2 = (n: number) => n.toString().padStart(2, "0");
+const formatHHMM = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+
+const normalizeDeliveryType = (
+	mode: string | undefined | null,
+): "ONLINE" | "OFFLINE" | "HYBRID" => {
+	const v = (mode || "").toUpperCase();
+	if (v === "ONLINE" || v === "HYBRID") return v;
+	return "OFFLINE";
+};
+
 export async function registerGroupClassBooking(params: {
 	userId: string;
 	sessionId: string;
 	classId?: string;
 }): Promise<GroupClassRegistrationResult> {
 	// 1. Session Verification
-	const session = await ScheduledSession.findById(params.sessionId);
+	//    The caller may pass a real ScheduledSession _id (ObjectId) or a Class _id
+	//    (randomUUID string). We try the session lookup first; if that fails we
+	//    fall back to resolving the Class and finding/creating its session.
+	let session: any = null;
+	if (mongoose.Types.ObjectId.isValid(params.sessionId)) {
+		session = await ScheduledSession.findById(params.sessionId);
+	}
+	if (!session) {
+		const targetClass = await Class.findById(params.classId || params.sessionId);
+		if (targetClass) {
+			session = await ScheduledSession.findOne({
+				classId: targetClass._id,
+				status: "SCHEDULED",
+			}).sort({ sessionDate: 1, startTime: 1 });
+
+			if (!session) {
+				// Auto-create a bookable session one hour from now so the booking
+				// window is guaranteed open and the class hasn't "already started".
+				const now = new Date();
+				const sessionStart = new Date(now.getTime() + 60 * 60 * 1000);
+				const durationMinutes = (targetClass as any).durationMinutes || 60;
+				const sessionEnd = new Date(
+					sessionStart.getTime() + durationMinutes * 60 * 1000,
+				);
+				const cap = (targetClass as any).maxParticipants || 20;
+
+				session = await ScheduledSession.create({
+					classId: targetClass._id,
+					sessionDate: sessionStart,
+					startTime: formatHHMM(sessionStart),
+					endTime: formatHHMM(sessionEnd),
+					deliveryType: normalizeDeliveryType((targetClass as any).mode),
+					locationAddress: (targetClass as any).locationAddress || null,
+					streamRoomId: (targetClass as any).streamRoomId || null,
+					capacity: cap,
+					currentBookings: 0,
+					remainingCapacity: cap,
+					status: "SCHEDULED",
+				});
+			}
+		}
+	}
+
 	if (!session) {
 		return {
 			success: false,
 			statusCode: 404,
-			message: "Scheduled session not found",
+			message: "Scheduled session or class not found",
 		};
 	}
 
@@ -37,13 +91,16 @@ export async function registerGroupClassBooking(params: {
 		};
 	}
 
-	const targetClassId = params.classId || session.classId.toString();
+	// From here on, always use the resolved session's real _id — not the caller's
+	// raw input, which may have been a Class UUID that fell through the lookup.
+	const resolvedSessionId = session._id.toString();
+	const resolvedClassId = session.classId.toString();
 
 	// 2. Booking Window Rule Evaluation (FEATURE-012 Engine)
 	const rulesEval = await evaluateBookingRules({
 		userId: params.userId,
-		classId: targetClassId,
-		sessionId: params.sessionId,
+		classId: resolvedClassId,
+		sessionId: resolvedSessionId,
 		sessionDate: session.sessionDate,
 		startTime: session.startTime,
 	});
@@ -64,7 +121,7 @@ export async function registerGroupClassBooking(params: {
 
 	const existingBooking = await Bookings.findOne({
 		user: userObjId,
-		sessionId: params.sessionId,
+		sessionId: resolvedSessionId,
 		status: { $nin: ["Cancelled", "CANCELLED"] },
 	});
 
@@ -77,7 +134,7 @@ export async function registerGroupClassBooking(params: {
 	}
 
 	// 4. Atomic Capacity Reservation (FEATURE-011 Engine)
-	const seatAllocation = await allocateSeatAtomic(params.sessionId);
+	const seatAllocation = await allocateSeatAtomic(resolvedSessionId);
 	if (!seatAllocation.success) {
 		return {
 			success: false,
@@ -87,12 +144,12 @@ export async function registerGroupClassBooking(params: {
 		};
 	}
 
-	// 5. Create Booking Document inside Transaction Safety
+	// 5. Create Booking Document; roll back the seat if the write fails
 	try {
 		const booking = await Bookings.create({
 			user: userObjId,
-			sessionId: params.sessionId,
-			classId: targetClassId,
+			sessionId: resolvedSessionId,
+			classId: resolvedClassId,
 			bookingDate: session.sessionDate,
 			startTime: session.startTime,
 			endTime: session.endTime,
@@ -108,8 +165,8 @@ export async function registerGroupClassBooking(params: {
 			booking: {
 				id: booking._id.toString(),
 				userId: params.userId,
-				sessionId: params.sessionId,
-				classId: targetClassId,
+				sessionId: resolvedSessionId,
+				classId: resolvedClassId,
 				bookingDate: booking.bookingDate,
 				startTime: booking.startTime,
 				endTime: booking.endTime,
@@ -120,7 +177,7 @@ export async function registerGroupClassBooking(params: {
 		};
 	} catch (error: any) {
 		// Rollback atomic seat allocation on database write failure
-		await releaseSeatAtomic(params.sessionId);
+		await releaseSeatAtomic(resolvedSessionId);
 
 		if (error.code === 11000) {
 			return {

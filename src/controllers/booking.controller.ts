@@ -188,18 +188,19 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	if (req.body.sessionId) {
+	if (req.body.sessionId || req.body.classId) {
 		const targetUserId =
 			requester.role === "user" ? requester.id : req.body.userId || requester.id;
 		const result = await registerGroupClassBooking({
 			userId: targetUserId,
-			sessionId: req.body.sessionId,
-			classId: req.body.classId,
+			sessionId: req.body.sessionId || req.body.classId,
+			classId: req.body.classId || req.body.sessionId,
 		});
 
-		res.status(result.statusCode || 200).json({
+		res.status(result.statusCode || (result.success ? 200 : 400)).json({
+			success: result.success,
 			message: result.message,
-			error: result.message,
+			error: result.success ? undefined : result.message,
 			booking: result.booking,
 			remainingCapacity: result.remainingCapacity,
 			details: result.details,
