@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { ZodError } from "zod";
+import { TrainerRosterError } from "../services/trainerRoster.service";
 import { CreditServiceError } from "./credit.service";
 
 export type ApiErrorCode =
@@ -379,6 +380,17 @@ const mapError = (
 	if (error instanceof CreditServiceError) {
 		const mapped = mapCreditServiceError(error);
 		return { status: mapped.status, error: mapped.message };
+	}
+
+	if (error instanceof TrainerRosterError) {
+		if (error.code === "NOT_YOUR_MEMBER") {
+			return {
+				status: 403,
+				error: error.message,
+				code: "NOT_YOUR_MEMBER",
+			};
+		}
+		return { status: 400, error: error.message };
 	}
 
 	if (isJwtError(error)) {

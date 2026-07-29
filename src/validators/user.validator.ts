@@ -173,9 +173,14 @@ export const updateMyPasswordBodySchema = z
 		path: ["newPassword"],
 	});
 
+export const assignTrainerBodySchema = z.object({
+	trainerId: z.string().min(1).nullable(),
+});
+
 export type CreateUserBody = z.infer<typeof createUserBodySchema>;
 export type UpdateUserBody = z.infer<typeof updateUserBodySchema>;
 export type UpdateMyPasswordBody = z.infer<typeof updateMyPasswordBodySchema>;
+export type AssignTrainerBody = z.infer<typeof assignTrainerBodySchema>;
 
 export const listUsersQuerySchema = z.object({
 	search: z.string().trim().optional(),

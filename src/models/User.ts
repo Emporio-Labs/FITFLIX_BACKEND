@@ -50,9 +50,19 @@ const userSchema = new mongoose.Schema(
 			startedAt: { type: Date, default: undefined },
 			completedAt: { type: Date, default: undefined },
 		},
+		// One primary trainer per member, mirroring how nutrition tracks
+		// createdByNutritionist on NutritionProfile rather than a join table.
+		assignedTrainer: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Trainer",
+			default: null,
+		},
+		assignedTrainerAt: { type: Date, default: null },
 	},
 	{ timestamps: true },
 );
+
+userSchema.index({ assignedTrainer: 1 });
 
 // Enforce one account per phone number for phone-auth (user app) accounts only.
 // Partial filter keeps legacy email users with blank/duplicate phones unaffected.

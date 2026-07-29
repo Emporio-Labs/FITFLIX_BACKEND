@@ -14,6 +14,19 @@ const setLogSchema = new mongoose.Schema(
 		isWarmup: { type: Boolean, default: false },
 		completedAt: { type: Date, default: Date.now },
 		notes: { type: String, default: null },
+		// Who actually logged this set — the member themself, or a trainer/
+		// admin logging in person during a PT session. Historical rows
+		// predate this field and are read as the member by default.
+		loggedBy: {
+			type: mongoose.Schema.Types.ObjectId,
+			refPath: "loggedByModel",
+			default: null,
+		},
+		loggedByModel: {
+			type: String,
+			enum: ["User", "Trainer", "Admin"],
+			default: "User",
+		},
 	},
 	{ timestamps: true },
 );

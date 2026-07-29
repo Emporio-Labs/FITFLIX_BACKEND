@@ -1,6 +1,11 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Trainer from "../models/Trainer";
+import User from "../models/User";
+import {
+	assertTrainerOwnsMember,
+	getRosterUserIds,
+} from "../services/trainerRoster.service";
 import { hashPassword } from "../utils/password";
 import {
 	createTrainerBodySchema,
@@ -165,6 +170,66 @@ export const updateTrainerById: RequestHandler = async (req, res, next) => {
 		res
 			.status(200)
 			.json({ message: "Trainer updated", trainer: updatedTrainer });
+	} catch (error) {
+		next(error);
+	}
+};
+
+// ── GET /trainers/me/members ───────────────────────────────────────────────
+// Members currently assigned to the authenticated trainer.
+
+export const getMyMembers: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	try {
+		const rosterIds = await getRosterUserIds(requester.id);
+		const members = await User.find({ _id: { $in: rosterIds } })
+			.select("username phone email age gender onboarded assignedTrainerAt")
+			.sort({ username: 1 })
+			.lean();
+
+		res.status(200).json({ members });
+	} catch (error) {
+		next(error);
+	}
+};
+
+// ── GET /trainers/me/members/:userId ───────────────────────────────────────
+// A single roster member's profile. Trainers may only fetch their own
+// roster; admins bypass the roster check.
+
+export const getMyMemberById: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	const userId = getIdParam(req.params.userId);
+	if (!userId) {
+		res.status(400).json({ message: "Invalid member id" });
+		return;
+	}
+
+	try {
+		if (requester.role === "trainer") {
+			await assertTrainerOwnsMember(requester.id, userId);
+		}
+
+		const member = await User.findById(userId).select(
+			"username phone email age gender onboarded assignedTrainer assignedTrainerAt",
+		);
+
+		if (!member) {
+			res.status(404).json({ message: "Member not found" });
+			return;
+		}
+
+		res.status(200).json({ member });
 	} catch (error) {
 		next(error);
 	}

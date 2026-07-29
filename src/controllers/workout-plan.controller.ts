@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import { PlanStatus } from "../models/Enums";
 import WorkoutPlan from "../models/WorkoutPlan";
 import { createAssignmentForUser } from "../services/planAssignment.service";
+import { actorModelForRole } from "../utils/actor-model";
 import {
 	assignUsersBodySchema,
 	createPlanBodySchema,
@@ -50,9 +51,8 @@ export const createPlan: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const authReq = req as unknown as { user?: { id: string } };
-		const createdBy = authReq.user?.id;
-		if (!createdBy) {
+		const requester = req.user;
+		if (!requester) {
 			res.status(403).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
 			return;
 		}
@@ -64,7 +64,8 @@ export const createPlan: RequestHandler = async (req, res, next) => {
 			difficulty: parsed.data
 				.difficulty as import("../models/Enums").ExerciseDifficulty,
 			splitType: parsed.data.splitType as import("../models/Enums").SplitType,
-			createdBy,
+			createdBy: requester.id,
+			createdByModel: actorModelForRole(requester.role),
 		});
 
 		res.status(201).json(plan);
@@ -92,12 +93,18 @@ export const listPlans: RequestHandler = async (req, res, next) => {
 		if (goal) filter.goal = goal;
 		if (difficulty) filter.difficulty = difficulty;
 
+		// Trainers see their own plans plus reusable templates, not the
+		// full catalogue — admins are unrestricted.
+		if (req.user?.role === "trainer") {
+			filter.$or = [{ createdBy: req.user.id }, { isTemplate: true }];
+		}
+
 		const [plans, total] = await Promise.all([
 			WorkoutPlan.find(filter)
 				.sort({ updatedAt: -1 })
 				.skip((page - 1) * limit)
 				.limit(limit)
-				.populate("createdBy", "name email")
+				.populate("createdBy", "name email trainerName imageUrl specialities")
 				.populate("assignedUsers", "name email")
 				.lean(),
 			WorkoutPlan.countDocuments(filter),
@@ -129,7 +136,7 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 		}
 
 		const plan = await WorkoutPlan.findById(id)
-			.populate("createdBy", "name email")
+			.populate("createdBy", "name email trainerName imageUrl specialities")
 			.populate("assignedUsers", "name email")
 			.populate(
 				"days.exercises.exerciseId",
@@ -138,6 +145,16 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 			.lean();
 
 		if (!plan) {
+			res.status(404).json({ error: "Plan not found" });
+			return;
+		}
+
+		if (
+			req.user?.role === "trainer" &&
+			!plan.isTemplate &&
+			(plan.createdBy as any)?._id?.toString() !== req.user.id &&
+			(plan.createdBy as any)?.toString() !== req.user.id
+		) {
 			res.status(404).json({ error: "Plan not found" });
 			return;
 		}
@@ -220,7 +237,7 @@ export const updatePlan: RequestHandler = async (req, res, next) => {
 			new: true,
 			runValidators: true,
 		})
-			.populate("createdBy", "name email")
+			.populate("createdBy", "name email trainerName imageUrl specialities")
 			.populate("assignedUsers", "name email")
 			.lean();
 
@@ -303,10 +320,11 @@ export const assignUsers: RequestHandler = async (req, res, next) => {
 			? new Date(parsed.data.startDate)
 			: new Date();
 		const adminId = req.user?.id;
-		if (!adminId) {
+		if (!adminId || !req.user) {
 			res.status(403).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
 			return;
 		}
+		const assignedByModel = actorModelForRole(req.user.role);
 
 		const results = await Promise.allSettled(
 			parsed.data.userIds.map((uid) =>
@@ -314,6 +332,7 @@ export const assignUsers: RequestHandler = async (req, res, next) => {
 					planId: id,
 					userId: uid,
 					assignedBy: adminId,
+					assignedByModel,
 					startDate,
 				}),
 			),

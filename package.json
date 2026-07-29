@@ -15,7 +15,8 @@
 		"export:meal-plan": "bun run scripts/export-meal-plan.ts",
 		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
 		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts",
-		"migrate:passwords": "bun run scripts/migrate-passwords.ts"
+		"migrate:passwords": "bun run scripts/migrate-passwords.ts",
+		"migrate:plan-actor-refs": "bun run scripts/migrate-plan-actor-refs.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.8",

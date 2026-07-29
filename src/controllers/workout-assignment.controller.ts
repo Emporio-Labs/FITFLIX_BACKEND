@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Exercise from "../models/Exercise";
 import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import { createAssignmentForUser } from "../services/planAssignment.service";
+import { actorModelForRole } from "../utils/actor-model";
 import {
 	advancePastMissedDays,
 	completeDayAndShift,
@@ -42,6 +43,14 @@ export const getMyAssignment: RequestHandler = async (req, res, next) => {
 			isDeleted: { $ne: true },
 		})
 			.select("-userDays.exercises")
+			.populate({
+				path: "assignedBy",
+				select: "name imageUrl specialities keySentence title bio",
+			})
+			.populate({
+				path: "planId",
+				select: "name goal splitType description durationWeeks",
+			})
 			.lean();
 
 		if (!assignment) {
@@ -255,6 +264,7 @@ export const assignPlan: RequestHandler = async (req, res, next) => {
 				planId,
 				userId: req.user?.id ?? "",
 				assignedBy: req.user?.id ?? "",
+				assignedByModel: actorModelForRole(req.user?.role ?? "user"),
 				startDate: parsed.data.startDate,
 			});
 			res.status(201).json(assignment);

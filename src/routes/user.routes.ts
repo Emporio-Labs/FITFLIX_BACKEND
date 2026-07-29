@@ -12,6 +12,7 @@ import {
 	getUserById,
 	onboardUser,
 	syncMyBcaMetrics,
+	updateAssignedTrainer,
 	updateMyPassword,
 	updateUserById,
 } from "../controllers/user.controller";
@@ -53,6 +54,11 @@ userRouter.get(
 	getReportSignedUrl,
 );
 userRouter.patch("/:id/onboard", authorize(["admin", "user"]), onboardUser);
+userRouter.patch(
+	"/:id/assigned-trainer",
+	authorize(["admin"]),
+	updateAssignedTrainer,
+);
 userRouter.patch("/:id", authorize(["admin", "user"]), updateUserById);
 userRouter.delete("/:id", authorize(["admin"]), deleteUserById);
 
