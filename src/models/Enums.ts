@@ -303,3 +303,87 @@ export enum DeletionRequestStatus {
 	Processed = "Processed",
 	Cancelled = "Cancelled",
 }
+
+export enum CommunityRole {
+	Outsider = "outsider",
+	Insider = "insider",
+	Trainer = "trainer",
+	Admin = "admin",
+}
+
+export enum PostStatus {
+	Draft = "draft",
+	Published = "published",
+	Removed = "removed",
+}
+
+export enum PostVisibility {
+	Public = "public",
+	MembersOnly = "members_only",
+}
+
+export enum UserStatus {
+	Active = "active",
+	Suspended = "suspended",
+	Banned = "banned",
+}
+
+export enum LikeTargetType {
+	Post = "post",
+	Comment = "comment",
+}
+
+export enum ReportStatus {
+	Pending = "pending",
+	Resolved = "resolved",
+	Dismissed = "dismissed",
+}
+
+export enum ModerationActionType {
+	Delete = "delete",
+	Restore = "restore",
+	Pin = "pin",
+	Unpin = "unpin",
+	Edit = "edit",
+	CreateOfficial = "create_official",
+	DeleteComment = "delete_comment",
+	Suspend = "suspend",
+	Unsuspend = "unsuspend",
+	Ban = "ban",
+	Unban = "unban",
+	AssignTrainer = "assign_trainer",
+	RevokeTrainer = "revoke_trainer",
+	Warn = "warn",
+	ResolveReport = "resolve_report",
+}
+
+export enum ModerationTargetType {
+	Post = "post",
+	Comment = "comment",
+	User = "user",
+}
+
+export enum BlockTargetType {
+	User = "user",
+}
+
+export enum PostMediaKind {
+	Image = "image",
+	Video = "video",
+	Audio = "audio",
+	File = "file",
+}
+
+export enum ShareChannel {
+	Copy = "copy",
+	Feed = "feed",
+	DirectMessage = "direct_message",
+	External = "external",
+}
+
+export enum ReportTargetType {
+	Post = "post",
+	Comment = "comment",
+	User = "user",
+}
+

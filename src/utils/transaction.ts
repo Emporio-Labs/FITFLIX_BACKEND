@@ -26,14 +26,17 @@ export async function withOptionalTransaction<T>(
 		});
 
 		return result!;
-	} catch (err) {
+	} catch (err: any) {
 		// Standalone mongod: "Transaction numbers are only allowed on a replica set member"
-		const msg = err instanceof Error ? err.message : String(err);
-		if (
-			msg.includes("Transaction numbers are only allowed") ||
-			msg.includes("replica set") ||
-			msg.includes("not a replica set")
-		) {
+		// If retryWrites=true (default), the driver wraps this in a retryable writes error.
+		const isTxError =
+			err?.message?.includes("Transaction numbers are only allowed") ||
+			err?.message?.includes("does not support retryable writes") ||
+			err?.originalError?.message?.includes("Transaction numbers are only allowed") ||
+			err?.code === 20;
+
+		if (isTxError) {
+			// Run without transaction wrapper
 			return fn(undefined);
 		}
 		throw err;

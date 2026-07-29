@@ -1,3 +1,4 @@
+import path from "node:path";
 import { config } from "dotenv";
 import express from "express";
 import { apiRateLimit } from "./middleware/rate-limit.middleware";
@@ -33,6 +34,8 @@ import userRouter from "./routes/user.routes";
 import webhookRouter from "./routes/webhook.route";
 import workoutRouter from "./routes/workout.routes";
 import workoutPlanRouter from "./routes/workout-plan.routes";
+import communityRouter from "./routes/community.routes";
+import communityAdminRouter from "./routes/community-admin.routes";
 import {
 	getApp,
 } from "./services/fcm.service";
@@ -115,7 +118,7 @@ app.use((req, res, next) => {
 	);
 	res.setHeader(
 		"Access-Control-Allow-Headers",
-		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret",
+		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token",
 	);
 	res.setHeader(
 		"Access-Control-Expose-Headers",
@@ -226,6 +229,8 @@ app.use("/expert-appointments", expertAppointmentRouter);
 app.use("/admin/expert-appointments", adminExpertAppointmentRouter);
 app.use("/notifications", notificationRouter);
 app.use("/internal", internalRouter);
+app.use("/community/admin", communityAdminRouter);
+app.use("/community", communityRouter);
 
 app.get("/health", (_req, res) => {
 	res.status(200).json({ ok: true });

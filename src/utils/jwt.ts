@@ -103,6 +103,21 @@ export const signAuthToken = (
 		sub: user.id,
 		email: user.email,
 		role: user.role,
+		scope: user.role === "admin" ? "admin" : "user",
+	};
+
+	return jwt.sign(payload, config.secret, buildSignOptions(config));
+};
+
+export const signAdminToken = (
+	user: AuthenticatedUser,
+	config: JwtConfig,
+): string => {
+	const payload = {
+		sub: user.id,
+		email: user.email,
+		role: user.role,
+		scope: "admin",
 	};
 
 	return jwt.sign(payload, config.secret, buildSignOptions(config));
@@ -112,6 +127,54 @@ export const signRefreshToken = (
 	user: AuthenticatedUser,
 	config: JwtConfig,
 ): string => signAuthToken(user, config);
+
+export const decodeTokenScope = (token: string): string | null => {
+	try {
+		const decoded = jwt.decode(token) as JwtPayload | null;
+		if (decoded && typeof decoded === "object" && typeof decoded.scope === "string") {
+			return decoded.scope;
+		}
+		if (decoded && typeof decoded === "object" && decoded.role === "admin") {
+			return "admin";
+		}
+		return null;
+	} catch {
+		return null;
+	}
+};
+
+export const signStepUpToken = (
+	adminId: string,
+	config: JwtConfig,
+): string => {
+	const payload = {
+		sub: adminId,
+		type: "step-up",
+		scope: "step-up",
+	};
+	return jwt.sign(payload, config.secret, { expiresIn: "5m" });
+};
+
+export const verifyStepUpToken = (
+	token: string,
+	adminId: string,
+	config: JwtConfig,
+): boolean => {
+	try {
+		const payload = jwt.verify(token, config.secret) as JwtPayload;
+		if (
+			payload &&
+			typeof payload === "object" &&
+			payload.sub === adminId &&
+			payload.type === "step-up"
+		) {
+			return true;
+		}
+		return false;
+	} catch {
+		return false;
+	}
+};
 
 export const verifyAuthToken = (
 	token: string,

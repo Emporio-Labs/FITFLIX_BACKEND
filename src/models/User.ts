@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { applyIdTransform } from "../utils/mongoose-serialization";
-import { Gender, OnboardingStep } from "./Enums";
+import { Gender, OnboardingStep, CommunityRole, UserStatus } from "./Enums";
 
 const userSchema = new mongoose.Schema(
 	{
@@ -50,6 +50,18 @@ const userSchema = new mongoose.Schema(
 			startedAt: { type: Date, default: undefined },
 			completedAt: { type: Date, default: undefined },
 		},
+		// Community fields
+		status: {
+			type: String,
+			enum: Object.values(UserStatus),
+			default: UserStatus.Active,
+		},
+		communityRole: {
+			type: String,
+			enum: [...Object.values(CommunityRole), null],
+			default: null,
+		},
+		suspendedUntil: { type: Date, default: null },
 	},
 	{ timestamps: true },
 );
