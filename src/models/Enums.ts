@@ -343,6 +343,7 @@ export enum PostMediaKind {
 	Image = "image",
 	Video = "video",
 	Audio = "audio",
+	File = "file",
 }
 
 export enum LikeTargetType {
@@ -398,4 +399,8 @@ export enum ModerationActionType {
 	// Retained from Day 1.
 	Hide = "hide",
 	Unhide = "unhide",
+}
+
+export enum BlockTargetType {
+	User = "user",
 }

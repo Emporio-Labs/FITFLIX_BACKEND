@@ -28,6 +28,9 @@ export interface PolicyPost {
 	authorId: string;
 	// Accepts the enum or a raw string; compared against PostVisibility values.
 	visibility: string;
+	// Snapshotted community role of the post's author. Optional so existing
+	// callers stay source-compatible; required for `post:repost` gating.
+	authorRole?: string;
 }
 
 export type PolicyResource = PolicyPost | undefined;
@@ -131,8 +134,12 @@ export function can(
 			return isPublic(resource) || user.role !== CommunityRole.Outsider;
 
 		case "post:repost":
-			// Admin ONLY — admin already returned true, so everyone else is denied.
-			return false;
+			// Insiders (or higher) may repost a Trainer-authored PUBLIC post.
+			// Admin already returned true above; trainers can also repost.
+			if (!isStaffOrInsider(user)) return false;
+			if (!resource) return false;
+			if (!isPublic(resource)) return false;
+			return resource.authorRole === CommunityRole.Trainer;
 
 		case "history:view":
 			// Author only; admin already handled by the short-circuit.

@@ -29,35 +29,87 @@ export const imageReferenceSchema = z.object({
 	position: z.number().int().min(0).optional(),
 });
 
+/** A reference to an already-uploaded audio clip (returned by POST /community/media/audio). */
+export const audioReferenceSchema = z.object({
+	url: z.string().min(1),
+	duration: z
+		.number()
+		.int()
+		.min(1)
+		.max(communityConfig.maxAudioDurationSeconds),
+});
+
+/** Request body for POST /community/media/video/presign. */
+export const videoPresignRequestSchema = z.object({
+	filename: z.string().min(1).max(255),
+	contentType: z.string().min(1),
+	contentLength: z.number().int().positive(),
+});
+
+/** A reference to an already-uploaded video (S3 key from the presigned-PUT flow). */
+export const videoReferenceSchema = z.object({
+	s3Key: z.string().min(1),
+});
+
 export const createPostBodySchema = z
 	.object({
+		title: z.string().trim().max(120).optional().default(""),
 		body: z.string().trim().max(5000).optional().default(""),
+		/** Long-form companion field. Optional; max 5,000 chars. */
+		description: z.string().trim().max(5000).optional().default(""),
 		visibility: z.enum(visibilityValues).optional().default(PostVisibility.Public),
 		images: z
 			.array(imageReferenceSchema)
 			.max(communityConfig.maxImagesPerPost)
 			.optional()
 			.default([]),
+		audio: z
+			.array(audioReferenceSchema)
+			.max(communityConfig.maxAudioPerPost)
+			.optional()
+			.default([]),
+		video: videoReferenceSchema.optional(),
 	})
-	.refine((data) => data.body.length > 0 || data.images.length > 0, {
-		message: "A post must have text or at least one image",
-		path: ["body"],
-	});
+	.refine(
+		(data) =>
+			data.body.length > 0 ||
+			data.images.length > 0 ||
+			data.audio.length > 0 ||
+			data.video !== undefined,
+		{
+			message:
+				"A post must have text, at least one image, a video, or an audio clip",
+			path: ["body"],
+		},
+	);
 
 export const updatePostBodySchema = z
 	.object({
+		title: z.string().trim().max(120).optional(),
 		body: z.string().trim().max(5000).optional(),
+		/** Long-form companion field. Optional; max 5,000 chars. */
+		description: z.string().trim().max(5000).optional(),
 		visibility: z.enum(visibilityValues).optional(),
 		images: z
 			.array(imageReferenceSchema)
 			.max(communityConfig.maxImagesPerPost)
 			.optional(),
+		audio: z
+			.array(audioReferenceSchema)
+			.max(communityConfig.maxAudioPerPost)
+			.optional(),
+		// null clears an existing video; undefined leaves it untouched.
+		video: videoReferenceSchema.nullable().optional(),
 	})
 	.refine(
 		(data) =>
+			data.title !== undefined ||
 			data.body !== undefined ||
+			data.description !== undefined ||
 			data.visibility !== undefined ||
-			data.images !== undefined,
+			data.images !== undefined ||
+			data.audio !== undefined ||
+			data.video !== undefined,
 		{ message: "Provide at least one field to update", path: ["body"] },
 	);
 

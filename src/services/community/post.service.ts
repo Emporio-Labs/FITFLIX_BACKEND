@@ -36,11 +36,22 @@ export interface ImageRef {
 	position?: number;
 }
 
+export interface AudioRef {
+	url: string;
+	duration: number;
+}
+
+export interface VideoRef {
+	s3Key: string;
+}
+
 interface LeanPost {
 	_id: mongoose.Types.ObjectId;
 	authorId: mongoose.Types.ObjectId;
 	authorRole?: string;
+	title?: string;
 	content?: string;
+	description?: string;
 	visibility: string;
 	status: string;
 	isOfficial?: boolean;
@@ -62,7 +73,28 @@ interface LeanMedia {
 	url: string;
 	thumbnailUrl?: string | null;
 	blurredUrl?: string | null;
+	duration?: number | null;
 	position?: number;
+}
+
+/** Infer the response Content-Type for a media object from its kind and, for
+ * audio, the stored S3 key extension (the upload path assigns .mp3 / .m4a /
+ * .aac deterministically per declared MIME). */
+function contentTypeFor(m: LeanMedia): string {
+	if (m.kind === PostMediaKind.Audio) {
+		const url = m.url.toLowerCase();
+		if (url.endsWith(".mp3")) return "audio/mpeg";
+		if (url.endsWith(".m4a") || url.endsWith(".mp4")) return "audio/mp4";
+		if (url.endsWith(".aac")) return "audio/aac";
+		return "audio/mpeg";
+	}
+	if (m.kind === PostMediaKind.Video) {
+		const url = m.url.toLowerCase();
+		if (url.endsWith(".webm")) return "video/webm";
+		if (url.endsWith(".mov")) return "video/quicktime";
+		return "video/mp4";
+	}
+	return "image/jpeg";
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -120,17 +152,35 @@ function excerpt(text: string, max: number): string {
 	return `${clean.slice(0, max).trimEnd()}…`;
 }
 
+/**
+ * Truncate the description for feed responses. Returns the preview text and a
+ * flag indicating whether the full description is longer. Feed callers pass
+ * `fullDescription: false`; the detail endpoint passes `true`.
+ */
+function descriptionPreview(
+	text: string,
+	max: number,
+): { preview: string; hasMore: boolean } {
+	const clean = text.trim();
+	if (clean.length <= max) return { preview: clean, hasMore: false };
+	return { preview: `${clean.slice(0, max).trimEnd()}…`, hasMore: true };
+}
+
 async function signMedia(media: LeanMedia[]) {
 	return Promise.all(
-		media.map(async (m) => ({
-			id: String(m._id),
-			kind: m.kind,
-			url: await generateSignedUrl(m.url, 900, "image/jpeg"),
-			thumbnailUrl: m.thumbnailUrl
-				? await generateSignedUrl(m.thumbnailUrl, 900, "image/jpeg")
-				: null,
-			position: m.position ?? 0,
-		})),
+		media.map(async (m) => {
+			const contentType = contentTypeFor(m);
+			return {
+				id: String(m._id),
+				kind: m.kind,
+				url: await generateSignedUrl(m.url, 900, contentType),
+				thumbnailUrl: m.thumbnailUrl
+					? await generateSignedUrl(m.thumbnailUrl, 900, "image/jpeg")
+					: null,
+				duration: m.duration ?? null,
+				position: m.position ?? 0,
+			};
+		}),
 	);
 }
 
@@ -221,6 +271,7 @@ async function buildPostResponse(
 	media: LeanMedia[],
 	viewerIsMember: boolean,
 	likedByViewer: boolean,
+	opts: { fullDescription?: boolean } = {},
 ) {
 	// Non-members receive members_only posts as REDACTED STUBS — no body, no
 	// full media URL, only a blurred thumbnail + short teaser.
@@ -229,13 +280,17 @@ async function buildPostResponse(
 
 	if (locked) {
 		const first = media[0];
+		const titleText = (post.title ?? "").trim();
 		return {
 			id: String(post._id),
 			authorId: String(post.authorId),
 			author,
 			visibility: post.visibility,
 			createdAt: post.createdAt,
-			titleOrExcerpt: excerpt(post.content ?? "", 80),
+			titleOrExcerpt: excerpt(
+				titleText.length > 0 ? titleText : (post.content ?? ""),
+				80,
+			),
 			blurredThumbnailUrl: first?.blurredUrl
 				? await generateSignedUrl(first.blurredUrl, 900, "image/jpeg")
 				: null,
@@ -244,14 +299,27 @@ async function buildPostResponse(
 			shareCount: post.shareCount ?? 0,
 			edited: Boolean(post.editedAt),
 			locked: true,
+			// description intentionally absent — never exposed in locked stubs.
 		};
 	}
+
+	const rawDescription = post.description ?? "";
+	const previewMax = communityConfig.feed.descriptionPreviewLength;
+	const { preview, hasMore } = descriptionPreview(rawDescription, previewMax);
 
 	return {
 		id: String(post._id),
 		authorId: String(post.authorId),
 		author,
+		title: post.title ?? "",
 		content: post.content ?? "",
+		// Detail endpoint returns the full description; feed returns a preview.
+		...(opts.fullDescription
+			? { description: rawDescription }
+			: {
+					descriptionPreview: preview,
+					descriptionHasMore: hasMore,
+			  }),
 		visibility: post.visibility,
 		status: post.status,
 		isOfficial: Boolean(post.isOfficial),
@@ -274,6 +342,7 @@ async function attachAll(
 	posts: LeanPost[],
 	viewerIsMember: boolean,
 	viewerId?: string,
+	opts: { fullDescription?: boolean } = {},
 ) {
 	if (posts.length === 0) {
 		return [];
@@ -307,6 +376,7 @@ async function attachAll(
 				mediaByPost.get(String(p._id)) ?? [],
 				viewerIsMember,
 				likedSet.has(String(p._id)),
+				opts,
 			),
 		),
 	);
@@ -315,7 +385,7 @@ async function attachAll(
 /** Non-gated load of a single post response (for owners after create/edit). */
 async function loadPostResponse(
 	postId: string,
-	opts: { includeDeleted?: boolean } = {},
+	opts: { includeDeleted?: boolean; fullDescription?: boolean } = {},
 	viewerId?: string,
 ) {
 	const filter: Record<string, unknown> = { _id: postId };
@@ -326,8 +396,8 @@ async function loadPostResponse(
 	if (!post) {
 		return null;
 	}
-	// Owner-facing load (after create/edit) — never redacted.
-	const [built] = await attachAll([post], true, viewerId);
+	// Owner-facing load (after create/edit) — never redacted, always full description.
+	const [built] = await attachAll([post], true, viewerId, { fullDescription: opts.fullDescription ?? true });
 	return built ?? null;
 }
 
@@ -358,7 +428,8 @@ export async function getPostForViewer(
 	if (!post) {
 		return null;
 	}
-	const [built] = await attachAll([post], viewerIsMember, viewerId);
+	// Detail endpoint — always return the full description.
+	const [built] = await attachAll([post], viewerIsMember, viewerId, { fullDescription: true });
 	return built ?? null;
 }
 
@@ -426,7 +497,9 @@ export async function getVersions(postId: string) {
 				_id: mongoose.Types.ObjectId;
 				editedBy: mongoose.Types.ObjectId;
 				editedAt: Date;
+				titleSnapshot?: string;
 				contentSnapshot?: string;
+				descriptionSnapshot?: string;
 				mediaSnapshot?: unknown;
 			}[]
 		>();
@@ -436,7 +509,9 @@ export async function getVersions(postId: string) {
 		version: index + 1,
 		editedBy: String(v.editedBy),
 		editedAt: v.editedAt,
+		titleSnapshot: v.titleSnapshot ?? "",
 		contentSnapshot: v.contentSnapshot ?? "",
+		descriptionSnapshot: v.descriptionSnapshot ?? "",
 		mediaSnapshot: v.mediaSnapshot ?? [],
 	}));
 }
@@ -449,12 +524,19 @@ export async function createPost(
 	params: {
 		authorId: string;
 		authorRole: string;
+		title?: string;
 		body: string;
+		description?: string;
 		visibility: string;
 		images: ImageRef[];
+		audio?: AudioRef[];
+		video?: VideoRef;
 	},
 	actingUserId: string,
 ) {
+	const audioRefs = params.audio ?? [];
+	const titleValue = params.title ?? "";
+	const descriptionValue = params.description ?? "";
 	const created = await withOptionalTransaction(async (session) => {
 		const opts: { session?: mongoose.ClientSession } = session
 			? { session }
@@ -463,7 +545,9 @@ export async function createPost(
 		const post = new Post({
 			authorId: params.authorId,
 			authorRole: params.authorRole,
+			title: titleValue,
 			content: params.body,
+			description: descriptionValue,
 			visibility: params.visibility,
 			status: PostStatus.Published,
 		});
@@ -483,12 +567,49 @@ export async function createPost(
 			);
 		}
 
+		// Video sits after images, before audio, in the carousel order.
+		if (params.video) {
+			await PostMedia.create(
+				[
+					{
+						postId: post._id,
+						kind: PostMediaKind.Video,
+						url: params.video.s3Key,
+						position: params.images.length,
+					},
+				],
+				opts,
+			);
+		}
+
+		if (audioRefs.length > 0) {
+			const base = params.images.length + (params.video ? 1 : 0);
+			await PostMedia.insertMany(
+				audioRefs.map((a, i) => ({
+					postId: post._id,
+					kind: PostMediaKind.Audio,
+					url: a.url,
+					duration: a.duration,
+					position: base + i,
+				})),
+				opts,
+			);
+		}
+
 		// Version 1 — written in the SAME transaction as the post.
 		const version = new PostVersion({
 			postId: post._id,
 			editedBy: actingUserId,
+			titleSnapshot: titleValue,
 			contentSnapshot: params.body,
-			mediaSnapshot: params.images,
+			descriptionSnapshot: descriptionValue,
+			mediaSnapshot: [
+				...params.images,
+				...(params.video
+					? [{ kind: PostMediaKind.Video, url: params.video.s3Key }]
+					: []),
+				...audioRefs,
+			],
 		});
 		await version.save(opts);
 
@@ -501,7 +622,16 @@ export async function createPost(
 export async function editPost(
 	postId: string,
 	actingUserId: string,
-	updates: { body?: string; visibility?: string; images?: ImageRef[] },
+	updates: {
+		title?: string;
+		body?: string;
+		description?: string;
+		visibility?: string;
+		images?: ImageRef[];
+		audio?: AudioRef[];
+		/** undefined = leave untouched, null = remove, object = replace. */
+		video?: VideoRef | null;
+	},
 ) {
 	const current = await Post.findOne({ _id: postId, deletedAt: null }).lean<
 		LeanPost | null
@@ -517,18 +647,67 @@ export async function editPost(
 
 		const newContent =
 			updates.body !== undefined ? updates.body : (current.content ?? "");
+		const newTitle =
+			updates.title !== undefined ? updates.title : (current.title ?? "");
+		const newDescription =
+			updates.description !== undefined ? updates.description : (current.description ?? "");
 
-		let mediaSnapshot: ImageRef[];
-		if (updates.images !== undefined) {
-			mediaSnapshot = updates.images;
+		let mediaSnapshot: Array<Record<string, unknown>>;
+		if (
+			updates.images !== undefined ||
+			updates.audio !== undefined ||
+			updates.video !== undefined
+		) {
+			const touchesAll =
+				updates.images !== undefined &&
+				updates.audio !== undefined &&
+				updates.video !== undefined;
+			const existing = touchesAll
+				? []
+				: await PostMedia.find({ postId })
+						.sort({ position: 1 })
+						.lean<LeanMedia[]>();
+			const nextImages =
+				updates.images ??
+				existing
+					.filter((m) => m.kind === PostMediaKind.Image)
+					.map((m) => ({
+						url: m.url,
+						thumbnailUrl: m.thumbnailUrl ?? undefined,
+						blurredUrl: m.blurredUrl ?? undefined,
+						position: m.position,
+					}));
+			const nextAudio =
+				updates.audio ??
+				existing
+					.filter((m) => m.kind === PostMediaKind.Audio)
+					.map((m) => ({ url: m.url, duration: m.duration ?? 0 }));
+			const nextVideo =
+				updates.video !== undefined
+					? updates.video
+					: (existing.find((m) => m.kind === PostMediaKind.Video) ?? null);
+			mediaSnapshot = [
+				...nextImages.map((r) => ({ kind: PostMediaKind.Image, ...r })),
+				...(nextVideo
+					? [
+							{
+								kind: PostMediaKind.Video,
+								url: "s3Key" in nextVideo ? nextVideo.s3Key : nextVideo.url,
+							},
+						]
+					: []),
+				...nextAudio.map((r) => ({ kind: PostMediaKind.Audio, ...r })),
+			];
 		} else {
 			const existing = await PostMedia.find({ postId })
 				.sort({ position: 1 })
 				.lean<LeanMedia[]>();
 			mediaSnapshot = existing.map((m) => ({
+				kind: m.kind,
 				url: m.url,
 				thumbnailUrl: m.thumbnailUrl ?? undefined,
 				blurredUrl: m.blurredUrl ?? undefined,
+				duration: m.duration ?? undefined,
 				position: m.position,
 			}));
 		}
@@ -537,14 +716,22 @@ export async function editPost(
 		const version = new PostVersion({
 			postId,
 			editedBy: actingUserId,
+			titleSnapshot: newTitle,
 			contentSnapshot: newContent,
+			descriptionSnapshot: newDescription,
 			mediaSnapshot,
 		});
 		await version.save(opts);
 
 		const set: Record<string, unknown> = { editedAt: new Date() };
+		if (updates.title !== undefined) {
+			set.title = updates.title;
+		}
 		if (updates.body !== undefined) {
 			set.content = updates.body;
+		}
+		if (updates.description !== undefined) {
+			set.description = updates.description;
 		}
 		if (updates.visibility !== undefined) {
 			set.visibility = updates.visibility;
@@ -564,8 +751,13 @@ export async function editPost(
 			throw new PostNotFoundError();
 		}
 
+		// Replace media per-kind so an image-only edit doesn't wipe attached audio
+		// (and vice versa).
 		if (updates.images !== undefined) {
-			await PostMedia.deleteMany({ postId }, opts);
+			await PostMedia.deleteMany(
+				{ postId, kind: PostMediaKind.Image },
+				opts,
+			);
 			if (updates.images.length > 0) {
 				await PostMedia.insertMany(
 					updates.images.map((img, i) => ({
@@ -575,6 +767,48 @@ export async function editPost(
 						thumbnailUrl: img.thumbnailUrl ?? null,
 						blurredUrl: img.blurredUrl ?? null,
 						position: img.position ?? i,
+					})),
+					opts,
+				);
+			}
+		}
+
+		if (updates.video !== undefined) {
+			await PostMedia.deleteMany(
+				{ postId, kind: PostMediaKind.Video },
+				opts,
+			);
+			if (updates.video !== null) {
+				const base = (updates.images ?? []).length;
+				await PostMedia.create(
+					[
+						{
+							postId,
+							kind: PostMediaKind.Video,
+							url: updates.video.s3Key,
+							position: base,
+						},
+					],
+					opts,
+				);
+			}
+		}
+
+		if (updates.audio !== undefined) {
+			await PostMedia.deleteMany(
+				{ postId, kind: PostMediaKind.Audio },
+				opts,
+			);
+			if (updates.audio.length > 0) {
+				const base =
+					(updates.images ?? []).length + (updates.video ? 1 : 0);
+				await PostMedia.insertMany(
+					updates.audio.map((a, i) => ({
+						postId,
+						kind: PostMediaKind.Audio,
+						url: a.url,
+						duration: a.duration,
+						position: base + i,
 					})),
 					opts,
 				);

@@ -3,6 +3,7 @@ import {
 	CommunityRole,
 	ModerationActionType,
 	ModerationTargetType,
+	PostMediaKind,
 	PostStatus,
 	ReportStatus,
 	UserStatus,
@@ -18,7 +19,7 @@ import User from "../../models/User";
 import { generateSignedUrl } from "../../utils/s3.service";
 import { withOptionalTransaction } from "../../utils/transaction";
 import { authorFor, resolveCommunityAuthors } from "./author";
-import type { ImageRef } from "./post.service";
+import type { ImageRef, VideoRef } from "./post.service";
 
 type Session = mongoose.ClientSession | undefined;
 const opt = (s: Session) => (s ? { session: s } : {});
@@ -166,7 +167,7 @@ export async function unpinPost(
 export async function adminEditPost(
 	adminId: string,
 	postId: string,
-	updates: { body?: string; visibility?: string },
+	updates: { title?: string; body?: string; description?: string; visibility?: string },
 	reason?: string,
 ): Promise<boolean> {
 	return withOptionalTransaction(async (session) => {
@@ -174,25 +175,32 @@ export async function adminEditPost(
 			_id: postId,
 			deletedAt: null,
 		})
-			.select("content")
+			.select("title content description")
 			.session(session ?? null);
 		if (!current) return false;
 
+		const currentDoc = current as { title?: string; content?: string; description?: string };
 		const newContent =
-			updates.body !== undefined
-				? updates.body
-				: ((current as { content?: string }).content ?? "");
+			updates.body !== undefined ? updates.body : (currentDoc.content ?? "");
+		const newTitle =
+			updates.title !== undefined ? updates.title : (currentDoc.title ?? "");
+		const newDescription =
+			updates.description !== undefined ? updates.description : (currentDoc.description ?? "");
 
 		const version = new PostVersion({
 			postId,
 			editedBy: adminId,
+			titleSnapshot: newTitle,
 			contentSnapshot: newContent,
+			descriptionSnapshot: newDescription,
 			mediaSnapshot: [],
 		});
 		await version.save(opt(session));
 
 		const set: Record<string, unknown> = { editedAt: new Date() };
+		if (updates.title !== undefined) set.title = updates.title;
 		if (updates.body !== undefined) set.content = updates.body;
+		if (updates.description !== undefined) set.description = updates.description;
 		if (updates.visibility !== undefined) set.visibility = updates.visibility;
 		await Post.updateOne(
 			{ _id: postId },
@@ -214,13 +222,24 @@ export async function adminEditPost(
 /** Create an official post as the gym account (is_official = true). */
 export async function createOfficialPost(
 	adminId: string,
-	params: { body: string; visibility: string; images: ImageRef[] },
+	params: {
+		title?: string;
+		body: string;
+		description?: string;
+		visibility: string;
+		images: ImageRef[];
+		video?: VideoRef;
+	},
 ): Promise<string> {
+	const titleValue = params.title ?? "";
+	const descriptionValue = params.description ?? "";
 	return withOptionalTransaction(async (session) => {
 		const post = new Post({
 			authorId: adminId,
 			authorRole: CommunityRole.Admin,
+			title: titleValue,
 			content: params.body,
+			description: descriptionValue,
 			visibility: params.visibility,
 			status: PostStatus.Published,
 			isOfficial: true,
@@ -241,11 +260,33 @@ export async function createOfficialPost(
 			);
 		}
 
+		// Video sits after images in the carousel order (matches createPost).
+		if (params.video) {
+			await PostMedia.create(
+				[
+					{
+						postId: post._id,
+						kind: PostMediaKind.Video,
+						url: params.video.s3Key,
+						position: params.images.length,
+					},
+				],
+				opt(session),
+			);
+		}
+
 		await new PostVersion({
 			postId: post._id,
 			editedBy: adminId,
+			titleSnapshot: titleValue,
 			contentSnapshot: params.body,
-			mediaSnapshot: params.images,
+			descriptionSnapshot: descriptionValue,
+			mediaSnapshot: [
+				...params.images,
+				...(params.video
+					? [{ kind: PostMediaKind.Video, url: params.video.s3Key }]
+					: []),
+			],
 		}).save(opt(session));
 
 		await audit(session, {
@@ -639,7 +680,9 @@ interface AdminPostLean {
 	_id: mongoose.Types.ObjectId;
 	authorId: mongoose.Types.ObjectId;
 	authorRole?: string;
+	title?: string;
 	content?: string;
+	description?: string;
 	visibility: string;
 	status: string;
 	isOfficial?: boolean;
@@ -692,7 +735,9 @@ export async function listPostsAdmin(filters: {
 			{ authorId: String(p.authorId), authorRole: p.authorRole },
 			authorMap,
 		),
+		title: p.title ?? "",
 		content: p.content ?? "",
+		description: p.description ?? "",
 		visibility: p.visibility,
 		status: p.status,
 		isOfficial: Boolean(p.isOfficial),
@@ -731,7 +776,9 @@ export async function getPostAdmin(postId: string) {
 			{ authorId: String(post.authorId), authorRole: post.authorRole },
 			authorMap,
 		),
+		title: post.title ?? "",
 		content: post.content ?? "",
+		description: post.description ?? "",
 		visibility: post.visibility,
 		status: post.status,
 		isOfficial: Boolean(post.isOfficial),
@@ -745,6 +792,7 @@ export async function getPostAdmin(postId: string) {
 		media: await Promise.all(
 			media.map(async (m) => ({
 				id: String(m._id),
+				kind: (m as { kind?: string }).kind ?? "image",
 				url: await generateSignedUrl(m.url, 900, "image/jpeg"),
 				position: m.position ?? 0,
 			})),

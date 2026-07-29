@@ -23,11 +23,17 @@ const toPublicTrainerResponse = (trainer: {
 	trainerName: string;
 	description: string;
 	specialities: string[];
+	imageUrl?: string;
+	keySentence?: string;
+	isActive?: boolean;
 }) => ({
 	_id: trainer._id,
 	name: trainer.trainerName,
 	description: trainer.description,
 	specialities: trainer.specialities,
+	imageUrl: trainer.imageUrl || "",
+	keySentence: trainer.keySentence || "",
+	isActive: trainer.isActive !== false,
 });
 
 export const createTrainer: RequestHandler = async (req, res, next) => {
@@ -65,8 +71,8 @@ export const getAllTrainers: RequestHandler = async (_req, res, next) => {
 
 export const getPublicTrainers: RequestHandler = async (_req, res, next) => {
 	try {
-		const trainers = await Trainer.find().select(
-			"trainerName description specialities",
+		const trainers = await Trainer.find({ isActive: { $ne: false } }).select(
+			"trainerName description specialities imageUrl keySentence isActive",
 		);
 		res.status(200).json({ trainers: trainers.map(toPublicTrainerResponse) });
 	} catch (error) {
@@ -105,8 +111,8 @@ export const getPublicTrainerById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const trainer = await Trainer.findById(id).select(
-			"trainerName description specialities",
+		const trainer = await Trainer.findOne({ _id: id, isActive: { $ne: false } }).select(
+			"trainerName description specialities imageUrl keySentence isActive",
 		);
 
 		if (!trainer) {

@@ -1,3 +1,4 @@
+import path from "node:path";
 import { config } from "dotenv";
 import express from "express";
 import { apiRateLimit } from "./middleware/rate-limit.middleware";

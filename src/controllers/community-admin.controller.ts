@@ -25,6 +25,10 @@ import {
 	unsuspendUser,
 } from "../services/community/moderation.service";
 import { getVersions } from "../services/community/post.service";
+import {
+	validateUploadedVideo,
+	VideoUploadError,
+} from "../services/community/video.service";
 import { getJwtConfig, signStepUpToken } from "../utils/jwt";
 import { verifyPassword } from "../utils/password";
 
@@ -111,7 +115,12 @@ export const editPostHandler: RequestHandler = async (req, res, next) => {
 		const ok = await adminEditPost(
 			req.user.id,
 			id,
-			{ body: req.body?.body, visibility: req.body?.visibility },
+			{
+				title: req.body?.title,
+				body: req.body?.body,
+				description: req.body?.description,
+				visibility: req.body?.visibility,
+			},
 			req.body?.reason,
 		);
 		res.status(ok ? 200 : 404).json(ok ? { success: true } : NOT_FOUND);
@@ -183,17 +192,34 @@ export const createOfficialHandler: RequestHandler = async (req, res, next) => {
 			return;
 		}
 		const body = (req.body?.body ?? "").toString().trim();
-		if (!body && !(req.body?.images?.length > 0)) {
+		const title = (req.body?.title ?? "").toString().trim().slice(0, 120);
+		const description = (req.body?.description ?? "").toString().trim().slice(0, 5000);
+		const rawVideo = req.body?.video;
+		const hasVideo =
+			rawVideo && typeof rawVideo === "object" && typeof rawVideo.s3Key === "string";
+		if (!body && !(req.body?.images?.length > 0) && !hasVideo) {
 			res.status(400).json({ error: "Empty post", code: "BAD_REQUEST" });
 			return;
 		}
+
+		// Confirm the client actually completed the presigned-PUT upload before
+		// trusting the S3 key it reports.
+		const video = hasVideo ? await validateUploadedVideo(rawVideo.s3Key) : undefined;
+
 		const id = await createOfficialPost(req.user.id, {
+			title,
 			body,
+			description,
 			visibility: req.body?.visibility === "members_only" ? "members_only" : "public",
 			images: Array.isArray(req.body?.images) ? req.body.images : [],
+			video: video ? { s3Key: video.s3Key } : undefined,
 		});
 		res.status(201).json({ postId: id });
 	} catch (error) {
+		if (error instanceof VideoUploadError) {
+			res.status(error.status).json({ error: error.message, code: error.code });
+			return;
+		}
 		next(error);
 	}
 };

@@ -9,7 +9,12 @@ const postSchema = new mongoose.Schema(
 			ref: "User",
 			required: true,
 		},
+		title: { type: String, default: "", maxlength: 120 },
 		content: { type: String, default: "" },
+		/** Optional long-form companion to `content`. Returned in full on the
+		 * detail endpoint; truncated with a `descriptionHasMore` flag on the
+		 * feed. Never sent to non-members for members_only posts. */
+		description: { type: String, default: "" },
 		// Community role of the author at post time (insider | trainer | admin),
 		// snapshotted so the feed can render Trainer/Admin badges and resolve the
 		// author's name from the correct collection without a per-request guess.

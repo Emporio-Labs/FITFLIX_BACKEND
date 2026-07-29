@@ -21,8 +21,12 @@ const postVersionSchema = new mongoose.Schema(
 			required: true,
 		},
 		editedAt: { type: Date, default: Date.now, required: true },
+		// Snapshot of the post's title at the moment of this edit.
+		titleSnapshot: { type: String, default: "" },
 		// Snapshot of the post's content at the moment of this edit.
 		contentSnapshot: { type: String, default: "" },
+		// Snapshot of the post's description at the moment of this edit.
+		descriptionSnapshot: { type: String, default: "" },
 		// Snapshot of the post's media array at the moment of this edit.
 		mediaSnapshot: {
 			type: [mongoose.Schema.Types.Mixed],

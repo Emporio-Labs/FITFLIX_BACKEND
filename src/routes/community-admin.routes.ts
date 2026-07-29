@@ -24,6 +24,13 @@ import {
 	versionsHandler,
 } from "../controllers/community-admin.controller";
 import {
+	activeUsersMetricsHandler,
+	engagementMetricsHandler,
+	growthMetricsHandler,
+	postsMetricsHandler,
+	reportsMetricsHandler,
+} from "../controllers/community-metrics.controller";
+import {
 	requireCommunityAdmin,
 	requireStepUp,
 } from "../middleware/community-admin.middleware";
@@ -74,5 +81,12 @@ communityAdminRouter.post("/users/:id/ban", requireStepUp, banHandler);
 communityAdminRouter.post("/users/:id/unban", unbanHandler);
 communityAdminRouter.post("/users/:id/role", assignRoleHandler);
 communityAdminRouter.delete("/users/:id/role", revokeRoleHandler);
+
+// Metrics (US-A7)
+communityAdminRouter.get("/metrics/active-users", activeUsersMetricsHandler);
+communityAdminRouter.get("/metrics/posts", postsMetricsHandler);
+communityAdminRouter.get("/metrics/engagement", engagementMetricsHandler);
+communityAdminRouter.get("/metrics/reports", reportsMetricsHandler);
+communityAdminRouter.get("/metrics/growth", growthMetricsHandler);
 
 export default communityAdminRouter;

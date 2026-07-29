@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { applyIdTransform } from "../utils/mongoose-serialization";
-import { Gender, OnboardingStep, UserStatus } from "./Enums";
+import { CommunityRole, Gender, OnboardingStep, UserStatus } from "./Enums";
 
 const userSchema = new mongoose.Schema(
 	{
@@ -33,7 +33,11 @@ const userSchema = new mongoose.Schema(
 		suspendedUntil: { type: Date, default: null },
 		// Admin-granted community elevation ("trainer") — overrides the derived
 		// insider/outsider role in the community feed. NULL for regular members.
-		communityRole: { type: String, default: null },
+		communityRole: {
+			type: String,
+			enum: [...Object.values(CommunityRole), null],
+			default: null,
+		},
 		onboarded: { type: Boolean, default: false },
 		fcmTokens: {
 			type: [
