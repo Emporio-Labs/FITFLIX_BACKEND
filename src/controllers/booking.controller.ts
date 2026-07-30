@@ -10,6 +10,7 @@ void HpodReport;
 
 import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
+import { releaseSeatAtomic } from "../services/capacity-engine.service";
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
 import {
 	changeBookingStatusBodySchema,
@@ -189,18 +190,19 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	if (req.body.sessionId) {
+	if (req.body.sessionId || req.body.classId) {
 		const targetUserId =
 			requester.role === "user" ? requester.id : req.body.userId || requester.id;
 		const result = await registerGroupClassBooking({
 			userId: targetUserId,
-			sessionId: req.body.sessionId,
-			classId: req.body.classId,
+			sessionId: req.body.sessionId || req.body.classId,
+			classId: req.body.classId || req.body.sessionId,
 		});
 
-		res.status(result.statusCode || 200).json({
+		res.status(result.statusCode || (result.success ? 200 : 400)).json({
+			success: result.success,
 			message: result.message,
-			error: result.message,
+			error: result.success ? undefined : result.message,
 			booking: result.booking,
 			remainingCapacity: result.remainingCapacity,
 			details: result.details,
@@ -418,6 +420,7 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
 			.populate("slot", "date startTime endTime")
+			.populate("classId", "name description creditCost mode instructor tags durationMinutes locationAddress")
 			.populate("report", "subject hasPdf");
 		res.status(200).json({ bookings });
 	} catch (error) {
@@ -689,10 +692,14 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 					);
 
 					if (transitionedBooking) {
-						await releaseSlotCapacity(
-							transitionedBooking.slot.toString(),
-							session,
-						);
+						if (transitionedBooking.slot) {
+							await releaseSlotCapacity(
+								transitionedBooking.slot.toString(),
+								session,
+							);
+						} else if (transitionedBooking.sessionId) {
+							await releaseSeatAtomic(transitionedBooking.sessionId);
+						}
 
 						await refundCreditsBySource({
 							userId: transitionedBooking.user.toString(),
@@ -814,10 +821,14 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 						return;
 					}
 
-					await releaseSlotCapacity(
-						transitionedBooking.slot.toString(),
-						session,
-					);
+					if (transitionedBooking.slot) {
+						await releaseSlotCapacity(
+							transitionedBooking.slot.toString(),
+							session,
+						);
+					} else if (transitionedBooking.sessionId) {
+						await releaseSeatAtomic(transitionedBooking.sessionId);
+					}
 
 					const refundResult = await refundCreditsBySource({
 						userId: transitionedBooking.user.toString(),

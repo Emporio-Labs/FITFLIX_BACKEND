@@ -8,7 +8,9 @@ export const createClassScheduleSchema = z.object({
 	sessionDate: z.string().trim().min(1, "sessionDate is required"),
 	startTime: z.string().regex(timeFormatRegex, "startTime must be HH:mm (00:00 - 23:59)"),
 	endTime: z.string().regex(timeFormatRegex, "endTime must be HH:mm (00:00 - 23:59)"),
-	deliveryType: z.enum(["ONLINE", "OFFLINE", "HYBRID"]).optional().default("OFFLINE"),
+	// Left without a default on purpose: when omitted the controller derives it
+	// from the parent class's `mode`, so an online class can't get OFFLINE sessions.
+	deliveryType: z.enum(["ONLINE", "OFFLINE", "HYBRID"]).optional(),
 	locationAddress: z.string().trim().optional(),
 	capacity: z.number().int().positive().optional().default(20),
 	recurrenceRule: z.enum(["NONE", "DAILY", "WEEKLY"]).optional().default("NONE"),

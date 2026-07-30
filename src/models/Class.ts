@@ -17,6 +17,68 @@ const classSchema = new mongoose.Schema(
 			default: "",
 			trim: true,
 		},
+		mode: {
+			type: String,
+			enum: ["online", "offline", "hybrid"],
+			default: "offline",
+		},
+		sessionType: {
+			type: String,
+			enum: ["group_class", "live_stream", ""],
+			default: "",
+		},
+		instructor: {
+			type: String,
+			default: "Staff",
+			trim: true,
+		},
+		durationMinutes: {
+			type: Number,
+			default: 60,
+			min: 1,
+		},
+		maxParticipants: {
+			type: Number,
+			default: 20,
+			min: 1,
+		},
+		tags: {
+			type: [String],
+			default: [],
+		},
+		scheduleInfo: {
+			type: String,
+			default: "",
+		},
+		recurrenceRule: {
+			type: String,
+			enum: ["NONE", "DAILY", "WEEKLY", "MONTHLY"],
+			default: "NONE",
+		},
+		schedulePattern: {
+			type: String,
+			default: null,
+		},
+		scheduleType: {
+			type: String,
+			default: "Fixed Session",
+		},
+		daysOfWeek: {
+			type: [Number],
+			default: [],
+		},
+		locationAddress: {
+			type: String,
+			default: "",
+		},
+		streamRoomId: {
+			type: String,
+			default: "",
+		},
+		enableWaitlist: {
+			type: Boolean,
+			default: false,
+		},
 		status: {
 			type: String,
 			enum: ["ACTIVE", "INACTIVE"],
@@ -38,6 +100,20 @@ const classSchema = new mongoose.Schema(
 			type: String,
 			enum: ["hours", "days"],
 			default: "hours",
+		},
+		bookingCloseValue: {
+			type: Number,
+			default: null,
+			min: 0,
+		},
+		bookingCloseUnit: {
+			type: String,
+			enum: ["minutes", "hours", "days"],
+			default: null,
+		},
+		isPublished: {
+			type: Boolean,
+			default: true,
 		},
 	},
 	{

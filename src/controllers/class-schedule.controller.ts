@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
+import { normalizeDeliveryType } from "../utils/delivery-type";
 import {
 	createClassScheduleSchema,
 	updateClassScheduleSchema,
@@ -54,6 +55,12 @@ export const createScheduledSession: RequestHandler = async (
 			res.status(404).json({ message: "Class not found" });
 			return;
 		}
+
+		// An omitted deliveryType inherits the class's mode rather than silently
+		// defaulting to OFFLINE, which previously left online classes with
+		// offline sessions that the app then filed under the wrong tab.
+		const resolvedDeliveryType =
+			deliveryType ?? normalizeDeliveryType(targetClass.mode);
 
 		const startMins = parseTimeToMinutes(startTime);
 		const endMins = parseTimeToMinutes(endTime);
@@ -117,7 +124,7 @@ export const createScheduledSession: RequestHandler = async (
 				sessionDate: currentSessionDate,
 				startTime,
 				endTime,
-				deliveryType,
+				deliveryType: resolvedDeliveryType,
 				locationAddress: locationAddress || null,
 				capacity: capacity || targetClass.maxParticipants || 20,
 				status: "SCHEDULED",
@@ -164,7 +171,7 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name creditCost mode instructor")
+			.populate("classId", "name description creditCost mode instructor tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
@@ -185,8 +192,11 @@ export const getSchedulesForMembers: RequestHandler = async (
 ) => {
 	try {
 		const { date } = req.query;
+		// FULL sessions stay in the member feed so a sold-out class renders as full
+		// rather than disappearing — capacity-engine flips SCHEDULED -> FULL at zero
+		// remaining capacity.
 		const query: any = {
-			status: "SCHEDULED",
+			status: { $in: ["SCHEDULED", "FULL"] },
 			isPublished: { $ne: false },
 		};
 
@@ -203,7 +213,7 @@ export const getSchedulesForMembers: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode instructor tags")
+			.populate("classId", "name description creditCost mode instructor tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
