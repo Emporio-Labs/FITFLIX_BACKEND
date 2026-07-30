@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Bookings from "../models/Bookings";
 import Class from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
+import { normalizeDeliveryType } from "../utils/delivery-type";
 import { evaluateBookingRules } from "./booking-rules-engine.service";
 import { allocateSeatAtomic, releaseSeatAtomic } from "./capacity-engine.service";
 
@@ -17,14 +18,6 @@ export interface GroupClassRegistrationResult {
 
 const pad2 = (n: number) => n.toString().padStart(2, "0");
 const formatHHMM = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-
-const normalizeDeliveryType = (
-	mode: string | undefined | null,
-): "ONLINE" | "OFFLINE" | "HYBRID" => {
-	const v = (mode || "").toUpperCase();
-	if (v === "ONLINE" || v === "HYBRID") return v;
-	return "OFFLINE";
-};
 
 export async function registerGroupClassBooking(params: {
 	userId: string;

@@ -3,6 +3,7 @@ import z from "zod";
 import mongoose from "mongoose";
 import Class from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
+import { normalizeDeliveryType } from "../utils/delivery-type";
 import {
 	createClassBodySchema,
 	updateClassBodySchema,
@@ -14,37 +15,58 @@ const isValidUuid = (id: string | undefined): boolean => {
 	return z.string().uuid().safeParse(id).success;
 };
 
-function formatHHMM(date: Date): string {
-	const h = String(date.getUTCHours()).padStart(2, "0");
-	const m = String(date.getUTCMinutes()).padStart(2, "0");
-	return `${h}:${m}`;
+/** Day-of-week index by name, accepting the abbreviations the admin portal emits. */
+const DAY_NAME_TO_INDEX: Record<string, number> = {
+	sunday: 0,
+	sun: 0,
+	monday: 1,
+	mon: 1,
+	tuesday: 2,
+	tue: 2,
+	tues: 2,
+	wednesday: 3,
+	wed: 3,
+	thursday: 4,
+	thu: 4,
+	thurs: 4,
+	friday: 5,
+	fri: 5,
+	saturday: 6,
+	sat: 6,
+};
+
+export interface ScheduleSyncSummary {
+	created: number;
+	deleted: number;
+	preserved: number;
+	skipped: boolean;
+	reason?: string;
 }
 
-export async function syncSessionsForClass(classDoc: any) {
-	const scheduleInfo = classDoc.scheduleInfo;
-	const hasAnySchedule = scheduleInfo?.trim() || classDoc.recurrenceRule || classDoc.daysOfWeek?.length;
-	if (!hasAnySchedule) {
-		return;
-	}
+/**
+ * Resolve a class's recurrence into concrete session dates.
+ *
+ * Prefers the structured fields (`recurrenceRule`, `daysOfWeek`) and falls back
+ * to parsing the human-readable `scheduleInfo` string, which is the only place
+ * the admin portal records the time window and occurrence count.
+ */
+function resolveScheduleForClass(classDoc: any): {
+	dates: Date[];
+	startTime: string;
+	endTime: string;
+} {
+	const scheduleInfo: string | undefined = classDoc.scheduleInfo;
 
-	// 1. Delete existing future scheduled sessions for this class
-	const todayStart = new Date();
-	todayStart.setUTCHours(0, 0, 0, 0);
-	await ScheduledSession.deleteMany({
-		classId: classDoc._id,
-		sessionDate: { $gte: todayStart },
-	});
-
-	// 2. Parse schedule — prefer structured fields, fall back to scheduleInfo text
 	let frequency: "NONE" | "DAILY" | "WEEKLY" | "MONTHLY" = "NONE";
 	const daysOfWeek: number[] = [];
 	let startTime = "09:00";
 	let endTime = "10:00";
 	let maxOccurrences = 1;
+
 	const startDate = new Date();
 	startDate.setUTCHours(0, 0, 0, 0);
 
-	// --- Use structured recurrenceRule if available ---
+	// --- Frequency: structured field wins, scheduleInfo prose is the fallback ---
 	if (classDoc.recurrenceRule && classDoc.recurrenceRule !== "NONE") {
 		frequency = classDoc.recurrenceRule as "DAILY" | "WEEKLY" | "MONTHLY";
 	} else if (scheduleInfo) {
@@ -59,83 +81,177 @@ export async function syncSessionsForClass(classDoc: any) {
 		}
 	}
 
-	// --- Use structured daysOfWeek if available ---
+	// --- Days: structured field wins; otherwise read day names out of the prose.
+	// The portal writes abbreviations ("Weekly on Mon, Tue, Wed"), so matching
+	// full names alone would silently yield an empty set for legacy documents.
 	if (Array.isArray(classDoc.daysOfWeek) && classDoc.daysOfWeek.length > 0) {
 		daysOfWeek.push(...classDoc.daysOfWeek.map(Number));
 	} else if (scheduleInfo) {
-		const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-		dayNames.forEach((dayName, index) => {
-			if (scheduleInfo.includes(dayName)) {
+		for (const token of scheduleInfo.match(/[A-Za-z]+/g) ?? []) {
+			const index = DAY_NAME_TO_INDEX[token.toLowerCase()];
+			if (index !== undefined && !daysOfWeek.includes(index)) {
 				daysOfWeek.push(index);
 			}
-		});
+		}
 	}
 
-	// Parse time window from scheduleInfo text
+	// --- Time window and occurrence count: only ever present in scheduleInfo ---
 	if (scheduleInfo) {
-		const timeMatch = scheduleInfo.match(/(\d{2}:\d{2})\s*[–-]\s*(\d{2}:\d{2})/);
-		if (timeMatch) {
-			startTime = timeMatch[1];
-			endTime = timeMatch[2];
+		const timeMatch = scheduleInfo.match(
+			/(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})/,
+		);
+		if (timeMatch?.[1] && timeMatch[2]) {
+			startTime = timeMatch[1].padStart(5, "0");
+			endTime = timeMatch[2].padStart(5, "0");
 		}
 
-		// Parse occurrences
 		const occMatch = scheduleInfo.match(/(\d+)\s*occurrence/);
-		if (occMatch) {
-			maxOccurrences = parseInt(occMatch[1], 10);
-		} else {
-			maxOccurrences = frequency === "NONE" ? 1 : 90;
-		}
+		maxOccurrences = occMatch?.[1]
+			? parseInt(occMatch[1], 10)
+			: frequency === "NONE"
+				? 1
+				: 90;
 	} else {
 		maxOccurrences = frequency === "NONE" ? 1 : 90;
 	}
 
-	// Generate session dates
-	const results: Date[] = [];
+	// Structured times, if a future admin payload ever sends them, take priority.
+	if (typeof classDoc.startTime === "string" && classDoc.startTime.includes(":")) {
+		startTime = classDoc.startTime;
+	}
+	if (typeof classDoc.endTime === "string" && classDoc.endTime.includes(":")) {
+		endTime = classDoc.endTime;
+	}
+
+	// A WEEKLY rule with no days resolved would otherwise match *every* day and
+	// generate a session daily. Anchor it to the start date's weekday instead.
+	if (frequency === "WEEKLY" && daysOfWeek.length === 0) {
+		daysOfWeek.push(startDate.getUTCDay());
+	}
+
+	const dates: Date[] = [];
 	const capDate = new Date();
 	capDate.setDate(capDate.getDate() + 90); // Cap at 90 days out
 	capDate.setUTCHours(23, 59, 59, 999);
 
-	const cursor = new Date(startDate);
-	while (cursor <= capDate && results.length < maxOccurrences) {
-		const dayVal = cursor.getUTCDay();
-		const dayOfMonth = cursor.getUTCDate();
-
-		if (frequency === "DAILY") {
-			results.push(new Date(cursor));
-			cursor.setUTCDate(cursor.getUTCDate() + 1);
-		} else if (frequency === "WEEKLY") {
-			if (daysOfWeek.length === 0 || daysOfWeek.includes(dayVal)) {
-				results.push(new Date(cursor));
+	if (frequency === "NONE") {
+		// One-time: the only date lives in the scheduleInfo text.
+		const dateMatch = scheduleInfo?.match(
+			/One-Time:\s*([A-Za-z]+,\s*[A-Za-z]+\s*\d{1,2},\s*\d{4})/,
+		);
+		if (dateMatch?.[1]) {
+			const parsed = new Date(dateMatch[1]);
+			if (!Number.isNaN(parsed.getTime())) {
+				parsed.setUTCHours(0, 0, 0, 0);
+				dates.push(parsed);
 			}
-			cursor.setUTCDate(cursor.getUTCDate() + 1);
-		} else if (frequency === "MONTHLY") {
-			const targetDay = daysOfWeek[0] ?? 1;
-			if (dayOfMonth === targetDay) {
-				results.push(new Date(cursor));
-			}
-			cursor.setUTCDate(cursor.getUTCDate() + 1);
-		} else {
-			// One-time
-			if (scheduleInfo) {
-				const dateMatch = scheduleInfo.match(/One-Time:\s*([A-Za-z]+,\s*[A-Za-z]+\s*\d{1,2},\s*\d{4})/);
-				if (dateMatch) {
-					const parsedD = new Date(dateMatch[1]);
-					if (!isNaN(parsedD.getTime())) {
-						parsedD.setUTCHours(0, 0, 0, 0);
-						results.push(parsedD);
-					}
-				}
-			}
-			break;
 		}
+		return { dates, startTime, endTime };
 	}
 
-	// 3. Create ScheduledSession documents — derive deliveryType from class.mode
-	const modeUpper = String(classDoc.mode || "OFFLINE").toUpperCase();
-	const deliveryType = (modeUpper === "ONLINE" || modeUpper === "HYBRID") ? modeUpper : "OFFLINE";
+	const cursor = new Date(startDate);
+	while (cursor <= capDate && dates.length < maxOccurrences) {
+		if (frequency === "DAILY") {
+			dates.push(new Date(cursor));
+		} else if (frequency === "WEEKLY") {
+			if (daysOfWeek.includes(cursor.getUTCDay())) {
+				dates.push(new Date(cursor));
+			}
+		} else if (frequency === "MONTHLY") {
+			// For monthly recurrence the admin portal overloads daysOfWeek[0] as a
+			// day-of-month (1-31), so compare against the calendar date.
+			if (cursor.getUTCDate() === (daysOfWeek[0] ?? 1)) {
+				dates.push(new Date(cursor));
+			}
+		}
+		cursor.setUTCDate(cursor.getUTCDate() + 1);
+	}
 
-	for (const sessionDate of results) {
+	return { dates, startTime, endTime };
+}
+
+/**
+ * Materialize `ScheduledSession` rows for a class's recurrence.
+ *
+ * Regenerating is destructive by nature, so two invariants hold: future sessions
+ * are only removed once a replacement set has actually been computed, and
+ * sessions that already carry bookings are never deleted.
+ */
+export async function syncSessionsForClass(
+	classDoc: any,
+	options: { dryRun?: boolean } = {},
+): Promise<ScheduleSyncSummary> {
+	const hasAnySchedule =
+		classDoc.scheduleInfo?.trim() ||
+		(classDoc.recurrenceRule && classDoc.recurrenceRule !== "NONE") ||
+		classDoc.daysOfWeek?.length;
+	if (!hasAnySchedule) {
+		return {
+			created: 0,
+			deleted: 0,
+			preserved: 0,
+			skipped: true,
+			reason: "no schedule configured",
+		};
+	}
+
+	// 1. Resolve the replacement set *before* touching anything. A schedule we
+	//    cannot parse must leave the existing sessions alone rather than wipe them.
+	const { dates, startTime, endTime } = resolveScheduleForClass(classDoc);
+	if (dates.length === 0) {
+		return {
+			created: 0,
+			deleted: 0,
+			preserved: 0,
+			skipped: true,
+			reason: "schedule produced no dates",
+		};
+	}
+
+	const todayStart = new Date();
+	todayStart.setUTCHours(0, 0, 0, 0);
+
+	// 2. Sessions with bookings are load-bearing for members — keep them, and
+	//    remember their dates so step 4 doesn't create a duplicate alongside.
+	const booked = await ScheduledSession.find({
+		classId: classDoc._id,
+		sessionDate: { $gte: todayStart },
+		currentBookings: { $gt: 0 },
+	})
+		.select("sessionDate")
+		.lean();
+
+	const preservedDayKeys = new Set(
+		booked.map((s: any) => new Date(s.sessionDate).toISOString().slice(0, 10)),
+	);
+
+	if (options.dryRun) {
+		const toCreate = dates.filter(
+			(d) => !preservedDayKeys.has(d.toISOString().slice(0, 10)),
+		);
+		return {
+			created: toCreate.length,
+			deleted: 0,
+			preserved: preservedDayKeys.size,
+			skipped: false,
+		};
+	}
+
+	// 3. Clear only the unbooked future sessions.
+	const deleteResult = await ScheduledSession.deleteMany({
+		classId: classDoc._id,
+		sessionDate: { $gte: todayStart },
+		$or: [{ currentBookings: { $lte: 0 } }, { currentBookings: null }],
+	});
+
+	// 4. Recreate, deriving deliveryType from the parent class's mode.
+	const deliveryType = normalizeDeliveryType(classDoc.mode);
+	const capacity = classDoc.maxParticipants || 20;
+	let created = 0;
+
+	for (const sessionDate of dates) {
+		if (preservedDayKeys.has(sessionDate.toISOString().slice(0, 10))) continue;
+
 		await ScheduledSession.create({
 			classId: classDoc._id,
 			trainerId: null,
@@ -145,12 +261,20 @@ export async function syncSessionsForClass(classDoc: any) {
 			deliveryType,
 			locationAddress: classDoc.locationAddress || null,
 			streamRoomId: classDoc.streamRoomId || null,
-			capacity: classDoc.maxParticipants || 20,
+			capacity,
 			currentBookings: 0,
-			remainingCapacity: classDoc.maxParticipants || 20,
+			remainingCapacity: capacity,
 			status: "SCHEDULED",
 		});
+		created += 1;
 	}
+
+	return {
+		created,
+		deleted: deleteResult.deletedCount ?? 0,
+		preserved: preservedDayKeys.size,
+		skipped: false,
+	};
 }
 
 export const createClass: RequestHandler = async (req, res, next) => {
