@@ -19,6 +19,71 @@ export function calculateWindowMs(
 	return value * 60 * 60 * 1000;
 }
 
+export interface LocalDateParts {
+	year: number;
+	month: number;
+	day: number;
+	hour: number;
+	minute: number;
+}
+
+export function getLocalDateParts(timezone: string, date: Date): LocalDateParts {
+	const formatter = new Intl.DateTimeFormat("en-US", {
+		timeZone: timezone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		hour12: false,
+	});
+
+	const parts = formatter.formatToParts(date);
+	const getVal = (type: string) => parts.find((p) => p.type === type)?.value || "";
+
+	return {
+		year: Number(getVal("year")),
+		month: Number(getVal("month")),
+		day: Number(getVal("day")),
+		hour: Number(getVal("hour")),
+		minute: Number(getVal("minute")),
+	};
+}
+
+export function parseInTimezone(date: Date, timeStr: string, timezone: string): Date {
+	const localDateParts = getLocalDateParts(timezone, date);
+	const [hours, minutes] = String(timeStr).split(":").map(Number);
+
+	const utcDate = new Date(
+		Date.UTC(
+			localDateParts.year,
+			localDateParts.month - 1,
+			localDateParts.day,
+			hours,
+			minutes,
+			0,
+			0,
+		),
+	);
+
+	const partsInTz = getLocalDateParts(timezone, utcDate);
+	const dateInTz = new Date(
+		Date.UTC(
+			partsInTz.year,
+			partsInTz.month - 1,
+			partsInTz.day,
+			partsInTz.hour,
+			partsInTz.minute,
+			0,
+			0,
+		),
+	);
+
+	const offsetMs = dateInTz.getTime() - utcDate.getTime();
+	return new Date(utcDate.getTime() - offsetMs);
+}
+
 export async function evaluateBookingRules(params: {
 	userId: string;
 	classId?: string;
@@ -99,10 +164,9 @@ export async function evaluateBookingRules(params: {
 	const windowUnit = targetClass.bookingWindowUnit || "hours";
 	const windowMs = calculateWindowMs(windowValue, windowUnit);
 
-	// Construct Session Start Time
-	const [hours, minutes] = String(startTime).split(":").map(Number);
-	const startDateTime = new Date(sessionDate);
-	startDateTime.setHours(hours, minutes, 0, 0);
+	// Construct Session Start Time (Timezone-Aware)
+	const classTimezone = (targetClass as any).timezone || "Asia/Kolkata";
+	const startDateTime = parseInTimezone(new Date(sessionDate), startTime, classTimezone);
 
 	const windowOpenTime = new Date(startDateTime.getTime() - windowMs);
 
@@ -115,13 +179,39 @@ export async function evaluateBookingRules(params: {
 		};
 	}
 
-	if (now.getTime() > startDateTime.getTime()) {
-		return {
-			allowed: false,
-			statusCode: 403,
-			message: "Booking window closed as class has already started",
-			details: { startDateTime },
-		};
+	const closeValue = (targetClass as any).bookingCloseValue !== undefined && (targetClass as any).bookingCloseValue !== null
+		? Number((targetClass as any).bookingCloseValue)
+		: null;
+	const closeUnit = (targetClass as any).bookingCloseUnit || "minutes";
+
+	if (closeValue !== null) {
+		let closeMs = closeValue * 60 * 1000;
+		if (closeUnit === "hours") {
+			closeMs = closeValue * 60 * 60 * 1000;
+		} else if (closeUnit === "days") {
+			closeMs = closeValue * 24 * 60 * 60 * 1000;
+		}
+
+		const windowCloseTime = new Date(startDateTime.getTime() - closeMs);
+
+		if (now.getTime() > windowCloseTime.getTime()) {
+			return {
+				allowed: false,
+				statusCode: 403,
+				message: `Booking window closed ${closeValue} ${closeUnit} before class start time`,
+				details: { windowCloseTime, startDateTime },
+			};
+		}
+	} else {
+		// Fallback: only close booking if the class has already started
+		if (now.getTime() > startDateTime.getTime()) {
+			return {
+				allowed: false,
+				statusCode: 403,
+				message: "Booking window closed as class has already started",
+				details: { startDateTime },
+			};
+		}
 	}
 
 	return { allowed: true };

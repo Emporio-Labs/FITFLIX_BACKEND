@@ -164,7 +164,7 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name creditCost mode instructor")
+			.populate("classId", "name description creditCost mode instructor tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
@@ -203,7 +203,7 @@ export const getSchedulesForMembers: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode instructor tags")
+			.populate("classId", "name description creditCost mode instructor tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 

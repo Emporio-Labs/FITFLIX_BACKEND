@@ -22,6 +22,11 @@ const classSchema = new mongoose.Schema(
 			enum: ["online", "offline", "hybrid"],
 			default: "offline",
 		},
+		sessionType: {
+			type: String,
+			enum: ["group_class", "live_stream", ""],
+			default: "",
+		},
 		instructor: {
 			type: String,
 			default: "Staff",
@@ -44,6 +49,23 @@ const classSchema = new mongoose.Schema(
 		scheduleInfo: {
 			type: String,
 			default: "",
+		},
+		recurrenceRule: {
+			type: String,
+			enum: ["NONE", "DAILY", "WEEKLY", "MONTHLY"],
+			default: "NONE",
+		},
+		schedulePattern: {
+			type: String,
+			default: null,
+		},
+		scheduleType: {
+			type: String,
+			default: "Fixed Session",
+		},
+		daysOfWeek: {
+			type: [Number],
+			default: [],
 		},
 		locationAddress: {
 			type: String,
@@ -78,6 +100,16 @@ const classSchema = new mongoose.Schema(
 			type: String,
 			enum: ["hours", "days"],
 			default: "hours",
+		},
+		bookingCloseValue: {
+			type: Number,
+			default: null,
+			min: 0,
+		},
+		bookingCloseUnit: {
+			type: String,
+			enum: ["minutes", "hours", "days"],
+			default: null,
 		},
 		isPublished: {
 			type: Boolean,
