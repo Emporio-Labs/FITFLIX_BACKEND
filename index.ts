@@ -18,6 +18,15 @@ if (missingEnvVars.length > 0) {
 	process.exit(1);
 }
 
+// ZEGOCLOUD features are optional but warn if missing
+const ZEGO_ENV_VARS = ["ZEGO_APP_ID", "ZEGO_SERVER_SECRET", "ZEGO_APP_SIGN"] as const;
+const missingZegoVars = ZEGO_ENV_VARS.filter((v) => !process.env[v]?.trim());
+if (missingZegoVars.length > 0) {
+	console.warn(
+		`[STARTUP] WARNING: ZEGOCLOUD features are disabled. Missing environment variables: ${missingZegoVars.join(", ")}`,
+	);
+}
+
 const port = Number(process.env.PORT ?? 3000);
 
 const start = async () => {
