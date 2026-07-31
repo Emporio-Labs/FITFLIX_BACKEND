@@ -32,6 +32,14 @@ const classSchema = new mongoose.Schema(
 			default: "Staff",
 			trim: true,
 		},
+		// User account that hosts this class — determines host vs audience role
+		// in ZEGOCLOUD live streaming (GCLS-24). Distinct from the `instructor`
+		// display-name string which remains for backwards compatibility.
+		instructorUserId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "User",
+			default: null,
+		},
 		durationMinutes: {
 			type: Number,
 			default: 60,

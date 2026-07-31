@@ -1,23 +1,24 @@
 import mongoose from "mongoose";
 import Bookings from "../models/Bookings";
 import Class from "../models/Class";
+import { CreditTransactionSource } from "../models/Enums";
 import ScheduledSession from "../models/ScheduledSession";
-import { normalizeDeliveryType } from "../utils/delivery-type";
+import {
+	consumeCreditsAtomic,
+	refundCreditsBySource,
+} from "../utils/credit.service";
 import { evaluateBookingRules } from "./booking-rules-engine.service";
 import { allocateSeatAtomic, releaseSeatAtomic } from "./capacity-engine.service";
 
 export interface GroupClassRegistrationResult {
 	success: boolean;
-	statusCode?: 201 | 400 | 403 | 404 | 409 | 500;
+	statusCode?: 201 | 400 | 402 | 403 | 404 | 409 | 500;
 	message?: string;
 	booking?: any;
 	remainingCapacity?: number;
 	details?: any;
 	reason?: string;
 }
-
-const pad2 = (n: number) => n.toString().padStart(2, "0");
-const formatHHMM = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 
 export async function registerGroupClassBooking(params: {
 	userId: string;
@@ -26,8 +27,10 @@ export async function registerGroupClassBooking(params: {
 }): Promise<GroupClassRegistrationResult> {
 	// 1. Session Verification
 	//    The caller may pass a real ScheduledSession _id (ObjectId) or a Class _id
-	//    (randomUUID string). We try the session lookup first; if that fails we
-	//    fall back to resolving the Class and finding/creating its session.
+	//    (randomUUID string). Try the session lookup first; if that fails, resolve
+	//    the class and pick its next upcoming session — never fabricate a session
+	//    from `now`, because the admin's configured time on `Class.scheduleInfo` is
+	//    the source of truth (materialized by syncSessionsForClass).
 	let session: any = null;
 	if (mongoose.Types.ObjectId.isValid(params.sessionId)) {
 		session = await ScheduledSession.findById(params.sessionId);
@@ -35,36 +38,13 @@ export async function registerGroupClassBooking(params: {
 	if (!session) {
 		const targetClass = await Class.findById(params.classId || params.sessionId);
 		if (targetClass) {
+			const todayStart = new Date();
+			todayStart.setUTCHours(0, 0, 0, 0);
 			session = await ScheduledSession.findOne({
 				classId: targetClass._id,
 				status: "SCHEDULED",
+				sessionDate: { $gte: todayStart },
 			}).sort({ sessionDate: 1, startTime: 1 });
-
-			if (!session) {
-				// Auto-create a bookable session one hour from now so the booking
-				// window is guaranteed open and the class hasn't "already started".
-				const now = new Date();
-				const sessionStart = new Date(now.getTime() + 60 * 60 * 1000);
-				const durationMinutes = (targetClass as any).durationMinutes || 60;
-				const sessionEnd = new Date(
-					sessionStart.getTime() + durationMinutes * 60 * 1000,
-				);
-				const cap = (targetClass as any).maxParticipants || 20;
-
-				session = await ScheduledSession.create({
-					classId: targetClass._id,
-					sessionDate: sessionStart,
-					startTime: formatHHMM(sessionStart),
-					endTime: formatHHMM(sessionEnd),
-					deliveryType: normalizeDeliveryType((targetClass as any).mode),
-					locationAddress: (targetClass as any).locationAddress || null,
-					streamRoomId: (targetClass as any).streamRoomId || null,
-					capacity: cap,
-					currentBookings: 0,
-					remainingCapacity: cap,
-					status: "SCHEDULED",
-				});
-			}
 		}
 	}
 
@@ -72,7 +52,8 @@ export async function registerGroupClassBooking(params: {
 		return {
 			success: false,
 			statusCode: 404,
-			message: "Scheduled session or class not found",
+			message:
+				"No upcoming session is scheduled for this class. Ask an admin to publish a schedule.",
 		};
 	}
 
@@ -88,6 +69,11 @@ export async function registerGroupClassBooking(params: {
 	// raw input, which may have been a Class UUID that fell through the lookup.
 	const resolvedSessionId = session._id.toString();
 	const resolvedClassId = session.classId.toString();
+
+	// The class doc is loaded unconditionally so step 5 can charge the member
+	// the real creditCost rather than the previous hardcoded `1`.
+	const targetClass = await Class.findById(resolvedClassId);
+	const creditCost = Number((targetClass as any)?.creditCost) || 1;
 
 	// 2. Booking Window Rule Evaluation (FEATURE-012 Engine)
 	const rulesEval = await evaluateBookingRules({
@@ -137,7 +123,29 @@ export async function registerGroupClassBooking(params: {
 		};
 	}
 
-	// 5. Create Booking Document; roll back the seat if the write fails
+	// 5. Atomic Credit Deduction (FEATURE-013 Engine)
+	//    Runs *after* the seat is reserved but *before* the booking row is
+	//    written, so a member with an empty wallet loses only the transient
+	//    seat lock we roll back below — never a partially-written booking.
+	const consumeResult = await consumeCreditsAtomic({
+		userId: params.userId,
+		amount: creditCost,
+		reason: `Group class booking ${resolvedClassId}`,
+		referenceId: resolvedSessionId,
+	});
+	if (!consumeResult.success) {
+		await releaseSeatAtomic(resolvedSessionId);
+		return {
+			success: false,
+			statusCode: 402,
+			message: consumeResult.message ?? "Insufficient credits",
+			reason: consumeResult.code,
+		};
+	}
+
+	// 6. Create Booking Document; roll back the seat AND refund the credits
+	//    if the write fails, so a Mongo error can't leave the member out of
+	//    pocket with nothing to show for it.
 	try {
 		const booking = await Bookings.create({
 			user: userObjId,
@@ -147,8 +155,8 @@ export async function registerGroupClassBooking(params: {
 			startTime: session.startTime,
 			endTime: session.endTime,
 			status: "Confirmed",
-			creditCostSnapshot: 1,
-			creditsBypassed: true,
+			creditCostSnapshot: creditCost,
+			creditsBypassed: false,
 		});
 
 		return {
@@ -169,8 +177,21 @@ export async function registerGroupClassBooking(params: {
 			remainingCapacity: seatAllocation.session?.remainingCapacity ?? 0,
 		};
 	} catch (error: any) {
-		// Rollback atomic seat allocation on database write failure
 		await releaseSeatAtomic(resolvedSessionId);
+		try {
+			await refundCreditsBySource({
+				userId: params.userId,
+				sourceType: CreditTransactionSource.Booking,
+				sourceId: resolvedSessionId,
+				reason: `Rollback: booking write failed for session ${resolvedSessionId}`,
+			});
+		} catch (refundError) {
+			console.warn(
+				"[REGISTRATION_ROLLBACK_REFUND_FAILED]",
+				resolvedSessionId,
+				refundError,
+			);
+		}
 
 		if (error.code === 11000) {
 			return {

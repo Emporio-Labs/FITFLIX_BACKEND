@@ -171,14 +171,19 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode instructor tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
+			.populate("classId", "name description creditCost mode instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
 		res.status(200).json({
 			message: "Scheduled sessions retrieved successfully",
 			count: sessions.length,
-			sessions,
+			sessions: sessions.map((s) => ({
+				...s,
+				// videoConferenceId is the session's own _id — the ZEGOCLOUD
+				// conference room is derived from this at join time (GCLS-24).
+				videoConferenceId: s._id.toString(),
+			})),
 		});
 	} catch (error) {
 		next(error);
@@ -213,14 +218,19 @@ export const getSchedulesForMembers: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode instructor tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
+			.populate("classId", "name description creditCost mode instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
 		res.status(200).json({
 			message: "Active scheduled sessions retrieved successfully",
 			count: sessions.length,
-			sessions,
+			sessions: sessions.map((s) => ({
+				...s,
+				// videoConferenceId = session._id — ZEGOCLOUD conference room
+				// is derived from this identifier at join time (GCLS-24 MVP).
+				videoConferenceId: s._id.toString(),
+			})),
 		});
 	} catch (error) {
 		next(error);

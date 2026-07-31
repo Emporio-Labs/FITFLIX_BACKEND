@@ -6,6 +6,9 @@ export const createClassBodySchema = z.object({
 	mode: z.enum(["online", "offline", "hybrid"]).optional().default("offline"),
 	sessionType: z.enum(["group_class", "live_stream", ""]).optional().default(""),
 	instructor: z.string().optional().default("Staff"),
+	// ObjectId string of the User account hosting this class.
+	// Used for ZEGOCLOUD host vs audience role dispatch (GCLS-24).
+	instructorUserId: z.string().nullable().optional().default(null),
 	durationMinutes: z.coerce.number().optional().default(60),
 	maxParticipants: z.coerce.number().optional().default(20),
 	tags: z.array(z.string()).optional().default([]),
@@ -46,6 +49,7 @@ export const updateClassBodySchema = z
 		mode: z.enum(["online", "offline", "hybrid"]).optional(),
 		sessionType: z.enum(["group_class", "live_stream", ""]).optional(),
 		instructor: z.string().optional(),
+		instructorUserId: z.string().nullable().optional(),
 		durationMinutes: z.coerce.number().optional(),
 		maxParticipants: z.coerce.number().optional(),
 		tags: z.array(z.string()).optional(),
