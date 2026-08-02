@@ -356,6 +356,9 @@ export const getClassById: RequestHandler = async (req, res, next) => {
 					startTime: sessionDetail.startTime,
 					endTime: sessionDetail.endTime,
 					status: sessionDetail.status,
+					capacity: sessionDetail.capacity,
+					currentBookings: sessionDetail.currentBookings,
+					remainingCapacity: sessionDetail.remainingCapacity,
 				};
 			}
 		}
