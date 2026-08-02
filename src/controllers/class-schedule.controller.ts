@@ -9,7 +9,9 @@ import {
 } from "../validators/class-schedule.validator";
 
 function parseTimeToMinutes(timeStr: string): number {
-	const [hours, minutes] = timeStr.split(":").map(Number);
+	const parts = (timeStr || "00:00").split(":").map(Number);
+	const hours = parts[0] ?? 0;
+	const minutes = parts[1] ?? 0;
 	return hours * 60 + minutes;
 }
 
@@ -171,7 +173,7 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
+			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
@@ -218,7 +220,7 @@ export const getSchedulesForMembers: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
+			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
@@ -329,7 +331,7 @@ export const updateSessionCapacity: RequestHandler = async (
 	res,
 	next,
 ) => {
-	const { id } = req.params;
+	const id = req.params.id as string;
 	const { capacity } = req.body;
 
 	if (typeof capacity !== "number" || capacity < 1) {
