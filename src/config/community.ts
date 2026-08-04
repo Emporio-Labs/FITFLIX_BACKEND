@@ -79,4 +79,24 @@ export const communityConfig = {
 		feed: positiveInt(process.env.COMMUNITY_IMAGE_FEED_WIDTH, 1080),
 		// "full" = original dimensions, re-encoded.
 	},
+
+	/** Avatar variant edge lengths (px). Avatars are square centre-crops, so
+	 *  these are both width and height. */
+	avatarVariants: {
+		full: positiveInt(process.env.COMMUNITY_AVATAR_FULL_PX, 512),
+		thumb: positiveInt(process.env.COMMUNITY_AVATAR_THUMB_PX, 128),
+	},
+
+	profile: {
+		maxDisplayNameLength: positiveInt(
+			process.env.COMMUNITY_PROFILE_MAX_DISPLAY_NAME,
+			40,
+		),
+		maxBioLength: positiveInt(process.env.COMMUNITY_PROFILE_MAX_BIO, 160),
+		/** Max trainers prepended to page one of a people search. */
+		searchTrainerLead: positiveInt(
+			process.env.COMMUNITY_PEOPLE_SEARCH_TRAINER_LEAD,
+			5,
+		),
+	},
 } as const;

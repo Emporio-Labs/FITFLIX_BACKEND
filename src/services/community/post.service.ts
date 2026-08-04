@@ -1,8 +1,6 @@
 import mongoose from "mongoose";
 import { communityConfig } from "../../config/community";
-import Admin from "../../models/Admin";
 import {
-	CommunityRole,
 	LikeTargetType,
 	PostMediaKind,
 	PostStatus,
@@ -11,10 +9,13 @@ import {
 import Post from "../../models/Post";
 import PostMedia from "../../models/PostMedia";
 import PostVersion from "../../models/PostVersion";
-import Trainer from "../../models/Trainer";
-import User from "../../models/User";
 import { generateSignedUrl } from "../../utils/s3.service";
 import { withOptionalTransaction } from "../../utils/transaction";
+import {
+	type CommunityAuthor,
+	authorFor as sharedAuthorFor,
+	resolveCommunityAuthors,
+} from "./author";
 import { getBlockedUserIds } from "./block.service";
 import { type FeedCursor, encodeCursor } from "./cursor";
 import { likedTargetIds } from "./like.service";
@@ -43,6 +44,16 @@ export interface AudioRef {
 
 export interface VideoRef {
 	s3Key: string;
+}
+
+/** A non-previewable attachment (PDF, DOCX, XLSX, TXT) already uploaded via
+ *  POST /community/media/files. */
+export interface FileRef {
+	url: string;
+	originalName?: string;
+	mimeType?: string;
+	bytes?: number;
+	position?: number;
 }
 
 interface LeanPost {
@@ -74,6 +85,9 @@ interface LeanMedia {
 	thumbnailUrl?: string | null;
 	blurredUrl?: string | null;
 	duration?: number | null;
+	originalName?: string | null;
+	mimeType?: string | null;
+	bytes?: number | null;
 	position?: number;
 }
 
@@ -93,6 +107,11 @@ function contentTypeFor(m: LeanMedia): string {
 		if (url.endsWith(".webm")) return "video/webm";
 		if (url.endsWith(".mov")) return "video/quicktime";
 		return "video/mp4";
+	}
+	// Files keep the MIME type recorded at upload time; without it the browser
+	// would be told a PDF is a JPEG and refuse to open it.
+	if (m.kind === PostMediaKind.File) {
+		return m.mimeType || "application/octet-stream";
 	}
 	return "image/jpeg";
 }
@@ -122,6 +141,13 @@ export function buildFeedFilter(
 		filter.authorId = { $nin: blockedIds };
 	}
 
+	// The chronological body excludes pinned posts — they are prepended to page
+	// one by getFeed. Without this they would appear twice on the first page and
+	// then again wherever their timestamp falls. `{ pinnedAt: null }` matches
+	// documents where the field is null *or* absent, which covers every post
+	// that was never pinned.
+	filter.pinnedAt = null;
+
 	if (cursor) {
 		const at = new Date(cursor.createdAt);
 		const id = new mongoose.Types.ObjectId(cursor.id);
@@ -139,11 +165,9 @@ export function buildFeedFilter(
 // Response shaping (eager-loaded author + media; no N+1)
 // ────────────────────────────────────────────────────────────────────────────
 
-type PostAuthor = {
-	id: string;
-	name: string | null;
-	role: "member" | "trainer" | "admin";
-};
+/** Re-exported shape from ./author — kept as a local alias so the many
+ *  signatures below stay unchanged. */
+type PostAuthor = CommunityAuthor;
 
 /** Trim + truncate to `max` chars for a locked-post teaser (never the full body). */
 function excerpt(text: string, max: number): string {
@@ -178,6 +202,9 @@ async function signMedia(media: LeanMedia[]) {
 					? await generateSignedUrl(m.thumbnailUrl, 900, "image/jpeg")
 					: null,
 				duration: m.duration ?? null,
+				originalName: m.originalName ?? null,
+				mimeType: m.mimeType ?? null,
+				bytes: m.bytes ?? null,
 				position: m.position ?? 0,
 			};
 		}),
@@ -185,83 +212,30 @@ async function signMedia(media: LeanMedia[]) {
 }
 
 /**
- * Resolve each distinct author to { id, name, role } using the role snapshotted
- * on the post — trainer/admin names live in their own collections. Batched: at
- * most one query per collection.
+ * Resolve each distinct author to { id, name, role, avatarUrl } using the role
+ * snapshotted on the post — trainer/admin names live in their own collections.
+ * Batched: at most one query per collection.
+ *
+ * Delegates to the shared resolver in ./author so posts, comments and profiles
+ * can never disagree about a person's name or avatar. This wrapper exists only
+ * to adapt LeanPost to the shared item shape.
  */
 async function resolveAuthors(posts: LeanPost[]) {
-	const roleById = new Map<string, PostAuthor["role"]>();
-	const adminIds: string[] = [];
-	const trainerIds: string[] = [];
-	const memberIds: string[] = [];
-
-	for (const p of posts) {
-		const id = String(p.authorId);
-		if (roleById.has(id)) continue;
-		if (p.authorRole === CommunityRole.Admin) {
-			roleById.set(id, "admin");
-			adminIds.push(id);
-		} else if (p.authorRole === CommunityRole.Trainer) {
-			roleById.set(id, "trainer");
-			trainerIds.push(id);
-		} else {
-			roleById.set(id, "member");
-			memberIds.push(id);
-		}
-	}
-
-	const [users, trainers, admins] = await Promise.all([
-		memberIds.length
-			? User.find({ _id: { $in: memberIds } })
-					.select("username")
-					.lean<{ _id: mongoose.Types.ObjectId; username?: string }[]>()
-			: [],
-		trainerIds.length
-			? Trainer.find({ _id: { $in: trainerIds } })
-					.select("trainerName")
-					.lean<{ _id: mongoose.Types.ObjectId; trainerName?: string }[]>()
-			: [],
-		adminIds.length
-			? Admin.find({ _id: { $in: adminIds } })
-					.select("adminName")
-					.lean<{ _id: mongoose.Types.ObjectId; adminName?: string }[]>()
-			: [],
-	]);
-
-	const authorMap = new Map<string, PostAuthor>();
-	for (const u of users)
-		authorMap.set(String(u._id), {
-			id: String(u._id),
-			name: u.username ?? null,
-			role: "member",
-		});
-	for (const t of trainers)
-		authorMap.set(String(t._id), {
-			id: String(t._id),
-			name: t.trainerName ?? null,
-			role: "trainer",
-		});
-	for (const a of admins)
-		authorMap.set(String(a._id), {
-			id: String(a._id),
-			name: a.adminName ?? null,
-			role: "admin",
-		});
-
-	return { authorMap, roleById };
+	return resolveCommunityAuthors(
+		posts.map((p) => ({
+			authorId: String(p.authorId),
+			authorRole: p.authorRole,
+		})),
+	);
 }
 
 function authorFor(
 	post: LeanPost,
 	resolved: Awaited<ReturnType<typeof resolveAuthors>>,
 ): PostAuthor {
-	const id = String(post.authorId);
-	return (
-		resolved.authorMap.get(id) ?? {
-			id,
-			name: null,
-			role: resolved.roleById.get(id) ?? "member",
-		}
+	return sharedAuthorFor(
+		{ authorId: String(post.authorId), authorRole: post.authorRole },
+		resolved,
 	);
 }
 
@@ -433,6 +407,13 @@ export async function getPostForViewer(
 	return built ?? null;
 }
 
+/**
+ * How many pinned posts may lead the feed. Pinning is for the occasional gym
+ * announcement; a feed that opens with fifteen sticky posts is just a worse
+ * feed, so the tail is dropped rather than pushing real content off-screen.
+ */
+const MAX_PINNED_IN_FEED = 3;
+
 export async function getFeed(
 	viewerIsMember: boolean,
 	params: { cursor?: FeedCursor | null; limit?: number },
@@ -450,7 +431,29 @@ export async function getFeed(
 
 	const hasMore = docs.length > pageSize;
 	const page = hasMore ? docs.slice(0, pageSize) : docs;
-	const posts = await attachAll(page, viewerIsMember, viewerId);
+
+	// Pinned posts lead page one.
+	//
+	// Deliberately a separate query rather than a `{ pinnedAt: -1, createdAt: -1 }`
+	// sort: the cursor is a keyset on (createdAt, _id), and mixing a third key
+	// into the ordering would make page two's `createdAt < cursor` predicate skip
+	// pinned posts that are older than the cursor. Keeping the chronological body
+	// pinned-free (see buildFeedFilter) leaves that cursor exactly as it was.
+	const pinnedDocs = params.cursor
+		? []
+		: await Post.find({
+				...buildFeedFilter(null, blocked),
+				pinnedAt: { $ne: null },
+			})
+				.sort({ pinnedAt: -1, _id: -1 })
+				.limit(MAX_PINNED_IN_FEED)
+				.lean<LeanPost[]>();
+
+	const posts = await attachAll(
+		[...pinnedDocs, ...page],
+		viewerIsMember,
+		viewerId,
+	);
 
 	const last = page[page.length - 1];
 	const nextCursor =
@@ -462,6 +465,64 @@ export async function getFeed(
 			: null;
 
 	return { posts, nextCursor };
+}
+
+/**
+ * One author's posts, newest first — the list behind a profile screen.
+ *
+ * Shares `attachAll` with the feed, which is the whole point: members_only
+ * posts are redacted into the same `locked: true` stubs for a non-member here
+ * as they are in the feed, with no second copy of the redaction logic to get
+ * out of sync.
+ *
+ * Unlike the feed this does NOT exclude pinned posts — on a profile the
+ * chronology should be complete.
+ */
+export async function getPostsByAuthor(
+	authorId: string,
+	viewerIsMember: boolean,
+	params: { cursor?: FeedCursor | null; limit?: number },
+	viewerId?: string,
+) {
+	const pageSize = params.limit ?? communityConfig.feed.defaultPageSize;
+
+	const filter: Record<string, unknown> = {
+		authorId,
+		deletedAt: null,
+		status: PostStatus.Published,
+	};
+	if (params.cursor) {
+		const at = new Date(params.cursor.createdAt);
+		const id = new mongoose.Types.ObjectId(params.cursor.id);
+		// Keyset pagination on (createdAt DESC, _id DESC) — same shape as the feed.
+		filter.$or = [
+			{ createdAt: { $lt: at } },
+			{ createdAt: at, _id: { $lt: id } },
+		];
+	}
+
+	// Fetch one extra to know whether another page exists.
+	const docs = await Post.find(filter)
+		.sort({ createdAt: -1, _id: -1 })
+		.limit(pageSize + 1)
+		.lean<LeanPost[]>();
+
+	const hasMore = docs.length > pageSize;
+	const page = hasMore ? docs.slice(0, pageSize) : docs;
+
+	const posts = await attachAll(page, viewerIsMember, viewerId);
+
+	const last = page[page.length - 1];
+	return {
+		posts,
+		nextCursor:
+			hasMore && last
+				? encodeCursor({
+						createdAt: new Date(last.createdAt).toISOString(),
+						id: String(last._id),
+					})
+				: null,
+	};
 }
 
 export interface PostMeta {

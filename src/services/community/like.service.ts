@@ -21,7 +21,7 @@ async function likeTarget(
 	targetId: string,
 	userId: string,
 	model: LikeTargetModel,
-): Promise<{ likeCount: number; liked: boolean }> {
+): Promise<{ likeCount: number; liked: boolean; inserted: boolean }> {
 	let inserted = false;
 	try {
 		const res = await Like.updateOne(
@@ -38,7 +38,14 @@ async function likeTarget(
 	if (inserted) {
 		await model.updateOne({ _id: targetId }, { $inc: { likeCount: 1 } });
 	}
-	return { likeCount: await readLikeCount(model, targetId), liked: true };
+	// `inserted` distinguishes a first like from a repeat of one already held.
+	// Callers use it to notify exactly once — re-liking must not ping the
+	// author again.
+	return {
+		likeCount: await readLikeCount(model, targetId),
+		liked: true,
+		inserted,
+	};
 }
 
 async function unlikeTarget(

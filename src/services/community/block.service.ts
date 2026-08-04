@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Admin from "../../models/Admin";
 import Block from "../../models/Block";
 import User from "../../models/User";
+import { type FeedCursor, encodeCursor } from "./cursor";
 
 export type BlockResult = "ok" | "self" | "admin" | "invalid";
 
@@ -59,13 +60,38 @@ export async function unblockUser(
 	await Block.deleteOne({ blockerId, blockedId });
 }
 
-export async function listBlocks(blockerId: string) {
-	const rows = await Block.find({ blockerId })
-		.sort({ createdAt: -1 })
+/**
+ * The viewer's block list, newest first.
+ *
+ * Cursor-paginated like every other community listing: someone who has been
+ * moderating for a year can accumulate more blocks than one response should
+ * carry, and returning a silently truncated list is the worst of both.
+ */
+export async function listBlocks(
+	blockerId: string,
+	params: { cursor?: FeedCursor | null; limit?: number } = {},
+) {
+	const limit = params.limit ?? 50;
+	const filter: Record<string, unknown> = { blockerId };
+	if (params.cursor) {
+		const at = new Date(params.cursor.createdAt);
+		const id = new mongoose.Types.ObjectId(params.cursor.id);
+		filter.$or = [
+			{ createdAt: { $lt: at } },
+			{ createdAt: at, _id: { $lt: id } },
+		];
+	}
+
+	// One extra row reveals whether another page exists.
+	const found = await Block.find(filter)
+		.sort({ createdAt: -1, _id: -1 })
+		.limit(limit + 1)
 		.select("blockedId createdAt")
 		.lean<
-			{ blockedId: mongoose.Types.ObjectId; createdAt: Date }[]
+			{ _id: mongoose.Types.ObjectId; blockedId: mongoose.Types.ObjectId; createdAt: Date }[]
 		>();
+	const hasMore = found.length > limit;
+	const rows = hasMore ? found.slice(0, limit) : found;
 
 	const ids = rows.map((r) => String(r.blockedId));
 	const users = await User.find({ _id: { $in: ids } })
@@ -73,9 +99,19 @@ export async function listBlocks(blockerId: string) {
 		.lean<{ _id: mongoose.Types.ObjectId; username?: string }[]>();
 	const nameById = new Map(users.map((u) => [String(u._id), u.username ?? null]));
 
-	return rows.map((r) => ({
-		userId: String(r.blockedId),
-		name: nameById.get(String(r.blockedId)) ?? null,
-		blockedAt: r.createdAt,
-	}));
+	const last = rows[rows.length - 1];
+	return {
+		blocks: rows.map((r) => ({
+			userId: String(r.blockedId),
+			name: nameById.get(String(r.blockedId)) ?? null,
+			blockedAt: r.createdAt,
+		})),
+		nextCursor:
+			hasMore && last
+				? encodeCursor({
+						createdAt: new Date(last.createdAt).toISOString(),
+						id: String(last._id),
+					})
+				: null,
+	};
 }

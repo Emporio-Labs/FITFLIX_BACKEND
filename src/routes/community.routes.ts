@@ -29,6 +29,15 @@ import {
 	unlikeCommentHandler,
 	unlikePostHandler,
 } from "../controllers/community-engagement.controller";
+import {
+	getMyProfileHandler,
+	getPublicProfileHandler,
+	listUserPostsHandler,
+	removeAvatarHandler,
+	searchPeopleHandler,
+	updateMyProfileHandler,
+	uploadAvatarHandler,
+} from "../controllers/community-profile.controller";
 import { attachCommunityContext } from "../middleware/community-context.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { apiRateLimit } from "../middleware/rate-limit.middleware";
@@ -73,6 +82,31 @@ const uploadImagesMulter: RequestHandler = (req, res, next) => {
 			});
 		},
 	);
+};
+
+/**
+ * Single-file avatar upload. Field name is `image` (singular) to keep it
+ * distinct from the post-attachment field `images`. Same limits and error
+ * mapping as the image endpoint.
+ */
+const uploadAvatarMulter: RequestHandler = (req, res, next) => {
+	uploadMiddleware.single("image")(req, res, (err: unknown) => {
+		if (!err) {
+			next();
+			return;
+		}
+		if (err instanceof multer.MulterError) {
+			const status = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+			res
+				.status(status)
+				.json({ error: `Upload rejected: ${err.message}`, code: err.code });
+			return;
+		}
+		res.status(415).json({
+			error: (err as Error).message || "Unsupported file",
+			code: "UNSUPPORTED_MEDIA_TYPE",
+		});
+	});
 };
 
 communityRouter.get("/feed", getFeedHandler);
@@ -166,6 +200,24 @@ communityRouter.post("/comments/:id/like", likeCommentHandler);
 communityRouter.delete("/comments/:id/like", unlikeCommentHandler);
 communityRouter.patch("/comments/:id", editCommentHandler);
 communityRouter.delete("/comments/:id", deleteCommentHandler);
+// ── Profiles ────────────────────────────────────────────────────────────────
+// Registered BEFORE the /users/:id/* routes below so every literal path segment
+// wins over a pattern. "/profile/me" uses a literal first segment, so the
+// me-vs-:id ambiguity never arises at all.
+communityRouter.get("/profile/me", getMyProfileHandler);
+communityRouter.patch("/profile/me", updateMyProfileHandler);
+communityRouter.post(
+	"/profile/me/avatar",
+	uploadRateLimiter,
+	uploadAvatarMulter,
+	uploadAvatarHandler,
+);
+communityRouter.delete("/profile/me/avatar", removeAvatarHandler);
+// Literal "search" must be registered ahead of the "/users/:id/*" patterns.
+communityRouter.get("/users/search", searchPeopleHandler);
+communityRouter.get("/users/:id/profile", getPublicProfileHandler);
+communityRouter.get("/users/:id/posts", listUserPostsHandler);
+
 communityRouter.post("/users/:id/block", blockUserHandler);
 communityRouter.delete("/users/:id/block", unblockUserHandler);
 communityRouter.get("/blocks", listBlocksHandler);

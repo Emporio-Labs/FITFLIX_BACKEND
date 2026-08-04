@@ -8,6 +8,7 @@ import authRouter from "./routes/auth.routes";
 import bookingRouter from "./routes/booking.routes";
 import calidWebhookRouter from "./routes/calid-webhook.routes";
 import communityAdminRouter from "./routes/community-admin.routes";
+import communityPublicRouter from "./routes/community-public.routes";
 import communityRouter from "./routes/community.routes";
 import creditRouter from "./routes/credit.routes";
 import dashboardRouter from "./routes/dashboard.routes";
@@ -228,9 +229,11 @@ app.use("/workouts", workoutRouter);
 app.use("/expert-appointments", expertAppointmentRouter);
 app.use("/admin/expert-appointments", adminExpertAppointmentRouter);
 app.use("/notifications", notificationRouter);
-// Admin moderation must be mounted BEFORE the member router so /community/admin/*
-// resolves to the admin router, not the member router.
+// Admin moderation and the unauthenticated public surface must both be mounted
+// BEFORE the member router — that one authenticates every request, so anything
+// falling through to it answers 401 instead of reaching its own handler.
 app.use("/community/admin", communityAdminRouter);
+app.use("/community/public", communityPublicRouter);
 app.use("/community", communityRouter);
 app.use("/internal", internalRouter);
 

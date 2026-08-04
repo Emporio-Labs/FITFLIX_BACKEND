@@ -78,6 +78,11 @@ userSchema.index(
 	{ unique: true, partialFilterExpression: { firebaseUid: { $exists: true } } },
 );
 
+// Community people-search looks up members by name. Index only — NO new field,
+// because `GET /users/me` and `/users/:id` serialize the whole document, so
+// anything added to this schema leaks into every existing response.
+userSchema.index({ username: 1 });
+
 applyIdTransform(userSchema);
 
 type UserDocument = mongoose.InferSchemaType<typeof userSchema>;

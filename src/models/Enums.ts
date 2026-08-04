@@ -135,6 +135,11 @@ export enum NotificationKind {
 	AppointmentReminder = "appointment_reminder",
 	OnboardingStepUpdated = "onboarding_step_updated",
 	MembershipExpiryReminder = "membership_expiry_reminder",
+	// Community engagement. Kept as distinct kinds rather than one
+	// "community" bucket so the client can badge and route each one.
+	CommunityPostLiked = "community_post_liked",
+	CommunityPostCommented = "community_post_commented",
+	CommunityCommentReplied = "community_comment_replied",
 }
 
 export enum ReminderKind {

@@ -21,6 +21,13 @@ const postMediaSchema = new mongoose.Schema(
 		blurredUrl: { type: String, default: null },
 		// Seconds; only meaningful for video/audio.
 		duration: { type: Number, default: null, min: 0 },
+		// The following three are only meaningful for kind "file" (PDF, DOCX,
+		// …). A file attachment has no visual preview, so clients render a chip
+		// from the original name and size instead, and the stored MIME type is
+		// what the signed-URL response is served as.
+		originalName: { type: String, default: null },
+		mimeType: { type: String, default: null },
+		bytes: { type: Number, default: null, min: 0 },
 		// Ordering within a post's media carousel.
 		position: { type: Number, default: 0, min: 0 },
 	},

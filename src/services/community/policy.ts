@@ -21,7 +21,10 @@ export type CommunityAction =
 	| "comment:delete"
 	| "comment:like"
 	| "user:block"
-	| "report:create";
+	| "report:create"
+	| "profile:view"
+	| "profile:edit"
+	| "people:search";
 
 /** Minimal resource shape the policy needs to reason about a post. */
 export interface PolicyPost {
@@ -51,6 +54,9 @@ const WRITE_ACTIONS: ReadonlySet<CommunityAction> = new Set([
 	"comment:like",
 	"user:block",
 	"report:create",
+	// Editing your own profile / avatar is a write, so suspended and banned
+	// accounts are denied by the single status gate below — no extra code.
+	"profile:edit",
 ]);
 
 const isStaffOrInsider = (user: CommunityUser): boolean =>
@@ -132,6 +138,24 @@ export function can(
 
 		case "post:view":
 			return isPublic(resource) || user.role !== CommunityRole.Outsider;
+
+		case "profile:view":
+		case "people:search":
+			// Public profiles carry no personal data (see profile.service's
+			// buildPublicProfile), so any authenticated caller may read one —
+			// outsiders included, mirroring `post:view` on a public post. Per-target
+			// visibility (blocks) is enforced by the controller, not here.
+			return true;
+
+		case "profile:edit":
+			// Editing your OWN profile is role-independent: an outsider whose
+			// membership lapsed can still set a name, bio and photo. Status is
+			// already gated to active by WRITE_ACTIONS above.
+			//
+			// This is deliberately NOT `isStaffOrInsider` — reusing the
+			// `post:create` gate here (as the post-image upload handler does) would
+			// stop a lapsed member from changing their own profile picture.
+			return true;
 
 		case "post:repost":
 			// Insiders (or higher) may repost a Trainer-authored PUBLIC post.

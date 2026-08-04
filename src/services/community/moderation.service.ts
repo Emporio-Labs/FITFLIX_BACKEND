@@ -19,7 +19,7 @@ import User from "../../models/User";
 import { generateSignedUrl } from "../../utils/s3.service";
 import { withOptionalTransaction } from "../../utils/transaction";
 import { authorFor, resolveCommunityAuthors } from "./author";
-import type { ImageRef, VideoRef } from "./post.service";
+import type { FileRef, ImageRef, VideoRef } from "./post.service";
 
 type Session = mongoose.ClientSession | undefined;
 const opt = (s: Session) => (s ? { session: s } : {});
@@ -229,10 +229,12 @@ export async function createOfficialPost(
 		visibility: string;
 		images: ImageRef[];
 		video?: VideoRef;
+		attachments?: FileRef[];
 	},
 ): Promise<string> {
 	const titleValue = params.title ?? "";
 	const descriptionValue = params.description ?? "";
+	const attachments = params.attachments ?? [];
 	return withOptionalTransaction(async (session) => {
 		const post = new Post({
 			authorId: adminId,
@@ -275,6 +277,23 @@ export async function createOfficialPost(
 			);
 		}
 
+		// Attachments sit last in the carousel, after images and any video.
+		if (attachments.length > 0) {
+			const base = params.images.length + (params.video ? 1 : 0);
+			await PostMedia.insertMany(
+				attachments.map((file, i) => ({
+					postId: post._id,
+					kind: PostMediaKind.File,
+					url: file.url,
+					originalName: file.originalName ?? null,
+					mimeType: file.mimeType ?? null,
+					bytes: file.bytes ?? null,
+					position: file.position ?? base + i,
+				})),
+				opt(session),
+			);
+		}
+
 		await new PostVersion({
 			postId: post._id,
 			editedBy: adminId,
@@ -286,6 +305,10 @@ export async function createOfficialPost(
 				...(params.video
 					? [{ kind: PostMediaKind.Video, url: params.video.s3Key }]
 					: []),
+				...attachments.map((file) => ({
+					kind: PostMediaKind.File,
+					url: file.url,
+				})),
 			],
 		}).save(opt(session));
 
@@ -764,8 +787,12 @@ export async function getPostAdmin(postId: string) {
 			.lean<
 				{
 					_id: mongoose.Types.ObjectId;
+					kind?: string;
 					url: string;
 					thumbnailUrl?: string | null;
+					originalName?: string | null;
+					mimeType?: string | null;
+					bytes?: number | null;
 					position?: number;
 				}[]
 			>(),
@@ -790,12 +817,24 @@ export async function getPostAdmin(postId: string) {
 		shareCount: post.shareCount ?? 0,
 		createdAt: post.createdAt,
 		media: await Promise.all(
-			media.map(async (m) => ({
-				id: String(m._id),
-				kind: (m as { kind?: string }).kind ?? "image",
-				url: await generateSignedUrl(m.url, 900, "image/jpeg"),
-				position: m.position ?? 0,
-			})),
+			media.map(async (m) => {
+				const kind = m.kind ?? PostMediaKind.Image;
+				// A file must be signed with its real MIME type, otherwise the
+				// browser is told a PDF is a JPEG and refuses to open it.
+				const contentType =
+					kind === PostMediaKind.File
+						? m.mimeType || "application/octet-stream"
+						: "image/jpeg";
+				return {
+					id: String(m._id),
+					kind,
+					url: await generateSignedUrl(m.url, 900, contentType),
+					originalName: m.originalName ?? null,
+					mimeType: m.mimeType ?? null,
+					bytes: m.bytes ?? null,
+					position: m.position ?? 0,
+				};
+			}),
 		),
 	};
 }

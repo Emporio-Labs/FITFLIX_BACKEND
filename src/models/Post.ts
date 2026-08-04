@@ -59,6 +59,13 @@ const postSchema = new mongoose.Schema(
 postSchema.index({ createdAt: -1, _id: -1 });
 postSchema.index({ authorId: 1 });
 postSchema.index({ deletedAt: 1 });
+// Profile pagination: one author's posts, newest-first, tie-broken by id.
+postSchema.index({ authorId: 1, createdAt: -1, _id: -1 });
+// Search. Without this, every query is an unanchored case-insensitive regex —
+// a full collection scan that is invisible at a few hundred posts and fatal at
+// a few hundred thousand. Mongo permits exactly one text index per collection,
+// so this is the only one that may exist here.
+postSchema.index({ content: "text" });
 
 applyIdTransform(postSchema);
 

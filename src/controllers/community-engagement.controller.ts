@@ -20,6 +20,10 @@ import {
 	unlikeComment,
 	unlikePost,
 } from "../services/community/like.service";
+import {
+	notifyCommented,
+	notifyPostLiked,
+} from "../services/community/notify.service";
 import { can } from "../services/community/policy";
 import { getPostMeta } from "../services/community/post.service";
 import { createReport } from "../services/community/report.service";
@@ -89,7 +93,13 @@ export const likePostHandler: RequestHandler = async (req, res, next) => {
 			res.status(403).json(FORBIDDEN);
 			return;
 		}
-		res.status(200).json(await likePost(id, user.id));
+		const { inserted, ...result } = await likePost(id, user.id);
+		// Only a first like is news, and only after the write succeeded. Fire
+		// and forget: a notification failure must not fail the like.
+		if (inserted) {
+			void notifyPostLiked(id, { id: user.id, role: user.role });
+		}
+		res.status(200).json(result);
 	} catch (error) {
 		next(error);
 	}
@@ -144,7 +154,11 @@ async function commentLikeFlow(
 		res.status(403).json(FORBIDDEN);
 		return;
 	}
-	res.status(200).json(await action(id, user.id));
+	const result = (await action(id, user.id)) as Record<string, unknown>;
+	// `inserted` is an internal signal for notification de-duplication, not
+	// part of the response contract.
+	const { inserted: _inserted, ...body } = result;
+	res.status(200).json(body);
 }
 
 export const likeCommentHandler: RequestHandler = (req, res, next) =>
@@ -243,6 +257,13 @@ export const createCommentHandler: RequestHandler = async (req, res, next) => {
 			res.status(400).json({ error: "Invalid parent comment", code: "BAD_REQUEST" });
 			return;
 		}
+		void notifyCommented({
+			postId: id,
+			commentId: String(comment.id),
+			parentId: parsed.data.parentId ?? null,
+			body: parsed.data.body,
+			actor: { id: user.id, role: user.role },
+		});
 		res.status(201).json({ comment });
 	} catch (error) {
 		next(error);
@@ -432,7 +453,15 @@ export const listBlocksHandler: RequestHandler = async (req, res, next) => {
 			res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
 			return;
 		}
-		res.status(200).json({ blocks: await listBlocks(user.id) });
+		const cursorRaw = req.query.cursor;
+		const cursor =
+			typeof cursorRaw === "string" ? decodeCursor(cursorRaw) : null;
+		const limitRaw = Number(req.query.limit);
+		const limit =
+			Number.isFinite(limitRaw) && limitRaw > 0
+				? Math.min(Math.floor(limitRaw), 100)
+				: undefined;
+		res.status(200).json(await listBlocks(user.id, { cursor, limit }));
 	} catch (error) {
 		next(error);
 	}

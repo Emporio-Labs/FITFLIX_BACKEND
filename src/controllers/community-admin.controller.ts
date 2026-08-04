@@ -197,7 +197,32 @@ export const createOfficialHandler: RequestHandler = async (req, res, next) => {
 		const rawVideo = req.body?.video;
 		const hasVideo =
 			rawVideo && typeof rawVideo === "object" && typeof rawVideo.s3Key === "string";
-		if (!body && !(req.body?.images?.length > 0) && !hasVideo) {
+		// Non-previewable attachments (PDF/DOCX/…) already uploaded via
+		// POST /community/media/files; keep only entries carrying a usable url.
+		const attachments = (
+			Array.isArray(req.body?.attachments) ? req.body.attachments : []
+		)
+			.filter(
+				(file: unknown): file is Record<string, unknown> =>
+					!!file && typeof file === "object" &&
+					typeof (file as { url?: unknown }).url === "string",
+			)
+			.map((file: Record<string, unknown>) => ({
+				url: String(file.url),
+				originalName:
+					typeof file.originalName === "string"
+						? file.originalName.slice(0, 260)
+						: undefined,
+				mimeType:
+					typeof file.mimeType === "string" ? file.mimeType : undefined,
+				bytes: typeof file.bytes === "number" ? file.bytes : undefined,
+			}));
+		if (
+			!body &&
+			!(req.body?.images?.length > 0) &&
+			!hasVideo &&
+			attachments.length === 0
+		) {
 			res.status(400).json({ error: "Empty post", code: "BAD_REQUEST" });
 			return;
 		}
@@ -213,6 +238,7 @@ export const createOfficialHandler: RequestHandler = async (req, res, next) => {
 			visibility: req.body?.visibility === "members_only" ? "members_only" : "public",
 			images: Array.isArray(req.body?.images) ? req.body.images : [],
 			video: video ? { s3Key: video.s3Key } : undefined,
+			attachments,
 		});
 		res.status(201).json({ postId: id });
 	} catch (error) {
