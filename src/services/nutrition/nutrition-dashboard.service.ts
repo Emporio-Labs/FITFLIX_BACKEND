@@ -786,7 +786,6 @@ export interface UserNutritionDashboard {
 		startTime?: string;
 		endTime?: string;
 		meetingLink?: string;
-		calBookingId?: string;
 		nutritionistApprovalStatus: string;
 		acceptedAt?: Date;
 	} | null;

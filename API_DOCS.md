@@ -60,7 +60,6 @@ Tokens are issued by `POST /auth/login` and can be refreshed via `POST /auth/ref
 
 **Webhook/Internal Auth Notes:**
 - `/webhook/email` uses `X-Webhook-Secret` instead of JWT.
-- `/webhooks/cal` uses `X-Cal-Signature-256` (HMAC signature on raw body).
 - `/internal/*` uses `X-Internal-Secret` (or `X-Webhook-Secret` alias) instead of JWT.
 
 ### Migration Notes (Basic Auth → JWT)
@@ -108,7 +107,6 @@ The system supports 5 role types:
 | `/nutritionist` | Nutritionist bookings | ✅ Admin + User | 4 endpoints |
 | `/notifications` | Notifications | ✅ All authenticated | 4 endpoints |
 | `/webhook` | HPOD webhook + reports | ✅ Webhook secret + Admin read | 4 endpoints |
-| `/webhooks/cal` | Cal ID webhook | ✅ Signature header | 1 endpoint |
 | `/internal` | Internal cron hooks | ✅ Internal secret | 1 endpoint |
 | `/onboarding` | Onboarding workflow — health markers, goals, dual-consent, reports, appointments | ✅ User only (+ 1 admin cancel) | 11 endpoints |
 | `/health` | Health check | ❌ Public | 1 endpoint |
@@ -3731,7 +3729,7 @@ For full field-level schemas and examples, see [docs/API_REFERENCE.md](docs/API_
 - `GET /nutritionist/my-booking` (User)
 - `PATCH /nutritionist/my-booking/switch-to-online` (User) — body: const {} (switches appointment mode to ONLINE and generates meeting URL)
 - `GET /nutritionist/bookings` (Admin) — query: `status`, `date`
-- `PATCH /nutritionist/bookings/:id/accept` (Admin) — body: `meetingLink`, `clinicLocation`, `calBookingId`
+- `PATCH /nutritionist/bookings/:id/accept` (Admin) — body: `meetingLink`, `clinicLocation`
 - `PATCH /nutritionist/bookings/:id/reject` (Admin) — body: `reason`
 - `PATCH /nutritionist/bookings/:id/complete` (Admin) — body: const {} (marks booking as Completed)
 
@@ -3756,10 +3754,6 @@ For full field-level schemas and examples, see [docs/API_REFERENCE.md](docs/API_
 - `GET /webhook/reports` (Admin)
 - `GET /webhook/reports/:id` (Admin)
 - `GET /webhook/reports/user/:userId` (Admin)
-
-### Cal ID Webhook: `/webhooks/cal`
-
-- `POST /webhooks/cal` — header: `X-Cal-Signature-256`
 
 ---
 
@@ -4087,13 +4081,12 @@ POST /onboarding/sports-scientist
 ```json
 {
   "appointmentDate": "2026-06-01T10:00:00Z",
-  "meetingLink": "https://cal.id/fitflix/sports-scientist",
-  "calComBookingId": "booking_abc123"
+  "meetingLink": "https://meet.google.com/xyz-uvwx-yza"
 }
 ```
 
 **Validation Notes:**
-- `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.id integration).
+- `appointmentDate` and `meetingLink` are optional.
 - Submitting again **upserts** the existing appointment (no duplicates).
 
 **Response (201 Created):**
@@ -4106,8 +4099,7 @@ POST /onboarding/sports-scientist
     "expertType": "sports_scientist",
     "bookingStatus": "Pending",
     "appointmentDate": "2026-06-01T10:00:00Z",
-    "meetingLink": "https://cal.id/fitflix/sports-scientist",
-    "calComBookingId": "booking_abc123",
+    "meetingLink": "https://meet.google.com/xyz-uvwx-yza",
     "createdAt": "2026-05-15T09:20:00Z",
     "updatedAt": "2026-05-15T09:20:00Z"
   }
@@ -4131,8 +4123,7 @@ POST /onboarding/nutritionist
 ```json
 {
   "appointmentDate": "2026-06-03T11:00:00Z",
-  "meetingLink": null,
-  "calComBookingId": null
+  "meetingLink": null
 }
 ```
 
@@ -4147,7 +4138,6 @@ POST /onboarding/nutritionist
     "bookingStatus": "Pending",
     "appointmentDate": "2026-06-03T11:00:00Z",
     "meetingLink": null,
-    "calComBookingId": null,
     "createdAt": "2026-05-15T09:25:00Z",
     "updatedAt": "2026-05-15T09:25:00Z"
   }
@@ -4199,15 +4189,14 @@ POST /onboarding/appointments
 {
   "expertType": "sports_scientist",
   "appointmentDate": "2026-06-01T10:00:00Z",
-  "meetingLink": "https://cal.id/fitflix/sports-scientist",
-  "calComBookingId": "booking_abc123"
+  "meetingLink": "https://meet.google.com/xyz-uvwx-yza"
 }
 ```
 
 **Validation Notes:**
 - `expertType` must be one of: `sports_scientist`, `nutritionist`.
 - Sports scientist **must be booked before** nutritionist — attempting nutritionist first returns `403 STEP_NOT_ALLOWED`.
-- `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.id integration).
+- `appointmentDate` and `meetingLink` are optional.
 - Submitting the same `expertType` again **upserts** the existing appointment (no duplicates).
 
 **Error Responses:**

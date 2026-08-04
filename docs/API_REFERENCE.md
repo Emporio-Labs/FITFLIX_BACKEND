@@ -36,13 +36,12 @@ Single-source HTTP reference for the Fitflix Express + MongoDB backend that powe
 22. [Workout plans — `/workout-plans`](#workout-plans--workout-plans)
 23. [Leads — `/leads`](#leads--leads)
 24. [Webhook — `/webhook`](#webhook--webhook)
-25. [Cal ID webhook — `/webhooks/cal`](#cal-id-webhook--webhookscal)
-26. [Nutrition — `/nutrition`](#nutrition--nutrition)
-27. [Nutritionist bookings — `/nutritionist`](#nutritionist-bookings--nutritionist)
-28. [Notifications — `/notifications`](#notifications--notifications)
-29. [Internal — `/internal`](#internal--internal)
-30. [Health check — `/health`](#health-check--health)
-31. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
+25. [Nutrition — `/nutrition`](#nutrition--nutrition)
+26. [Nutritionist bookings — `/nutritionist`](#nutritionist-bookings--nutritionist)
+27. [Notifications — `/notifications`](#notifications--notifications)
+28. [Internal — `/internal`](#internal--internal)
+29. [Health check — `/health`](#health-check--health)
+30. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
 
 ---
 
@@ -58,7 +57,6 @@ Authorization: Bearer <token>
 - **Roles:** `user`, `admin`, `doctor`, `trainer`, `nutritionist`. The token's role determines which endpoints are accessible.
 - **Public endpoints** are explicitly labelled `Auth: Public`.
 - **Webhook endpoint** uses a shared-secret header (`X-Webhook-Secret`) instead of JWT.
-- **Cal ID webhook** uses `X-Cal-Signature-256` (HMAC) and requires the raw request body.
 - **Internal endpoints** use `X-Internal-Secret` (or `X-Webhook-Secret` as an alias) instead of JWT.
 
 Failed authentication returns `401 UNAUTHORIZED`. Insufficient role returns `403 FORBIDDEN`.
@@ -69,7 +67,6 @@ Failed authentication returns `401 UNAUTHORIZED`. Insufficient role returns `403
 
 - All bodies are JSON unless explicitly noted. Set `Content-Type: application/json`.
 - File uploads (for example `/onboarding/reports`) use `multipart/form-data`.
-- `/webhooks/cal` uses a raw body for signature verification.
 - Query parameters use standard URL encoding.
 - Path params noted as `:id` accept a 24-character MongoDB ObjectId. Anything else returns `400 BAD_REQUEST`.
 
@@ -963,8 +960,6 @@ Step 5. Book the sports scientist appointment (legacy expert appointment record)
 |---|---|---|---|
 | `appointmentDate` | ISO date | no | |
 | `meetingLink` | string | no | |
-| `calIdBookingId` | string | no | |
-| `calComBookingId` | string | no | legacy alias for `calIdBookingId` |
 
 **Success (201):** `{ "message": "Sports scientist appointment booked", "appointment": { /* ... */ } }`
 
@@ -1002,8 +997,6 @@ Legacy endpoint that accepts `expertType` explicitly.
 | `expertType` | `ExpertType` | yes | `sports_scientist` or `nutritionist` |
 | `appointmentDate` | ISO date | no | |
 | `meetingLink` | string | no | |
-| `calIdBookingId` | string | no | |
-| `calComBookingId` | string | no | legacy alias for `calIdBookingId` |
 
 **Success (201):** `{ "message": "<Sports scientist|Nutritionist> appointment booked", "appointment": { /* ... */ } }`
 
@@ -1654,7 +1647,7 @@ curl -X PATCH "https://api.example.com/appointments/5f1a2b3c4d5e6f7a8b9c0d1e/sta
 
 ## Expert Appointments — `/expert-appointments`
 
-Specialized appointment scheduling for booking Sports Scientist and Nutritionist consultations during and after onboarding. Powered by Cal ID and integrated with Google Meet and Google Calendar.
+Specialized appointment scheduling for booking Sports Scientist and Nutritionist consultations during and after onboarding.
 
 ### User Routes — `/expert-appointments`
 
@@ -1731,8 +1724,6 @@ curl -X POST "https://api.example.com/expert-appointments/book" \
     "bookingStatus": "Confirmed",
     "appointmentStart": "2026-05-27T10:00:00.000Z",
     "appointmentEnd": "2026-05-27T10:30:00.000Z",
-    "calIdBookingId": "bKHU7iV8fynVuG9vYqhaSr",
-    "calIdEventTypeId": "86433",
     "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
     "webhookSyncStatus": "SYNCED"
   }
@@ -1760,8 +1751,6 @@ curl "https://api.example.com/expert-appointments/me" \
       "bookingStatus": "Confirmed",
       "appointmentStart": "2026-05-27T10:00:00.000Z",
       "appointmentEnd": "2026-05-27T10:30:00.000Z",
-      "calIdBookingId": "bKHU7iV8fynVuG9vYqhaSr",
-      "calIdEventTypeId": "86433",
       "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
       "webhookSyncStatus": "SYNCED"
     }
@@ -1805,8 +1794,6 @@ curl -X PATCH "https://api.example.com/expert-appointments/6a155160963fc70a99e94
     "bookingStatus": "Rescheduled",
     "appointmentStart": "2026-05-27T11:00:00.000Z",
     "appointmentEnd": "2026-05-27T11:30:00.000Z",
-    "calIdBookingId": "bKHU7iV8fynVuG9vYqhaSr",
-    "calIdEventTypeId": "86433",
     "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
     "webhookSyncStatus": "SYNCED"
   }
@@ -1882,8 +1869,6 @@ curl "https://api.example.com/admin/expert-appointments?expertType=nutritionist&
       "bookingStatus": "Confirmed",
       "appointmentStart": "2026-05-27T10:00:00.000Z",
       "appointmentEnd": "2026-05-27T10:30:00.000Z",
-      "calIdBookingId": "bKHU7iV8fynVuG9vYqhaSr",
-      "calIdEventTypeId": "86433",
       "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
       "webhookSyncStatus": "SYNCED"
     }
@@ -1924,8 +1909,6 @@ curl "https://api.example.com/admin/expert-appointments/6a155160963fc70a99e94cb2
     "bookingStatus": "Confirmed",
     "appointmentStart": "2026-05-27T10:00:00.000Z",
     "appointmentEnd": "2026-05-27T10:30:00.000Z",
-    "calIdBookingId": "bKHU7iV8fynVuG9vYqhaSr",
-    "calIdEventTypeId": "86433",
     "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
     "webhookSyncStatus": "SYNCED"
   },
@@ -1937,7 +1920,6 @@ curl "https://api.example.com/admin/expert-appointments/6a155160963fc70a99e94cb2
       "action": "booked",
       "actor": "user",
       "actorId": "6a154915d00ec8d02047e53d",
-      "calBookingId": "bKHU7iV8fynVuG9vYqhaSr",
       "createdAt": "2026-05-26T13:45:00.000Z"
     }
   ]
@@ -2910,31 +2892,6 @@ curl "https://api.example.com/webhook/reports/user/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 ---
 
-## Cal ID webhook — `/webhooks/cal`
-
-### POST /webhooks/cal
-
-Cal ID webhook receiver. Verifies the request signature using `X-Cal-Signature-256` against the raw request body.
-
-**Auth:** Signature header `X-Cal-Signature-256`
-
-```bash
-curl -X POST "https://api.example.com/webhooks/cal" \
-  -H "X-Cal-Signature-256: <hmac>" \
-  -H "Content-Type: application/json" \
-  -d '{ "triggerEvent": "BOOKING_CREATED", "payload": { "uid": "..." } }'
-```
-
-**Success (200)**
-
-```json
-{ "received": true }
-```
-
-**Errors:** 401 invalid signature, 400 invalid payload, 500 processing error.
-
----
-
 ## Nutrition — `/nutrition`
 
 The largest section of the API. All routes require authentication. Three role aliases used below:
@@ -3456,7 +3413,6 @@ Accept a pending booking.
 |---|---|---|
 | `meetingLink` | string (url) | no |
 | `clinicLocation` | string | no |
-| `calBookingId` | string | no |
 
 **Success (200):** `{ "message": "Nutritionist booking accepted", "booking": { /* ... */ } }`
 

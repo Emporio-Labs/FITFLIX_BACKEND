@@ -340,7 +340,6 @@ async function run() {
 				Date.now() + 2 * 24 * 60 * 60 * 1000,
 			).toISOString(), // Day after tomorrow
 			meetingLink: "http://meet.google.com/xyz-uvwx-yza",
-			calComBookingId: "nut-booking-456",
 		};
 		const nutritionistRes = await callApi(
 			"STEP 8: BOOK NUTRITIONIST APPOINTMENT",

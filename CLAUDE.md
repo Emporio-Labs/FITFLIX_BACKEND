@@ -198,7 +198,7 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 | **HealthGoals** | `HealthGoals.ts` | userId (unique), goals[], targetWeight, timeline, workoutExperience, foodPreferences | Onboarding step 2 |
 | **ConsentForm** | `ConsentForm.ts` | userId (unique), accepted, acceptedAt, signatureUrl, ipAddress | Onboarding step 3 |
 | **MedicalReport** | `MedicalReport.ts` | userId (index), reportName, reportType, reportUrl | Onboarding step 4, multiple per user |
-| **ExpertAppointment** | `ExpertAppointment.ts` | userId+expertType (unique compound), bookingStatus, appointmentDate, meetingLink, calComBookingId | Onboarding steps 5+6 |
+| **ExpertAppointment** | `ExpertAppointment.ts` | userId+expertType (unique compound), bookingStatus, appointmentDate, meetingLink | Onboarding steps 5+6 |
 
 ---
 

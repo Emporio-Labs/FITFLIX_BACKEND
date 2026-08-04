@@ -3,9 +3,9 @@ var mongoose_1 = require("mongoose");
 var Enums_1 = require("./Enums");
 var webhookEventSchema = new mongoose_1.default.Schema(
 	{
-		// Provider identifier — "calid" for Cal ID webhooks
+		// Provider identifier (e.g. external integrations)
 		provider: { type: String, required: true },
-		// Cal ID sends a unique uid per webhook delivery — used for idempotency
+		// Unique event identifier per webhook delivery — used for idempotency
 		eventId: { type: String, required: true },
 		triggerEvent: { type: String, required: true },
 		// Raw deserialized webhook body

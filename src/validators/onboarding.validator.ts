@@ -199,8 +199,6 @@ export const appointmentBodySchema = z.object({
 	}, z.date().optional()),
 	meetingLink: optionalString,
 	appointmentMode: z.nativeEnum(AppointmentMode).optional(),
-	calIdBookingId: optionalString,
-	calComBookingId: optionalString,
 });
 
 export type HealthMarkersBody = z.infer<typeof healthMarkersBodySchema>;

@@ -3,9 +3,9 @@ import { WebhookEventStatus } from "./Enums";
 
 const webhookEventSchema = new mongoose.Schema(
 	{
-		// Provider identifier — "calid" for Cal ID webhooks
+		// Provider identifier (e.g. external integrations)
 		provider: { type: String, required: true },
-		// Cal ID sends a unique uid per webhook delivery — used for idempotency
+		// Unique event identifier per webhook delivery — used for idempotency
 		eventId: { type: String, required: true },
 		triggerEvent: { type: String, required: true },
 		// Raw deserialized webhook body
