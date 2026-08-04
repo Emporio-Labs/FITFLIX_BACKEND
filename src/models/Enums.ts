@@ -266,6 +266,12 @@ export enum AppointmentMode {
 	ONLINE = "ONLINE",
 }
 
+export enum MeetingStatus {
+	SCHEDULED = "SCHEDULED",
+	IN_PROGRESS = "IN_PROGRESS",
+	COMPLETED = "COMPLETED",
+}
+
 export enum NutritionistBookingStatus {
 	PENDING = "PENDING",
 	ACCEPTED = "ACCEPTED",

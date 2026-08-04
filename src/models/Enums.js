@@ -318,6 +318,12 @@ var AppointmentMode;
 	AppointmentMode["IN_PERSON"] = "IN_PERSON";
 	AppointmentMode["ONLINE"] = "ONLINE";
 })(AppointmentMode || (exports.AppointmentMode = AppointmentMode = {}));
+var MeetingStatus;
+((MeetingStatus) => {
+	MeetingStatus["SCHEDULED"] = "SCHEDULED";
+	MeetingStatus["IN_PROGRESS"] = "IN_PROGRESS";
+	MeetingStatus["COMPLETED"] = "COMPLETED";
+})(MeetingStatus || (exports.MeetingStatus = MeetingStatus = {}));
 var NutritionistBookingStatus;
 ((NutritionistBookingStatus) => {
 	NutritionistBookingStatus["PENDING"] = "PENDING";

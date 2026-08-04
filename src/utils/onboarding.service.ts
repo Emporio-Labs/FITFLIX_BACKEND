@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
-import { OnboardingStep } from "../models/Enums";
+import { NutritionistBookingStatus, OnboardingStep } from "../models/Enums";
+import NutritionistBooking from "../models/NutritionistBooking";
 import User from "../models/User";
 
 export type OnboardingServiceErrorCode =
@@ -59,6 +60,20 @@ export type OnboardingStatusResponse = {
 	completedSteps: string[];
 	onboardingCompleted: boolean;
 	allowedNextStep: string | null;
+	bookingDetails?: {
+		_id: string;
+		bookingStatus: string;
+		appointmentMode: string;
+		clinicLocation: string | null;
+		zegoRoomId: string | null;
+		assignedNutritionistId: string | null;
+		assignedNutritionistName: string | null;
+		meetingStatus: string;
+		bookingDate?: Date;
+		startTime?: string;
+		endTime?: string;
+		acceptedAt?: Date | null;
+	} | null;
 };
 
 export const getOnboardingStatus = async (
@@ -66,7 +81,15 @@ export const getOnboardingStatus = async (
 ): Promise<OnboardingStatusResponse> => {
 	const userObjectId = toObjectId(userId, "NOT_FOUND", "Invalid user ID");
 
-	const user = await User.findById(userObjectId).select("onboardingStatus");
+	const [user, booking] = await Promise.all([
+		User.findById(userObjectId).select("onboardingStatus"),
+		NutritionistBooking.findOne({
+			userId: userObjectId,
+			status: { $ne: NutritionistBookingStatus.REJECTED },
+		})
+			.sort({ createdAt: -1 })
+			.lean(),
+	]);
 
 	if (!user) {
 		throw new OnboardingServiceError("NOT_FOUND", "User not found");
@@ -77,11 +100,31 @@ export const getOnboardingStatus = async (
 	const completedSteps = status?.completedSteps ?? [];
 	const onboardingCompleted = status?.onboardingCompleted ?? false;
 
+	const bookingDetails = booking
+		? {
+				_id: booking._id.toString(),
+				bookingStatus: booking.status,
+				appointmentMode: booking.appointmentMode,
+				clinicLocation: booking.clinicLocation ?? null,
+				zegoRoomId: booking.zegoRoomId ?? null,
+				assignedNutritionistId: booking.assignedNutritionistId
+					? booking.assignedNutritionistId.toString()
+					: null,
+				assignedNutritionistName: booking.assignedNutritionistName ?? null,
+				meetingStatus: booking.meetingStatus,
+				bookingDate: booking.bookingDate,
+				startTime: booking.startTime,
+				endTime: booking.endTime,
+				acceptedAt: booking.acceptedAt ?? null,
+		  }
+		: null;
+
 	return {
 		currentStep,
 		completedSteps: completedSteps as string[],
 		onboardingCompleted,
 		allowedNextStep: onboardingCompleted ? null : currentStep,
+		bookingDetails,
 	};
 };
 

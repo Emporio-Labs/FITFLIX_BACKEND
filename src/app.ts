@@ -18,6 +18,7 @@ import membershipRouter from "./routes/membership.routes";
 import membershipPlanRouter from "./routes/membershipPlan.routes";
 import notificationRouter from "./routes/notification.routes";
 import nutritionRouter from "./routes/nutrition.routes";
+import nutritionistBookingRouter from "./routes/nutritionist-booking.routes";
 
 import onboardingRouter from "./routes/onboarding.routes";
 import scheduleRouter from "./routes/schedule.routes";
@@ -211,6 +212,8 @@ app.use("/api/v1/zego", zegoRouter);
 app.use("/api/v1/admin/settings", settingsRouter);
 app.use("/membership-plans", membershipPlanRouter);
 app.use("/onboarding", onboardingRouter);
+app.use(nutritionistBookingRouter);
+app.use("/api/v1", nutritionistBookingRouter);
 app.use("/nutrition", nutritionRouter);
 app.use("/dashboard", dashboardRouter);
 app.use("/webhook", webhookRouter);
