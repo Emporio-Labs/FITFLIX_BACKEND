@@ -46,7 +46,11 @@ export const listExercises: RequestHandler = async (req, res, next) => {
 			limit,
 		} = parsed.data;
 
-		const filter: Record<string, unknown> = {};
+		// Soft-deleted exercises stay readable by the name-resolution joins in
+		// the plan/assignment/session controllers, but must never appear in a
+		// picker — otherwise a trainer can assign an exercise that is on its way
+		// out and re-orphan the reference later.
+		const filter: Record<string, unknown> = { isDeleted: { $ne: true } };
 
 		if (typeof isSystem === "boolean") {
 			if (isSystem) {
@@ -106,7 +110,7 @@ export const getExerciseById: RequestHandler = async (req, res, next) => {
 		}
 
 		const exercise = await Exercise.findById(id);
-		if (!exercise) {
+		if (!exercise || exercise.isDeleted) {
 			res.status(404).json({ message: "Exercise not found" });
 			return;
 		}
@@ -182,7 +186,7 @@ export const updateExercise: RequestHandler = async (req, res, next) => {
 		}
 
 		const exercise = await Exercise.findById(id);
-		if (!exercise) {
+		if (!exercise || exercise.isDeleted) {
 			res.status(404).json({ message: "Exercise not found" });
 			return;
 		}
@@ -224,7 +228,7 @@ export const deleteExercise: RequestHandler = async (req, res, next) => {
 		}
 
 		const exercise = await Exercise.findById(id);
-		if (!exercise) {
+		if (!exercise || exercise.isDeleted) {
 			res.status(404).json({ message: "Exercise not found" });
 			return;
 		}
@@ -241,7 +245,11 @@ export const deleteExercise: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		await Exercise.findByIdAndDelete(id);
+		// Soft delete — see the note on `isDeleted` in models/Exercise.ts. A hard
+		// delete here is what orphaned the plan and assignment rows that render
+		// as "Deleted exercise"; the document has to stay so those joins resolve.
+		exercise.isDeleted = true;
+		await exercise.save();
 
 		res.status(200).json({ message: "Exercise deleted" });
 	} catch (error) {

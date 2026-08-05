@@ -196,7 +196,11 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 							},
 						};
 					}
-					return ex;
+					// populate() yields null when the Exercise document is gone,
+					// leaving `exerciseId` as a bare ObjectId and no `exercise`.
+					// Flag it so the builder can prompt for a replacement instead
+					// of silently rendering a nameless row.
+					return { ...ex, exerciseMissing: true };
 				}),
 			})),
 		};

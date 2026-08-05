@@ -56,6 +56,8 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 		.lean();
 
 	const exerciseIds = workoutExercises.map((we) => we.exerciseId);
+	// Name resolution, so it must not filter on `isDeleted` — a session in
+	// progress has to keep rendering an exercise the trainer deleted mid-plan.
 	const exercises = await Exercise.find({ _id: { $in: exerciseIds } }).lean();
 	const exerciseMap = new Map(exercises.map((e) => [e._id.toString(), e]));
 

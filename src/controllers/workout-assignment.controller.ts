@@ -102,6 +102,9 @@ export const getUserAssignment: RequestHandler = async (req, res, next) => {
 			}
 		}
 
+		// Deliberately not filtered on `isDeleted`: an assignment that references
+		// a since-deleted exercise still has to render its name. Pickers filter
+		// it out instead (see listExercises).
 		const exerciseDocs = await Exercise.find({
 			_id: { $in: Array.from(exerciseIds).map((id) => new mongoose.Types.ObjectId(id)) },
 		})
@@ -116,8 +119,13 @@ export const getUserAssignment: RequestHandler = async (req, res, next) => {
 				const info = exMap.get(ex.exerciseId.toString());
 				return {
 					...ex,
-					name: info?.name ?? "Unknown Exercise",
+					name: info?.name ?? "Deleted exercise",
 					muscleGroup: info?.muscleGroup ?? "FullBody",
+					// The referenced Exercise document no longer exists, so its
+					// name is unrecoverable and a trainer has to pick a
+					// replacement. Flagged rather than left to look like a
+					// rendering glitch.
+					...(info ? {} : { exerciseMissing: true }),
 				};
 			}),
 		}));
