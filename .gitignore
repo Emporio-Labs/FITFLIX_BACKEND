@@ -40,4 +40,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .vercel
 .env*
 
+scratch/inspect-db.ts
+
 archive_docs/

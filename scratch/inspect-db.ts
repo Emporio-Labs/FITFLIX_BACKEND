@@ -1,40 +1,88 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import ScheduledSession from "../src/models/ScheduledSession";
-import Class from "../src/models/Class";
 
 dotenv.config();
 
+const MONGODB_URL = process.env.MONGODB_URL;
+if (!MONGODB_URL) {
+  console.error("MONGODB_URL is not set in environment");
+  process.exit(1);
+}
+
 async function run() {
-  const url = process.env.MONGODB_URL;
-  if (!url) {
-    console.error("MONGODB_URL is not defined in .env");
-    process.exit(1);
-  }
-
-  console.log("Connecting to DB...");
-  await mongoose.connect(url);
-  console.log("Connected!");
-
   try {
-    const classes = await Class.find({});
-    console.log("ALL CLASSES IN DB:");
-    for (const c of classes) {
-      console.log(`- ID: ${c._id}, Name: ${c.name}, Mode: ${c.mode}, sessionType: ${c.sessionType}, startTime: ${c.startTime}`);
+    console.log("Connecting to MongoDB...");
+    await mongoose.connect(MONGODB_URL);
+    console.log("Connected successfully.\n");
+
+    const db = mongoose.connection.db;
+    if (!db) {
+      throw new Error("Database instance is null");
     }
 
-    const sessions = await ScheduledSession.find({});
-    console.log("\nALL SCHEDULED SESSIONS IN DB:");
-    for (const s of sessions) {
-      const cls = classes.find(c => c._id.toString() === s.classId.toString());
-      console.log(`- ID: ${s._id}, ClassName: ${cls?.name}, Date: ${s.sessionDate?.toISOString()}, StartTime: ${s.startTime}, EndTime: ${s.endTime}`);
+    console.log("=== LAST 5 NUTRITIONIST BOOKINGS ===");
+    const bookings = await db
+      .collection("nutritionistbookings")
+      .find({})
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .toArray();
+
+    if (bookings.length === 0) {
+      console.log("No nutritionist bookings found.");
+    } else {
+      for (const booking of bookings) {
+        // Fetch user info
+        const user = await db
+          .collection("users")
+          .findOne({ _id: booking.userId });
+
+        console.log(`Booking ID: ${booking._id}`);
+        console.log(`User: ${user ? `${user.username} (${user.email || user.phone})` : "Unknown"}`);
+        console.log(`User ID: ${booking.userId}`);
+        console.log(`bookingDate: ${booking.bookingDate}`);
+        console.log(`startTime: ${booking.startTime}`);
+        console.log(`endTime: ${booking.endTime}`);
+        console.log(`appointmentMode: ${booking.appointmentMode}`);
+        console.log(`status: ${booking.status}`);
+        console.log(`zegoRoomId: ${booking.zegoRoomId}`);
+        console.log(`assignedNutritionistName: ${booking.assignedNutritionistName}`);
+        console.log(`createdAt: ${booking.createdAt}`);
+        console.log("------------------------------------------");
+      }
     }
 
-  } catch (err) {
-    console.error("Error occurred:", err);
+    // Let's also look up a user by email "rahul@fitflix.in" (seen in the user request image)
+    console.log("\n=== USER INFO FOR rahul@fitflix.in ===");
+    const rahul = await db
+      .collection("users")
+      .findOne({ email: "rahul@fitflix.in" });
+
+    if (!rahul) {
+      console.log("User rahul@fitflix.in not found.");
+    } else {
+      console.log(`User ID: ${rahul._id}`);
+      console.log(`Username: ${rahul.username}`);
+      console.log(`Phone: ${rahul.phone}`);
+      console.log(`Onboarding completed: ${rahul.onboarded}`);
+      console.log(`Onboarding Status:`, JSON.stringify(rahul.onboardingStatus, null, 2));
+
+      // Fetch bookings for this user specifically
+      const userBookings = await db
+        .collection("nutritionistbookings")
+        .find({ userId: rahul._id })
+        .toArray();
+      console.log(`\nBookings for Rahul (Total: ${userBookings.length}):`);
+      for (const b of userBookings) {
+        console.log(`  - Booking ID: ${b._id}, status: ${b.status}, date: ${b.bookingDate}, slot: ${b.startTime}-${b.endTime}, mode: ${b.appointmentMode}, nutritionist: ${b.assignedNutritionistName}`);
+      }
+    }
+
+  } catch (error) {
+    console.error("Error occurred:", error);
   } finally {
     await mongoose.disconnect();
-    console.log("Disconnected!");
+    console.log("Disconnected from MongoDB.");
   }
 }
 
