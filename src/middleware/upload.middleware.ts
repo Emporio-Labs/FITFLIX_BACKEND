@@ -5,6 +5,16 @@ import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 import { communityConfig } from "../config/community";
 
+/**
+ * Byte ceiling for the shared upload middlewares. Uncapped by default (see
+ * `UNLIMITED` in config/community.ts for why this is a large finite integer
+ * rather than Infinity); set UPLOAD_MAX_FILE_BYTES to reimpose a real cap.
+ */
+const MAX_UPLOAD_BYTES = (() => {
+	const n = Number(process.env.UPLOAD_MAX_FILE_BYTES);
+	return Number.isFinite(n) && n > 0 ? Math.floor(n) : Number.MAX_SAFE_INTEGER;
+})();
+
 const ALLOWED_MIME_TYPES = [
 	"application/pdf",
 	"image/jpeg",
@@ -58,7 +68,7 @@ export const uploadMiddleware = multer({
 			);
 		},
 	}),
-	limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+	limits: { fileSize: MAX_UPLOAD_BYTES },
 	fileFilter: (_req, file, cb) => {
 		if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
 			cb(null, true);
@@ -98,7 +108,8 @@ export const audioUploadMiddleware = multer({
 
 /**
  * Multer instance for general file uploads (images, PDF, DOCX, video, etc.).
- * 50 MB limit per file; up to 10 files per request.
+ * Uncapped per file by default (UPLOAD_MAX_FILE_BYTES); up to 10 files per
+ * request.
  */
 export const fileUploadMiddleware = multer({
 	storage: multer.diskStorage({
@@ -111,7 +122,7 @@ export const fileUploadMiddleware = multer({
 			);
 		},
 	}),
-	limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB limit
+	limits: { fileSize: MAX_UPLOAD_BYTES },
 	fileFilter: (_req, file, cb) => {
 		if (ALLOWED_FILE_MIME_TYPES.includes(file.mimetype)) {
 			cb(null, true);
@@ -217,8 +228,22 @@ setInterval(
 ); // every 30 minutes
 
 /**
- * Rate limiter middleware for file uploads.
- * Restricts users to a maximum of 10 uploads per 15-minute window.
+ * Max uploads per user per window. Off by default: the composer uploads one
+ * request per file, so a post with a dozen photos used to burn the whole
+ * allowance and 429 mid-attach. Set UPLOAD_MAX_PER_WINDOW to a positive
+ * number to switch throttling back on.
+ */
+const MAX_UPLOADS_PER_WINDOW = (() => {
+	const n = Number(process.env.UPLOAD_MAX_PER_WINDOW);
+	return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0; // 0 = unlimited
+})();
+
+const UPLOAD_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Rate limiter middleware for file uploads. Enforces
+ * {@link MAX_UPLOADS_PER_WINDOW} per user per 15-minute window; when that is 0
+ * (the default) it only checks authentication and lets the upload through.
  */
 export const uploadRateLimiter = (
 	req: Request,
@@ -232,10 +257,15 @@ export const uploadRateLimiter = (
 		return;
 	}
 
+	if (MAX_UPLOADS_PER_WINDOW === 0) {
+		next();
+		return;
+	}
+
 	const userId = req.user.id;
 	const now = Date.now();
-	const windowMs = 15 * 60 * 1000; // 15 minutes
-	const maxUploads = 10; // Max 10 uploads per 15 minutes per user
+	const windowMs = UPLOAD_WINDOW_MS;
+	const maxUploads = MAX_UPLOADS_PER_WINDOW;
 
 	const userLimit = uploadLimits.get(userId);
 

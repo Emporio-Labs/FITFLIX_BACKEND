@@ -8,41 +8,54 @@ const positiveInt = (value: string | undefined, fallback: number): number => {
 	return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 };
 
+/**
+ * "No ceiling" for the media limits below.
+ *
+ * A real integer rather than `Infinity`, because these values flow straight
+ * into multer's `limits.fileSize`, zod's `.max()`, and plain `>` comparisons —
+ * all of which keep working unchanged with a very large finite number, and
+ * some of which would misbehave with `Infinity` or `null`.
+ *
+ * Every limit remains env-overridable, so a real cap can be reimposed in
+ * production without a code change.
+ */
+const UNLIMITED = Number.MAX_SAFE_INTEGER;
+
 export const communityConfig = {
 	/** How long after soft-delete a post may still be restored. */
 	restoreWindowDays: positiveInt(process.env.COMMUNITY_RESTORE_WINDOW_DAYS, 30),
 
-	/** Per-image byte ceiling (also enforced by multer). */
-	maxImageBytes: positiveInt(
-		process.env.COMMUNITY_MAX_IMAGE_BYTES,
-		10 * 1024 * 1024,
+	/** Per-image byte ceiling (also enforced by multer). Unlimited by default. */
+	maxImageBytes: positiveInt(process.env.COMMUNITY_MAX_IMAGE_BYTES, UNLIMITED),
+
+	/** Max images attachable to a single post. Unlimited by default. */
+	maxImagesPerPost: positiveInt(
+		process.env.COMMUNITY_MAX_IMAGES_PER_POST,
+		UNLIMITED,
 	),
 
-	/** Max images attachable to a single post. */
-	maxImagesPerPost: positiveInt(process.env.COMMUNITY_MAX_IMAGES_PER_POST, 10),
-
-	/** Per-audio byte ceiling (also enforced by multer). */
-	maxAudioBytes: positiveInt(
-		process.env.COMMUNITY_MAX_AUDIO_BYTES,
-		20 * 1024 * 1024,
-	),
+	/** Per-audio byte ceiling (also enforced by multer). Unlimited by default. */
+	maxAudioBytes: positiveInt(process.env.COMMUNITY_MAX_AUDIO_BYTES, UNLIMITED),
 
 	/** Per-clip duration ceiling in seconds. Enforced against a client-declared
-	 * value on upload; the server treats the value as untrusted. */
+	 * value on upload; the server treats the value as untrusted. Unlimited by
+	 * default. */
 	maxAudioDurationSeconds: positiveInt(
 		process.env.COMMUNITY_MAX_AUDIO_DURATION_SECONDS,
-		180,
+		UNLIMITED,
 	),
 
-	/** Max audio clips attachable to a single post. */
-	maxAudioPerPost: positiveInt(process.env.COMMUNITY_MAX_AUDIO_PER_POST, 1),
+	/** Max audio clips attachable to a single post. Unlimited by default. */
+	maxAudioPerPost: positiveInt(
+		process.env.COMMUNITY_MAX_AUDIO_PER_POST,
+		UNLIMITED,
+	),
 
 	/** Per-video byte ceiling. Enforced both at presign time (declared size)
-	 * and again via a HEAD check against the actual uploaded object. */
-	maxVideoBytes: positiveInt(
-		process.env.COMMUNITY_MAX_VIDEO_BYTES,
-		200 * 1024 * 1024,
-	),
+	 * and again via a HEAD check against the actual uploaded object. Unlimited
+	 * by default — note S3 itself refuses a single PUT above 5 GB, which is
+	 * the flow the presign endpoint hands out. */
+	maxVideoBytes: positiveInt(process.env.COMMUNITY_MAX_VIDEO_BYTES, UNLIMITED),
 
 	/** How long a presigned video-upload PUT URL stays valid. */
 	videoPresignedUrlTtlSeconds: positiveInt(
