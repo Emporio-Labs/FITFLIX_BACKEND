@@ -381,7 +381,24 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			});
 		}
 
-		res.status(200).json({ bookings });
+		const mappedBookings = bookings.map((b: any) => {
+			const obj = b.toObject ? b.toObject() : b;
+			const roomId =
+				obj.sessionId?.videoRoomId ||
+				obj.sessionId?._id?.toString() ||
+				(typeof obj.sessionId === "string" ? obj.sessionId : null) ||
+				obj.classId?.zegoRoomId ||
+				obj.classId?._id?.toString() ||
+				(typeof obj.classId === "string" ? obj.classId : null) ||
+				obj._id?.toString();
+			return {
+				...obj,
+				videoRoomId: roomId,
+				videoConferenceId: roomId,
+			};
+		});
+
+		res.status(200).json({ bookings: mappedBookings });
 	} catch (error) {
 		next(error);
 	}
@@ -441,7 +458,25 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 			.populate("slot", "date startTime endTime")
 			.populate("classId", "name description creditCost mode instructor tags durationMinutes locationAddress")
 			.populate("report", "subject hasPdf");
-		res.status(200).json({ bookings });
+
+		const mappedBookings = bookings.map((b: any) => {
+			const obj = b.toObject ? b.toObject() : b;
+			const roomId =
+				obj.sessionId?.videoRoomId ||
+				obj.sessionId?._id?.toString() ||
+				(typeof obj.sessionId === "string" ? obj.sessionId : null) ||
+				obj.classId?.zegoRoomId ||
+				obj.classId?._id?.toString() ||
+				(typeof obj.classId === "string" ? obj.classId : null) ||
+				obj._id?.toString();
+			return {
+				...obj,
+				videoRoomId: roomId,
+				videoConferenceId: roomId,
+			};
+		});
+
+		res.status(200).json({ bookings: mappedBookings });
 	} catch (error) {
 		next(error);
 	}
@@ -939,6 +974,34 @@ export const cancelBookingHandler: RequestHandler = async (req, res, next) => {
 		});
 
 		res.status(result.statusCode || 200).json(result);
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const recordAttendance: RequestHandler = async (req, res, next) => {
+	const { id } = req.params;
+	const stayDurationMinutes = Number(req.body?.stayDurationMinutes ?? 0);
+	const joinedAt = req.body?.joinedAt ? new Date(req.body.joinedAt) : new Date();
+
+	try {
+		const booking = await Booking.findById(id);
+		if (!booking) {
+			res.status(404).json({ message: "Booking not found" });
+			return;
+		}
+
+		booking.status = "Consumed";
+		booking.joinedAt = booking.joinedAt || joinedAt;
+		booking.leftAt = new Date();
+		booking.stayDurationMinutes = Math.max(booking.stayDurationMinutes || 0, stayDurationMinutes);
+
+		await booking.save();
+
+		res.status(200).json({
+			message: "Attendance recorded successfully",
+			booking,
+		});
 	} catch (error) {
 		next(error);
 	}

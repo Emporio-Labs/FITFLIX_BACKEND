@@ -68,6 +68,10 @@ const scheduledSessionSchema = new mongoose.Schema(
 			type: String,
 			default: null,
 		},
+		videoRoomId: {
+			type: String,
+			default: null,
+		},
 		isPublished: {
 			type: Boolean,
 			default: true,

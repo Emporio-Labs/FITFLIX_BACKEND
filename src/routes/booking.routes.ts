@@ -7,6 +7,7 @@ import {
 	getAllBookings,
 	getBookingById,
 	getMyBookings,
+	recordAttendance,
 	updateBookingById,
 } from "../controllers/booking.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
@@ -21,6 +22,7 @@ bookingRouter.get("/", authorize(["admin"]), getAllBookings);
 bookingRouter.get("/me", authorize(["user"]), getMyBookings);
 bookingRouter.get("/:id", authorize(["admin", "user"]), getBookingById);
 bookingRouter.post("/:id/cancel", authorize(["admin", "user"]), cancelBookingHandler);
+bookingRouter.post("/:id/attendance", authorize(["admin", "user"]), recordAttendance);
 bookingRouter.patch("/:id", authorize(["admin", "user"]), updateBookingById);
 bookingRouter.delete("/:id", authorize(["admin", "user"]), deleteBookingById);
 bookingRouter.patch("/:id/status", authorize(["admin", "user"]), changeBookingStatus);

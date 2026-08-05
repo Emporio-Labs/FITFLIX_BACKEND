@@ -182,8 +182,7 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 			count: sessions.length,
 			sessions: sessions.map((s) => ({
 				...s,
-				// videoConferenceId is the session's own _id — the ZEGOCLOUD
-				// conference room is derived from this at join time (GCLS-24).
+				videoRoomId: (s as any).videoRoomId || s._id.toString(),
 				videoConferenceId: s._id.toString(),
 			})),
 		});
@@ -229,8 +228,7 @@ export const getSchedulesForMembers: RequestHandler = async (
 			count: sessions.length,
 			sessions: sessions.map((s) => ({
 				...s,
-				// videoConferenceId = session._id — ZEGOCLOUD conference room
-				// is derived from this identifier at join time (GCLS-24 MVP).
+				videoRoomId: (s as any).videoRoomId || s._id.toString(),
 				videoConferenceId: s._id.toString(),
 			})),
 		});

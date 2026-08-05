@@ -53,6 +53,9 @@ const bookingSchema = new mongoose.Schema(
 			default: false,
 			required: true,
 		},
+		joinedAt: { type: Date, default: null },
+		leftAt: { type: Date, default: null },
+		stayDurationMinutes: { type: Number, default: 0 },
 	},
 	{ timestamps: true },
 );
