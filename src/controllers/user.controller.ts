@@ -276,6 +276,61 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					as: "_healthGoalsDocs",
 				},
 			},
+			// ── Latest active NutritionistBooking (drives expertAppointments[]) ──
+			// The frontend admin roster reads slot time / mode / assigned name from
+			// this. Without the lookup, the $unifiedAppointment reference below
+			// stays undefined and every row's expertAppointments comes back empty.
+			{
+				$lookup: {
+					from: "nutritionistbookings",
+					let: { uid: "$_id" },
+					pipeline: [
+						{
+							$match: {
+								$expr: { $eq: ["$userId", "$$uid"] },
+								status: { $nin: ["REJECTED", "CANCELLED"] },
+							},
+						},
+						{ $sort: { createdAt: -1 } },
+						{ $limit: 1 },
+						{
+							$project: {
+								_id: 1,
+								userId: 1,
+								expertType: { $literal: "nutritionist" },
+								// Map backend enum (PENDING/ACCEPTED/…) to the casing the
+								// frontend ExpertAppointment type expects.
+								bookingStatus: {
+									$switch: {
+										branches: [
+											{ case: { $eq: ["$status", "ACCEPTED"] }, then: "Confirmed" },
+											{ case: { $eq: ["$status", "COMPLETED"] }, then: "Completed" },
+											{ case: { $eq: ["$status", "REJECTED"] }, then: "Cancelled" },
+										],
+										default: "Pending",
+									},
+								},
+								appointmentDate: "$bookingDate",
+								startTime: 1,
+								endTime: 1,
+								// Legacy field the current formatBookingTime still reads.
+								appointmentStart: "$startTime",
+								appointmentMode: 1,
+								assignedNutritionistName: 1,
+								zegoRoomId: 1,
+								meetingLink: 1,
+								createdAt: 1,
+							},
+						},
+					],
+					as: "_nutritionistBooking",
+				},
+			},
+			{
+				$addFields: {
+					unifiedAppointment: { $arrayElemAt: ["$_nutritionistBooking", 0] },
+				},
+			},
 		);
 
 		// Sort → paginate → project (order matters: filter/lookup before sort+paginate)
