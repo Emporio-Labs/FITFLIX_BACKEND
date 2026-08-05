@@ -347,8 +347,9 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 
 export const getAllBookings: RequestHandler = async (req, res, next) => {
 	try {
-		const userIdRaw = req.query.userId;
+		const { userId: userIdRaw, status, search } = req.query;
 		const filter: Record<string, unknown> = {};
+
 		if (typeof userIdRaw === "string" && userIdRaw.length > 0) {
 			const userId = getIdParam(userIdRaw);
 			if (!userId) {
@@ -357,11 +358,29 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			}
 			filter.user = userId;
 		}
-		const bookings = await Booking.find(filter)
+
+		if (typeof status === "string" && status.length > 0 && status.toLowerCase() !== "all") {
+			filter.status = new RegExp(`^${status.trim()}$`, "i");
+		}
+
+		let bookings = await Booking.find(filter)
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
 			.populate("slot", "date startTime endTime")
-			.populate("report", "subject hasPdf");
+			.populate("classId", "name instructor deliveryMode creditCost scheduleInfo zegoRoomId")
+			.populate("sessionId")
+			.populate("report", "subject hasPdf")
+			.sort({ createdAt: -1 });
+
+		if (typeof search === "string" && search.trim().length > 0) {
+			const q = search.trim().toLowerCase();
+			bookings = bookings.filter((b: any) => {
+				const username = b.user?.username?.toLowerCase() || "";
+				const email = b.user?.email?.toLowerCase() || "";
+				return username.includes(q) || email.includes(q);
+			});
+		}
+
 		res.status(200).json({ bookings });
 	} catch (error) {
 		next(error);

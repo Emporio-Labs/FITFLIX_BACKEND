@@ -199,6 +199,7 @@ app.use("/services", serviceRouter);
 app.use("/therapies", therapyRouter);
 app.use("/bookings", apiRateLimit, bookingRouter);
 app.use("/api/v1/bookings", apiRateLimit, bookingRouter);
+app.use("/api/v1/admin/bookings", apiRateLimit, bookingRouter);
 app.use("/credits", apiRateLimit, creditRouter);
 app.use("/api/v1/credits", apiRateLimit, creditRouter);
 app.use("/schedules", apiRateLimit, scheduleRouter);
