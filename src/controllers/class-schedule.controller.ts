@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import mongoose from "mongoose";
 import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
@@ -120,7 +121,13 @@ export const createScheduledSession: RequestHandler = async (
 				}
 			}
 
+			// Pre-generate the _id so videoRoomId can be persisted as the single source
+			// of truth for the ZEGOCLOUD room — the Admin host and the User App both
+			// resolve their room from this field (falling back to _id for older rows),
+			// so it must never diverge from _id.toString().
+			const sessionId = new mongoose.Types.ObjectId();
 			const sessionDoc = await ScheduledSession.create({
+				_id: sessionId,
 				classId,
 				trainerId: trainerId || null,
 				sessionDate: currentSessionDate,
@@ -132,6 +139,7 @@ export const createScheduledSession: RequestHandler = async (
 				status: "SCHEDULED",
 				recurrenceRule,
 				streamRoomId: streamRoomId || targetClass.streamRoomId || null,
+				videoRoomId: sessionId.toString(),
 				isPublished,
 			});
 
@@ -180,11 +188,17 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 		res.status(200).json({
 			message: "Scheduled sessions retrieved successfully",
 			count: sessions.length,
-			sessions: sessions.map((s) => ({
-				...s,
-				videoRoomId: (s as any).videoRoomId || s._id.toString(),
-				videoConferenceId: s._id.toString(),
-			})),
+			sessions: sessions.map((s) => {
+				// videoRoomId is the single source of truth for the ZEGOCLOUD room;
+				// videoConferenceId must always mirror it (never derived separately)
+				// so the Admin host and User App can never resolve different rooms.
+				const videoRoomId = (s as any).videoRoomId || s._id.toString();
+				return {
+					...s,
+					videoRoomId,
+					videoConferenceId: videoRoomId,
+				};
+			}),
 		});
 	} catch (error) {
 		next(error);
@@ -226,11 +240,17 @@ export const getSchedulesForMembers: RequestHandler = async (
 		res.status(200).json({
 			message: "Active scheduled sessions retrieved successfully",
 			count: sessions.length,
-			sessions: sessions.map((s) => ({
-				...s,
-				videoRoomId: (s as any).videoRoomId || s._id.toString(),
-				videoConferenceId: s._id.toString(),
-			})),
+			sessions: sessions.map((s) => {
+				// videoRoomId is the single source of truth for the ZEGOCLOUD room;
+				// videoConferenceId must always mirror it (never derived separately)
+				// so the Admin host and User App can never resolve different rooms.
+				const videoRoomId = (s as any).videoRoomId || s._id.toString();
+				return {
+					...s,
+					videoRoomId,
+					videoConferenceId: videoRoomId,
+				};
+			}),
 		});
 	} catch (error) {
 		next(error);
