@@ -819,12 +819,27 @@ export async function getPostAdmin(postId: string) {
 		media: await Promise.all(
 			media.map(async (m) => {
 				const kind = m.kind ?? PostMediaKind.Image;
-				// A file must be signed with its real MIME type, otherwise the
-				// browser is told a PDF is a JPEG and refuses to open it.
-				const contentType =
-					kind === PostMediaKind.File
-						? m.mimeType || "application/octet-stream"
-						: "image/jpeg";
+				// A file/video/audio must be signed with its real MIME type so the
+				// browser receives the correct Content-Type header from S3.
+				// Defaulting to "image/jpeg" for all non-file kinds was causing
+				// videos to be served as images — breaking playback entirely.
+				let contentType: string;
+				if (kind === PostMediaKind.File) {
+					contentType = m.mimeType || "application/octet-stream";
+				} else if (kind === PostMediaKind.Video) {
+					const ext = m.url.toLowerCase();
+					if (ext.endsWith(".webm")) contentType = "video/webm";
+					else if (ext.endsWith(".mov")) contentType = "video/quicktime";
+					else contentType = "video/mp4";
+				} else if (kind === PostMediaKind.Audio) {
+					const ext = m.url.toLowerCase();
+					if (ext.endsWith(".m4a") || ext.endsWith(".mp4")) contentType = "audio/mp4";
+					else if (ext.endsWith(".aac")) contentType = "audio/aac";
+					else contentType = "audio/mpeg";
+				} else {
+					contentType = "image/jpeg";
+				}
+
 				return {
 					id: String(m._id),
 					kind,

@@ -17,6 +17,11 @@ const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY?.trim() ?? "";
 
 const hasAwsCredentials = Boolean(AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY);
 
+/**
+ * Main S3 client — used for server-side PutObject / GetObject / HeadObject /
+ * DeleteObject operations where the SDK can compute checksums correctly
+ * because the full body is available.
+ */
 const s3Client = hasAwsCredentials
 	? new S3Client({
 			region: REGION,
@@ -24,6 +29,33 @@ const s3Client = hasAwsCredentials
 				accessKeyId: AWS_ACCESS_KEY_ID,
 				secretAccessKey: AWS_SECRET_ACCESS_KEY,
 			},
+		})
+	: null;
+
+/**
+ * Dedicated S3 client used ONLY for generating presigned PUT URLs.
+ *
+ * AWS SDK v3 (≥ 3.x) automatically appends an `x-amz-checksum-crc32`
+ * parameter to PutObject presigned URLs. It computes the checksum against
+ * an empty body at presign time, so when the browser PUTs the real video
+ * file the checksum never matches and S3 rejects every upload with
+ * "ERR_FAILED" / "failed to fetch".
+ *
+ * Setting `requestChecksumCalculation: 'WHEN_REQUIRED'` disables the
+ * automatic checksum so the presigned URL only requires `Content-Type`,
+ * which the browser reliably sends.
+ */
+const s3PresignClient = hasAwsCredentials
+	? new S3Client({
+			region: REGION,
+			credentials: {
+				accessKeyId: AWS_ACCESS_KEY_ID,
+				secretAccessKey: AWS_SECRET_ACCESS_KEY,
+			},
+			// Prevents the SDK from embedding a CRC32 checksum into presigned URLs.
+			// The checksum is computed against an empty body during presigning but
+			// S3 validates it against the actual uploaded file — so it always fails.
+			requestChecksumCalculation: "WHEN_REQUIRED",
 		})
 	: null;
 
@@ -159,27 +191,35 @@ export const generateSignedUrl = async (
  * Mint a presigned PUT URL so the client can upload a large file (video)
  * directly to S3, bypassing the app server. Requires real S3 credentials —
  * there is no local-disk fallback, since a browser cannot PUT to this process.
+ *
+ * IMPORTANT: Only ContentType is included in the presigned signature.
+ * Headers like ContentLength, ContentDisposition, and ServerSideEncryption
+ * must NOT be signed here because browsers cannot set Content-Length
+ * (forbidden header) and won't send the AWS-specific headers automatically.
+ * A signed-but-not-sent header causes S3 to reject with a signature mismatch,
+ * which the browser surface as "failed to fetch".
  */
 export const generatePresignedPutUrl = async (
 	key: string,
 	contentType: string,
-	contentLength: number,
+	_contentLength: number,
 	expiresInSeconds = 3600,
 ): Promise<string> => {
-	if (!s3Client) {
+	if (!s3PresignClient) {
 		throw new Error(
 			"Direct-to-S3 upload requires AWS credentials to be configured",
 		);
 	}
+	// Only ContentType is signed — it is the one header the browser fetch() PUT
+	// will reliably send. ContentLength is a forbidden header in browsers;
+	// ContentDisposition and ServerSideEncryption must be applied via bucket
+	// policy or a server-side copy, not via the browser presigned URL.
 	const command = new PutObjectCommand({
 		Bucket: BUCKET,
 		Key: key,
 		ContentType: contentType,
-		ContentLength: contentLength,
-		ContentDisposition: "inline",
-		ServerSideEncryption: "AES256",
 	});
-	return getSignedUrl(s3Client, command, { expiresIn: expiresInSeconds });
+	return getSignedUrl(s3PresignClient, command, { expiresIn: expiresInSeconds });
 };
 
 /**
