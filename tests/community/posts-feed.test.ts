@@ -563,6 +563,11 @@ async function run(): Promise<void> {
 		spoof.status === 400 && spoof.json.code === "INVALID_IMAGE",
 	);
 
+	// Image size is uncapped by default (see UNLIMITED in config/community.ts),
+	// so this case only means something with a cap configured. The
+	// `test:community-posts` script sets COMMUNITY_MAX_IMAGE_BYTES=10485760 —
+	// run this file through that script, not directly, or the 11 MB upload
+	// below is accepted and the check fails.
 	const oversized = await uploadImage(insiderTok, {
 		filename: "big.jpg",
 		mime: "image/jpeg",

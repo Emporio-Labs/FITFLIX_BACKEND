@@ -50,6 +50,12 @@ config();
 
 const app = express();
 
+// Behind a tunnel/proxy (ngrok in dev, Vercel in prod) the socket is local —
+// without this, `req.protocol` reads "http" and `req.ip` reads the proxy, so
+// absolute URLs handed to the app come back as cleartext links that Android
+// blocks. Trusting X-Forwarded-Proto / -For fixes both.
+app.set("trust proxy", true);
+
 const isProduction = process.env.NODE_ENV === "production";
 const isCorsDebugEnabled = process.env.CORS_DEBUG === "true";
 const rawAllowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "")
@@ -119,7 +125,7 @@ app.use((req, res, next) => {
 	);
 	res.setHeader(
 		"Access-Control-Allow-Headers",
-		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token",
+		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token, ngrok-skip-browser-warning",
 	);
 	res.setHeader(
 		"Access-Control-Expose-Headers",
@@ -165,7 +171,9 @@ app.use("/webhooks/cal", calidWebhookRouter);
 // Backwards-compatibility: legacy Cal webhook path used by external integrations
 app.use("/cal/webhook", calidWebhookRouter);
 
-app.use(express.json());
+// Body cap raised well past express's 100kb default: a post now carries an
+// unbounded number of image references, and each one is a handful of URLs.
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "25mb" }));
 app.use((_req, res, next) => {
 	const originalJson = res.json.bind(res);
 	res.json = ((body: unknown) => {

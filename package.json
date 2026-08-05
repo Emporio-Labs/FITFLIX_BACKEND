@@ -16,7 +16,7 @@
 		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
 		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts",
 		"test:community": "bun run tests/community/community-foundation.test.ts",
-		"test:community-posts": "bun run tests/community/posts-feed.test.ts",
+		"test:community-posts": "COMMUNITY_MAX_IMAGE_BYTES=10485760 bun run tests/community/posts-feed.test.ts",
 		"test:community-engagement": "bun run tests/community/engagement.test.ts",
 		"test:community-moderation": "bun run tests/community/moderation.test.ts",
 		"seed:community": "bun run scripts/seed-community.ts",
