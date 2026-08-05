@@ -116,9 +116,10 @@ const AUTH_RATE_LIMIT_WINDOW_MS = parseEnvNumber(
 	15 * 60 * 1000,
 	1000,
 );
+const defaultAuthMax = process.env.NODE_ENV === "development" ? 500 : 10;
 const AUTH_RATE_LIMIT_MAX = parseEnvNumber(
 	process.env.AUTH_RATE_LIMIT_MAX,
-	10,
+	defaultAuthMax,
 	1,
 );
 

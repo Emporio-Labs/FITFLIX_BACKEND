@@ -18,6 +18,7 @@ import {
 	isHashedPassword,
 	verifyPassword,
 } from "../utils/password";
+import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import {
 	loginBodySchema,
 	refreshTokenBodySchema,
@@ -108,10 +109,9 @@ export const signup: RequestHandler = async (req, res, next) => {
 	try {
 		const passwordHash = await hashPassword(password);
 
-		const existingUser = await User.findOne({ email }).select("_id");
-
-		if (existingUser) {
-			res.status(409).json({ message: "User with this email already exists" });
+		const emailCheck = await isEmailInUseAcrossSystem(email);
+		if (emailCheck.exists) {
+			res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
 			return;
 		}
 

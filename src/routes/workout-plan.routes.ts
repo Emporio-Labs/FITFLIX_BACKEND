@@ -6,7 +6,9 @@ import {
 	getAssignmentSchedule,
 	getMyAssignment,
 	getTodayAssignedWorkout,
+	getUserAssignment,
 	updateMyDayExercises,
+	updateUserDayExercises,
 } from "../controllers/workout-assignment.controller";
 import {
 	assignUsers,
@@ -53,6 +55,18 @@ workoutPlanRouter.patch(
 	"/assignments/mine/days/:dayNumber",
 	authorize(["user"]),
 	updateMyDayExercises,
+);
+
+// Staff management of member assignments
+workoutPlanRouter.get(
+	"/assignments/user/:userId",
+	authorize(["admin", "trainer"]),
+	getUserAssignment,
+);
+workoutPlanRouter.patch(
+	"/assignments/user/:userId/days/:dayNumber",
+	authorize(["admin", "trainer"]),
+	updateUserDayExercises,
 );
 
 // ── Plan CRUD ─────────────────────────────────────────────────────────────────

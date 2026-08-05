@@ -21,6 +21,7 @@ import {
 } from "../utils/activex.service";
 import { buildApiErrorEnvelope } from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
+import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import { generateSignedUrl } from "../utils/s3.service";
 import {
 	assignTrainerBodySchema,
@@ -107,13 +108,10 @@ export const createUser: RequestHandler = async (req, res, next) => {
 		}
 
 		if (sanitizedEmail) {
-			const existingUser = await User.findOne({
-				email: sanitizedEmail,
-			}).select("_id");
-
-			if (existingUser) {
+			const emailCheck = await isEmailInUseAcrossSystem(sanitizedEmail);
+			if (emailCheck.exists) {
 				res.status(409).json({
-					error: "User with this email already exists",
+					error: `An account with this email already exists as a ${emailCheck.accountType}`,
 					code: "CONFLICT",
 				});
 				return;
@@ -796,14 +794,10 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 		}
 
 		if (sanitizedEmail) {
-			const existingUser = await User.findOne({
-				email: sanitizedEmail,
-				_id: { $ne: id },
-			}).select("_id");
-
-			if (existingUser) {
+			const emailCheck = await isEmailInUseAcrossSystem(sanitizedEmail, id);
+			if (emailCheck.exists) {
 				res.status(409).json({
-					error: "User with this email already exists",
+					error: `An account with this email already exists as a ${emailCheck.accountType}`,
 					code: "CONFLICT",
 				});
 				return;

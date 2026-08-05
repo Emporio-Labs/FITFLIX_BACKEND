@@ -7,6 +7,7 @@ import {
 	getRosterUserIds,
 } from "../services/trainerRoster.service";
 import { hashPassword } from "../utils/password";
+import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import {
 	createTrainerBodySchema,
 	updateTrainerBodySchema,
@@ -54,6 +55,15 @@ export const createTrainer: RequestHandler = async (req, res, next) => {
 
 	try {
 		const { password, ...rest } = parsedBody.data;
+
+		if (rest.email) {
+			const emailCheck = await isEmailInUseAcrossSystem(rest.email);
+			if (emailCheck.exists) {
+				res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
+				return;
+			}
+		}
+
 		const passwordHash = await hashPassword(password);
 		const trainer = await Trainer.create({
 			...rest,
@@ -157,6 +167,14 @@ export const updateTrainerById: RequestHandler = async (req, res, next) => {
 	};
 
 	try {
+		if (rest.email) {
+			const emailCheck = await isEmailInUseAcrossSystem(rest.email, id);
+			if (emailCheck.exists) {
+				res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
+				return;
+			}
+		}
+
 		const updatedTrainer = await Trainer.findByIdAndUpdate(id, updatePayload, {
 			returnDocument: "after",
 			runValidators: true,
