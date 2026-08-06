@@ -9,6 +9,8 @@ import {
 	updateClassScheduleSchema,
 } from "../validators/class-schedule.validator";
 
+import { syncSessionsForClass } from "./class.controller";
+
 function parseTimeToMinutes(timeStr: string): number {
 	const parts = (timeStr || "00:00").split(":").map(Number);
 	const hours = parts[0] ?? 0;
@@ -20,6 +22,20 @@ function normalizeDateStart(dateInput: string | Date): Date {
 	const d = new Date(dateInput);
 	d.setUTCHours(0, 0, 0, 0);
 	return d;
+}
+
+async function ensureSessionsMaterializedForActiveClasses(): Promise<void> {
+	try {
+		const activeClasses = await ClassModel.find({
+			isPublished: { $ne: false },
+			status: { $ne: "INACTIVE" },
+		});
+		for (const c of activeClasses) {
+			await syncSessionsForClass(c);
+		}
+	} catch (e) {
+		console.error("[ensureSessionsMaterialized] Warning:", e);
+	}
 }
 
 export const createScheduledSession: RequestHandler = async (
@@ -162,6 +178,7 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 	next,
 ) => {
 	try {
+		await ensureSessionsMaterializedForActiveClasses();
 		const { classId, trainerId, date, startDate, endDate } = req.query;
 		const query: any = {};
 
@@ -211,6 +228,7 @@ export const getSchedulesForMembers: RequestHandler = async (
 	next,
 ) => {
 	try {
+		await ensureSessionsMaterializedForActiveClasses();
 		const { date } = req.query;
 		// FULL sessions stay in the member feed so a sold-out class renders as full
 		// rather than disappearing — capacity-engine flips SCHEDULED -> FULL at zero

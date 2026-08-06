@@ -101,7 +101,7 @@ export const generateSessionToken: RequestHandler = async (req, res, next) => {
 		// session and carries the cancellation state.
 		const booking = await Booking.findOne({
 			user: user.id,
-			sessionId,
+			$or: [{ sessionId }, { classId: sessionId }],
 			status: nonCancelledBookingStatusFilter,
 		})
 			.populate("sessionId", "sessionDate startTime endTime status videoRoomId")
@@ -116,31 +116,27 @@ export const generateSessionToken: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const session = booking.sessionId as unknown as
-			| {
-					sessionDate?: Date;
-					startTime?: string;
-					endTime?: string;
-					status?: string;
-			  }
-			| null;
+		const sessionObj =
+			typeof booking.sessionId === "object" && booking.sessionId
+				? (booking.sessionId as any)
+				: null;
+		const sessionDate = sessionObj?.sessionDate || (booking as any).bookingDate;
+		const startTime = sessionObj?.startTime || (booking as any).startTime;
+		const endTime = sessionObj?.endTime || (booking as any).endTime;
 
-		if (session?.status === "CANCELLED") {
+		if (sessionObj?.status === "CANCELLED") {
 			res.status(409).json({ message: "This session has been cancelled." });
 			return;
 		}
 
-		const start = combineSessionDateTime(
-			session?.sessionDate,
-			session?.startTime,
-		);
+		const start = combineSessionDateTime(sessionDate, startTime);
 		if (!start) {
 			res.status(409).json({
 				message: "This session has no valid schedule; cannot issue a token.",
 			});
 			return;
 		}
-		const end = combineSessionDateTime(session?.sessionDate, session?.endTime);
+		const end = combineSessionDateTime(sessionDate, endTime);
 
 		const { opensAt, closesAt } = buildJoinWindow(start, end);
 		const now = new Date();

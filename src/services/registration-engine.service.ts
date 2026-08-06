@@ -10,6 +10,8 @@ import {
 import { evaluateBookingRules } from "./booking-rules-engine.service";
 import { allocateSeatAtomic, releaseSeatAtomic } from "./capacity-engine.service";
 
+import { syncSessionsForClass } from "../controllers/class.controller";
+
 export interface GroupClassRegistrationResult {
 	success: boolean;
 	statusCode?: 201 | 400 | 402 | 403 | 404 | 409 | 500;
@@ -45,6 +47,23 @@ export async function registerGroupClassBooking(params: {
 				status: "SCHEDULED",
 				sessionDate: { $gte: todayStart },
 			}).sort({ sessionDate: 1, startTime: 1 });
+
+			if (!session) {
+				// Auto-materialize scheduled sessions for classes whose schedule was updated
+				await syncSessionsForClass(targetClass);
+				session = await ScheduledSession.findOne({
+					classId: targetClass._id,
+					status: "SCHEDULED",
+					sessionDate: { $gte: todayStart },
+				}).sort({ sessionDate: 1, startTime: 1 });
+
+				if (!session) {
+					session = await ScheduledSession.findOne({
+						classId: targetClass._id,
+						status: "SCHEDULED",
+					}).sort({ sessionDate: 1, startTime: 1 });
+				}
+			}
 		}
 	}
 

@@ -136,14 +136,27 @@ function resolveScheduleForClass(classDoc: any): {
 
 	if (frequency === "NONE") {
 		// One-time: the only date lives in the scheduleInfo text.
-		const dateMatch = scheduleInfo?.match(
-			/One-Time:\s*([A-Za-z]+,\s*[A-Za-z]+\s*\d{1,2},\s*\d{4})/,
-		);
+		const dateMatch = scheduleInfo?.match(/One-Time:\s*([^·\n]+)/);
 		if (dateMatch?.[1]) {
-			const parsed = new Date(dateMatch[1]);
+			const rawDateStr = dateMatch[1].trim();
+			let parsed = new Date(rawDateStr);
+			if (Number.isNaN(parsed.getTime())) {
+				const stripped = rawDateStr.replace(/^[A-Za-z]+,\s*/, "");
+				parsed = new Date(stripped);
+			}
 			if (!Number.isNaN(parsed.getTime())) {
-				parsed.setUTCHours(0, 0, 0, 0);
-				dates.push(parsed);
+				const utcMidnight = new Date(
+					Date.UTC(
+						parsed.getFullYear(),
+						parsed.getMonth(),
+						parsed.getDate(),
+						0,
+						0,
+						0,
+						0,
+					),
+				);
+				dates.push(utcMidnight);
 			}
 		}
 		return { dates, startTime, endTime };
@@ -237,10 +250,9 @@ export async function syncSessionsForClass(
 		};
 	}
 
-	// 3. Clear only the unbooked future sessions.
+	// 3. Clear unbooked sessions for this class (including misdated legacy rows).
 	const deleteResult = await ScheduledSession.deleteMany({
 		classId: classDoc._id,
-		sessionDate: { $gte: todayStart },
 		$or: [{ currentBookings: { $lte: 0 } }, { currentBookings: null }],
 	});
 
