@@ -151,14 +151,15 @@ export const publicLeadCaptureBodySchema = z
 		website: z.string().trim().optional(),
 	})
 	.superRefine((payload, ctx) => {
-		const hasLegacyIdentity = Boolean(payload.leadName && payload.email);
+		const hasLegacyIdentity = Boolean(payload.leadName || payload.email);
 		const hasFitflixIdentity = Boolean(
-			payload.personalDetails?.fullName &&
-				payload.personalDetails?.emailAddress,
+			payload.personalDetails?.fullName 
 		);
 		const hasCallbackIdentity = Boolean(
-			payload.name && payload.phone && payload.email,
+			payload.name && payload.phone || payload.email,
 		);
+
+		
 
 		if (!hasLegacyIdentity && !hasFitflixIdentity && !hasCallbackIdentity) {
 			ctx.addIssue({
