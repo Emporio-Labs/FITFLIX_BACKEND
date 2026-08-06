@@ -120,7 +120,7 @@ const fitflixAssessmentSchema = z
 
 export const createLeadBodySchema = z.object({
 	leadName: z.string().trim().min(1),
-	email: z.string().trim().email(),
+	email: z.string().trim().email().optional(),
 	phone: z.string().trim().min(1).optional(),
 	source: z.string().trim().min(1).optional(),
 	interestedIn: z.string().trim().min(1).optional(),
