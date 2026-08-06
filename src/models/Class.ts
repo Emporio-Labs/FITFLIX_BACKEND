@@ -119,6 +119,11 @@ const classSchema = new mongoose.Schema(
 			enum: ["minutes", "hours", "days"],
 			default: null,
 		},
+		occurrenceLeadMinutes: {
+			type: Number,
+			default: 30,
+			min: 0,
+		},
 		isPublished: {
 			type: Boolean,
 			default: true,

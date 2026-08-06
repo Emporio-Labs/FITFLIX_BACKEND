@@ -35,6 +35,10 @@ export const createClassBodySchema = z.object({
 		(val) => (val === "" || val === null || val === undefined ? null : val),
 		z.enum(["minutes", "hours", "days"]).nullable().optional().default(null)
 	),
+	occurrenceLeadMinutes: z.preprocess(
+		(val) => (val === "" || val === null || val === undefined ? 30 : Number(val)),
+		z.number().int().nonnegative().optional().default(30)
+	),
 	isPublished: z.boolean().optional().default(true),
 });
 
@@ -76,6 +80,10 @@ export const updateClassBodySchema = z
 		bookingCloseUnit: z.preprocess(
 			(val) => (val === "" || val === null || val === undefined ? null : val),
 			z.enum(["minutes", "hours", "days"]).nullable().optional()
+		),
+		occurrenceLeadMinutes: z.preprocess(
+			(val) => (val === "" || val === null || val === undefined ? undefined : Number(val)),
+			z.number().int().nonnegative().optional()
 		),
 		isPublished: z.boolean().optional(),
 	})

@@ -67,7 +67,7 @@ export const resolveRoomIdFromBooking = (booking: {
 export const sanitizeRoomId = (roomId: string): string =>
 	roomId.replace(/[^a-zA-Z0-9_-]/g, "_");
 
-export const JOIN_WINDOW_BEFORE_MINUTES = 10;
+export const JOIN_WINDOW_BEFORE_MINUTES = 30;
 export const JOIN_WINDOW_GRACE_AFTER_MINUTES = 15;
 
 /**
