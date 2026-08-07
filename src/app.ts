@@ -15,6 +15,7 @@ import dashboardRouter from "./routes/dashboard.routes";
 import deleteAccountRouter from "./routes/delete-account.routes";
 import doctorRouter from "./routes/doctor.routes";
 import exerciseRouter from "./routes/exercise.routes";
+import gymVisitRouter from "./routes/gymVisit.routes";
 import {
 	adminExpertAppointmentRouter,
 	expertAppointmentRouter,
@@ -223,6 +224,7 @@ app.use("/appointments", apiRateLimit, appointmentRouter);
 app.use("/schedules", apiRateLimit, scheduleRouter);
 app.use("/exercises", apiRateLimit, exerciseRouter);
 app.use("/leads", apiRateLimit, leadRouter);
+app.use("/gym-visits", apiRateLimit, gymVisitRouter);
 app.use("/invoices", apiRateLimit, invoiceRouter);
 app.use("/api/invoices", apiRateLimit, invoiceRouter);
 app.use("/membership-plans", membershipPlanRouter);

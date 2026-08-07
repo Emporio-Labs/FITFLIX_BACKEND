@@ -6,6 +6,7 @@ import Service from "../models/Service";
 import Slot from "../models/Slots";
 
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
+import { getActiveMembership } from "../utils/membership.guard";
 import {
 	changeBookingStatusBodySchema,
 	createBookingBodySchema,
@@ -217,6 +218,21 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 		res
 			.status(403)
 			.json({ message: "Only admins can bypass credit consumption" });
+		return;
+	}
+
+	// Block booking if the target user has no active, non-expired membership.
+	try {
+		const activeMembership = await getActiveMembership(targetUserId);
+		if (!activeMembership) {
+			res.status(403).json({
+				message: "User does not have an active membership",
+				code: "NO_ACTIVE_MEMBERSHIP",
+			});
+			return;
+		}
+	} catch (membershipErr) {
+		next(membershipErr);
 		return;
 	}
 
