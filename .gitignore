@@ -43,3 +43,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 scratch/inspect-db.ts
 
 archive_docs/
+
+scratch/test-jwt-and-api.ts
