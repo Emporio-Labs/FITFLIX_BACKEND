@@ -354,29 +354,13 @@ export const getClassById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		let classDetail = await Class.findById(id).lean();
-
-		if (!classDetail && isObjectId) {
-			const sessionDetail = await ScheduledSession.findById(id).populate("classId").lean();
-			if (sessionDetail && sessionDetail.classId) {
-				const classObj = sessionDetail.classId as any;
-				classDetail = {
-					...classObj,
-					_id: sessionDetail._id,
-					classId: classObj,
-					sessionDate: sessionDetail.sessionDate,
-					startTime: sessionDetail.startTime,
-					endTime: sessionDetail.endTime,
-					status: sessionDetail.status,
-					capacity: sessionDetail.capacity,
-					currentBookings: sessionDetail.currentBookings,
-					remainingCapacity: sessionDetail.remainingCapacity,
-				};
-			}
-		}
+		const classDetail = await Class.findById(id).lean();
 
 		if (!classDetail) {
-			res.status(404).json({ message: "Class not found" });
+			res.status(404).json({
+				message:
+					"Class not found. If this is a session id, use GET /api/v1/classes/schedule/:id.",
+			});
 			return;
 		}
 

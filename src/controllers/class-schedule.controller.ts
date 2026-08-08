@@ -291,6 +291,49 @@ export const getSchedulesForMembers: RequestHandler = async (
 	}
 };
 
+export const getScheduledSessionByIdForMembers: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
+	const id = String(req.params.id);
+	const isValidId =
+		mongoose.Types.ObjectId.isValid(id) ||
+		/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+	if (!isValidId) {
+		res.status(400).json({
+			message: "Invalid session id format. Must be a valid ObjectId or UUID.",
+		});
+		return;
+	}
+
+	try {
+		const session = await ScheduledSession.findById(id)
+			.populate(
+				"classId",
+				"name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes",
+			)
+			.lean();
+
+		if (!session) {
+			res.status(404).json({ message: "Session not found" });
+			return;
+		}
+
+		const videoRoomId = (session as any).videoRoomId || session._id.toString();
+		res.status(200).json({
+			session: withAbsoluteTimes({
+				...session,
+				videoRoomId,
+				videoConferenceId: videoRoomId,
+			}),
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const updateScheduledSession: RequestHandler = async (
 	req,
 	res,

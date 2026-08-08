@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
 	createScheduledSession,
 	getAllSchedulesForAdmin,
+	getScheduledSessionByIdForMembers,
 	getSchedulesForMembers,
 	updateScheduledSession,
 	updateSessionCapacity,
@@ -40,6 +41,11 @@ classScheduleRouter.get(
 	"/classes/schedule",
 	authorize(["admin", "trainer", "user"]),
 	getSchedulesForMembers,
+);
+classScheduleRouter.get(
+	"/classes/schedule/:id",
+	authorize(["admin", "trainer", "user"]),
+	getScheduledSessionByIdForMembers,
 );
 
 export default classScheduleRouter;
