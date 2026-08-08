@@ -246,11 +246,13 @@ export const login: RequestHandler = async (req, res, next) => {
 			email: maskEmail(email),
 		});
 
+		const emailRegex = new RegExp(`^${email}$`, "i");
+
 		const [user, admin, doctor, trainer] = await Promise.all([
-			User.findOne({ email }).select("+passwordHash"),
-			Admin.findOne({ email }).select("+passwordHash"),
-			Doctor.findOne({ email }).select("+passwordHash"),
-			Trainer.findOne({ email }).select("+passwordHash"),
+			User.findOne({ email: emailRegex }).select("+passwordHash"),
+			Admin.findOne({ email: emailRegex }).select("+passwordHash"),
+			Doctor.findOne({ email: emailRegex }).select("+passwordHash"),
+			Trainer.findOne({ email: emailRegex }).select("+passwordHash"),
 		]);
 
 		console.log("[AUTH][LOGIN] Model lookups completed", {

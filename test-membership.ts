@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+  import mongoose from "mongoose";
 import { getActiveMembership } from "./src/utils/membership.guard";
 import GymVisit from "./src/models/GymVisit";
 import User from "./src/models/User";
@@ -13,7 +13,7 @@ async function test() {
     const active = await getActiveMembership(u._id.toString());
     console.log(`User ${u.username} (${u._id}): memberships=${mems.length}, active=${active !== null}`);
   }
-  
+
   process.exit(0);
 }
 test();

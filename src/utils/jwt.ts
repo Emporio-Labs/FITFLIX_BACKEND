@@ -145,6 +145,38 @@ export const signStepUpToken = (adminId: string, config: JwtConfig): string =>
 		buildSignOptions({ ...config, expiresIn: STEP_UP_EXPIRES_IN }),
 	);
 
+// Gym QR check-in token: rotates client-side every 60s. TTL is longer than
+// the rotation interval so a token scanned right before refresh still validates.
+const QR_EXPIRES_IN = process.env.JWT_QR_EXPIRES_IN?.trim() || "90s";
+
+/** Member's rotating gym-entry QR token. */
+export const signGymQrToken = (userId: string, config: JwtConfig): string =>
+	jwt.sign(
+		{ sub: userId, scope: "gym_qr" },
+		config.secret,
+		buildSignOptions({ ...config, expiresIn: QR_EXPIRES_IN }),
+	);
+
+/** Verifies a scanned gym QR token; returns the member's userId or null. */
+export const verifyGymQrToken = (
+	token: string,
+	config: JwtConfig,
+): string | null => {
+	try {
+		const payload = jwt.verify(
+			token,
+			config.secret,
+			buildVerifyOptions(config),
+		) as JwtPayload;
+		if (payload.scope !== "gym_qr" || typeof payload.sub !== "string") {
+			return null;
+		}
+		return payload.sub;
+	} catch {
+		return null;
+	}
+};
+
 export const verifyStepUpToken = (
 	token: string,
 	adminId: string,

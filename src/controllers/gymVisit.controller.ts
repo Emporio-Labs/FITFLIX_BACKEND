@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import GymVisit, { VISIT_TYPES, type VisitType } from "../models/GymVisit";
 import User from "../models/User";
 import { getActiveMembership } from "../utils/membership.guard";
+import { getJwtConfig, signGymQrToken, verifyGymQrToken } from "../utils/jwt";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
@@ -42,6 +43,63 @@ const serializeVisit = (raw: any, user?: { username?: string; email?: string }) 
 	updatedAt: raw.updatedAt,
 });
 
+type CheckInResult =
+	| { ok: true; visit: any; user: { username?: string; email?: string } | null }
+	| { ok: false; status: number; body: Record<string, unknown> };
+
+/**
+ * Shared by manual (search-and-select) and QR-scan check-in paths: validates
+ * membership + dedup, then opens a GymVisit. Callers translate the result
+ * into their own response shape.
+ */
+async function performCheckIn(
+	userId: string,
+	adminId: string | undefined,
+	visitType: unknown,
+	notes: unknown,
+): Promise<CheckInResult> {
+	const type: VisitType = VISIT_TYPES.includes(visitType as VisitType)
+		? (visitType as VisitType)
+		: "workout";
+
+	const user = await User.findById(userId).select("username email").lean();
+	if (!user) {
+		return { ok: false, status: 404, body: { message: "Member not found" } };
+	}
+
+	// Block check-in if the member has no active, non-expired membership.
+	const activeMembership = await getActiveMembership(userId);
+	if (!activeMembership) {
+		return {
+			ok: false,
+			status: 403,
+			body: {
+				message: "Member does not have an active membership",
+				code: "NO_ACTIVE_MEMBERSHIP",
+			},
+		};
+	}
+
+	// Block check-in if the member is already checked in.
+	const openVisit = await GymVisit.findOne({ userId, checkOutAt: null });
+	if (openVisit) {
+		return {
+			ok: false,
+			status: 409,
+			body: { message: "Member is already checked in" },
+		};
+	}
+
+	const visit = await GymVisit.create({
+		userId: new mongoose.Types.ObjectId(userId),
+		visitType: type,
+		notes: typeof notes === "string" && notes.trim() ? notes.trim() : null,
+		checkedInByAdminId: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+	});
+
+	return { ok: true, visit: visit.toObject(), user: user as any };
+}
+
 /** Admin marks a member as present (opens a new visit). */
 export const checkInMember: RequestHandler = async (req, res, next) => {
 	try {
@@ -52,16 +110,29 @@ export const checkInMember: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const type: VisitType = VISIT_TYPES.includes(visitType) ? visitType : "workout";
-
-		const user = await User.findById(userId).select("username email").lean();
-		if (!user) {
-			res.status(404).json({ message: "Member not found" });
+		const result = await performCheckIn(userId, req.user?.id, visitType, notes);
+		if (!result.ok) {
+			res.status(result.status).json(result.body);
 			return;
 		}
 
-		// Block check-in if the member has no active, non-expired membership.
-		const activeMembership = await getActiveMembership(userId);
+		res.status(201).json({
+			message: "Member checked in",
+			visit: serializeVisit(result.visit, result.user ?? undefined),
+		});
+	} catch (err) {
+		next(err);
+	}
+};
+
+/** Member fetches a short-lived rotating QR token to present at the front desk. */
+export const issueQrToken: RequestHandler = async (req, res, next) => {
+	if (!req.user) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+	try {
+		const activeMembership = await getActiveMembership(req.user.id);
 		if (!activeMembership) {
 			res.status(403).json({
 				message: "Member does not have an active membership",
@@ -70,25 +141,52 @@ export const checkInMember: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		// Block check-in if the member is already checked in.
-		const openVisit = await GymVisit.findOne({ userId, checkOutAt: null });
-		if (openVisit) {
-			res.status(409).json({ message: "Member is already checked in" });
+		const config = getJwtConfig();
+		if (!config) {
+			res.status(500).json({ message: "Server auth misconfigured" });
 			return;
 		}
 
-		const visit = await GymVisit.create({
-			userId: new mongoose.Types.ObjectId(userId),
-			visitType: type,
-			notes: typeof notes === "string" && notes.trim() ? notes.trim() : null,
-			checkedInByAdminId: req.user?.id
-				? new mongoose.Types.ObjectId(req.user.id)
-				: null,
-		});
+		const token = signGymQrToken(req.user.id, config);
+		res.status(200).json({ token, expiresIn: 90 });
+	} catch (err) {
+		next(err);
+	}
+};
+
+/** Front-desk scans a member's QR code to check them in. */
+export const qrCheckIn: RequestHandler = async (req, res, next) => {
+	try {
+		const { token } = req.body ?? {};
+		if (typeof token !== "string" || !token) {
+			res.status(400).json({ message: "token is required" });
+			return;
+		}
+
+		const config = getJwtConfig();
+		if (!config) {
+			res.status(500).json({ message: "Server auth misconfigured" });
+			return;
+		}
+
+		const userId = verifyGymQrToken(token, config);
+		if (!userId) {
+			res.status(400).json({
+				message: "Invalid or expired QR code",
+				code: "INVALID_QR",
+			});
+			return;
+		}
+
+		const result = await performCheckIn(userId, req.user?.id, "workout", null);
+		if (!result.ok) {
+			res.status(result.status).json(result.body);
+			return;
+		}
 
 		res.status(201).json({
 			message: "Member checked in",
-			visit: serializeVisit(visit.toObject(), user as any),
+			visit: serializeVisit(result.visit, result.user ?? undefined),
 		});
 	} catch (err) {
 		next(err);
