@@ -92,7 +92,10 @@ export async function registerGroupClassBooking(params: {
 	// The class doc is loaded unconditionally so step 5 can charge the member
 	// the real creditCost rather than the previous hardcoded `1`.
 	const targetClass = await Class.findById(resolvedClassId);
-	const creditCost = Number((targetClass as any)?.creditCost) || 1;
+	const isFree =
+		(targetClass as any)?.bookingRequirement === "free" ||
+		Number((targetClass as any)?.creditCost) === 0;
+	const creditCost = isFree ? 0 : Number((targetClass as any)?.creditCost) || 1;
 
 	// 2. Booking Window Rule Evaluation (FEATURE-012 Engine)
 	const rulesEval = await evaluateBookingRules({
@@ -146,20 +149,22 @@ export async function registerGroupClassBooking(params: {
 	//    Runs *after* the seat is reserved but *before* the booking row is
 	//    written, so a member with an empty wallet loses only the transient
 	//    seat lock we roll back below — never a partially-written booking.
-	const consumeResult = await consumeCreditsAtomic({
-		userId: params.userId,
-		amount: creditCost,
-		reason: `Group class booking ${resolvedClassId}`,
-		referenceId: resolvedSessionId,
-	});
-	if (!consumeResult.success) {
-		await releaseSeatAtomic(resolvedSessionId);
-		return {
-			success: false,
-			statusCode: 402,
-			message: consumeResult.message ?? "Insufficient credits",
-			reason: consumeResult.code,
-		};
+	if (creditCost > 0) {
+		const consumeResult = await consumeCreditsAtomic({
+			userId: params.userId,
+			amount: creditCost,
+			reason: `Group class booking ${resolvedClassId}`,
+			referenceId: resolvedSessionId,
+		});
+		if (!consumeResult.success) {
+			await releaseSeatAtomic(resolvedSessionId);
+			return {
+				success: false,
+				statusCode: 402,
+				message: consumeResult.message ?? "Insufficient credits",
+				reason: consumeResult.code,
+			};
+		}
 	}
 
 	// 6. Create Booking Document; roll back the seat AND refund the credits

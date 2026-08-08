@@ -21,10 +21,12 @@ export const createClassBodySchema = z.object({
 	streamRoomId: z.string().optional().default(""),
 	enableWaitlist: z.boolean().optional().default(false),
 	status: z.enum(["ACTIVE", "INACTIVE"]).default("ACTIVE"),
+	access: z.enum(["members_only", "open_to_all"]).optional().default("members_only"),
+	bookingRequirement: z.enum(["free", "credits_required"]).optional().default("credits_required"),
 	creditCost: z.coerce
 		.number()
 		.int("Credit cost must be an integer")
-		.min(1, "Credit cost must be a positive integer (>= 1)"),
+		.min(0, "Credit cost must be a non-negative integer (>= 0)"),
 	bookingWindowValue: z.number().int().positive().optional().default(72),
 	bookingWindowUnit: z.enum(["hours", "days"]).optional().default("hours"),
 	bookingCloseValue: z.preprocess(
@@ -66,10 +68,12 @@ export const updateClassBodySchema = z
 		streamRoomId: z.string().optional(),
 		enableWaitlist: z.boolean().optional(),
 		status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+		access: z.enum(["members_only", "open_to_all"]).optional(),
+		bookingRequirement: z.enum(["free", "credits_required"]).optional(),
 		creditCost: z.coerce
 			.number()
 			.int("Credit cost must be an integer")
-			.min(1, "Credit cost must be a positive integer (>= 1)")
+			.min(0, "Credit cost must be a non-negative integer (>= 0)")
 			.optional(),
 		bookingWindowValue: z.number().int().positive().optional(),
 		bookingWindowUnit: z.enum(["hours", "days"]).optional(),

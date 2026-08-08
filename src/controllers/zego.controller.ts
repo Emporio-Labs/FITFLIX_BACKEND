@@ -88,7 +88,12 @@ const resolveDisplayName = async (
 };
 
 const respondDenied = (res: Parameters<RequestHandler>[1], access: SessionAccessDenied) => {
-	res.status(access.status).json({ message: access.message, code: access.code });
+	res.status(access.status).json({
+		message: access.message,
+		code: access.code,
+		startsAt: access.startsAt ? access.startsAt.toISOString() : undefined,
+		endsAt: access.endsAt ? access.endsAt.toISOString() : undefined,
+	});
 };
 
 /**

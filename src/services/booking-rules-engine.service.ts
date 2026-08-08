@@ -118,15 +118,6 @@ export async function evaluateBookingRules(params: {
 		};
 	}
 
-	const membershipStatus = (user as any).membershipStatus;
-	if (membershipStatus === "EXPIRED" || membershipStatus === "CANCELLED") {
-		return {
-			allowed: false,
-			statusCode: 403,
-			message: "Active membership tier required for class bookings",
-		};
-	}
-
 	// 2. Resolve Class and Session Details
 	let targetClassId = params.classId;
 	let sessionDate = params.sessionDate;
@@ -157,6 +148,16 @@ export async function evaluateBookingRules(params: {
 	const targetClass = await ClassModel.findById(targetClassId).lean();
 	if (!targetClass) {
 		return { allowed: false, statusCode: 404, message: "Class not found" };
+	}
+
+	const isOpenToAll = (targetClass as any)?.access === "open_to_all";
+	const membershipStatus = (user as any).membershipStatus;
+	if (!isOpenToAll && (membershipStatus === "EXPIRED" || membershipStatus === "CANCELLED")) {
+		return {
+			allowed: false,
+			statusCode: 403,
+			message: "Active membership tier required for class bookings",
+		};
 	}
 
 	// 3. Dynamic Booking Window Evaluation based on Class Configuration

@@ -94,10 +94,20 @@ const classSchema = new mongoose.Schema(
 			required: true,
 			index: true,
 		},
+		access: {
+			type: String,
+			enum: ["members_only", "open_to_all"],
+			default: "members_only",
+		},
+		bookingRequirement: {
+			type: String,
+			enum: ["free", "credits_required"],
+			default: "credits_required",
+		},
 		creditCost: {
 			type: Number,
 			required: true,
-			min: 1,
+			min: 0,
 		},
 		bookingWindowValue: {
 			type: Number,

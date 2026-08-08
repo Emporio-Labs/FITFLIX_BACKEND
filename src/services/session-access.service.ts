@@ -46,6 +46,8 @@ export type SessionAccessDenied = {
 	status: number;
 	code: DenyCode;
 	message: string;
+	startsAt?: Date;
+	endsAt?: Date;
 };
 
 export type SessionAccessGranted = {
@@ -64,11 +66,12 @@ export type SessionAccessGranted = {
 
 export type SessionAccessResult = SessionAccessGranted | SessionAccessDenied;
 
-const deny = (code: DenyCode): SessionAccessDenied => ({
+const deny = (code: DenyCode, extra?: { startsAt?: Date; endsAt?: Date }): SessionAccessDenied => ({
 	ok: false,
 	status: DENY_STATUS[code],
 	code,
 	message: DENY_MESSAGE[code],
+	...(extra || {}),
 });
 
 /**
@@ -105,10 +108,10 @@ export const resolveSessionAccess = async ({
 
 	const klass = session
 		? await ClassModel.findById(session.classId)
-				.select("instructorUserId sessionType name streamRoomId")
+				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost")
 				.lean()
 		: await ClassModel.findById(sessionId)
-				.select("instructorUserId sessionType name streamRoomId")
+				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost")
 				.lean();
 
 	if (!session && !klass) {
@@ -168,12 +171,13 @@ export const resolveSessionAccess = async ({
 			.populate("sessionId", "sessionDate startTime endTime status videoRoomId")
 			.populate("classId", "zegoRoomId");
 
-		if (!booking) {
+		const isOpenToAll = (klass as any)?.access === "open_to_all";
+		if (!booking && !isOpenToAll) {
 			return deny("NO_BOOKING");
 		}
 
 		const bookingSessionObj =
-			typeof booking.sessionId === "object" && booking.sessionId
+			booking && typeof booking.sessionId === "object" && booking.sessionId
 				? (booking.sessionId as unknown as { status?: string })
 				: null;
 		if (bookingSessionObj?.status === "CANCELLED") {
@@ -184,7 +188,7 @@ export const resolveSessionAccess = async ({
 	// 6. Role-scoped join window — the only place lead/grace times are read.
 	const window = buildJoinWindow(startsAt, endsAt, role);
 	if (now.getTime() < window.opensAt.getTime()) {
-		return deny("NOT_OPEN_YET");
+		return deny("NOT_OPEN_YET", { startsAt, endsAt });
 	}
 	if (now.getTime() >= window.closesAt.getTime()) {
 		return deny("ENDED");
