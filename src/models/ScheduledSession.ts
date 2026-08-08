@@ -77,6 +77,18 @@ const scheduledSessionSchema = new mongoose.Schema(
 			default: true,
 			required: true,
 		},
+		// Set only by the host-initiated /zego/sessions/:id/end flow — lets a
+		// member's "class ended" UI distinguish an early host-ended class from
+		// one that simply ran to its scheduled end time.
+		endedAt: {
+			type: Date,
+			default: null,
+		},
+		endedBy: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "User",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );

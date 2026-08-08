@@ -4,12 +4,25 @@ import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
 import { normalizeDeliveryType } from "../utils/delivery-type";
+import { combineSessionDateTime } from "../utils/zego-room";
 import {
 	createClassScheduleSchema,
 	updateClassScheduleSchema,
 } from "../validators/class-schedule.validator";
 
 import { syncSessionsForClass } from "./class.controller";
+
+/// Absolute instants, computed once server-side so neither the Flutter app nor
+/// frontdesk has to re-derive them from `sessionDate` + "HH:mm" (the exact
+/// derivation that was drifting by the IST offset before combineSessionDateTime
+/// was fixed to read that string as business-timezone, not UTC).
+const withAbsoluteTimes = <T extends { sessionDate: Date; startTime: string; endTime: string }>(
+	session: T,
+): T & { startsAtUtc: string | null; endsAtUtc: string | null } => ({
+	...session,
+	startsAtUtc: combineSessionDateTime(session.sessionDate, session.startTime)?.toISOString() ?? null,
+	endsAtUtc: combineSessionDateTime(session.sessionDate, session.endTime)?.toISOString() ?? null,
+});
 
 function parseTimeToMinutes(timeStr: string): number {
 	const parts = (timeStr || "00:00").split(":").map(Number);
@@ -210,11 +223,11 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 				// videoConferenceId must always mirror it (never derived separately)
 				// so the Admin host and User App can never resolve different rooms.
 				const videoRoomId = (s as any).videoRoomId || s._id.toString();
-				return {
+				return withAbsoluteTimes({
 					...s,
 					videoRoomId,
 					videoConferenceId: videoRoomId,
-				};
+				});
 			}),
 		});
 	} catch (error) {
@@ -263,11 +276,11 @@ export const getSchedulesForMembers: RequestHandler = async (
 				// videoConferenceId must always mirror it (never derived separately)
 				// so the Admin host and User App can never resolve different rooms.
 				const videoRoomId = (s as any).videoRoomId || s._id.toString();
-				return {
+				return withAbsoluteTimes({
 					...s,
 					videoRoomId,
 					videoConferenceId: videoRoomId,
-				};
+				});
 			}),
 		});
 	} catch (error) {
@@ -287,6 +300,17 @@ export const updateScheduledSession: RequestHandler = async (
 		res.status(400).json({
 			message: "Validation failed for schedule update",
 			errors: parsed.error.issues,
+		});
+		return;
+	}
+
+	// COMPLETED carries side effects — attendance backfill, a best-effort Zego
+	// kick, endedAt/endedBy — that this endpoint's blind Object.assign below
+	// does not perform. Route hosts/admins to the endpoint that actually does.
+	if (parsed.data.status === "COMPLETED") {
+		res.status(400).json({
+			message:
+				"Use POST /api/v1/zego/sessions/:sessionId/end to end a live session.",
 		});
 		return;
 	}

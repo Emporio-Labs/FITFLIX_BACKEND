@@ -12,6 +12,7 @@ import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
 import { releaseSeatAtomic } from "../services/capacity-engine.service";
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
+import { combineSessionDateTime } from "../utils/zego-room";
 import {
 	changeBookingStatusBodySchema,
 	createBookingBodySchema,
@@ -456,6 +457,7 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
 			.populate("slot", "date startTime endTime")
+			.populate("sessionId", "sessionDate startTime endTime status videoRoomId")
 			.populate("classId", "name description creditCost mode instructor tags durationMinutes locationAddress")
 			.populate("report", "subject hasPdf");
 
@@ -469,10 +471,27 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 				obj.classId?._id?.toString() ||
 				(typeof obj.classId === "string" ? obj.classId : null) ||
 				obj._id?.toString();
+			const scheduledSession =
+				typeof obj.sessionId === "object" && obj.sessionId ? obj.sessionId : null;
 			return {
 				...obj,
+				// `sessionId` is a String-typed field on Booking; populating it above
+				// (to reach sessionDate/startTime/endTime for startsAtUtc/endsAtUtc)
+				// replaces it with the populated sub-document on the spread above.
+				// Every existing client — admin and member — reads `sessionId` as a
+				// plain id string, so it must be put back exactly as that shape,
+				// with the richer data carried only in the new, additive fields.
+				sessionId: scheduledSession
+					? String(scheduledSession._id)
+					: (typeof obj.sessionId === "string" ? obj.sessionId : null),
 				videoRoomId: roomId,
 				videoConferenceId: roomId,
+				startsAtUtc: scheduledSession
+					? combineSessionDateTime(scheduledSession.sessionDate, scheduledSession.startTime)?.toISOString() ?? null
+					: null,
+				endsAtUtc: scheduledSession
+					? combineSessionDateTime(scheduledSession.sessionDate, scheduledSession.endTime)?.toISOString() ?? null
+					: null,
 			};
 		});
 
@@ -984,6 +1003,12 @@ export const recordAttendance: RequestHandler = async (req, res, next) => {
 	const stayDurationMinutes = Number(req.body?.stayDurationMinutes ?? 0);
 	const joinedAt = req.body?.joinedAt ? new Date(req.body.joinedAt) : new Date();
 
+	const requester = getRequiredAuthenticatedUser(req);
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
 	try {
 		const booking = await Booking.findById(id);
 		if (!booking) {
@@ -991,7 +1016,18 @@ export const recordAttendance: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		booking.status = "Consumed";
+		const isOwner = String(booking.user) === String(requester.id);
+		if (requester.role !== "admin" && !isOwner) {
+			res.status(403).json({ message: "Forbidden" });
+			return;
+		}
+
+		if (isCancelledBookingStatus(booking.status)) {
+			res.status(409).json({ message: "This booking has been cancelled." });
+			return;
+		}
+
+		booking.status = "Attended";
 		booking.joinedAt = booking.joinedAt || joinedAt;
 		booking.leftAt = new Date();
 		booking.stayDurationMinutes = Math.max(booking.stayDurationMinutes || 0, stayDurationMinutes);

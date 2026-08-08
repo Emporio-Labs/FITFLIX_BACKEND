@@ -67,11 +67,64 @@ export const resolveRoomIdFromBooking = (booking: {
 export const sanitizeRoomId = (roomId: string): string =>
 	roomId.replace(/[^a-zA-Z0-9_-]/g, "_");
 
-export const JOIN_WINDOW_BEFORE_MINUTES = 30;
-export const JOIN_WINDOW_GRACE_AFTER_MINUTES = 15;
+/// A host needs setup time; a member should not be milling about in the room
+/// long before the class. The member grace is deliberately zero — once the
+/// class is over, the room is closed to members (there is no "just this once".)
+export const HOST_JOIN_LEAD_MINUTES = 30;
+export const MEMBER_JOIN_LEAD_MINUTES = 5;
+export const MEMBER_JOIN_GRACE_AFTER_MINUTES = 0;
+
+/// A class routinely runs over. The host's window stays open past the scheduled
+/// end so the session isn't cut off mid-sentence; it closes for real when the
+/// host ends the class, which is an explicit action.
+export const HOST_OVERRUN_GRACE_MINUTES = Number(
+	process.env.SESSION_HOST_OVERRUN_MINUTES ?? 120,
+);
+
+/// Sessions are stored as a UTC-midnight `sessionDate` plus an "HH:mm" string,
+/// and that string is gym wall-clock time, not UTC. Reading it as UTC shifts
+/// every class by the zone offset — 5h30m for IST, which is long enough to
+/// close the join window before the class has even started.
+export const BUSINESS_TIMEZONE = process.env.BUSINESS_TIMEZONE ?? "Asia/Kolkata";
 
 /**
- * Combines a session's date with its "HH:mm" wall-clock time.
+ * Offset of [timeZone] from UTC at a given instant, in milliseconds.
+ *
+ * Derived via `Intl` rather than hardcoded to +05:30 so the value stays correct
+ * if the business timezone is ever repointed somewhere that observes DST.
+ */
+const zoneOffsetMs = (instant: Date, timeZone: string): number => {
+	const parts = Object.fromEntries(
+		new Intl.DateTimeFormat("en-US", {
+			timeZone,
+			hour12: false,
+			year: "numeric",
+			month: "2-digit",
+			day: "2-digit",
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+		})
+			.formatToParts(instant)
+			.map((part) => [part.type, part.value]),
+	);
+
+	return (
+		Date.UTC(
+			Number(parts.year),
+			Number(parts.month) - 1,
+			Number(parts.day),
+			Number(parts.hour) % 24,
+			Number(parts.minute),
+			Number(parts.second),
+		) - instant.getTime()
+	);
+};
+
+/**
+ * Combines a session's date with its "HH:mm" wall-clock time, interpreting that
+ * time in [BUSINESS_TIMEZONE].
+ *
  * Returns null when either part is missing or unparseable, so callers can fail
  * closed rather than admitting everyone to a session with a malformed schedule.
  */
@@ -91,10 +144,22 @@ export const combineSessionDateTime = (
 	const minutes = Number(match[2]);
 	if (hours > 23 || minutes > 59) return null;
 
-	const combined = new Date(base);
-	combined.setUTCHours(hours, minutes, 0, 0);
-	return combined;
+	// `sessionDate` is written at UTC midnight, so its UTC calendar date is the
+	// intended day. Resolve twice: the first pass picks the offset from a rough
+	// instant, the second re-reads it at the corrected one, which is what makes
+	// this right across a DST boundary.
+	const naive = Date.UTC(
+		base.getUTCFullYear(),
+		base.getUTCMonth(),
+		base.getUTCDate(),
+		hours,
+		minutes,
+	);
+	const firstPass = new Date(naive - zoneOffsetMs(new Date(naive), BUSINESS_TIMEZONE));
+	return new Date(naive - zoneOffsetMs(firstPass, BUSINESS_TIMEZONE));
 };
+
+export type SessionRole = "host" | "member";
 
 export type JoinWindow = {
 	opensAt: Date;
@@ -104,15 +169,18 @@ export type JoinWindow = {
 export const buildJoinWindow = (
 	start: Date,
 	end: Date | null,
+	role: SessionRole,
 ): JoinWindow => {
-	const opensAt = new Date(
-		start.getTime() - JOIN_WINDOW_BEFORE_MINUTES * 60_000,
-	);
+	const leadMinutes =
+		role === "host" ? HOST_JOIN_LEAD_MINUTES : MEMBER_JOIN_LEAD_MINUTES;
+	const graceMinutes =
+		role === "host" ? HOST_OVERRUN_GRACE_MINUTES : MEMBER_JOIN_GRACE_AFTER_MINUTES;
+
+	const opensAt = new Date(start.getTime() - leadMinutes * 60_000);
 	// A session with no parseable end time still gets a bounded window rather
 	// than an open-ended one.
 	const effectiveEnd = end ?? new Date(start.getTime() + 60 * 60_000);
-	const closesAt = new Date(
-		effectiveEnd.getTime() + JOIN_WINDOW_GRACE_AFTER_MINUTES * 60_000,
-	);
+	const closesAt = new Date(effectiveEnd.getTime() + graceMinutes * 60_000);
+
 	return { opensAt, closesAt };
 };
