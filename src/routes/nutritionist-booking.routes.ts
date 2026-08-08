@@ -2,7 +2,12 @@ import { Router } from "express";
 import {
 	acceptBooking,
 	bookNutritionist,
+	completeBooking,
+	getAllBookingsForAdmin,
 	getMemberBooking,
+	getMyBookings,
+	rejectBooking,
+	rescheduleMyBooking,
 	switchToOnline,
 } from "../controllers/nutritionist-booking.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
@@ -31,10 +36,22 @@ nutritionistBookingRouter.get(
 	getMemberBooking,
 );
 
+nutritionistBookingRouter.get(
+	"/nutritionist/my-bookings",
+	authorize(["user"]),
+	getMyBookings,
+);
+
 nutritionistBookingRouter.patch(
 	"/nutritionist/my-booking/switch-to-online",
 	authorize(["user"]),
 	switchToOnline,
+);
+
+nutritionistBookingRouter.patch(
+	"/nutritionist/my-booking/reschedule",
+	authorize(["user"]),
+	rescheduleMyBooking,
 );
 
 nutritionistBookingRouter.post(
@@ -44,6 +61,12 @@ nutritionistBookingRouter.post(
 );
 
 // Admin endpoints
+nutritionistBookingRouter.get(
+	"/nutritionist/bookings",
+	authorize(["admin", "nutritionist", "frontdesk"]),
+	getAllBookingsForAdmin,
+);
+
 nutritionistBookingRouter.patch(
 	"/admin/nutrition/bookings/:id/accept",
 	authorize(["admin", "nutritionist", "frontdesk"]),
@@ -60,6 +83,18 @@ nutritionistBookingRouter.patch(
 	"/nutritionist/bookings/:id/accept",
 	authorize(["admin", "nutritionist", "frontdesk"]),
 	acceptBooking,
+);
+
+nutritionistBookingRouter.patch(
+	"/nutritionist/bookings/:id/reject",
+	authorize(["admin", "nutritionist", "frontdesk"]),
+	rejectBooking,
+);
+
+nutritionistBookingRouter.patch(
+	"/nutritionist/bookings/:id/complete",
+	authorize(["admin", "nutritionist", "frontdesk"]),
+	completeBooking,
 );
 
 export default nutritionistBookingRouter;

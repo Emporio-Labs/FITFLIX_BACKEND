@@ -277,6 +277,8 @@ export enum NutritionistBookingStatus {
 	ACCEPTED = "ACCEPTED",
 	REJECTED = "REJECTED",
 	COMPLETED = "COMPLETED",
+	EXPIRED = "EXPIRED",
+	RESCHEDULE_REQUIRED = "RESCHEDULE_REQUIRED",
 }
 
 export enum NutritionistApprovalStatus {

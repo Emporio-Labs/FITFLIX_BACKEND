@@ -13,6 +13,7 @@ import User from "../models/User";
 import Admin from "../models/Admin";
 import Notification from "../models/Notification";
 import { notify } from "./notification.service";
+import { expireStalePendingBookings } from "./nutritionist-expiry.service";
 
 const REMINDER_OFFSETS_MS: Record<ReminderKind, number> = {
 	[ReminderKind.TMinus24H]: 24 * 60 * 60 * 1000,
@@ -163,6 +164,13 @@ export async function processReminders(): Promise<{
 		await checkMembershipExpiries();
 	} catch (err) {
 		console.error("[reminder-poller] checkMembershipExpiries failed", err);
+	}
+
+	// Auto-expire PENDING nutritionist bookings whose slot start has passed.
+	try {
+		await expireStalePendingBookings(now);
+	} catch (err) {
+		console.error("[reminder-poller] expireStalePendingBookings failed", err);
 	}
 
 	return { fired, failed };

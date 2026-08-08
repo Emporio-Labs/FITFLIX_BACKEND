@@ -176,7 +176,35 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 			remainingCapacity: s.remainingCapacity,
 		}));
 
-		const slots = [...concreteRows, ...templateRows].sort((a, b) =>
+		// Multiple daily-template rows can legitimately exist for the same
+		// startTime/endTime window (no uniqueness constraint on templates) —
+		// collapse them into one card per window so the UI never shows
+		// duplicate "same time, different count" slots. Any of the grouped
+		// slotIds still resolves correctly when booking.
+		const grouped = new Map<
+			string,
+			{
+				slotId: (typeof concreteRows)[number]["slotId"];
+				date: (typeof concreteRows)[number]["date"];
+				startTime: string;
+				endTime: string;
+				capacity: number;
+				remainingCapacity: number;
+			}
+		>();
+
+		for (const row of [...concreteRows, ...templateRows]) {
+			const key = `${row.startTime}::${row.endTime}`;
+			const existing = grouped.get(key);
+			if (!existing) {
+				grouped.set(key, { ...row });
+				continue;
+			}
+			existing.capacity = Math.max(existing.capacity, row.capacity);
+			existing.remainingCapacity += row.remainingCapacity;
+		}
+
+		const slots = Array.from(grouped.values()).sort((a, b) =>
 			a.startTime.localeCompare(b.startTime),
 		);
 

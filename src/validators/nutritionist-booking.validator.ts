@@ -34,6 +34,11 @@ export const switchToOnlineSchema = z.object({
 	notes: optionalString,
 });
 
+export const rescheduleNutritionistBookingSchema = z.object({
+	slotId: z.string().trim().min(1, "slotId is required"),
+	date: optionalString,
+});
+
 export type BookNutritionistBody = z.infer<typeof bookNutritionistSchema>;
 export type AcceptNutritionistBookingBody = z.infer<
 	typeof acceptNutritionistBookingSchema
