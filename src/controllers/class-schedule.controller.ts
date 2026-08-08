@@ -198,14 +198,17 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes")
+			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes status")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
+		// Filter out sessions belonging to retired (INACTIVE) classes
+		const activeSessions = sessions.filter((s: any) => s.classId && s.classId.status !== "INACTIVE");
+
 		res.status(200).json({
 			message: "Scheduled sessions retrieved successfully",
-			count: sessions.length,
-			sessions: sessions.map((s) => {
+			count: activeSessions.length,
+			sessions: activeSessions.map((s) => {
 				// videoRoomId is the single source of truth for the ZEGOCLOUD room;
 				// videoConferenceId must always mirror it (never derived separately)
 				// so the Admin host and User App can never resolve different rooms.

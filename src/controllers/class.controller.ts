@@ -3,6 +3,7 @@ import z from "zod";
 import mongoose from "mongoose";
 import Class from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
+import Booking from "../models/Bookings";
 import { normalizeDeliveryType } from "../utils/delivery-type";
 import {
 	createClassBodySchema,
@@ -228,7 +229,6 @@ export async function syncSessionsForClass(
 	//    remember their dates so step 4 doesn't create a duplicate alongside.
 	const booked = await ScheduledSession.find({
 		classId: classDoc._id,
-		sessionDate: { $gte: todayStart },
 		currentBookings: { $gt: 0 },
 	})
 		.select("sessionDate")
@@ -435,18 +435,48 @@ export const softDeleteClassById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const retiredClass = await Class.findByIdAndUpdate(
-			id,
-			{ status: "INACTIVE" },
-			{ returnDocument: "after" },
-		);
+		const hasBookings = await Booking.exists({ classId: id });
+		const hasActiveSessionBookings = await ScheduledSession.exists({
+			classId: id,
+			currentBookings: { $gt: 0 },
+		});
 
-		if (!retiredClass) {
-			res.status(404).json({ message: "Class not found" });
-			return;
+		if (hasBookings || hasActiveSessionBookings) {
+			// Soft delete/retire the class by setting status to INACTIVE.
+			const retiredClass = await Class.findByIdAndUpdate(
+				id,
+				{ status: "INACTIVE" },
+				{ returnDocument: "after" },
+			);
+
+			if (!retiredClass) {
+				res.status(404).json({ message: "Class not found" });
+				return;
+			}
+
+			// Clean up unbooked sessions of the retired class
+			await ScheduledSession.deleteMany({
+				classId: id,
+				$or: [{ currentBookings: { $lte: 0 } }, { currentBookings: null }],
+			});
+
+			res.status(200).json({ message: "Class retired", class: retiredClass });
+		} else {
+			// Hard delete the class and all associated unbooked sessions
+			const deletedClass = await Class.findByIdAndDelete(id);
+
+			if (!deletedClass) {
+				res.status(404).json({ message: "Class not found" });
+				return;
+			}
+
+			await ScheduledSession.deleteMany({ classId: id });
+
+			res.status(200).json({
+				message: "Class deleted successfully",
+				class: deletedClass,
+			});
 		}
-
-		res.status(200).json({ message: "Class retired", class: retiredClass });
 	} catch (error) {
 		next(error);
 	}

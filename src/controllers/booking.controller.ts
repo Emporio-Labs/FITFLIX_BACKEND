@@ -367,7 +367,7 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
 			.populate("slot", "date startTime endTime")
-			.populate("classId", "name instructor deliveryMode creditCost scheduleInfo zegoRoomId")
+			.populate("classId", "name instructor mode sessionType creditCost scheduleInfo zegoRoomId")
 			.populate("sessionId")
 			.populate("report", "subject hasPdf")
 			.sort({ createdAt: -1 });
@@ -456,7 +456,7 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
 			.populate("slot", "date startTime endTime")
-			.populate("classId", "name description creditCost mode instructor tags durationMinutes locationAddress")
+			.populate("classId", "name description creditCost mode sessionType instructor tags durationMinutes locationAddress")
 			.populate("report", "subject hasPdf");
 
 		const mappedBookings = bookings.map((b: any) => {
