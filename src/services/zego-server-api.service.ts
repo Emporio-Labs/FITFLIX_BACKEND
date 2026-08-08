@@ -25,6 +25,23 @@ type ZegoApiConfig = {
 	serverSecret: string;
 };
 
+/**
+ * Reads the server-side Zego credentials from the environment, returning null
+ * if either is missing/unparseable rather than throwing — callers that only
+ * need a best-effort kickout (the lifecycle sweep, the manual end endpoint)
+ * should degrade to "skip the kick" rather than fail the whole operation.
+ */
+export const readZegoServerConfig = (): ZegoApiConfig | null => {
+	const appIdStr = process.env.ZEGO_APP_ID;
+	const serverSecret = process.env.ZEGO_SERVER_SECRET;
+	if (!appIdStr || !serverSecret) return null;
+
+	const appId = Number.parseInt(appIdStr, 10);
+	if (Number.isNaN(appId)) return null;
+
+	return { appId, serverSecret };
+};
+
 type ZegoApiEnvelope<T> = {
 	Code: number;
 	Message: string;

@@ -272,6 +272,9 @@ export async function syncSessionsForClass(
 			endTime,
 			deliveryType,
 			locationAddress: classDoc.locationAddress || null,
+			// Zego layout template, not a room id. `videoRoomId` is deliberately
+			// left unset — the lifecycle job stamps it at (start - lead), and every
+			// reader derives the identical value from _id until then.
 			streamRoomId: classDoc.streamRoomId || null,
 			capacity,
 			currentBookings: 0,

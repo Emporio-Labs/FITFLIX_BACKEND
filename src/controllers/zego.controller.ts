@@ -1,14 +1,11 @@
 import type { RequestHandler } from "express";
-import mongoose from "mongoose";
-import Booking from "../models/Bookings";
 import User from "../models/User";
-import { nonCancelledBookingStatusFilter } from "../utils/zego-room";
 import { generateToken04 } from "../utils/zego";
 import {
 	resolveSessionAccess,
 	type SessionAccessDenied,
 } from "../services/session-access.service";
-import { forceDisconnectRoom } from "../services/zego-server-api.service";
+import { finalizeSession } from "../services/session-finalize.service";
 import { videoTokenParamsSchema } from "../validators/zego.validator";
 
 /// Login-room + publish-stream, granted to hosts and to every member of a
@@ -176,6 +173,7 @@ export const generateSessionToken: RequestHandler = async (req, res, next) => {
 			roomOpensAt: access.windowOpensAt.toISOString(),
 			sessionEndsAt: access.endsAt.toISOString(),
 			windowClosesAt: access.windowClosesAt.toISOString(),
+			hostLiveAt: access.hostLiveAt ? access.hostLiveAt.toISOString() : null,
 		});
 	} catch (error) {
 		console.error("Zego session token generation error:", error);
@@ -241,57 +239,16 @@ export const endLiveSession: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		// Flip to COMPLETED before kicking, so a kicked client that instantly
-		// retries /token races against a closed door, not an open one.
-		access.session.status = "COMPLETED";
-		access.session.endedAt = new Date();
-		if (mongoose.Types.ObjectId.isValid(user.id)) {
-			access.session.endedBy = new mongoose.Types.ObjectId(user.id);
-		}
-		await access.session.save();
-
-		const attendanceResult = await Booking.updateMany(
-			{
-				$or: [
-					{ sessionId },
-					...(access.session._id ? [{ sessionId: String(access.session._id) }] : []),
-				],
-				joinedAt: { $ne: null },
-				status: nonCancelledBookingStatusFilter,
-			},
-			{ $set: { status: "Attended", leftAt: new Date() } },
-		);
-
-		let kicked: string[] = [];
-		let kickErrors: Array<{ userIds: string[]; message: string }> = [];
-
 		const config = readZegoConfig();
-		if (!("error" in config)) {
-			try {
-				const result = await forceDisconnectRoom(
-					{ appId: config.appID, serverSecret: config.serverSecret },
-					access.roomId,
-					"Class ended by host",
-				);
-				kicked = result.kicked;
-				kickErrors = result.errors;
-			} catch (error) {
-				// Best-effort — Zego being unreachable must never block ending a
-				// class. The COMPLETED flip above is what actually closes it.
-				kickErrors = [
-					{
-						userIds: [],
-						message: error instanceof Error ? error.message : String(error),
-					},
-				];
-			}
-		}
+		const result = await finalizeSession(access.session, {
+			endedBy: user.id,
+			reason: "Class ended by host",
+			zegoConfig: "error" in config ? null : { appId: config.appID, serverSecret: config.serverSecret },
+		});
 
 		res.status(200).json({
 			message: "Session ended.",
-			attendanceMarked: attendanceResult.modifiedCount,
-			kicked,
-			kickErrors,
+			...result,
 		});
 	} catch (error) {
 		console.error("Zego end-session error:", error);
@@ -363,6 +320,83 @@ export const recordSessionAttendance: RequestHandler = async (req, res, next) =>
 		res.status(200).json({ message: "Attendance recorded successfully.", booking });
 	} catch (error) {
 		console.error("Zego session attendance error:", error);
+		next(error);
+	}
+};
+
+/**
+ * POST /api/v1/zego/sessions/:sessionId/host-presence
+ *
+ * Host-only heartbeat: called from the host client's real "I am now in the
+ * room" callback (Zego's onJoinRoom / onLiveStart), not from token issuance —
+ * a host who requests a token but never actually joins must not flip members
+ * into the room. Safe to call repeatedly; `hostLiveAt` is write-once, so a
+ * reconnect after a brief drop never resets when the class "started" and
+ * never re-blocks members who are already in.
+ *
+ * This is the fast path. session-room-lifecycle.service.ts's
+ * verifyHostPresence sweep is the self-heal for a host whose client dies
+ * before ever calling this endpoint.
+ */
+export const reportHostPresence: RequestHandler = async (req, res, next) => {
+	try {
+		const parsedParams = videoTokenParamsSchema.safeParse({
+			sessionId: req.params.sessionId,
+		});
+		if (!parsedParams.success) {
+			res.status(400).json({
+				message: "Invalid session id",
+				errors: parsedParams.error.issues,
+			});
+			return;
+		}
+
+		const user = req.user;
+		if (!user?.id) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
+		const { sessionId } = parsedParams.data;
+		const access = await resolveSessionAccess({ sessionId, user });
+
+		if (!access.ok) {
+			respondDenied(res, access);
+			return;
+		}
+
+		if (access.role !== "host") {
+			res.status(403).json({ message: "Only the host can report presence for this class." });
+			return;
+		}
+
+		if (access.nutritionistBooking) {
+			const now = new Date();
+			if (!access.nutritionistBooking.hostLiveAt) {
+				access.nutritionistBooking.hostLiveAt = now;
+			}
+			access.nutritionistBooking.hostLastSeenAt = now;
+			await access.nutritionistBooking.save();
+
+			res.status(200).json({ hostLiveAt: access.nutritionistBooking.hostLiveAt.toISOString() });
+			return;
+		}
+
+		if (!access.session) {
+			res.status(409).json({ message: "This session has no schedule." });
+			return;
+		}
+
+		const now = new Date();
+		if (!access.session.hostLiveAt) {
+			access.session.hostLiveAt = now;
+		}
+		access.session.hostLastSeenAt = now;
+		await access.session.save();
+
+		res.status(200).json({ hostLiveAt: access.session.hostLiveAt.toISOString() });
+	} catch (error) {
+		console.error("Zego host-presence error:", error);
 		next(error);
 	}
 };

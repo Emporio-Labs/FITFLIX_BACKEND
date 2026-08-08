@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Booking from "../models/Bookings";
 import ClassModel from "../models/Class";
+import NutritionistBooking from "../models/NutritionistBooking";
 import ScheduledSession from "../models/ScheduledSession";
 import { normalizeRole } from "../middleware/rbac.middleware";
 import type { AuthenticatedUser } from "../types/auth";
@@ -8,7 +9,8 @@ import {
 	buildJoinWindow,
 	combineSessionDateTime,
 	nonCancelledBookingStatusFilter,
-	sanitizeRoomId,
+	resolveSessionRoomId,
+	ROOM_LEAD_MINUTES,
 	type SessionRole,
 } from "../utils/zego-room";
 
@@ -21,6 +23,7 @@ export type DenyCode =
 	| "CANCELLED"
 	| "ENDED"
 	| "NOT_OPEN_YET"
+	| "HOST_NOT_STARTED"
 	| "NO_ROOM";
 
 const DENY_STATUS: Record<DenyCode, number> = {
@@ -29,6 +32,7 @@ const DENY_STATUS: Record<DenyCode, number> = {
 	CANCELLED: 409,
 	ENDED: 409,
 	NOT_OPEN_YET: 403,
+	HOST_NOT_STARTED: 403,
 	NO_ROOM: 409,
 };
 
@@ -38,6 +42,7 @@ const DENY_MESSAGE: Record<DenyCode, string> = {
 	CANCELLED: "This session has been cancelled.",
 	ENDED: "This class has ended.",
 	NOT_OPEN_YET: "The join window for this class has not opened yet.",
+	HOST_NOT_STARTED: "The host hasn't started this class yet.",
 	NO_ROOM: "No video room is available for this session.",
 };
 
@@ -61,7 +66,17 @@ export type SessionAccessGranted = {
 	windowClosesAt: Date;
 	booking: InstanceType<typeof Booking> | null;
 	session: InstanceType<typeof ScheduledSession> | null;
-	klass: { _id: unknown; instructorUserId?: unknown; sessionType?: string; name?: string; streamRoomId?: string } | null;
+	nutritionistBooking?: any;
+	hostLiveAt: Date | null;
+	klass: {
+		_id: unknown;
+		instructorUserId?: unknown;
+		sessionType?: string;
+		name?: string;
+		/// Zego layout template, not a room id — see ScheduledSession.streamRoomId.
+		streamRoomId?: string;
+		occurrenceLeadMinutes?: number;
+	} | null;
 };
 
 export type SessionAccessResult = SessionAccessGranted | SessionAccessDenied;
@@ -108,14 +123,87 @@ export const resolveSessionAccess = async ({
 
 	const klass = session
 		? await ClassModel.findById(session.classId)
-				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost")
+				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes")
 				.lean()
 		: await ClassModel.findById(sessionId)
-				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost")
+				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes")
 				.lean();
 
 	if (!session && !klass) {
-		return deny("NO_SCHEDULE");
+		const cleanId = sessionId.startsWith("nutri_session_")
+			? sessionId.replace("nutri_session_", "")
+			: sessionId;
+
+		let nutriBooking: any = null;
+		if (mongoose.Types.ObjectId.isValid(cleanId)) {
+			nutriBooking = await NutritionistBooking.findById(cleanId);
+		}
+		if (!nutriBooking) {
+			nutriBooking = await NutritionistBooking.findOne({ zegoRoomId: sessionId });
+		}
+
+		if (!nutriBooking) {
+			return deny("NO_SCHEDULE");
+		}
+
+		const userRoleNorm = normalizeRole(user.role);
+		const isHostRole =
+			userRoleNorm === "admin" ||
+			userRoleNorm === "nutritionist" ||
+			userRoleNorm === "frontdesk" ||
+			(nutriBooking.assignedNutritionistId &&
+				String(nutriBooking.assignedNutritionistId) === String(rawUserId));
+		const isMember = String(nutriBooking.userId) === String(rawUserId);
+
+		if (!isHostRole && !isMember) {
+			return deny("NO_BOOKING");
+		}
+
+		const role: SessionRole = isHostRole ? "host" : "member";
+
+		if (nutriBooking.status === "REJECTED" || nutriBooking.status === "CANCELLED") {
+			return deny("CANCELLED");
+		}
+		if (nutriBooking.status === "COMPLETED") {
+			return deny("ENDED");
+		}
+
+		const startsAt = combineSessionDateTime(nutriBooking.bookingDate, nutriBooking.startTime);
+		const endsAt = combineSessionDateTime(nutriBooking.bookingDate, nutriBooking.endTime) || new Date((startsAt?.getTime() ?? Date.now()) + 30 * 60_000);
+
+		if (!startsAt) {
+			return deny("NO_SCHEDULE");
+		}
+
+		// Host presence check: Member cannot enter until host has joined/started
+		if (role === "member" && !nutriBooking.hostLiveAt) {
+			return deny("HOST_NOT_STARTED", { startsAt, endsAt });
+		}
+
+		const roomId = nutriBooking.zegoRoomId || `nutri_session_${nutriBooking._id}`;
+		const ttlSeconds = Math.max(
+			MIN_TTL_SECONDS,
+			Math.min(
+				MAX_TTL_SECONDS,
+				Math.floor((endsAt.getTime() - now.getTime()) / 1000) + 30 * 60,
+			),
+		);
+
+		return {
+			ok: true,
+			role,
+			roomId,
+			ttlSeconds,
+			startsAt,
+			endsAt,
+			windowOpensAt: startsAt,
+			windowClosesAt: endsAt,
+			booking: null,
+			session: null,
+			nutritionistBooking: nutriBooking,
+			hostLiveAt: nutriBooking.hostLiveAt || null,
+			klass: null,
+		};
 	}
 
 	// 2. Host identity: the class's designated host, or an admin operator.
@@ -168,8 +256,7 @@ export const resolveSessionAccess = async ({
 			],
 			status: nonCancelledBookingStatusFilter,
 		})
-			.populate("sessionId", "sessionDate startTime endTime status videoRoomId")
-			.populate("classId", "zegoRoomId");
+			.populate("sessionId", "sessionDate startTime endTime status videoRoomId");
 
 		const isOpenToAll = (klass as any)?.access === "open_to_all";
 		if (!booking && !isOpenToAll) {
@@ -186,7 +273,13 @@ export const resolveSessionAccess = async ({
 	}
 
 	// 6. Role-scoped join window — the only place lead/grace times are read.
-	const window = buildJoinWindow(startsAt, endsAt, role);
+	// The class may widen the host's lead beyond the platform default; the
+	// lifecycle job reads the same override when it provisions the room, so the
+	// room is always ready by the time the host's window opens.
+	const leadMinutes = Number.isFinite(Number(klass?.occurrenceLeadMinutes))
+		? Number(klass?.occurrenceLeadMinutes)
+		: ROOM_LEAD_MINUTES;
+	const window = buildJoinWindow(startsAt, endsAt, role, leadMinutes);
 	if (now.getTime() < window.opensAt.getTime()) {
 		return deny("NOT_OPEN_YET", { startsAt, endsAt });
 	}
@@ -194,27 +287,27 @@ export const resolveSessionAccess = async ({
 		return deny("ENDED");
 	}
 
-	// 7. Room id — deterministic per session, same for every participant.
-	//
-	// This MUST NOT be derived from the caller's booking. Doing so gave the
-	// host (no booking) and the member (booking) two different resolution
-	// orders: the booking path never considered streamRoomId and could fall
-	// all the way through to booking._id — a room unique to that one member.
-	// For a live_stream the host landed on session.streamRoomId while the
-	// member landed on session._id, so each sat alone in their own room and
-	// the audience saw a black screen. Both roles now resolve identically,
-	// off the session/class only.
-	const rawRoomId =
-		session?.videoRoomId ||
-		session?.streamRoomId ||
-		session?._id?.toString() ||
-		klass?.streamRoomId ||
-		sessionId;
+	// 6.5. A member cannot enter a room the host has never joined — otherwise
+	// the join window alone lets a booked member land in an empty room at
+	// T-5 with nobody else there. Hosts are exempt: they are the ones whose
+	// presence this very check is waiting on. Deliberately placed after the
+	// time window (a member 40 minutes early sees NOT_OPEN_YET, not this) and
+	// before room resolution. hostLiveAt is write-once — see
+	// ScheduledSession.hostLiveAt and POST .../host-presence — so once a
+	// class has gone live this never re-blocks a member mid-session even if
+	// the host's connection drops.
+	if (role === "member" && !session?.hostLiveAt) {
+		return deny("HOST_NOT_STARTED", { startsAt, endsAt });
+	}
 
-	if (!rawRoomId) {
+	// 7. Room id — deterministic per session, same for every participant.
+	// resolveSessionRoomId is the only implementation; see its doc comment for
+	// why neither the caller's booking nor `streamRoomId` may influence this.
+	const roomId = resolveSessionRoomId(session);
+
+	if (!roomId) {
 		return deny("NO_ROOM");
 	}
-	const roomId = sanitizeRoomId(String(rawRoomId));
 
 	// 8. TTL = time left in the window, clamped. Below the floor is functionally
 	// over — deny rather than hand out a token that outlives the window.
@@ -238,5 +331,6 @@ export const resolveSessionAccess = async ({
 		booking,
 		session,
 		klass,
+		hostLiveAt: session?.hostLiveAt ?? null,
 	};
 };

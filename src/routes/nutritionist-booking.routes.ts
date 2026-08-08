@@ -55,6 +55,24 @@ nutritionistBookingRouter.patch(
 );
 
 nutritionistBookingRouter.post(
+	"/nutritionist/my-booking/reschedule",
+	authorize(["user"]),
+	rescheduleMyBooking,
+);
+
+nutritionistBookingRouter.post(
+	"/onboarding/nutritionist/reschedule",
+	authorize(["user"]),
+	rescheduleMyBooking,
+);
+
+nutritionistBookingRouter.patch(
+	"/onboarding/nutritionist/reschedule",
+	authorize(["user"]),
+	rescheduleMyBooking,
+);
+
+nutritionistBookingRouter.post(
 	"/nutritionist/my-booking/switch-to-online",
 	authorize(["user"]),
 	switchToOnline,

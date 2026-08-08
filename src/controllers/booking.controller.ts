@@ -12,7 +12,7 @@ import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
 import { releaseSeatAtomic } from "../services/capacity-engine.service";
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
-import { combineSessionDateTime } from "../utils/zego-room";
+import { combineSessionDateTime, resolveSessionRoomId } from "../utils/zego-room";
 import {
 	changeBookingStatusBodySchema,
 	createBookingBodySchema,
@@ -368,7 +368,7 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
 			.populate("slot", "date startTime endTime")
-			.populate("classId", "name instructor mode sessionType creditCost scheduleInfo zegoRoomId")
+			.populate("classId", "name instructor mode sessionType creditCost scheduleInfo")
 			.populate("sessionId")
 			.populate("report", "subject hasPdf")
 			.sort({ createdAt: -1 });
@@ -384,14 +384,9 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 
 		const mappedBookings = bookings.map((b: any) => {
 			const obj = b.toObject ? b.toObject() : b;
-			const roomId =
-				obj.sessionId?.videoRoomId ||
-				obj.sessionId?._id?.toString() ||
-				(typeof obj.sessionId === "string" ? obj.sessionId : null) ||
-				obj.classId?.zegoRoomId ||
-				obj.classId?._id?.toString() ||
-				(typeof obj.classId === "string" ? obj.classId : null) ||
-				obj._id?.toString();
+			// A booking never determines a room — the session does. Deriving it
+			// from the booking gave each member a room of their own.
+			const roomId = resolveSessionRoomId(obj.sessionId);
 			return {
 				...obj,
 				videoRoomId: roomId,
@@ -457,20 +452,13 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
 			.populate("slot", "date startTime endTime")
-			.populate("sessionId", "sessionDate startTime endTime status videoRoomId")
+			.populate("sessionId", "sessionDate startTime endTime status videoRoomId hostLiveAt")
 			.populate("classId", "name description creditCost mode sessionType instructor tags durationMinutes locationAddress")
 			.populate("report", "subject hasPdf");
 
 		const mappedBookings = bookings.map((b: any) => {
 			const obj = b.toObject ? b.toObject() : b;
-			const roomId =
-				obj.sessionId?.videoRoomId ||
-				obj.sessionId?._id?.toString() ||
-				(typeof obj.sessionId === "string" ? obj.sessionId : null) ||
-				obj.classId?.zegoRoomId ||
-				obj.classId?._id?.toString() ||
-				(typeof obj.classId === "string" ? obj.classId : null) ||
-				obj._id?.toString();
+			const roomId = resolveSessionRoomId(obj.sessionId);
 			const scheduledSession =
 				typeof obj.sessionId === "object" && obj.sessionId ? obj.sessionId : null;
 			return {
@@ -491,6 +479,12 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 					: null,
 				endsAtUtc: scheduledSession
 					? combineSessionDateTime(scheduledSession.sessionDate, scheduledSession.endTime)?.toISOString() ?? null
+					: null,
+				// The client can only decide "waiting for host" vs. "live" from
+				// this — everything else on the join gate is already derivable
+				// from startsAtUtc/endsAtUtc alone.
+				hostLiveAt: scheduledSession?.hostLiveAt
+					? new Date(scheduledSession.hostLiveAt).toISOString()
 					: null,
 			};
 		});

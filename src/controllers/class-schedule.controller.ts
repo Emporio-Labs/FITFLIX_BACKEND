@@ -4,7 +4,11 @@ import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
 import { normalizeDeliveryType } from "../utils/delivery-type";
-import { combineSessionDateTime } from "../utils/zego-room";
+import {
+	combineSessionDateTime,
+	deriveRoomId,
+	resolveSessionRoomId,
+} from "../utils/zego-room";
 import {
 	createClassScheduleSchema,
 	updateClassScheduleSchema,
@@ -150,10 +154,13 @@ export const createScheduledSession: RequestHandler = async (
 				}
 			}
 
-			// Pre-generate the _id so videoRoomId can be persisted as the single source
-			// of truth for the ZEGOCLOUD room — the Admin host and the User App both
-			// resolve their room from this field (falling back to _id for older rows),
-			// so it must never diverge from _id.toString().
+			// Pre-generate the _id so videoRoomId matches deriveRoomId(_id) exactly:
+			// every reader falls back to that derivation for rows the lifecycle job
+			// has not stamped yet, so the two must never disagree.
+			//
+			// Stamping it here does not "create the room" — a Zego room only exists
+			// once someone joins. The lifecycle job still owns the T-minus-lead
+			// transition to roomStatus READY.
 			const sessionId = new mongoose.Types.ObjectId();
 			const sessionDoc = await ScheduledSession.create({
 				_id: sessionId,
@@ -167,8 +174,9 @@ export const createScheduledSession: RequestHandler = async (
 				capacity: capacity || targetClass.maxParticipants || 20,
 				status: "SCHEDULED",
 				recurrenceRule,
+				// Zego layout template inherited from the class — not a room id.
 				streamRoomId: streamRoomId || targetClass.streamRoomId || null,
-				videoRoomId: sessionId.toString(),
+				videoRoomId: deriveRoomId(sessionId),
 				isPublished,
 			});
 
@@ -222,10 +230,10 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 			message: "Scheduled sessions retrieved successfully",
 			count: activeSessions.length,
 			sessions: activeSessions.map((s) => {
-				// videoRoomId is the single source of truth for the ZEGOCLOUD room;
-				// videoConferenceId must always mirror it (never derived separately)
-				// so the Admin host and User App can never resolve different rooms.
-				const videoRoomId = (s as any).videoRoomId || s._id.toString();
+				// videoConferenceId must always mirror videoRoomId (never derived
+				// separately) so the Admin host and User App can never resolve
+				// different rooms.
+				const videoRoomId = resolveSessionRoomId(s as any);
 				return withAbsoluteTimes({
 					...s,
 					videoRoomId,
@@ -275,10 +283,10 @@ export const getSchedulesForMembers: RequestHandler = async (
 			message: "Active scheduled sessions retrieved successfully",
 			count: sessions.length,
 			sessions: sessions.map((s) => {
-				// videoRoomId is the single source of truth for the ZEGOCLOUD room;
-				// videoConferenceId must always mirror it (never derived separately)
-				// so the Admin host and User App can never resolve different rooms.
-				const videoRoomId = (s as any).videoRoomId || s._id.toString();
+				// videoConferenceId must always mirror videoRoomId (never derived
+				// separately) so the Admin host and User App can never resolve
+				// different rooms.
+				const videoRoomId = resolveSessionRoomId(s as any);
 				return withAbsoluteTimes({
 					...s,
 					videoRoomId,
@@ -321,7 +329,7 @@ export const getScheduledSessionByIdForMembers: RequestHandler = async (
 			return;
 		}
 
-		const videoRoomId = (session as any).videoRoomId || session._id.toString();
+		const videoRoomId = resolveSessionRoomId(session as any);
 		res.status(200).json({
 			session: withAbsoluteTimes({
 				...session,

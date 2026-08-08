@@ -3,6 +3,7 @@ import {
 	endLiveSession,
 	generateSessionToken,
 	recordSessionAttendance,
+	reportHostPresence,
 } from "../controllers/zego.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 
@@ -22,5 +23,9 @@ zegoRouter.post("/sessions/:sessionId/token", generateSessionToken);
 zegoRouter.post("/sessions/:sessionId/end", endLiveSession);
 
 zegoRouter.post("/sessions/:sessionId/attendance", recordSessionAttendance);
+
+// Host-only; resolveSessionAccess rejects a non-host caller with 403 before
+// this ever writes anything.
+zegoRouter.post("/sessions/:sessionId/host-presence", reportHostPresence);
 
 export default zegoRouter;

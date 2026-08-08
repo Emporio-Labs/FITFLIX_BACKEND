@@ -78,6 +78,14 @@ const nutritionistBookingSchema = new mongoose.Schema(
 			type: Date,
 			default: null,
 		},
+		hostLiveAt: {
+			type: Date,
+			default: null,
+		},
+		hostLastSeenAt: {
+			type: Date,
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );

@@ -12,73 +12,73 @@ export const nonCancelledBookingStatusFilter = {
 };
 
 /**
- * The single source of truth for "which Zego room does this booking map to".
- *
- * The precedence below is the one already used when serving bookings to admin
- * and user clients — if the token endpoint derived a room ID any other way, a
- * member and their trainer would be issued tokens for two different rooms and
- * neither would see the other. Keep this function as the only implementation.
- */
-export const resolveRoomIdFromBooking = (booking: {
-	sessionId?: unknown;
-	classId?: unknown;
-	_id?: unknown;
-}): string | null => {
-	const session = booking.sessionId as
-		| { videoRoomId?: string | null; _id?: unknown }
-		| string
-		| null
-		| undefined;
-	const klass = booking.classId as
-		| { zegoRoomId?: string | null; _id?: unknown }
-		| string
-		| null
-		| undefined;
-
-	const candidates: Array<unknown> = [
-		typeof session === "object" && session ? session.videoRoomId : null,
-		typeof session === "object" && session ? session._id : null,
-		typeof session === "string" ? session : null,
-		typeof klass === "object" && klass ? klass.zegoRoomId : null,
-		typeof klass === "object" && klass ? klass._id : null,
-		typeof klass === "string" ? klass : null,
-		booking._id,
-	];
-
-	for (const candidate of candidates) {
-		if (typeof candidate === "string" && candidate.trim() !== "") {
-			return candidate;
-		}
-		if (candidate && typeof candidate === "object") {
-			const asString = String(candidate);
-			if (asString && asString !== "[object Object]") {
-				return asString;
-			}
-		}
-	}
-
-	return null;
-};
-
-/**
  * Zego room IDs must match the sanitisation the clients apply, otherwise the
  * signed room_id and the room actually joined diverge and the token is rejected.
  */
 export const sanitizeRoomId = (roomId: string): string =>
 	roomId.replace(/[^a-zA-Z0-9_-]/g, "_");
 
+/**
+ * The room ID for a scheduled session, derived from its own `_id`.
+ *
+ * Deterministic and prefixed so it survives `sanitizeRoomId` unchanged and can
+ * be computed without a database write — which is what lets the lifecycle job,
+ * the token endpoint, and every read API agree on a room without coordinating.
+ */
+export const deriveRoomId = (sessionId: unknown): string =>
+	sanitizeRoomId(`gc_${String(sessionId)}`);
+
+/**
+ * THE room resolver. Every consumer — token issuance, booking reads, admin
+ * schedule listings — must call this and nothing else.
+ *
+ * It deliberately considers only the session's own identity. Earlier code
+ * resolved rooms from `streamRoomId`, from the parent `Class`, or from the
+ * caller's `Booking`, which meant the host and the member could compute
+ * different rooms and sit alone in them. Worse, `streamRoomId` holds a Zego
+ * *layout template* (`interactive_class`, `large_event`, `standard_meeting`),
+ * not a room ID, so every online class on the platform collapsed into one
+ * shared room. Neither field belongs anywhere near room identity.
+ */
+export const resolveSessionRoomId = (
+	session:
+		| { videoRoomId?: string | null; _id?: unknown }
+		| string
+		| null
+		| undefined,
+): string | null => {
+	// An un-populated ref is still an unambiguous session identity, and
+	// deriveRoomId agrees with what the token endpoint computes for that same
+	// session — provided legacy `videoRoomId` values have been normalised by
+	// scripts/backfill-session-room-ids.ts. Run that before deploying this.
+	if (typeof session === "string") {
+		return session.trim() ? deriveRoomId(session.trim()) : null;
+	}
+	if (!session?._id) return null;
+	const stored = session.videoRoomId?.trim();
+	return stored ? sanitizeRoomId(stored) : deriveRoomId(session._id);
+};
+
 /// A host needs setup time; a member should not be milling about in the room
 /// long before the class. The member grace is deliberately zero — once the
 /// class is over, the room is closed to members (there is no "just this once".)
-export const HOST_JOIN_LEAD_MINUTES = 30;
-export const MEMBER_JOIN_LEAD_MINUTES = 5;
+///
+/// The host lead doubles as the provisioning trigger: the lifecycle job stamps
+/// a session's room ID at exactly the moment the host becomes able to join it.
+export const ROOM_LEAD_MINUTES = Number(
+	process.env.SESSION_ROOM_LEAD_MINUTES ?? 30,
+);
+export const MEMBER_JOIN_LEAD_MINUTES = Number(
+	process.env.SESSION_MEMBER_LEAD_MINUTES ?? 5,
+);
 export const MEMBER_JOIN_GRACE_AFTER_MINUTES = 0;
 
-/// A class routinely runs over. The host's window stays open past the scheduled
-/// end so the session isn't cut off mid-sentence; it closes for real when the
-/// host ends the class, which is an explicit action.
-export const HOST_OVERRUN_GRACE_MINUTES = Number(
-	process.env.SESSION_HOST_OVERRUN_MINUTES ?? 120,
+/// A class routinely runs a little over, so the host's window stays open past
+/// the scheduled end — but only until the room expires and is torn down. This
+/// is the same number the lifecycle job uses to schedule that teardown, so the
+/// host's token can never outlive the room it was minted for.
+export const ROOM_EXPIRY_GRACE_MINUTES = Number(
+	process.env.SESSION_ROOM_EXPIRY_MINUTES ?? 30,
 );
 
 /// Sessions are stored as a UTC-midnight `sessionDate` plus an "HH:mm" string,
@@ -166,21 +166,57 @@ export type JoinWindow = {
 	closesAt: Date;
 };
 
+export type RoomTimeline = {
+	/// Room ID is assigned and the host may join.
+	roomReadyAt: Date;
+	/// Booked members may join.
+	memberOpensAt: Date;
+	/// Member access closes — the scheduled end, exactly.
+	memberClosesAt: Date;
+	/// Room is torn down and the session is durably over.
+	roomExpiresAt: Date;
+};
+
+/**
+ * The whole lifecycle of one session's room, as absolute instants.
+ *
+ * Identical for `group_class` and `live_stream` — the only thing that differs
+ * between the two is the Zego publish privilege, which is decided at token
+ * minting, not here.
+ *
+ * Both the join gate and the lifecycle job read this one function, so the job
+ * can never tear down a room the gate still considers open (or vice versa).
+ */
+export const buildRoomTimeline = (
+	start: Date,
+	end: Date | null,
+	leadMinutes: number = ROOM_LEAD_MINUTES,
+): RoomTimeline => {
+	// A session with no parseable end time still gets a bounded lifecycle
+	// rather than an open-ended one.
+	const effectiveEnd = end ?? new Date(start.getTime() + 60 * 60_000);
+
+	return {
+		roomReadyAt: new Date(start.getTime() - leadMinutes * 60_000),
+		memberOpensAt: new Date(start.getTime() - MEMBER_JOIN_LEAD_MINUTES * 60_000),
+		memberClosesAt: new Date(
+			effectiveEnd.getTime() + MEMBER_JOIN_GRACE_AFTER_MINUTES * 60_000,
+		),
+		roomExpiresAt: new Date(
+			effectiveEnd.getTime() + ROOM_EXPIRY_GRACE_MINUTES * 60_000,
+		),
+	};
+};
+
 export const buildJoinWindow = (
 	start: Date,
 	end: Date | null,
 	role: SessionRole,
+	leadMinutes?: number,
 ): JoinWindow => {
-	const leadMinutes =
-		role === "host" ? HOST_JOIN_LEAD_MINUTES : MEMBER_JOIN_LEAD_MINUTES;
-	const graceMinutes =
-		role === "host" ? HOST_OVERRUN_GRACE_MINUTES : MEMBER_JOIN_GRACE_AFTER_MINUTES;
+	const timeline = buildRoomTimeline(start, end, leadMinutes);
 
-	const opensAt = new Date(start.getTime() - leadMinutes * 60_000);
-	// A session with no parseable end time still gets a bounded window rather
-	// than an open-ended one.
-	const effectiveEnd = end ?? new Date(start.getTime() + 60 * 60_000);
-	const closesAt = new Date(effectiveEnd.getTime() + graceMinutes * 60_000);
-
-	return { opensAt, closesAt };
+	return role === "host"
+		? { opensAt: timeline.roomReadyAt, closesAt: timeline.roomExpiresAt }
+		: { opensAt: timeline.memberOpensAt, closesAt: timeline.memberClosesAt };
 };

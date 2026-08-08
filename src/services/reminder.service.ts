@@ -14,6 +14,11 @@ import Admin from "../models/Admin";
 import Notification from "../models/Notification";
 import { notify } from "./notification.service";
 import { expireStalePendingBookings } from "./nutritionist-expiry.service";
+import {
+	expireDueRooms,
+	prepareDueRooms,
+	verifyHostPresence,
+} from "./session-room-lifecycle.service";
 
 const REMINDER_OFFSETS_MS: Record<ReminderKind, number> = {
 	[ReminderKind.TMinus24H]: 24 * 60 * 60 * 1000,
@@ -171,6 +176,19 @@ export async function processReminders(): Promise<{
 		await expireStalePendingBookings(now);
 	} catch (err) {
 		console.error("[reminder-poller] expireStalePendingBookings failed", err);
+	}
+
+	// Group-class / live-stream room lifecycle: stamp room IDs at (start -
+	// lead), tear rooms down at (end + grace). Piggybacking on this poller
+	// gives non-serverless deployments a minute-granularity tick for free,
+	// alongside the external caller that drives /internal/sessions/lifecycle/tick
+	// on Vercel (whose own cron only fires daily).
+	try {
+		await prepareDueRooms(now);
+		await verifyHostPresence(now);
+		await expireDueRooms(now);
+	} catch (err) {
+		console.error("[reminder-poller] session room lifecycle sweep failed", err);
 	}
 
 	return { fired, failed };

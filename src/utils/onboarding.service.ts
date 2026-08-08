@@ -219,6 +219,15 @@ export const completeOnboarding = async (userId: string): Promise<Date> => {
 		}
 	}
 
+	const hasBookingDoc = await NutritionistBooking.exists({
+		userId: userObjectId,
+		status: { $ne: NutritionistBookingStatus.REJECTED },
+	});
+
+	if (!hasBookingDoc && !status?.nutritionistBooked) {
+		missingSteps.push("nutritionistBooked");
+	}
+
 	if (missingSteps.length > 0) {
 		throw new OnboardingServiceError(
 			"MISSING_STEPS",

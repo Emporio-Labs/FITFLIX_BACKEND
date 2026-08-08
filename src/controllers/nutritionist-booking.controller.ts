@@ -5,6 +5,7 @@ import NutritionistBooking from "../models/NutritionistBooking";
 import Slot from "../models/Slots";
 import User from "../models/User";
 import { advanceStep, getOnboardingStatus } from "../utils/onboarding.service";
+import { combineSessionDateTime } from "../utils/zego-room";
 import {
 	acceptNutritionistBookingSchema,
 	bookNutritionistSchema,
@@ -90,11 +91,16 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 		// Check onboarding status and advance if applicable
 		try {
 			const onboardingStatus = await getOnboardingStatus(user.id);
-			if (
-				!onboardingStatus.onboardingCompleted &&
-				onboardingStatus.currentStep === OnboardingStep.REPORT_UPLOAD
-			) {
-				await advanceStep(user.id, OnboardingStep.REPORT_UPLOAD);
+			if (!onboardingStatus.onboardingCompleted) {
+				await User.findByIdAndUpdate(user.id, {
+					$set: { "onboardingStatus.nutritionistBooked": true },
+				});
+				if (
+					onboardingStatus.currentStep === OnboardingStep.REPORT_UPLOAD ||
+					onboardingStatus.currentStep === OnboardingStep.NUTRITIONIST_BOOKING
+				) {
+					await advanceStep(user.id, OnboardingStep.NUTRITIONIST_BOOKING);
+				}
 			}
 		} catch (_err) {
 			// Non-onboarding user or post-onboarding user — ignore error
@@ -216,14 +222,24 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 		}
 
 		// Re-validate the linked slot before accepting. Between booking time
-		// and admin action, an admin might have deleted or retired the slot.
-		// Accepting anyway would silently confirm the user against a slot
-		// they can't actually use.
-		//
-		// NOTE: remainingCapacity == 0 is a normal fully-booked state — this
-		// booking's seat was already decremented at book time, so its hold is
-		// still valid. Only treat missing-slot or retired-slot (capacity == 0)
-		// as reason to reschedule.
+		// and admin action, an admin might have deleted/retired the slot, or
+		// the slot's appointment time may have already passed.
+		const now = new Date();
+
+		if (!booking.slotId && !booking.bookingDate) {
+			booking.status = NutritionistBookingStatus.RESCHEDULE_REQUIRED;
+			await booking.save();
+			res.status(409).json({
+				error: "No slot selected for this booking. The user has been asked to pick a time slot.",
+				code: "SLOT_REQUIRED",
+				booking,
+			});
+			return;
+		}
+
+		let appointmentDate = booking.bookingDate;
+		let endTimeStr = booking.endTime;
+
 		if (booking.slotId) {
 			const slot = await Slot.findById(booking.slotId).lean();
 			if (!slot || slot.capacity <= 0) {
@@ -233,6 +249,24 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 					error:
 						"Original slot is no longer available. The user has been asked to pick a new time.",
 					code: "SLOT_NO_LONGER_AVAILABLE",
+					booking,
+				});
+				return;
+			}
+			appointmentDate = slot.date || booking.bookingDate;
+			endTimeStr = slot.endTime || booking.endTime;
+		}
+
+		// Validate that the slot date/time has not already passed
+		if (appointmentDate && endTimeStr) {
+			const appointmentEndInstant = combineSessionDateTime(appointmentDate, endTimeStr);
+			if (appointmentEndInstant && appointmentEndInstant.getTime() < now.getTime()) {
+				booking.status = NutritionistBookingStatus.RESCHEDULE_REQUIRED;
+				await booking.save();
+				res.status(409).json({
+					error:
+						"This appointment slot date/time has already passed. The user has been asked to pick a new time.",
+					code: "SLOT_EXPIRED_RESCHEDULE_REQUIRED",
 					booking,
 				});
 				return;

@@ -38,7 +38,7 @@ export async function expireStalePendingBookings(
 			// Atomic status transition — guard against a concurrent accept.
 			const claimed = await NutritionistBooking.findOneAndUpdate(
 				{ _id: row._id, status: NutritionistBookingStatus.PENDING },
-				{ $set: { status: NutritionistBookingStatus.EXPIRED } },
+				{ $set: { status: NutritionistBookingStatus.RESCHEDULE_REQUIRED } },
 				{ returnDocument: "after" },
 			);
 			if (!claimed) {

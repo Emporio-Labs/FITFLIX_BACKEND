@@ -64,12 +64,53 @@ const scheduledSessionSchema = new mongoose.Schema(
 			default: "NONE",
 			required: true,
 		},
+		// A Zego *layout template* copied down from the parent class
+		// ("interactive_class" | "large_event" | "standard_meeting") — NOT a room
+		// identifier, despite the name. It must never take part in resolving a
+		// room; see resolveSessionRoomId in utils/zego-room.ts.
 		streamRoomId: {
 			type: String,
 			default: null,
 		},
+		// The one and only room identity for this occurrence. Stamped by the
+		// lifecycle job at (start - lead); readers fall back to deriveRoomId(_id),
+		// which produces the identical value.
 		videoRoomId: {
 			type: String,
+			default: null,
+		},
+		// Room lifecycle, tracked separately from `status` because a room outlives
+		// the class by the expiry grace: members are locked out at the scheduled
+		// end while the host is still inside a READY room.
+		roomStatus: {
+			type: String,
+			enum: ["PENDING", "READY", "EXPIRED"],
+			default: "PENDING",
+			required: true,
+		},
+		roomReadyAt: {
+			type: Date,
+			default: null,
+		},
+		roomExpiresAt: {
+			type: Date,
+			default: null,
+		},
+		// First confirmed instant the host was actually present in the room —
+		// either self-reported (POST .../host-presence) or discovered by the
+		// lifecycle sweep's Zego room-membership check. Write-once: never
+		// cleared once set, even if the host later disconnects, so a flaky host
+		// connection mid-class does not eject the members already admitted.
+		// A member's join is gated on this being non-null (see
+		// session-access.service.ts's HOST_NOT_STARTED check).
+		hostLiveAt: {
+			type: Date,
+			default: null,
+		},
+		// Most recent host presence confirmation, from either source above.
+		// Diagnostics only — nothing gates on this field.
+		hostLastSeenAt: {
+			type: Date,
 			default: null,
 		},
 		isPublished: {
@@ -92,6 +133,14 @@ const scheduledSessionSchema = new mongoose.Schema(
 	},
 	{ timestamps: true },
 );
+
+// The lifecycle sweep scans by room state within a narrow date band every
+// minute; without this it degrades to a full collection scan as history grows.
+scheduledSessionSchema.index({ roomStatus: 1, sessionDate: 1 });
+scheduledSessionSchema.index({ roomStatus: 1, roomExpiresAt: 1 });
+// The host-presence verification sweep scans exactly this pair: READY rooms
+// that haven't confirmed a host yet.
+scheduledSessionSchema.index({ roomStatus: 1, hostLiveAt: 1 });
 
 type ScheduledSessionDocument = mongoose.InferSchemaType<
 	typeof scheduledSessionSchema

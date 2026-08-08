@@ -306,6 +306,8 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 											{ case: { $eq: ["$status", "ACCEPTED"] }, then: "Confirmed" },
 											{ case: { $eq: ["$status", "COMPLETED"] }, then: "Completed" },
 											{ case: { $eq: ["$status", "REJECTED"] }, then: "Cancelled" },
+											{ case: { $eq: ["$status", "RESCHEDULE_REQUIRED"] }, then: "RescheduleRequired" },
+											{ case: { $eq: ["$status", "EXPIRED"] }, then: "Expired" },
 										],
 										default: "Pending",
 									},
