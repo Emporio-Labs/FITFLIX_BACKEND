@@ -1,5 +1,13 @@
 # Frontend Scheduling and Spot Booking Guide
 
+> **Status: partially superseded.** The `/appointments` router was removed from
+> the codebase; the doctor-appointment flow this guide describes no longer
+> exists. Sections covering bookings, slots, capacity, credits, and
+> cancellation semantics are still accurate. For any endpoint's current
+> contract, **[docs/API_REFERENCE.md](docs/API_REFERENCE.md) is authoritative.**
+> Class scheduling is now handled by `/api/v1/classes/schedule`, and expert
+> consultations by `/nutritionist/*`.
+
 This document explains how scheduling currently works in the backend and how the frontend should implement booking, spot booking, appointment handling, and credit-aware UI.
 
 ## 1) Scope
@@ -10,7 +18,7 @@ Use this guide for:
 - Appointment UI (admin/doctor)
 - Capacity, conflict, and credit handling
 
-Source of truth remains API behavior in `API_DOCS.md` and controllers.
+Source of truth remains API behavior in [docs/API_REFERENCE.md](docs/API_REFERENCE.md) and controllers.
 
 ## 2) Core Backend Behavior
 
@@ -171,15 +179,15 @@ Success response includes:
 - `credits.consumed`
 - `credits.bypassed`
 
-### 5.4 Create appointment (admin)
+### 5.4 Create appointment (admin) — **removed**
 
-Endpoint:
-- `POST /appointments`
+`POST /appointments` no longer exists. The replacements are:
 
-Notes:
-- `serviceId` is optional.
-- If `serviceId` omitted, default deduction is 1 credit (unless bypassed).
-- Uses same slot capacity pool and same 409 conflict behavior.
+| Need | Endpoint |
+|---|---|
+| Schedule a class occurrence | `POST /api/v1/admin/classes/schedule` |
+| Book a nutritionist consult | `POST /nutritionist/book` |
+| Accept a consult request | `PATCH /nutritionist/bookings/:id/accept` |
 
 ## 6) Cancellation and Delete Semantics (Critical for UI)
 
@@ -188,8 +196,11 @@ Notes:
 Booking cancel:
 - `PATCH /bookings/:id/status` with `{ "status": 2 }`
 
-Appointment cancel:
-- `PATCH /appointments/:id/status` with `{ "status": 2 }`
+Nutritionist consult cancel:
+- `PATCH /nutritionist/bookings/:id/reject` (releases slot capacity)
+
+Class booking cancel:
+- `POST /bookings/:id/cancel` (cancellation engine: releases the seat and applies the refund policy)
 
 First successful cancel does:
 - Refund consumed credits once
@@ -206,9 +217,6 @@ Frontend rule:
 
 Booking delete:
 - `DELETE /bookings/:id`
-
-Appointment delete:
-- `DELETE /appointments/:id`
 
 Behavior:
 - If record is not already cancelled, backend applies cancel compensation (refund + release) before deletion.

@@ -8,6 +8,12 @@ Single-source HTTP reference for the Fitflix Express + MongoDB backend that powe
 - **Date format:** ISO-8601 (`2026-05-22T10:30:00.000Z`)
 - **Object IDs:** 24-character MongoDB hex strings
 
+> **Keeping this file honest.** This is the only API reference in the repo — the
+> former root `API_DOCS.md` is now a pointer to this file. When you add, remove,
+> or change an endpoint, update [Endpoint index](#endpoint-index) in the same
+> commit. That table is the diff surface: comparing `main` against a feature
+> branch should show every API change as a one-line add/remove/modify there.
+
 ---
 
 ## Table of contents
@@ -16,32 +22,39 @@ Single-source HTTP reference for the Fitflix Express + MongoDB backend that powe
 2. [Conventions](#conventions)
 3. [Error responses](#error-responses)
 4. [Enums](#enums)
-5. [Auth — `/auth`](#auth--auth)
-6. [Admins — `/admins`](#admins--admins)
-7. [Users — `/users`](#users--users)
-8. [Onboarding — `/onboarding`](#onboarding--onboarding)
-9. [Doctors — `/doctors`](#doctors--doctors)
-10. [Trainers — `/trainers`](#trainers--trainers)
-11. [Slots — `/slots`](#slots--slots)
-12. [Services — `/services`](#services--services)
-13. [Therapies — `/therapies`](#therapies--therapies)
-14. [Bookings — `/bookings`](#bookings--bookings)
-15. [Appointments (Doctors) — `/appointments`](#appointments--appointments)
-16. [Expert Appointments — `/expert-appointments`](#expert-appointments--expert-appointments)
-17. [Credits — `/credits`](#credits--credits)
-18. [Memberships — `/memberships`](#memberships--memberships)
-19. [Schedules — `/schedules`](#schedules--schedules)
-20. [Exercises — `/exercises`](#exercises--exercises)
-21. [Workouts — `/workouts`](#workouts--workouts)
-22. [Workout plans — `/workout-plans`](#workout-plans--workout-plans)
-23. [Leads — `/leads`](#leads--leads)
-24. [Webhook — `/webhook`](#webhook--webhook)
-25. [Nutrition — `/nutrition`](#nutrition--nutrition)
-26. [Nutritionist bookings — `/nutritionist`](#nutritionist-bookings--nutritionist)
-27. [Notifications — `/notifications`](#notifications--notifications)
-28. [Internal — `/internal`](#internal--internal)
-29. [Health check — `/health`](#health-check--health)
-30. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
+5. [Endpoint index](#endpoint-index)
+6. [Auth — `/auth`](#auth--auth)
+7. [Account deletion — `/delete-account`](#account-deletion--delete-account)
+8. [Admins — `/admins`](#admins--admins)
+9. [Users — `/users`](#users--users)
+10. [Onboarding — `/onboarding`](#onboarding--onboarding)
+11. [Trainers — `/trainers`](#trainers--trainers)
+12. [Classes — `/api/v1/classes`](#classes--apiv1classes)
+13. [Class schedules — `/api/v1/classes/schedule`](#class-schedules--apiv1classesschedule)
+14. [Video sessions (ZEGOCLOUD) — `/api/v1/zego`](#video-sessions-zegocloud--apiv1zego)
+15. [Conference settings — `/api/v1/admin/settings`](#conference-settings--apiv1adminsettings)
+16. [Slots — `/slots`](#slots--slots)
+17. [Services — `/services`](#services--services)
+18. [Therapies — `/therapies`](#therapies--therapies)
+19. [Bookings — `/bookings`](#bookings--bookings)
+20. [Credits — `/credits`](#credits--credits)
+21. [Memberships — `/memberships`](#memberships--memberships)
+22. [Membership plans — `/membership-plans`](#membership-plans--membership-plans)
+23. [Invoices — `/invoices`](#invoices--invoices)
+24. [Schedules — `/schedules`](#schedules--schedules)
+25. [Exercises — `/exercises`](#exercises--exercises)
+26. [Workouts — `/workouts`](#workouts--workouts)
+27. [Workout plans — `/workout-plans`](#workout-plans--workout-plans)
+28. [Leads — `/leads`](#leads--leads)
+29. [Dashboard — `/dashboard`](#dashboard--dashboard)
+30. [Nutrition — `/nutrition`](#nutrition--nutrition)
+31. [Nutritionist bookings — `/nutritionist`](#nutritionist-bookings--nutritionist)
+32. [Notifications — `/notifications`](#notifications--notifications)
+33. [Webhook — `/webhook`](#webhook--webhook)
+34. [Internal — `/internal`](#internal--internal)
+35. [Health & diagnostics](#health--diagnostics)
+36. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
+37. [Appendix B: Path aliases](#appendix-b-path-aliases)
 
 ---
 
@@ -54,12 +67,45 @@ Authorization: Bearer <token>
 ```
 
 - **Token lifetime:** 12 hours (configurable via `JWT_EXPIRES_IN`).
-- **Roles:** `user`, `admin`, `doctor`, `trainer`, `nutritionist`. The token's role determines which endpoints are accessible.
 - **Public endpoints** are explicitly labelled `Auth: Public`.
 - **Webhook endpoint** uses a shared-secret header (`X-Webhook-Secret`) instead of JWT.
 - **Internal endpoints** use `X-Internal-Secret` (or `X-Webhook-Secret` as an alias) instead of JWT.
 
-Failed authentication returns `401 UNAUTHORIZED`. Insufficient role returns `403 FORBIDDEN`.
+Failed authentication returns `401` (`{"message":"Unauthorized"}` from the RBAC layer, or `{"error":...,"code":"UNAUTHORIZED"}` from a controller). Insufficient role returns `403 {"message":"Forbidden"}`.
+
+### Roles
+
+Canonical roles, from [src/types/auth.ts](../src/types/auth.ts):
+
+| Role | Description |
+|---|---|
+| `user` | End member using the Flutter app |
+| `admin` | Full administrative access |
+| `frontdesk` | FrontDesk dashboard staff — leads, invoices, memberships, bookings |
+| `trainer` | Class instructor / workout-plan author |
+| `nutritionist` | Nutrition plans, foods, templates, member roster |
+| `doctor` | Declared in the role union but no route currently authorizes it |
+
+**Legacy role aliases.** `authorize()` normalizes before comparing, so these
+inbound values are accepted and collapsed ([src/middleware/rbac.middleware.ts](../src/middleware/rbac.middleware.ts)):
+
+| Token value | Normalizes to |
+|---|---|
+| `ROLE_FRONT_DESK_STAFF` | `admin` |
+| `staff`, `ROLE_FRONT_END_STAFF` | `frontdesk` |
+| `ROLE_MEMBER` | `user` |
+
+Because normalization runs on *both* sides of the comparison, a route declared
+`authorize(["admin"])` also admits a token carrying `ROLE_FRONT_DESK_STAFF`.
+
+### Token revocation
+
+`POST /auth/logout` writes the presented token to a `TokenBlacklist` collection.
+`authenticateToken` checks that collection on every request, so a revoked token
+returns `401 {"message":"Token has been revoked"}` even before its expiry.
+
+If `JWT_SECRET` is unset the whole auth layer fails closed with
+`503 {"message":"JWT authentication is not configured"}`.
 
 ## Conventions
 
@@ -86,8 +132,16 @@ Failed authentication returns `401 UNAUTHORIZED`. Insufficient role returns `403
 
 ### Rate limiting
 
-- `/auth/signup` and `/auth/login` are rate-limited (default: 10 attempts per 15 minutes per IP; configurable via `AUTH_RATE_LIMIT_WINDOW_MS` and `AUTH_RATE_LIMIT_MAX`).
-- `/leads/public-capture` is rate-limited and CAPTCHA-protected.
+| Limiter | Applies to | Default |
+|---|---|---|
+| `authRateLimit` | Every `/auth/*` route, including `/auth/phone/*` | 10 requests / 15 min / IP (`AUTH_RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_WINDOW_MS`) |
+| `apiRateLimit` | `/bookings`, `/credits`, `/schedules`, `/exercises`, `/leads`, `/invoices` and their `/api/v1` aliases | see `src/middleware/rate-limit.middleware.ts` |
+| `publicLeadCaptureRateLimit` | `POST /leads/public-capture` (also CAPTCHA-protected) | see `src/middleware/public-rate-limit.middleware.ts` |
+| `publicDeleteAccountRateLimit` | `GET /delete-account`, `POST /delete-account/request` | see `src/middleware/public-rate-limit.middleware.ts` |
+| `uploadRateLimiter` | `POST /onboarding/reports` | see `src/middleware/upload.middleware.ts` |
+
+Limit headers are exposed to browsers via `Access-Control-Expose-Headers`:
+`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 
 ### CORS
 
@@ -136,14 +190,14 @@ Authoritative source: [src/models/Enums.ts](../src/models/Enums.ts). Numeric enu
 | `ExerciseDifficulty` | `Beginner`, `Intermediate`, `Advanced` |
 | `ExerciseSection` | `warmup`, `workout`, `stretching` |
 | `WorkoutSessionStatus` | `Active`, `Completed`, `Abandoned` |
-| `OnboardingStep` | `HEALTH_MARKERS`, `HEALTH_GOALS`, `CONSENT`, `REPORT_UPLOAD`, `SPORTS_SCIENTIST_BOOKING`, `NUTRITIONIST_BOOKING`, `COMPLETED` |
-| `ExpertType` | `sports_scientist`, `nutritionist` |
+| `OnboardingStep` | `HEALTH_MARKERS`, `HEALTH_GOALS`, `CONSENT`, `REPORT_UPLOAD`, `NUTRITIONIST_BOOKING`, `COMPLETED` |
+| `ExpertType` | `nutritionist` |
 | `AppointmentBookingStatus` | `Pending`, `Confirmed`, `Cancelled`, `Rescheduled`, `Completed`, `NoShow` |
 | `WebhookSyncStatus` | `PENDING`, `SYNCED`, `FAILED`, `STALE` |
 | `AppointmentSource` | `USER_APP`, `ADMIN`, `CAL_DASHBOARD` |
 | `WebhookEventStatus` | `RECEIVED`, `PROCESSING`, `PROCESSED`, `FAILED`, `DLQ` |
 | `NotificationChannel` | `INAPP`, `PUSH`, `SOCKET` |
-| `NotificationKind` | `appointment_booked`, `appointment_rescheduled`, `appointment_cancelled`, `appointment_reminder`, `onboarding_step_updated` |
+| `NotificationKind` | `appointment_booked`, `appointment_rescheduled`, `appointment_cancelled`, `appointment_reminder`, `onboarding_step_updated`, `membership_expiry_reminder` |
 | `ReminderKind` | `T_MINUS_24H`, `T_MINUS_1H`, `T_MINUS_15M` |
 | `ReminderStatus` | `SCHEDULED`, `FIRED`, `CANCELLED` |
 | `PlanGoal` *(workout)* | `Strength`, `Hypertrophy`, `Endurance`, `WeightLoss`, `Maintenance`, `Custom` |
@@ -159,14 +213,479 @@ Authoritative source: [src/models/Enums.ts](../src/models/Enums.ts). Numeric enu
 | `ProgressRecordedBy` | `User`, `Nutritionist` |
 | `ConsentType` | `WELLNESS_SERVICES`, `GYM_FITNESS` |
 | `AppointmentMode` | `IN_PERSON`, `ONLINE` |
-| `NutritionistBookingStatus` | `PENDING`, `ACCEPTED`, `REJECTED`, `COMPLETED` |
+| `MeetingStatus` | `SCHEDULED`, `IN_PROGRESS`, `COMPLETED` |
+| `NutritionistBookingStatus` | `PENDING`, `ACCEPTED`, `REJECTED`, `COMPLETED`, `EXPIRED`, `RESCHEDULE_REQUIRED` |
 | `NutritionistApprovalStatus` | `PENDING`, `APPROVED`, `REJECTED` |
+| `InvoicePaymentStatus` | `DRAFT`, `PENDING`, `PAID`, `FAILED`, `CANCELLED`, `REFUNDED` |
+| `InvoicePaymentMethod` | `CASH`, `UPI`, `CARD`, `BANK_TRANSFER`, `NONE` |
+| `DeletionRequestStatus` | `Pending`, `Processed`, `Cancelled` |
+| `AuditAction` | `BOOKED`, `RESCHEDULED`, `CANCELLED`, `WEBHOOK_SYNC`, `STATUS_CHANGED` |
+| `IngredientUnit` | `g`, `ml` |
+| `ImportRowType` | `CategoryHeader`, `ColumnHeader`, `Empty`, `Total`, `Recipe`, `Ingredient` |
 | `ActivityLevel` *(health markers)* | `Sedentary`, `Light`, `Moderate`, `Active`, `VeryActive` |
 | `WorkoutExperience` *(health goals)* | `None`, `Beginner`, `Intermediate`, `Advanced` |
+
+### Status values declared outside `Enums.ts`
+
+These are inline Mongoose/Zod string unions, not TypeScript enums — grep the
+listed file when changing them.
+
+| Concept | Values | Source |
+|---|---|---|
+| Class `status` | `ACTIVE`, `INACTIVE` | [Class.ts](../src/models/Class.ts) |
+| Class `mode` | `online`, `offline`, `hybrid` | class validator |
+| Class `sessionType` | `group_class`, `live_stream`, `""` | class validator |
+| Class `access` | `members_only`, `open_to_all` | class validator |
+| Class `bookingRequirement` | `free`, `credits_required` | class validator |
+| Class `recurrenceRule` | `NONE`, `DAILY`, `WEEKLY`, `MONTHLY` | class validator |
+| ScheduledSession `status` | `SCHEDULED`, `FULL`, `CANCELLED`, `COMPLETED` | [ScheduledSession.ts](../src/models/ScheduledSession.ts) |
+| ScheduledSession `roomStatus` | `PENDING`, `READY`, `EXPIRED` | [ScheduledSession.ts](../src/models/ScheduledSession.ts) |
+| ScheduledSession `deliveryType` | `ONLINE`, `OFFLINE`, `HYBRID` | [ScheduledSession.ts](../src/models/ScheduledSession.ts) |
+| Session access role | `host`, `member` | [session-access.service.ts](../src/services/session-access.service.ts) |
+| Session deny code | `NO_SCHEDULE`, `NO_BOOKING`, `CANCELLED`, `ENDED`, `NOT_OPEN_YET`, `HOST_NOT_STARTED`, `NO_ROOM` | [session-access.service.ts](../src/services/session-access.service.ts) |
+| Conference resolution | `360p`, `540p`, `720p`, `1080p` | [settings.controller.ts](../src/controllers/settings.controller.ts) |
+| FCM platform | `ios`, `android` | [notification.controller.ts](../src/controllers/notification.controller.ts) |
 
 > Each endpoint section below uses this template:
 > **Auth → Path params → Query params → Request body → Example request (curl + TypeScript/axios) → Success response → Error responses → Notes.**
 > Sections are omitted when they don't apply.
+
+---
+
+## Endpoint index
+
+Every route declaration in the codebase, grouped by the route file that owns it
+and listed in **registration order** (which is also Express's match order —
+important where a static path must precede a `:param` path).
+
+**This is the diff surface.** Regenerate or hand-edit it whenever routes change;
+a `git diff main..<branch> -- docs/API_REFERENCE.md` scoped to this section is a
+complete inventory of the branch's API changes.
+
+- **Auth** — `JWT` = `authenticateToken` required; `Public` = no auth;
+  `Secret` = shared-secret header.
+- **Roles** — the `authorize([...])` list. `—` means authenticated but
+  unrestricted by role. Remember legacy aliases normalize in
+  ([Roles](#roles)).
+- **Handler** — the exported controller function, for jumping to the code.
+
+Where one route file is mounted at several prefixes, the table lists the primary
+prefix and notes the aliases; every listed path exists at each alias too. See
+[Appendix B: Path aliases](#appendix-b-path-aliases).
+
+#### `/auth` → [auth.routes.ts](../src/routes/auth.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/auth/signup` | Public | — | `signup` |
+| POST | `/auth/login` | Public | — | `login` |
+| POST | `/auth/refresh` | Public | — | `refreshAccessToken` |
+| POST | `/auth/logout` | JWT | — | `logout` |
+| POST | `/auth/phone/verify` | Public | — | `verifyPhone` |
+| POST | `/auth/phone/register` | Public | — | `registerPhone` |
+
+#### `/delete-account` → [delete-account.routes.ts](../src/routes/delete-account.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/delete-account` | Public | — | `renderDeleteAccountPage` |
+| POST | `/delete-account/request` | Public | — | `createDeletionRequest` |
+
+#### `/admins` → [admin.routes.ts](../src/routes/admin.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/admins` | JWT | admin | `createAdmin` |
+| GET | `/admins` | JWT | admin | `getAllAdmins` |
+| GET | `/admins/deletion-requests` | JWT | admin | `getDeletionRequests` |
+| PATCH | `/admins/deletion-requests/:id` | JWT | admin | `updateDeletionRequestStatus` |
+| GET | `/admins/:id` | JWT | admin | `getAdminById` |
+| PATCH | `/admins/:id` | JWT | admin | `updateAdminById` |
+| DELETE | `/admins/:id` | JWT | admin | `deleteAdminById` |
+
+#### `/trainers` → [trainer.routes.ts](../src/routes/trainer.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/trainers/public` | Public | — | `getPublicTrainers` |
+| GET | `/trainers/public/:id` | Public | — | `getPublicTrainerById` |
+| POST | `/trainers` | JWT | admin | `createTrainer` |
+| GET | `/trainers` | JWT | admin | `getAllTrainers` |
+| GET | `/trainers/:id` | JWT | admin, trainer | `getTrainerById` |
+| PATCH | `/trainers/:id` | JWT | admin, trainer | `updateTrainerById` |
+| DELETE | `/trainers/:id` | JWT | admin | `deleteTrainerById` |
+
+#### `/users` → [user.routes.ts](../src/routes/user.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/users` | JWT | admin | `createUser` |
+| GET | `/users` | JWT | admin, nutritionist | `getAllUsers` |
+| GET | `/users/me` | JWT | user | `getMyUser` |
+| GET | `/users/me/reports` | JWT | user | `getMyUserReports` |
+| GET | `/users/me/medical-reports` | JWT | user | `getMyMedicalReports` |
+| GET | `/users/me/hpod-metrics` | JWT | user | `getMyUserHpodMetrics` |
+| POST | `/users/me/hpod-metrics` | JWT | user | `uploadHpodMetrics` |
+| GET | `/users/me/reports/:id/pdf` | JWT | user | `getMyUserReportPdf` |
+| PATCH | `/users/me/password` | JWT | user | `updateMyPassword` |
+| GET | `/users/:id` | JWT | admin, nutritionist, user | `getUserById` |
+| GET | `/users/:id/onboarding-profile` | JWT | admin, nutritionist, user | `getOnboardingProfile` |
+| GET | `/users/:id/reports/:reportId/url` | JWT | admin, nutritionist | `getReportSignedUrl` |
+| PATCH | `/users/:id/onboard` | JWT | admin, user | `onboardUser` |
+| PATCH | `/users/:id` | JWT | admin, user | `updateUserById` |
+| DELETE | `/users/:id` | JWT | admin | `deleteUserById` |
+
+#### `/memberships` → [membership.routes.ts](../src/routes/membership.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/memberships` | JWT | admin | `createMembership` |
+| GET | `/memberships` | JWT | admin, frontdesk | `getAllMemberships` |
+| GET | `/memberships/me` | JWT | user | `getMyMemberships` |
+| GET | `/memberships/:id` | JWT | admin, frontdesk | `getMembershipById` |
+| PATCH | `/memberships/:id` | JWT | admin | `updateMembershipById` |
+| DELETE | `/memberships/:id` | JWT | admin | `deleteMembershipById` |
+
+#### `/slots` → [slot.routes.ts](../src/routes/slot.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/slots` | JWT | admin, trainer, user | `getAllSlots` |
+| GET | `/slots/available` | JWT | admin, trainer, user | `getAvailableSlots` |
+| GET | `/slots/:id` | JWT | admin, trainer, user | `getSlotById` |
+| POST | `/slots` | JWT | admin | `createSlot` |
+| PATCH | `/slots/:id` | JWT | admin | `updateSlotById` |
+| DELETE | `/slots/:id` | JWT | admin | `deleteSlotById` |
+
+#### `/services` → [service.routes.ts](../src/routes/service.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/services` | JWT | admin, trainer, user | `getAllServices` |
+| GET | `/services/:id` | JWT | admin, trainer, user | `getServiceById` |
+| POST | `/services` | JWT | admin | `createService` |
+| PATCH | `/services/:id` | JWT | admin | `updateServiceById` |
+| DELETE | `/services/:id` | JWT | admin | `deleteServiceById` |
+
+#### `/therapies` → [therapy.routes.ts](../src/routes/therapy.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/therapies/public` | Public | — | `getPublicTherapies` |
+| GET | `/therapies/public/:id` | Public | — | `getPublicTherapyById` |
+| GET | `/therapies` | JWT | admin, trainer, user | `getAllTherapies` |
+| GET | `/therapies/:id` | JWT | admin, trainer, user | `getTherapyById` |
+| POST | `/therapies` | JWT | admin | `createTherapy` |
+| PATCH | `/therapies/:id` | JWT | admin | `updateTherapyById` |
+| DELETE | `/therapies/:id` | JWT | admin | `deleteTherapyById` |
+
+#### `/bookings` → [booking.routes.ts](../src/routes/booking.routes.ts)
+
+Also mounted at `/api/v1/bookings`, `/api/v1/admin/bookings`. Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/bookings` | JWT | admin, user | `createBooking` |
+| GET | `/bookings` | JWT | admin | `getAllBookings` |
+| GET | `/bookings/me` | JWT | user | `getMyBookings` |
+| GET | `/bookings/:id` | JWT | admin, user | `getBookingById` |
+| POST | `/bookings/:id/cancel` | JWT | admin, user | `cancelBookingHandler` |
+| POST | `/bookings/:id/attendance` | JWT | admin, user | `recordAttendance` |
+| PATCH | `/bookings/:id` | JWT | admin, user | `updateBookingById` |
+| DELETE | `/bookings/:id` | JWT | admin, user | `deleteBookingById` |
+| PATCH | `/bookings/:id/status` | JWT | admin, user | `changeBookingStatus` |
+
+#### `/credits` → [credit.routes.ts](../src/routes/credit.routes.ts)
+
+Also mounted at `/api/v1/credits`. Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/credits/balance` | JWT | user, admin | `getCreditsBalance` |
+| GET | `/credits/ledger` | JWT | user, admin | `getCreditsLedger` |
+| GET | `/credits/me/balance` | JWT | user | `getMyCreditBalance` |
+| GET | `/credits/me/history` | JWT | user | `getMyCreditHistory` |
+| GET | `/credits/users/:userId/balance` | JWT | admin, user | `getUserCreditBalanceById` |
+| GET | `/credits/users/:userId/history` | JWT | admin, user | `getUserCreditHistoryById` |
+| POST | `/credits/users/:userId/topup` | JWT | admin | `topUpUserCreditsById` |
+
+#### `/schedules` → [schedule.routes.ts](../src/routes/schedule.routes.ts)
+
+Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/schedules/my-schedule` | JWT | — | `getMySchedule` |
+| POST | `/schedules` | JWT | user, trainer, admin | `createSchedule` |
+| GET | `/schedules/:userId` | JWT | user, trainer, admin | `getScheduleByUserId` |
+| PATCH | `/schedules/:userId` | JWT | user, trainer, admin | `updateSchedule` |
+| PATCH | `/schedules/:userId/reschedule` | JWT | user, trainer, admin | `rescheduleSchedule` |
+| DELETE | `/schedules/:userId` | JWT | admin | `deleteSchedule` |
+
+#### `/exercises` → [exercise.routes.ts](../src/routes/exercise.routes.ts)
+
+Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/exercises` | JWT | admin, user | `listExercises` |
+| GET | `/exercises/:id` | JWT | admin, user | `getExerciseById` |
+| POST | `/exercises` | JWT | admin, user | `createExercise` |
+| PUT | `/exercises/:id` | JWT | admin, user | `updateExercise` |
+| DELETE | `/exercises/:id` | JWT | admin, user | `deleteExercise` |
+
+#### `/leads` → [lead.routes.ts](../src/routes/lead.routes.ts)
+
+Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/leads/public-capture` | Public | — | `createPublicLead` |
+| POST | `/leads` | JWT | admin, frontdesk, trainer | `createLead` |
+| GET | `/leads` | JWT | admin, frontdesk | `getAllLeads` |
+| GET | `/leads/stats` | JWT | admin, frontdesk | `getLeadStats` |
+| GET | `/leads/:id` | JWT | admin, frontdesk, trainer | `getLeadById` |
+| PATCH | `/leads/:id` | JWT | admin, frontdesk, trainer | `updateLeadById` |
+| DELETE | `/leads/:id` | JWT | admin, frontdesk | `deleteLeadById` |
+| POST | `/leads/:id/convert` | JWT | admin, frontdesk | `convertLeadToUser` |
+
+#### `/invoices` → [invoice.routes.ts](../src/routes/invoice.routes.ts)
+
+Also mounted at `/api/invoices`. Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/invoices` | JWT | admin, frontdesk | `createInvoiceHandler` |
+| GET | `/invoices` | JWT | admin, frontdesk | `listInvoicesHandler` |
+| GET | `/invoices/:id` | JWT | admin, frontdesk | `getInvoiceByIdHandler` |
+| PATCH | `/invoices/:id/status` | JWT | admin, frontdesk | `updateInvoiceStatusHandler` |
+| GET | `/invoices/:id/pdf` | JWT | admin, frontdesk | `getInvoicePdfHandler` |
+
+#### `/api/v1` → [class-schedule.routes.ts](../src/routes/class-schedule.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/api/v1/admin/classes/schedule` | JWT | admin | `createScheduledSession` |
+| GET | `/api/v1/admin/classes/schedule` | JWT | admin | `getAllSchedulesForAdmin` |
+| PATCH | `/api/v1/admin/classes/schedule/:id` | JWT | admin | `updateScheduledSession` |
+| PATCH | `/api/v1/admin/classes/schedule/:id/capacity` | JWT | admin | `updateSessionCapacity` |
+| GET | `/api/v1/classes/schedule` | JWT | admin, trainer, user | `getSchedulesForMembers` |
+| GET | `/api/v1/classes/schedule/:id` | JWT | admin, trainer, user | `getScheduledSessionByIdForMembers` |
+
+#### `/api/v1` → [class.routes.ts](../src/routes/class.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/api/v1/admin/classes` | JWT | admin | `createClass` |
+| GET | `/api/v1/admin/classes` | JWT | admin | `getAllClassesForAdmin` |
+| PUT | `/api/v1/admin/classes/:id` | JWT | admin | `updateClassById` |
+| PATCH | `/api/v1/admin/classes/:id/publish` | JWT | admin | `publishClassById` |
+| PATCH | `/api/v1/admin/classes/schedule/:id/publish` | JWT | admin | `publishClassById` |
+| DELETE | `/api/v1/admin/classes/:id` | JWT | admin | `softDeleteClassById` |
+| GET | `/api/v1/classes` | JWT | admin, trainer, user | `getActiveClassesForMembers` |
+| GET | `/api/v1/classes/:id` | JWT | admin, trainer, user | `getClassById` |
+
+#### `/api/v1/zego` → [zego.routes.ts](../src/routes/zego.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/api/v1/zego/sessions/:sessionId/token` | JWT | — | `generateSessionToken` |
+| POST | `/api/v1/zego/sessions/:sessionId/end` | JWT | — | `endLiveSession` |
+| POST | `/api/v1/zego/sessions/:sessionId/attendance` | JWT | — | `recordSessionAttendance` |
+| POST | `/api/v1/zego/sessions/:sessionId/host-presence` | JWT | — | `reportHostPresence` |
+
+#### `/api/v1/admin/settings` → [settings.routes.ts](../src/routes/settings.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/api/v1/admin/settings/rooms` | JWT | — | `getConferenceSettings` |
+| PUT | `/api/v1/admin/settings/rooms` | JWT | — | `updateConferenceSettings` |
+
+#### `/membership-plans` → [membershipPlan.routes.ts](../src/routes/membershipPlan.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/membership-plans` | Public | — | `getAllMembershipPlans` |
+| GET | `/membership-plans/:id` | JWT | admin, user, trainer | `getMembershipPlanById` |
+| POST | `/membership-plans` | JWT | admin | `createMembershipPlan` |
+| PATCH | `/membership-plans/:id` | JWT | admin | `updateMembershipPlanById` |
+| DELETE | `/membership-plans/:id` | JWT | admin | `deleteMembershipPlanById` |
+
+#### `/onboarding` → [onboarding.routes.ts](../src/routes/onboarding.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/onboarding/status` | JWT | user | `getStatus` |
+| GET | `/onboarding/status/:userId` | JWT | admin, frontdesk | `getStatusByUserId` |
+| POST | `/onboarding/health-markers` | JWT | user | `submitHealthMarkers` |
+| POST | `/onboarding/health-goals` | JWT | user | `submitHealthGoals` |
+| POST | `/onboarding/consent` | JWT | user | `submitConsent` |
+| POST | `/onboarding/reports` | JWT | user | `submitReport` |
+| POST | `/onboarding/complete` | JWT | user | `submitComplete` |
+
+#### `(root)` → [nutritionist-booking.routes.ts](../src/routes/nutritionist-booking.routes.ts)
+
+Also mounted at `/api/v1`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/onboarding/nutritionist/book` | JWT | user | `bookNutritionist` |
+| POST | `/nutritionist/book` | JWT | user | `bookNutritionist` |
+| GET | `/nutritionist/my-booking` | JWT | user | `getMemberBooking` |
+| GET | `/nutritionist/my-bookings` | JWT | user | `getMyBookings` |
+| PATCH | `/nutritionist/my-booking/switch-to-online` | JWT | user | `switchToOnline` |
+| PATCH | `/nutritionist/my-booking/reschedule` | JWT | user | `rescheduleMyBooking` |
+| POST | `/nutritionist/my-booking/reschedule` | JWT | user | `rescheduleMyBooking` |
+| POST | `/onboarding/nutritionist/reschedule` | JWT | user | `rescheduleMyBooking` |
+| PATCH | `/onboarding/nutritionist/reschedule` | JWT | user | `rescheduleMyBooking` |
+| POST | `/nutritionist/my-booking/switch-to-online` | JWT | user | `switchToOnline` |
+| GET | `/nutritionist/bookings` | JWT | admin, nutritionist, frontdesk | `getAllBookingsForAdmin` |
+| PATCH | `/admin/nutrition/bookings/:id/accept` | JWT | admin, nutritionist, frontdesk | `acceptBooking` |
+| POST | `/admin/nutrition/bookings/:id/accept` | JWT | admin, nutritionist, frontdesk | `acceptBooking` |
+| PATCH | `/nutritionist/bookings/:id/accept` | JWT | admin, nutritionist, frontdesk | `acceptBooking` |
+| PATCH | `/nutritionist/bookings/:id/reject` | JWT | admin, nutritionist, frontdesk | `rejectBooking` |
+| PATCH | `/nutritionist/bookings/:id/complete` | JWT | admin, nutritionist, frontdesk | `completeBooking` |
+
+#### `/nutrition` → [nutrition.routes.ts](../src/routes/nutrition.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/nutrition/my/profile` | JWT | user | `getMyProfileHandler` |
+| POST | `/nutrition/profiles` | JWT | nutritionist, admin | `createProfileHandler` |
+| GET | `/nutrition/profiles/:userId` | JWT | nutritionist, admin | `getProfileByUserHandler` |
+| PATCH | `/nutrition/profiles/:userId` | JWT | nutritionist, admin | `updateProfileHandler` |
+| DELETE | `/nutrition/profiles/:userId` | JWT | nutritionist, admin | `deleteProfileHandler` |
+| POST | `/nutrition/admin/foods` | JWT | admin | `createSystemFood` |
+| POST | `/nutrition/admin/adherence/rebuild` | JWT | admin | `rebuildPlanAdherence` |
+| GET | `/nutrition/foods` | JWT | nutritionist, admin, user | `listFoods` |
+| POST | `/nutrition/foods` | JWT | nutritionist, admin | `createCustomFood` |
+| PATCH | `/nutrition/foods/:id` | JWT | nutritionist, admin | `patchFood` |
+| DELETE | `/nutrition/foods/:id` | JWT | nutritionist, admin | `removeFood` |
+| GET | `/nutrition/categories` | JWT | nutritionist, admin, user | `listCategoriesHandler` |
+| GET | `/nutrition/categories/:categoryId/recipes` | JWT | nutritionist, admin, user | `listRecipesByCategoryHandler` |
+| GET | `/nutrition/recipes` | JWT | nutritionist, admin, user | `listRecipesHandler` |
+| GET | `/nutrition/recipes/:id` | JWT | nutritionist, admin, user | `getRecipeHandler` |
+| POST | `/nutrition/templates/from-category/:categoryId` | JWT | nutritionist, admin | `buildTemplateFromCategoryHandler` |
+| POST | `/nutrition/templates/from-recipe/:recipeId` | JWT | nutritionist, admin | `buildTemplateFromRecipeHandler` |
+| POST | `/nutrition/templates/copy` | JWT | nutritionist, admin | `copyPlanDayStructure` |
+| POST | `/nutrition/templates` | JWT | nutritionist, admin | `createNutritionTemplate` |
+| GET | `/nutrition/templates` | JWT | nutritionist, admin | `listNutritionTemplates` |
+| GET | `/nutrition/templates/:id` | JWT | nutritionist, admin | `getNutritionTemplate` |
+| PATCH | `/nutrition/templates/:id` | JWT | nutritionist, admin | `updateNutritionTemplate` |
+| DELETE | `/nutrition/templates/:id` | JWT | nutritionist, admin | `deleteNutritionTemplate` |
+| POST | `/nutrition/templates/:id/assign` | JWT | nutritionist, admin | `assignTemplate` |
+| GET | `/nutrition/dashboard/stats` | JWT | nutritionist, admin | `dashboardStats` |
+| GET | `/nutrition/dashboard/members` | JWT | nutritionist, admin | `dashboardMembers` |
+| GET | `/nutrition/users/:userId/dashboard` | JWT | nutritionist, admin | `userDashboard` |
+| GET | `/nutrition/members` | JWT | nutritionist, admin | `dashboardMembers` |
+| GET | `/nutrition/my/plans` | JWT | user | `listMyPlans` |
+| GET | `/nutrition/my/plans/:id` | JWT | user | `getMyPlanById` |
+| GET | `/nutrition/my/plans/:id/pdf` | JWT | user | `getPlanPdfHandler` |
+| POST | `/nutrition/my/plans/:id/meals/complete` | JWT | user | `completePlanMeal` |
+| POST | `/nutrition/my/meal-logs` | JWT | user | `createMealLog` |
+| GET | `/nutrition/my/meal-logs` | JWT | user, nutritionist, admin | `listMyMealLogs` |
+| PATCH | `/nutrition/my/meal-logs/:id` | JWT | user | `patchMealLog` |
+| DELETE | `/nutrition/my/meal-logs/:id` | JWT | user | `removeMealLog` |
+| POST | `/nutrition/my/hydration` | JWT | user | `addHydrationIntake` |
+| PATCH | `/nutrition/my/hydration/goal` | JWT | user | `updateHydrationGoal` |
+| GET | `/nutrition/my/hydration` | JWT | user, nutritionist, admin | `getMyHydration` |
+| POST | `/nutrition/my/progress` | JWT | user | `addMyProgress` |
+| GET | `/nutrition/my/progress` | JWT | user, nutritionist, admin | `listMyProgress` |
+| GET | `/nutrition/my/adherence/weekly` | JWT | user, nutritionist, admin | `getMyWeeklyAdherence` |
+| GET | `/nutrition/my/adherence` | JWT | user, nutritionist, admin | `getMyAdherence` |
+| POST | `/nutrition/plans` | JWT | nutritionist, admin | `createPlan` |
+| GET | `/nutrition/plans` | JWT | nutritionist, admin | `listManagedPlans` |
+| GET | `/nutrition/plans/:id` | JWT | nutritionist, admin | `getPlanById` |
+| PATCH | `/nutrition/plans/:id` | JWT | nutritionist, admin | `patchPlan` |
+| DELETE | `/nutrition/plans/:id` | JWT | nutritionist, admin | `deletePlanHandler` |
+| PATCH | `/nutrition/plans/:id/status` | JWT | nutritionist, admin | `changePlanStatus` |
+| POST | `/nutrition/plans/:id/pdf` | JWT | nutritionist, admin | `generatePlanPdfHandler` |
+| POST | `/nutrition/plans/:id/duplicate` | JWT | nutritionist, admin | `duplicatePlanHandler` |
+| GET | `/nutrition/plans/:id/adherence/weekly` | JWT | nutritionist, admin | `getPlanWeeklyAdherence` |
+| GET | `/nutrition/plans/:id/adherence` | JWT | nutritionist, admin | `getPlanAdherence` |
+| GET | `/nutrition/plans/:id/progress` | JWT | nutritionist, admin | `listPlanProgress` |
+| POST | `/nutrition/plans/:id/progress` | JWT | nutritionist, admin | `addPlanProgressEntry` |
+
+#### `/dashboard` → [dashboard.routes.ts](../src/routes/dashboard.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/dashboard/metrics` | JWT | admin, frontdesk | `getDashboardMetrics` |
+
+#### `/webhook` → [webhook.route.ts](../src/routes/webhook.route.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/webhook/email` | Secret | — | `(inline)` |
+| GET | `/webhook/reports/me` | JWT | user | `(inline)` |
+| GET | `/webhook/reports` | JWT | admin | `(inline)` |
+| GET | `/webhook/reports/user/:userId` | JWT | admin | `(inline)` |
+| GET | `/webhook/reports/:id` | JWT | admin | `(inline)` |
+
+#### `/workout-plans` → [workout-plan.routes.ts](../src/routes/workout-plan.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/workout-plans/assignments/mine` | JWT | user | `getMyAssignment` |
+| GET | `/workout-plans/assignments/mine/schedule` | JWT | user | `getAssignmentSchedule` |
+| GET | `/workout-plans/assignments/mine/today` | JWT | user | `getTodayAssignedWorkout` |
+| GET | `/workout-plans/assignments/mine/days/:dayNumber` | JWT | user | `getAssignedWorkoutForDay` |
+| POST | `/workout-plans/assignments/mine/complete-day` | JWT | user | `completePlanDay` |
+| PATCH | `/workout-plans/assignments/mine/days/:dayNumber` | JWT | user | `updateMyDayExercises` |
+| GET | `/workout-plans` | JWT | admin, trainer | `listPlans` |
+| POST | `/workout-plans` | JWT | admin, trainer | `createPlan` |
+| GET | `/workout-plans/:id` | JWT | admin, trainer | `getPlan` |
+| PATCH | `/workout-plans/:id` | JWT | admin, trainer | `updatePlan` |
+| DELETE | `/workout-plans/:id` | JWT | admin, trainer | `deletePlan` |
+| POST | `/workout-plans/:id/assign` | JWT | admin, trainer | `assignUsers` |
+| POST | `/workout-plans/:planId/assign-to-me` | JWT | user, trainer, admin | `assignPlan` |
+
+#### `/workouts` → [workout.routes.ts](../src/routes/workout.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/workouts/active` | JWT | user | `getActiveSession` |
+| GET | `/workouts/today` | JWT | user | `getTodaySession` |
+| GET | `/workouts/me` | JWT | user | `listMySessions` |
+| GET | `/workouts/me/stats` | JWT | user | `getMyStats` |
+| GET | `/workouts/me/history` | JWT | user | `getMyHistory` |
+| POST | `/workouts` | JWT | user | `createSession` |
+| GET | `/workouts/:id` | JWT | user | `getSessionById` |
+| PATCH | `/workouts/:id` | JWT | user | `updateSession` |
+| DELETE | `/workouts/:id` | JWT | user | `deleteSession` |
+| POST | `/workouts/:sessionId/exercises` | JWT | user | `addExerciseToSession` |
+| PATCH | `/workouts/:sessionId/exercises/reorder` | JWT | user | `reorderExercises` |
+| PATCH | `/workouts/:sessionId/exercises/:id` | JWT | user | `updateWorkoutExercise` |
+| DELETE | `/workouts/:sessionId/exercises/:id` | JWT | user | `deleteWorkoutExercise` |
+| POST | `/workouts/:sessionId/exercises/:exerciseId/sets` | JWT | user | `logSet` |
+| PATCH | `/workouts/:sessionId/exercises/:exerciseId/sets/:setId` | JWT | user | `updateSet` |
+| DELETE | `/workouts/:sessionId/exercises/:exerciseId/sets/:setId` | JWT | user | `deleteSet` |
+
+#### `/notifications` → [notification.routes.ts](../src/routes/notification.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/notifications` | JWT | — | `listNotifications` |
+| PATCH | `/notifications/read-all` | JWT | — | `markAllRead` |
+| PATCH | `/notifications/:id/read` | JWT | — | `markNotificationRead` |
+| POST | `/notifications/fcm-token` | JWT | — | `registerToken` |
+
+#### `/internal` → [internal.routes.ts](../src/routes/internal.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/internal/reminders/tick` | Public | — | `(inline)` |
+| POST | `/internal/sessions/lifecycle/tick` | Public | — | `(inline)` |
+| POST | `/internal/leads/followup` | Public | — | `(inline)` |
+
+#### Declared inline in [src/app.ts](../src/app.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/health` | Public | — | inline |
+| POST | `/test/firebase` | Public | — | inline |
+
+<!-- generated: 248 route declarations across 29 route files -->
 
 ---
 
@@ -237,7 +756,7 @@ const { data } = await axios.post("https://api.example.com/auth/signup", {
 
 ### POST /auth/login
 
-Exchange credentials for a JWT. The login route resolves identity across `User`, `Admin`, `Doctor`, and `Trainer` collections by email; the returned `role` reflects which collection matched.
+Exchange credentials for a JWT. The login route resolves identity across the `User`, `Admin`, and `Trainer` collections by email; the returned `role` reflects which collection matched.
 
 **Auth:** Public (rate-limited)
 
@@ -340,6 +859,156 @@ curl -X POST "https://api.example.com/auth/logout" \
 
 **Success (200):** `{ "message": "Logged out successfully" }`
 
+### POST /auth/phone/verify
+
+Phone + OTP sign-in for the Flutter app. The client runs the Firebase phone-auth
+flow, then posts the resulting **Firebase ID token**; the backend verifies it and
+exchanges it for its own JWT. The backend never sends or validates an OTP itself.
+
+**Auth:** Public (rate-limited)
+
+**Request body**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `firebaseIdToken` | string | yes | min 1 — Firebase ID token from the client SDK |
+
+Account lookup order: `firebaseUid`, then last-10-digits phone match. A legacy
+account matched by phone is backfilled with `firebaseUid`, `phoneVerified: true`,
+and a normalized 10-digit `phone`.
+
+```bash
+curl -X POST "https://api.example.com/auth/phone/verify" \
+  -H "Content-Type: application/json" \
+  -d '{"firebaseIdToken":"eyJhbGciOiJSUzI1NiIs..."}'
+```
+
+**Success (200) — returning user**
+
+```json
+{
+  "message": "Login successful",
+  "isNewUser": false,
+  "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
+  "tokenType": "Bearer",
+  "expiresIn": "12h",
+  "user": {
+    "id": "5f1a2b3c4d5e6f7a8b9c0d1e",
+    "email": "",
+    "role": "user",
+    "onboarded": false,
+    "onboardingStatus": { "currentStep": "HEALTH_MARKERS", "completedSteps": [] }
+  }
+}
+```
+
+`email` is `""` for phone-only accounts. `refreshToken` is `null` when refresh
+tokens are not configured.
+
+**Success (200) — unknown phone number**
+
+No user is created. The client must follow up with `/auth/phone/register`.
+
+```json
+{ "isNewUser": true, "phoneNumber": "5555550123" }
+```
+
+**Errors**
+
+| Status | Body | When |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Missing/empty `firebaseIdToken` |
+| 401 | `UNAUTHORIZED` | Firebase rejected the token |
+| 503 | `NOT_IMPLEMENTED` | `FIREBASE_NOT_CONFIGURED`, or JWT not configured |
+
+### POST /auth/phone/register
+
+First-time account creation after OTP verification. Creates the `User`, upserts
+a `Lead` keyed by phone, and returns the same auth envelope as
+`/auth/phone/verify`.
+
+**Auth:** Public (rate-limited)
+
+**Request body**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `firebaseIdToken` | string | yes | min 1 |
+| `name` | string | yes | min 1 → `username` |
+| `goal` | string | yes | min 1 → `goal`, and the Lead's `interestedIn` |
+| `age` | number | yes | 0–130 (numeric strings coerced) |
+| `gender` | Gender | yes | `Male` \| `Female` \| `Other`; legacy `0`/`1`/`2` and `"Others"` normalized |
+
+```bash
+curl -X POST "https://api.example.com/auth/phone/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firebaseIdToken": "eyJhbGciOiJSUzI1NiIs...",
+    "name": "Jane Doe",
+    "goal": "Weight loss",
+    "age": 29,
+    "gender": "Female"
+  }'
+```
+
+**Success (201)** — `{ "message": "User signup successful", "isNewUser": true, ...authEnvelope }`
+
+The new user starts at `currentStep: "HEALTH_MARKERS"` with all step flags false.
+
+**Success (200) — already registered.** Idempotent: an existing `firebaseUid` or
+phone match returns `{ "message": "Login successful", "isNewUser": false, ... }`
+rather than creating a duplicate. A duplicate-key race (`E11000`) is caught and
+resolved the same way.
+
+**Errors:** same table as `/auth/phone/verify`.
+
+> Lead upsert failure is swallowed and logged — a CRM write must never fail
+> account creation. The response is unaffected.
+
+---
+
+## Account deletion — `/delete-account`
+
+Public, user-facing account deletion request flow, required by the App Store and
+Play Store. Nothing here deletes data directly: it records a
+`DeletionRequest` for an admin to action via
+[`/admins/deletion-requests`](#get-adminsdeletion-requests).
+
+Both routes are rate-limited by `publicDeleteAccountRateLimit`.
+
+### GET /delete-account
+
+Renders the public HTML request page. Returns `text/html`, not JSON.
+
+**Auth:** Public
+
+### POST /delete-account/request
+
+Log a deletion request. Identity is proven with a Firebase ID token, so the
+caller does not need a backend JWT.
+
+**Auth:** Public
+
+**Request body**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `firebaseIdToken` | string | yes | min 1 |
+| `reason` | string | no | max 500, defaults to `""` |
+| `confirm` | boolean | yes | must be exactly `true` |
+
+`confirm` is a hard gate — any value other than `true` fails validation with
+"You must confirm that you understand this action is permanent."
+
+```bash
+curl -X POST "https://api.example.com/delete-account/request" \
+  -H "Content-Type: application/json" \
+  -d '{"firebaseIdToken":"eyJ...","reason":"No longer using the app","confirm":true}'
+```
+
+**Errors:** 400 validation, 401 invalid Firebase token, 429 rate limited.
+
 ---
 
 ## Admins — `/admins`
@@ -402,6 +1071,96 @@ const { data } = await axios.get("https://api.example.com/admins", {
 ```
 
 **Success response (200):** `{ "admins": [{ "_id": "...", "adminName": "...", "email": "...", "phone": "..." }] }`
+
+### GET /admins/deletion-requests
+
+Review account-deletion requests submitted through
+[`POST /delete-account/request`](#post-delete-accountrequest).
+
+> Declared **before** `/admins/:id` in the router so the literal segment wins the
+> match. Keep that ordering when editing
+> [admin.routes.ts](../src/routes/admin.routes.ts).
+
+**Query params**
+
+| Param | Type | Default | Constraints |
+|---|---|---|---|
+| `page` | number | `1` | ≥ 1 |
+| `limit` | number | `20` | 1–100 |
+| `status` | `DeletionRequestStatus` | — | `Pending` \| `Processed` \| `Cancelled` |
+
+```bash
+curl "https://api.example.com/admins/deletion-requests?status=Pending&limit=50" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200)** — newest first:
+
+```json
+{
+  "requests": [
+    {
+      "id": "6650f1a2b3c4d5e6f7a8b9c0",
+      "userId": "5f1a2b3c4d5e6f7a8b9c0d1e",
+      "fullName": "Jane Doe",
+      "email": "user@example.com",
+      "phone": "5555550123",
+      "reason": "No longer using the app",
+      "status": "Pending",
+      "ipAddress": "203.0.113.9",
+      "userAgent": "Mozilla/5.0 ...",
+      "createdAt": "2026-08-01T10:00:00.000Z"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 50, "total": 3, "totalPages": 1 }
+}
+```
+
+**Errors:** 400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`, 403 `FORBIDDEN`.
+
+### PATCH /admins/deletion-requests/:id
+
+Action a deletion request.
+
+**Path params:** `id` — deletion request ObjectId.
+
+**Request body**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `status` | string | yes | `Processed` or `Cancelled` only — `Pending` is not accepted |
+
+> **`Processed` is destructive and irreversible.** It runs
+> `deleteAndAnonymizeUserData(userId)` against the matched account. The user is
+> resolved from `request.userId`, falling back to an email lookup and then a
+> last-10-digits phone lookup, so an account created *after* the request was
+> filed can still be matched. If nothing matches, the request is still marked
+> `Processed` and a `[ADMIN_DELETION]` warning is logged — no data is touched.
+>
+> `Cancelled` only changes the status.
+
+```bash
+curl -X PATCH "https://api.example.com/admins/deletion-requests/6650f1a2b3c4d5e6f7a8b9c0" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"status":"Cancelled"}'
+```
+
+**Success (200)**
+
+```json
+{
+  "message": "Deletion request successfully updated to: Cancelled",
+  "request": { "id": "6650f1a2b3c4d5e6f7a8b9c0", "status": "Cancelled" }
+}
+```
+
+**Errors**
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Invalid id, or `status` not `Processed`/`Cancelled` |
+| 404 | `NOT_FOUND` | No such deletion request |
+| 409 | `CONFLICT` | Request is not `Pending` — already processed |
 
 ### GET /admins/:id
 
@@ -519,7 +1278,7 @@ const { data } = await axios.post(
 
 List users with search, filter, pagination.
 
-**Auth:** Bearer (`admin`, `doctor`, `nutritionist`)
+**Auth:** Bearer (`admin`, `nutritionist`)
 
 **Query params**
 
@@ -653,6 +1412,46 @@ curl "https://api.example.com/users/me/hpod-metrics" -H "Authorization: Bearer $
 
 **Success (200):** `{ "history": [ /* HpodMetric documents */ ] }`
 
+### POST /users/me/hpod-metrics
+
+Manually record a body-composition measurement, for members who enter readings
+themselves instead of receiving an HPOD report by email.
+
+**Auth:** Bearer (`user` only — other roles get `403 FORBIDDEN`)
+
+**Request body** — all four are required. Validation is a plain
+presence check, not Zod, so any value that is not `undefined` passes and is
+coerced with `Number()`.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `weight_kg` | number | yes | → `vitals.weight_kg` |
+| `body_fat_percent` | number | yes | → `bodyComposition.body_fat_percent` |
+| `skeletal_muscle_mass_kg` | number | yes | → `bodyComposition.skeletal_muscle_mass_kg` |
+| `age` | number \| string | yes | Stored as a **string** |
+
+```bash
+curl -X POST "https://api.example.com/users/me/hpod-metrics" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "weight_kg": 72.4, "body_fat_percent": 21.3, "skeletal_muscle_mass_kg": 31.8, "age": 29 }'
+```
+
+The record is stored with `source: "manual"` and both `recordedAt` and
+`receivedAt` set to now. Every other metric field — height, BMI, SpO2, pulse,
+blood pressure, the full ECG block, `idealBodyWeight_kg`, `weightToLose_kg` — is
+written as `null`, and `testsNotTaken`/`concerns` as `[]`. Consumers must
+tolerate a sparse `HpodMetric`, since a manual entry populates only three
+measurements.
+
+**Success (201):** `{ "success": true, "metric": { /* HpodMetric */ } }`
+
+**Errors**
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `BAD_REQUEST` | `All fields (weight_kg, body_fat_percent, skeletal_muscle_mass_kg, age) are required` |
+| 403 | `FORBIDDEN` | Caller is not a `user` |
+
 ### GET /users/me/reports/:id/pdf
 
 Fetch a report PDF. Currently a stub.
@@ -708,9 +1507,9 @@ await axios.patch(
 
 ### GET /users/:id
 
-Get any user (admin/doctor/nutritionist).
+Get any user.
 
-**Auth:** Bearer (`admin`, `doctor`, `nutritionist`)
+**Auth:** Bearer (`admin`, `nutritionist`, `user`)
 
 **Path params:** `id` — user ObjectId.
 
@@ -723,9 +1522,9 @@ curl "https://api.example.com/users/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 ### GET /users/:id/onboarding-profile
 
-Return the aggregated onboarding profile for a user (markers, goals, consent, reports, appointments).
+Return the aggregated onboarding profile for a user (markers, goals, consent, reports, nutritionist booking).
 
-**Auth:** Bearer (`admin`, `doctor`, `nutritionist`)
+**Auth:** Bearer (`admin`, `nutritionist`, `user`)
 
 ```bash
 curl "https://api.example.com/users/5f1a2b3c4d5e6f7a8b9c0d1e/onboarding-profile" \
@@ -738,7 +1537,7 @@ curl "https://api.example.com/users/5f1a2b3c4d5e6f7a8b9c0d1e/onboarding-profile"
 
 Generate a short-lived signed URL for a specific uploaded report.
 
-**Auth:** Bearer (`admin`, `doctor`, `nutritionist`)
+**Auth:** Bearer (`admin`, `nutritionist`)
 
 ```bash
 curl "https://api.example.com/users/5f1a2b3c4d5e6f7a8b9c0d1e/reports/5f1a2b3c4d5e6f7a8b9c0d2f/url" \
@@ -806,19 +1605,25 @@ curl -X DELETE "https://api.example.com/users/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 Multi-step onboarding workflow. The backend is the single source of truth — steps must be completed in the order shown in [Appendix A](#appendix-a-onboarding-step-order).
 
-All routes require `Authorization: Bearer <token>`. Most endpoints are user-only; the nutritionist cancel endpoint is admin-only.
+All routes require `Authorization: Bearer <token>`. Every route is `user`-only
+except `GET /onboarding/status/:userId`, which is `admin` + `frontdesk`.
 
-Common step-order errors:
+Common step-order errors, raised by `OnboardingServiceError` in
+[onboarding.service.ts](../src/utils/onboarding.service.ts):
 
 | Status | Code | When |
 |---|---|---|
-| 403 | `STEP_NOT_ALLOWED` | Submitting a step out of order |
+| 403 | `STEP_NOT_ALLOWED` | Submitting a step other than `currentStep` |
 | 409 | `ALREADY_COMPLETED` | Onboarding has already been finalized |
 | 400 | `MISSING_STEPS` | `POST /onboarding/complete` called before all steps done |
+| 404 | `NOT_FOUND` | User id invalid or user does not exist |
 
 ### GET /onboarding/status
 
-Get the current step, completed steps, and per-step flags.
+Current step for the calling user, plus the latest non-rejected nutritionist
+booking.
+
+**Auth:** Bearer (`user` only — any other role gets `403 FORBIDDEN`)
 
 ```bash
 curl "https://api.example.com/onboarding/status" -H "Authorization: Bearer $TOKEN"
@@ -826,20 +1631,58 @@ curl "https://api.example.com/onboarding/status" -H "Authorization: Bearer $TOKE
 
 **Success (200)**
 
+The response is exactly `OnboardingStatusResponse` from
+[onboarding.service.ts](../src/utils/onboarding.service.ts) — the per-step
+booleans live on the User document but are **not** part of this payload.
+
 ```json
 {
   "currentStep": "HEALTH_GOALS",
   "completedSteps": ["HEALTH_MARKERS"],
-  "healthMarkersCompleted": true,
-  "healthGoalsCompleted": false,
-  "consentCompleted": false,
-  "reportsUploaded": false,
-  "sportsScientistBooked": false,
-  "nutritionistBooked": false,
   "onboardingCompleted": false,
-  "startedAt": "2026-05-22T08:00:00.000Z"
+  "allowedNextStep": "HEALTH_GOALS",
+  "bookingDetails": null
 }
 ```
+
+| Field | Type | Notes |
+|---|---|---|
+| `currentStep` | `OnboardingStep` | Defaults to `HEALTH_MARKERS` when unset |
+| `completedSteps` | `OnboardingStep[]` | Append-only history |
+| `onboardingCompleted` | boolean | Mirrors `onboardingStatus.onboardingCompleted` |
+| `allowedNextStep` | `OnboardingStep \| null` | Equals `currentStep`, or `null` once complete |
+| `bookingDetails` | object \| null | Latest nutritionist booking whose status is not `REJECTED` |
+
+When present, `bookingDetails` is:
+
+```json
+{
+  "_id": "6650f1a2b3c4d5e6f7a8b9c0",
+  "bookingStatus": "ACCEPTED",
+  "appointmentMode": "ONLINE",
+  "clinicLocation": null,
+  "zegoRoomId": "nutri_session_6650f1a2b3c4d5e6f7a8b9c0",
+  "assignedNutritionistId": "6650aaa2b3c4d5e6f7a8b9c0",
+  "assignedNutritionistName": "Dr. Rao",
+  "meetingStatus": "SCHEDULED",
+  "bookingDate": "2026-08-14T00:00:00.000Z",
+  "startTime": "10:00",
+  "endTime": "10:30",
+  "acceptedAt": "2026-08-10T09:12:00.000Z"
+}
+```
+
+**Errors:** 400 `BAD_REQUEST` (invalid user id), 403 `FORBIDDEN`, 404 `NOT_FOUND`.
+
+### GET /onboarding/status/:userId
+
+Same payload as above, for any user. Used by the FrontDesk dashboard.
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+| Path param | Type | Notes |
+|---|---|---|
+| `userId` | ObjectId | 400 `BAD_REQUEST` if not a valid ObjectId |
 
 ### POST /onboarding/health-markers
 
@@ -950,68 +1793,26 @@ curl -X POST "https://api.example.com/onboarding/reports" \
 
 **Success (201):** `{ "message": "Report uploaded", "report": { /* ... */ } }`
 
-### POST /onboarding/sports-scientist
+### Nutritionist booking step
 
-Step 5. Book the sports scientist appointment (legacy expert appointment record).
+There is **no** `/onboarding/nutritionist` or `/onboarding/appointments` route on
+the onboarding router. The booking step is served by the nutritionist-booking
+router, which is mounted at the app root and therefore answers on the
+`/onboarding/...` prefix:
 
-**Request body**
+| Method | Path | Handler |
+|---|---|---|
+| POST | `/onboarding/nutritionist/book` | `bookNutritionist` |
+| POST, PATCH | `/onboarding/nutritionist/reschedule` | `rescheduleMyBooking` |
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `appointmentDate` | ISO date | no | |
-| `meetingLink` | string | no | |
+Both are documented under
+[Nutritionist bookings](#nutritionist-bookings--nutritionist); the
+`/onboarding/...` spellings are exact aliases of the `/nutritionist/...` ones.
 
-**Success (201):** `{ "message": "Sports scientist appointment booked", "appointment": { /* ... */ } }`
-
-### POST /onboarding/nutritionist
-
-Step 6. Book the nutritionist appointment (legacy expert appointment record).
-
-**Request body:** same as `/onboarding/sports-scientist`.
-
-**Success (201):** `{ "message": "Nutritionist appointment booked", "appointment": { /* ... */ } }`
-
-### POST /onboarding/nutritionist/book
-
-Submit a slot-based nutritionist booking for approval.
-
-**Request body**
-
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `slotId` | ObjectId | yes | Slot template or concrete slot id |
-| `date` | ISO date | yes | Booking date (UTC day) |
-| `appointmentMode` | `AppointmentMode` | yes | `IN_PERSON` or `ONLINE` |
-| `clinicLocation` | string | no | Required for in-person appointments |
-
-**Success (201):** `{ "message": "Nutritionist booking submitted for approval", "booking": { /* ... */ } }`
-
-### POST /onboarding/appointments
-
-Legacy endpoint that accepts `expertType` explicitly.
-
-**Request body**
-
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `expertType` | `ExpertType` | yes | `sports_scientist` or `nutritionist` |
-| `appointmentDate` | ISO date | no | |
-| `meetingLink` | string | no | |
-
-**Success (201):** `{ "message": "<Sports scientist|Nutritionist> appointment booked", "appointment": { /* ... */ } }`
-
-### DELETE /onboarding/appointments/nutritionist/:userId
-
-Admin-only cancellation that also rewinds the onboarding step.
-
-**Auth:** Bearer (`admin`)
-
-**Success (200):** `{ "success": true, "message": "Nutritionist appointment cancelled successfully", "onboardingStatus": { /* ... */ } }`
-
-### Expert Appointments — `/expert-appointments`
-
-> [!NOTE]
-> The Expert Appointments endpoints (User & Admin routes) have been promoted to their own dedicated top-level section. See [Expert Appointments — `/expert-appointments`](#expert-appointments--expert-appointments) for complete routing details.
+`bookNutritionist` sets `onboardingStatus.nutritionistBooked = true` and, when
+the caller's current step is `REPORT_UPLOAD` or `NUTRITIONIST_BOOKING`, calls
+`advanceStep(NUTRITIONIST_BOOKING)`. It never fails onboarding-wise: a
+post-onboarding user booking a follow-up gets a normal `201`.
 
 ### POST /onboarding/complete
 
@@ -1028,114 +1829,11 @@ curl -X POST "https://api.example.com/onboarding/complete" \
 
 ---
 
-## Doctors — `/doctors`
-
-### GET /doctors/public
-
-Public listing of doctors (no auth) with minimal fields.
-
-```bash
-curl "https://api.example.com/doctors/public"
-```
-
-```ts
-const { data } = await axios.get("https://api.example.com/doctors/public");
-```
-
-**Success (200)**
-
-```json
-{ "doctors": [ { "_id": "...", "name": "Dr. Jane Doe", "description": "...", "specialities": ["Cardiology"] } ] }
-```
-
-### GET /doctors/public/:id
-
-Public single doctor.
-
-```bash
-curl "https://api.example.com/doctors/public/5f1a2b3c4d5e6f7a8b9c0d1e"
-```
-
-**Success (200):** `{ "doctor": { /* limited fields */ } }`
-
-### POST /doctors
-
-Create a doctor.
-
-**Auth:** Bearer (`admin`)
-
-**Request body**
-
-| Field | Type | Required | Constraints |
-|---|---|---|---|
-| `doctorName` | string | yes | min 1 |
-| `email` | string | yes | valid, unique |
-| `phone` | string | yes | min 1 |
-| `password` | string | yes | min 6 |
-| `description` | string | no | default `""` |
-| `specialities` | string[] | no | default `[]` |
-
-```bash
-curl -X POST "https://api.example.com/doctors" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{ "doctorName": "Dr. Jane Doe", "email": "doctor@example.com", "phone": "+15555550150", "password": "ChangeMe123", "specialities": ["Cardiology"] }'
-```
-
-**Success (201):** `{ "message": "Doctor created", "doctor": { /* ... */ } }`
-
-### GET /doctors
-
-List all doctors (full fields).
-
-**Auth:** Bearer (`admin`)
-
-```bash
-curl "https://api.example.com/doctors" -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** `{ "doctors": [ /* ... */ ] }`
-
-### GET /doctors/:id
-
-**Auth:** Bearer (`doctor`, `trainer`)
-
-```bash
-curl "https://api.example.com/doctors/5f1a2b3c4d5e6f7a8b9c0d1e" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** `{ "doctor": { /* ... */ } }`
-
-### PATCH /doctors/:id
-
-**Auth:** Bearer (`doctor`, `trainer`)
-
-**Request body:** any of `doctorName`, `email`, `phone`, `password`, `description`, `specialities`.
-
-```bash
-curl -X PATCH "https://api.example.com/doctors/5f1a2b3c4d5e6f7a8b9c0d1e" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{ "description": "Updated bio." }'
-```
-
-**Success (200):** `{ "message": "Doctor updated", "doctor": { /* ... */ } }`
-
-### DELETE /doctors/:id
-
-**Auth:** Bearer (`admin`)
-
-```bash
-curl -X DELETE "https://api.example.com/doctors/5f1a2b3c4d5e6f7a8b9c0d1e" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** `{ "message": "Doctor deleted" }`
-
----
-
 ## Trainers — `/trainers`
 
-Identical shape to `/doctors`. Substitute `trainerName` for `doctorName` and `trainer` for `doctor` everywhere.
+Trainer accounts. `/trainers/public*` are declared before
+`router.use(authenticateToken)` and are therefore unauthenticated; everything
+else needs a JWT.
 
 | Method | Path | Auth |
 |---|---|---|
@@ -1143,9 +1841,22 @@ Identical shape to `/doctors`. Substitute `trainerName` for `doctorName` and `tr
 | GET | `/trainers/public/:id` | Public |
 | POST | `/trainers` | `admin` |
 | GET | `/trainers` | `admin` |
-| GET | `/trainers/:id` | `trainer`, `doctor` |
-| PATCH | `/trainers/:id` | `trainer`, `doctor` |
+| GET | `/trainers/:id` | `admin`, `trainer` |
+| PATCH | `/trainers/:id` | `admin`, `trainer` |
 | DELETE | `/trainers/:id` | `admin` |
+
+**Request body (create)**
+
+| Field | Type | Required |
+|---|---|---|
+| `trainerName` | string | yes |
+| `email` | string | yes (unique) |
+| `phone` | string | yes |
+| `password` | string | yes |
+| `specialities` | string[] | no |
+
+The public endpoints return a reduced projection with no contact details or
+credentials.
 
 **Example: create trainer**
 
@@ -1163,7 +1874,575 @@ await axios.post(
 );
 ```
 
-Bodies, responses, and errors mirror the doctor section above.
+Responses wrap the resource as `{ "trainer": { ... } }` for single reads and
+`{ "trainers": [ ... ] }` for the list. Errors follow the standard envelope:
+400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`, 403 `FORBIDDEN`, 404 `NOT_FOUND`,
+409 `CONFLICT` (email already registered).
+
+---
+
+## Classes — `/api/v1/classes`
+
+Class **templates** — the reusable definition of a class (name, capacity, credit
+cost, booking window). Concrete dated occurrences live in
+[Class schedules](#class-schedules--apiv1classesschedule).
+
+Mounted from [class.routes.ts](../src/routes/class.routes.ts) at `/api/v1`, so
+admin paths read `/api/v1/admin/classes` and member paths `/api/v1/classes`. All
+routes require a JWT.
+
+> **`Class._id` is a UUID string, not an ObjectId.** It defaults to
+> `randomUUID()`. Handlers validate with `isValidUuid`, so passing a 24-character
+> ObjectId returns `400 "Invalid class id format"`. This is the one resource in
+> the API whose ids are not Mongo ObjectIds.
+
+### POST /api/v1/admin/classes
+
+Create a class template.
+
+**Auth:** Bearer (`admin`)
+
+**Request body** — only `name` and `creditCost` are required; everything else
+has a server default.
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `name` | string | yes | — | min 1 after trim |
+| `creditCost` | number | yes | — | integer ≥ 0 |
+| `description` | string | no | `""` | |
+| `mode` | enum | no | `offline` | `online` \| `offline` \| `hybrid` |
+| `sessionType` | enum | no | `""` | `group_class` \| `live_stream` \| `""` |
+| `instructor` | string | no | `"Staff"` | Display name only |
+| `instructorUserId` | ObjectId \| null | no | `null` | **Determines the ZEGOCLOUD host.** Must match the instructor's `User._id` or they cannot host |
+| `durationMinutes` | number | no | `60` | |
+| `maxParticipants` | number | no | `20` | |
+| `tags` | string[] | no | `[]` | |
+| `scheduleInfo` | string | no | `""` | Free-text display string |
+| `recurrenceRule` | enum | no | `NONE` | `NONE` \| `DAILY` \| `WEEKLY` \| `MONTHLY` |
+| `schedulePattern` | string \| null | no | `null` | |
+| `scheduleType` | string | no | `"Fixed Session"` | |
+| `daysOfWeek` | number[] | no | `[]` | 0–6, Sunday = 0 |
+| `locationAddress` | string | no | `""` | |
+| `streamRoomId` | string | no | `""` | Zego **layout template** name, not a room id |
+| `enableWaitlist` | boolean | no | `false` | |
+| `status` | enum | no | `ACTIVE` | `ACTIVE` \| `INACTIVE` |
+| `access` | enum | no | `members_only` | `members_only` \| `open_to_all` |
+| `bookingRequirement` | enum | no | `credits_required` | `free` \| `credits_required` |
+| `bookingWindowValue` | number | no | `72` | Positive integer — how far ahead booking opens |
+| `bookingWindowUnit` | enum | no | `hours` | `hours` \| `days` |
+| `bookingCloseValue` | number \| null | no | `null` | Cutoff before start; `""` coerces to `null` |
+| `bookingCloseUnit` | enum \| null | no | `null` | `minutes` \| `hours` \| `days` |
+| `occurrenceLeadMinutes` | number | no | `30` | Minutes before start that the video room is prepared |
+| `isPublished` | boolean | no | `true` | |
+
+```bash
+curl -X POST "https://api.example.com/api/v1/admin/classes" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "name": "Sunrise Vinyasa",
+    "creditCost": 2,
+    "mode": "hybrid",
+    "sessionType": "group_class",
+    "instructorUserId": "5f1a2b3c4d5e6f7a8b9c0d1e",
+    "maxParticipants": 25
+  }'
+```
+
+**Success (201):** `{ "message": "Class created", "class": { /* class doc */ } }`
+
+**Errors:** `400 { "message": "Invalid class payload", "errors": [ /* Zod issues */ ] }`.
+
+> Class endpoints return Zod issues under `errors`, not the `code` +
+> `details` envelope used elsewhere. See [Error responses](#error-responses).
+
+### GET /api/v1/admin/classes
+
+All classes regardless of status, newest first. No query filters.
+
+**Auth:** Bearer (`admin`)
+
+**Success (200):** `{ "classes": [ /* ... */ ] }`
+
+### PUT /api/v1/admin/classes/:id
+
+Update a class. Note **PUT**, not PATCH — but the body is a partial update and at
+least one field must be present.
+
+**Auth:** Bearer (`admin`)
+
+**Path params:** `id` — class UUID.
+
+**Request body:** any subset of the create fields. An empty object fails with
+"At least one field must be provided for update".
+
+**Success (200):** `{ "message": "Class updated", "class": { /* ... */ } }`
+
+**Errors:** 400 invalid UUID, 400 invalid payload, 404 `{ "message": "Class not found" }`.
+
+> Saving a class calls `syncSessionsForClass`, which propagates the changed
+> fields down onto that class's future `ScheduledSession` documents.
+
+### PATCH /api/v1/admin/classes/:id/publish
+
+Publish or unpublish a class. Also available at
+`PATCH /api/v1/admin/classes/schedule/:id/publish` — the same handler bound
+twice, both taking a **class** id.
+
+**Auth:** Bearer (`admin`)
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `isPublished` | boolean | no | Defaults to `true` when omitted. `is_published` accepted as a snake_case alias |
+
+Sets `status` to `ACTIVE` when publishing and `INACTIVE` when unpublishing, then
+runs `syncSessionsForClass`.
+
+**Success (200):** `{ "message": "Class published" | "Class unpublished", "class": { /* ... */ } }`
+
+### DELETE /api/v1/admin/classes/:id
+
+Delete or retire a class. The behaviour depends on whether anyone has booked it:
+
+| Condition | Effect | Response message |
+|---|---|---|
+| Any `Booking` for the class, or any session with `currentBookings > 0` | Soft delete: `status` → `INACTIVE`, then unbooked sessions are removed | `"Class retired"` |
+| No bookings at all | Hard delete of the class **and** all its sessions | `"Class deleted successfully"` |
+
+**Auth:** Bearer (`admin`)
+
+**Success (200):** `{ "message": "...", "class": { /* ... */ } }`
+
+**Errors:** 400 invalid UUID, 404 `{ "message": "Class not found" }`.
+
+### GET /api/v1/classes
+
+Member-facing catalogue: only classes with `status: "ACTIVE"` **and**
+`isPublished` not `false`, newest first.
+
+**Auth:** Bearer (`admin`, `trainer`, `user`)
+
+**Success (200):** `{ "classes": [ /* ... */ ] }`
+
+### GET /api/v1/classes/:id
+
+One class by UUID.
+
+**Auth:** Bearer (`admin`, `trainer`, `user`)
+
+**Success (200):** `{ "class": { /* ... */ } }`
+
+**Errors:** 400 invalid UUID; 404 with a hint when the id is a session rather
+than a class:
+
+```json
+{ "message": "Class not found. If this is a session id, use GET /api/v1/classes/schedule/:id." }
+```
+
+---
+
+## Class schedules — `/api/v1/classes/schedule`
+
+Dated **occurrences** of a class. A `ScheduledSession` is what members book and
+what the video-room lifecycle operates on.
+
+Mounted from [class-schedule.routes.ts](../src/routes/class-schedule.routes.ts)
+at `/api/v1`. All routes require a JWT.
+
+### Session lifecycle
+
+Two independent state fields, deliberately separate because a room outlives its
+class by the expiry grace:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `status` | `SCHEDULED`, `FULL`, `CANCELLED`, `COMPLETED` | Booking state. `FULL` sessions stay in the member feed so a sold-out class renders as full instead of disappearing |
+| `roomStatus` | `PENDING`, `READY`, `EXPIRED` | Video-room state, driven by [`POST /internal/sessions/lifecycle/tick`](#post-internalsessionslifecycletick) |
+
+Room timeline for one session:
+
+1. `PENDING` — created; no `videoRoomId` yet.
+2. `READY` at `start − occurrenceLeadMinutes` — the sweep stamps `videoRoomId` and
+   `roomReadyAt`. Readers that run before the sweep fall back to
+   `deriveRoomId(_id)`, which produces the identical value.
+3. `hostLiveAt` set — first confirmed instant the host was actually in the room,
+   from `POST /api/v1/zego/sessions/:id/host-presence` or the sweep's Zego
+   membership check. **Write-once**: members are gated on it being non-null, so a
+   flaky host connection never ejects members already admitted.
+4. `EXPIRED` at `end + grace` — everyone is kicked, `roomStatus` → `EXPIRED`,
+   `status` → `COMPLETED`.
+
+### POST /api/v1/admin/classes/schedule
+
+Schedule one or more occurrences of a class.
+
+**Auth:** Bearer (`admin`)
+
+**Request body**
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `classId` | string | yes | — | Class UUID |
+| `sessionDate` | string | yes | — | Date of the first occurrence |
+| `startTime` | string | yes | — | `HH:mm`, 24-hour (`00:00`–`23:59`) |
+| `endTime` | string | yes | — | `HH:mm`; must be after `startTime` |
+| `trainerId` | string | no | — | Conflict-checked against the trainer's other sessions |
+| `deliveryType` | enum | no | *inherited* | `ONLINE` \| `OFFLINE` \| `HYBRID`. **Omitting it inherits the parent class's `mode`** — deliberately no default, so an online class can't get `OFFLINE` sessions |
+| `locationAddress` | string | no | — | |
+| `capacity` | number | no | `20` | Positive integer |
+| `recurrenceRule` | enum | no | `NONE` | `NONE` \| `DAILY` \| `WEEKLY` |
+| `repeatCount` | number | no | `1` | 1–30 occurrences |
+| `streamRoomId` | string | no | — | Zego layout template |
+| `isPublished` | boolean | no | `true` | |
+
+```bash
+curl -X POST "https://api.example.com/api/v1/admin/classes/schedule" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "classId": "3f1b8c2e-9d4a-4c77-91b2-0a5e6d7c8f90",
+    "sessionDate": "2026-08-15",
+    "startTime": "07:00",
+    "endTime": "08:00",
+    "recurrenceRule": "WEEKLY",
+    "repeatCount": 8
+  }'
+```
+
+**Success (201)**
+
+```json
+{
+  "message": "Class session scheduled successfully",
+  "count": 8,
+  "sessions": [ /* created ScheduledSession docs */ ]
+}
+```
+
+**Errors**
+
+| Status | Message | When |
+|---|---|---|
+| 400 | `Validation failed for schedule creation` | Zod issues under `errors` |
+| 400 | `Session end time must be after start time` | |
+| 400 | `Cannot schedule class sessions in the past` | |
+| 404 | `Class not found` | `classId` doesn't resolve |
+| 409 | `Trainer is already scheduled for a conflicting session at this time` | Overlaps another session for that trainer |
+
+### GET /api/v1/admin/classes/schedule
+
+All non-cancelled sessions, for the admin calendar.
+
+**Auth:** Bearer (`admin`)
+
+**Query params:** `classId`, `trainerId`, `date`, `startDate`, `endDate` — all
+optional; `startDate`/`endDate` bound a range.
+
+**Success (200)**
+
+```json
+{
+  "message": "Scheduled sessions retrieved successfully",
+  "count": 12,
+  "sessions": [ /* ... */ ]
+}
+```
+
+Each session carries both `videoRoomId` and `videoConferenceId`. They always hold
+the same value — the duplicate exists so the admin host and the user app resolve
+the identical room. Never derive one from the other.
+
+### PATCH /api/v1/admin/classes/schedule/:id
+
+Update a session.
+
+**Auth:** Bearer (`admin`)
+
+**Request body:** any of `trainerId`, `sessionDate`, `startTime`, `endTime`,
+`deliveryType`, `locationAddress`, `capacity`, `status`, `streamRoomId`,
+`isPublished`. `status` accepts `SCHEDULED`, `CANCELLED`, `COMPLETED`.
+
+**Success (200):** the updated session.
+
+**Errors:** 400 validation, 404 `Scheduled session not found`, plus:
+
+```json
+{ "message": "Use POST /api/v1/zego/sessions/:sessionId/end to end a live session." }
+```
+
+returned `400` when the update tries to end a live session — ending must go
+through the Zego flow so attendance is backfilled and participants are kicked.
+
+### PATCH /api/v1/admin/classes/schedule/:id/capacity
+
+Resize a session, delegating to the capacity engine so existing bookings are
+reconciled.
+
+**Auth:** Bearer (`admin`)
+
+**Request body**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `capacity` | number | yes | Positive integer ≥ 1 |
+
+**Success:** the engine's own result object, returned with its own status code.
+
+**Errors:** `400 { "message": "Capacity must be a positive integer" }`.
+
+### GET /api/v1/classes/schedule
+
+Member-facing feed. Returns sessions whose `status` is `SCHEDULED` **or**
+`FULL`.
+
+**Auth:** Bearer (`admin`, `trainer`, `user`)
+
+**Query params:** `date` — optional, restricts to a single day.
+
+**Success (200):** `{ "message": "...", "count": 5, "sessions": [ /* ... */ ] }`
+
+### GET /api/v1/classes/schedule/:id
+
+One session, with `videoRoomId`/`videoConferenceId` resolved.
+
+**Auth:** Bearer (`admin`, `trainer`, `user`)
+
+**Path params:** `id` — accepts a session ObjectId or UUID.
+
+**Success (200):** `{ "session": { /* ... */ } }`
+
+**Errors:** 400 invalid id format, 404 `Session not found`.
+
+---
+
+## Video sessions (ZEGOCLOUD) — `/api/v1/zego`
+
+Video-room access for group classes, live streams, and online nutritionist
+consultations. From [zego.routes.ts](../src/routes/zego.routes.ts).
+
+All four routes require a JWT and take `:sessionId` in the path. **None of them
+declares `authorize([...])`** — authorization is per-session, resolved inside
+`resolveSessionAccess`, so an instructor can host their own class without holding
+the `admin` role.
+
+### The access model
+
+Every endpoint here routes through
+[`resolveSessionAccess`](../src/services/session-access.service.ts), the single
+place where join-window, role, and lifecycle rules live. It returns either a
+grant (with `role`, `roomId`, `ttlSeconds`, and the window boundaries) or a
+denial.
+
+**Role** is derived server-side: `host` when the caller matches the class's
+`instructorUserId` or is an admin operator, otherwise `member`.
+
+**The room is always derived from the caller's booking.** There is deliberately
+no endpoint that mints a token for a client-supplied room id — that would hand
+any authenticated user the keys to every room in the project.
+
+**Denial codes**
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `NO_SCHEDULE` | 409 | Session has no valid schedule |
+| `NO_BOOKING` | 403 | Caller has no active booking for this session |
+| `CANCELLED` | 409 | Session was cancelled |
+| `ENDED` | 409 | Class has ended |
+| `NOT_OPEN_YET` | 403 | Join window hasn't opened |
+| `HOST_NOT_STARTED` | 403 | Host hasn't started the class yet |
+| `NO_ROOM` | 409 | No video room available for this session |
+
+Denial responses carry `startsAt`/`endsAt` when known, so a client can render an
+accurate countdown:
+
+```json
+{
+  "message": "The join window for this class has not opened yet.",
+  "code": "NOT_OPEN_YET",
+  "startsAt": "2026-08-15T07:00:00.000Z",
+  "endsAt": "2026-08-15T08:00:00.000Z"
+}
+```
+
+### POST /api/v1/zego/sessions/:sessionId/token
+
+Mint a ZEGOCLOUD token scoped to exactly one room, expiring when the caller's
+join window closes.
+
+**Auth:** Bearer (any role; access resolved per session)
+
+**Request body:** none.
+
+**Privileges granted** — the token binds `room_id`, so it is not a skeleton key:
+
+| Caller | Privilege | Effect |
+|---|---|---|
+| Host, or member of a `group_class` | `{1:1, 2:1}` | Login + publish |
+| Member of a `live_stream` | `{1:1, 2:0}` | Login only — a patched client still cannot publish into someone else's broadcast |
+
+```bash
+curl -X POST "https://api.example.com/api/v1/zego/sessions/6650f1a2b3c4d5e6f7a8b9c0/token" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200)**
+
+```json
+{
+  "token": "04AAAAAGa1...",
+  "appID": 1234567890,
+  "roomId": "session_6650f1a2b3c4d5e6f7a8b9c0",
+  "userId": "5f1a2b3c4d5e6f7a8b9c0d1e",
+  "userName": "jane.doe",
+  "role": "member",
+  "expiresAt": "2026-08-15T08:15:00.000Z",
+  "roomOpensAt": "2026-08-15T06:30:00.000Z",
+  "sessionEndsAt": "2026-08-15T08:00:00.000Z",
+  "windowClosesAt": "2026-08-15T08:10:00.000Z",
+  "hostLiveAt": "2026-08-15T06:58:12.000Z"
+}
+```
+
+`userName` resolves from the `User` document, falling back to the email local
+part, then to `"Host"`/`"Member"`.
+
+> **Side effect:** issuing a token stamps `booking.joinedAt` if unset. This is
+> the robust half of attendance — a client killed mid-class never runs its own
+> dispose-time report, so attendance survives a crash.
+
+**Errors:** 400 invalid session id, 401 unauthorized, any denial code above,
+503 `ZEGOCLOUD is not configured on the server.`, 500 if `ZEGO_APP_ID` is
+non-numeric.
+
+### POST /api/v1/zego/sessions/:sessionId/end
+
+End a class. **Host only.** Flips the session to `COMPLETED` (closing the window
+for everyone including the host), backfills attendance from bookings that show a
+join, then best-effort kicks anyone still connected via ZEGOCLOUD's REST API.
+The DB flip is what matters; the kick just makes it immediate.
+
+**Auth:** Bearer — caller must resolve to `host`
+
+**Success (200)**
+
+```json
+{
+  "message": "Session ended.",
+  "attendanceMarked": 14,
+  "kicked": ["5f1a...", "5f1b..."],
+  "kickErrors": []
+}
+```
+
+**Idempotent:** ending an already-ended session returns `200` with
+`"Session already ended."` and zeroed counters, so a retried click never shows an
+error.
+
+**Errors:** 403 `Only the host can end this class.`, 409
+`This session has no schedule to end.`, plus denial codes.
+
+### POST /api/v1/zego/sessions/:sessionId/attendance
+
+Record the caller's own attendance. The booking is resolved server-side, so
+there is no booking id for a client to get wrong or forge — this replaces
+`POST /bookings/:id/attendance` for the Zego join flow.
+
+**Auth:** Bearer (any role)
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `stayDurationMinutes` | number | no | Defaults to `0`. Stored as `max(existing, submitted)`, so a late report never shortens a recorded stay |
+
+Sets `status: "Attended"`, `joinedAt` (if unset), and `leftAt: now`.
+
+> The access check runs against `now − 5 minutes`, tolerating a client that
+> reports just after its window closed. `ENDED` is accepted here rather than
+> refused.
+
+**Success (200):** `{ "message": "Attendance recorded successfully.", "booking": { /* ... */ } }`
+
+Hosts have no booking, so they get `200 { "message": "No booking to record attendance for." }`.
+
+### POST /api/v1/zego/sessions/:sessionId/host-presence
+
+Host heartbeat. **Host only.** Call from the host client's real "I am in the
+room" callback (Zego's `onJoinRoom` / `onLiveStart`) — *not* from token
+issuance, because a host who requests a token but never joins must not flip
+members into the room.
+
+**Auth:** Bearer — caller must resolve to `host`
+
+Safe to call repeatedly: `hostLiveAt` is write-once, so a reconnect after a brief
+drop never resets when the class started and never re-blocks members already in.
+`hostLastSeenAt` updates every call (diagnostics only — nothing gates on it).
+
+Works for both scheduled sessions and online nutritionist bookings.
+
+**Success (200):** `{ "hostLiveAt": "2026-08-15T06:58:12.000Z" }`
+
+**Errors:** 403 `Only the host can report presence for this class.`, 409
+`This session has no schedule.`, plus denial codes.
+
+> This is the fast path. `verifyHostPresence` in
+> [session-room-lifecycle.service.ts](../src/services/session-room-lifecycle.service.ts)
+> is the self-heal for a host whose client dies before ever calling this.
+
+---
+
+## Conference settings — `/api/v1/admin/settings`
+
+Global ZEGOCLOUD defaults, stored as a **single** `ConferenceSettings` document.
+From [settings.routes.ts](../src/routes/settings.routes.ts).
+
+> **Authorization note:** the router applies `authenticateToken` but **no
+> `authorize([...])` guard**, so any authenticated caller — including a `user`
+> token — can read *and* write these settings. The `/admin` prefix is naming
+> only; it grants nothing.
+
+### GET /api/v1/admin/settings/rooms
+
+Read the settings. If no document exists yet, one is created on first read with
+the defaults below and returned.
+
+**Auth:** Bearer (any authenticated role — see note above)
+
+**Success (200)**
+
+```json
+{
+  "message": "Conference settings retrieved successfully",
+  "settings": {
+    "defaultVideoResolution": "720p",
+    "defaultFrameRate": 30,
+    "defaultAudioMode": "stereo",
+    "maxParticipantsPerSession": 50,
+    "layoutTemplates": ["interactive_class", "large_event", "standard_meeting"]
+  }
+}
+```
+
+### PUT /api/v1/admin/settings/rooms
+
+Update the settings. Partial: every field is optional and only the supplied keys
+are assigned.
+
+**Auth:** Bearer (any authenticated role — see note above)
+
+**Request body**
+
+| Field | Type | Constraints |
+|---|---|---|
+| `defaultVideoResolution` | string | `360p` \| `540p` \| `720p` \| `1080p` |
+| `defaultFrameRate` | number | `15` \| `30` \| `60` |
+| `defaultAudioMode` | string | `mono` \| `stereo` |
+| `maxParticipantsPerSession` | number | integer 1–500 |
+| `layoutTemplates` | string[] | each non-empty after trim |
+
+**Success (200):** `{ "message": "Conference settings updated successfully", "settings": { /* ... */ } }`
+
+**Errors:** `400 { "message": "Validation failed for conference settings update", "errors": [ /* Zod issues */ ] }`.
 
 ---
 
@@ -1173,7 +2452,7 @@ All routes require authentication.
 
 ### GET /slots
 
-**Auth:** Bearer (`admin`, `doctor`, `trainer`, `user`)
+**Auth:** Bearer (`admin`, `trainer`, `user`)
 
 ```bash
 curl "https://api.example.com/slots" -H "Authorization: Bearer $TOKEN"
@@ -1185,7 +2464,7 @@ curl "https://api.example.com/slots" -H "Authorization: Bearer $TOKEN"
 
 Return available slots for a given date (UTC day). Combines concrete dated slots and daily templates that have not yet been materialized for the day.
 
-**Auth:** Bearer (`admin`, `doctor`, `trainer`, `user`)
+**Auth:** Bearer (`admin`, `trainer`, `user`)
 
 **Query params**
 
@@ -1218,7 +2497,7 @@ curl "https://api.example.com/slots/available?date=2026-06-01" \
 
 ### GET /slots/:id
 
-**Auth:** Bearer (`admin`, `doctor`, `trainer`, `user`)
+**Auth:** Bearer (`admin`, `trainer`, `user`)
 
 ```bash
 curl "https://api.example.com/slots/5f1a2b3c4d5e6f7a8b9c0d1e" \
@@ -1290,7 +2569,7 @@ curl -X DELETE "https://api.example.com/slots/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 ### GET /services
 
-**Auth:** Bearer (`admin`, `doctor`, `trainer`, `user`)
+**Auth:** Bearer (`admin`, `trainer`, `user`)
 
 ```bash
 curl "https://api.example.com/services" -H "Authorization: Bearer $TOKEN"
@@ -1300,7 +2579,7 @@ curl "https://api.example.com/services" -H "Authorization: Bearer $TOKEN"
 
 ### GET /services/:id
 
-**Auth:** Bearer (`admin`, `doctor`, `trainer`, `user`)
+**Auth:** Bearer (`admin`, `trainer`, `user`)
 
 ```bash
 curl "https://api.example.com/services/5f1a2b3c4d5e6f7a8b9c0d1e" \
@@ -1379,8 +2658,8 @@ Mirrors `/services` with therapy-specific fields. Two public endpoints + five pr
 |---|---|---|
 | GET | `/therapies/public` | Public |
 | GET | `/therapies/public/:id` | Public |
-| GET | `/therapies` | `admin`, `doctor`, `trainer`, `user` |
-| GET | `/therapies/:id` | `admin`, `doctor`, `trainer`, `user` |
+| GET | `/therapies` | `admin`, `trainer`, `user` |
+| GET | `/therapies/:id` | `admin`, `trainer`, `user` |
 | POST | `/therapies` | `admin` |
 | PATCH | `/therapies/:id` | `admin` |
 | DELETE | `/therapies/:id` | `admin` |
@@ -1510,6 +2789,85 @@ curl -X DELETE "https://api.example.com/bookings/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 **Success (200):** `{ "message": "Booking deleted" }`
 
+### POST /bookings/:id/cancel
+
+Cancel a booking through the cancellation engine: releases the seat atomically
+and applies the refund policy.
+
+**Auth:** Bearer (`admin`, `user`)
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `adminOverride` | boolean | no | When exactly `true`, forces a refund regardless of the cutoff. Intended for staff |
+
+The engine decides refund vs. forfeit from the cancellation window; the response
+message states which applied.
+
+```bash
+curl -X POST "https://api.example.com/bookings/6650f1a2b3c4d5e6f7a8b9c0/cancel" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'
+```
+
+**Success (200) — refunded**
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Booking cancelled successfully. Credits refunded.",
+  "refunded": true,
+  "latePenaltyApplied": false,
+  "creditRefunded": 2,
+  "booking": {
+    "id": "6650f1a2b3c4d5e6f7a8b9c0",
+    "status": 2,
+    "refunded": true,
+    "cancelledAt": "2026-08-14T09:00:00.000Z"
+  }
+}
+```
+
+**Success (200) — late cancellation:** same shape with
+`"message": "Late cancellation policy applied: seat released, credits forfeited."`,
+`refunded: false`, `latePenaltyApplied: true`. The seat is still released.
+
+> The engine's `statusCode` is used as the HTTP status *and* echoed in the body.
+> A refund failure is logged as `[CANCELLATION_REFUND_NOTICE]` and does **not**
+> fail the cancellation — the seat release is the operation that matters.
+
+**Errors** — all share the `{ success: false, statusCode, message }` shape:
+
+| Status | Message |
+|---|---|
+| 400 | `Booking is already cancelled` |
+| 403 | `Forbidden: You cannot cancel another member's booking` |
+| 404 | `Booking not found` |
+
+### POST /bookings/:id/attendance
+
+Record attendance against a booking by id.
+
+**Auth:** Bearer (`admin`, `user`)
+
+> For the Zego join flow prefer
+> [`POST /api/v1/zego/sessions/:sessionId/attendance`](#post-apiv1zegosessionssessionidattendance),
+> which resolves the booking server-side so there is no id for a client to get
+> wrong or forge.
+
+**Request body**
+
+| Field | Type | Required | Default |
+|---|---|---|---|
+| `stayDurationMinutes` | number | no | `0` |
+| `joinedAt` | ISO date | no | now |
+
+**Success (200):** `{ "message": "Attendance recorded successfully", "booking": { /* ... */ } }`
+
+**Errors:** 401 `Unauthorized`, 403 `Forbidden` (not your booking), 404
+`Booking not found`, 409 `This booking has been cancelled.`
+
 ### PATCH /bookings/:id/status
 
 Change booking status (e.g., mark `Attended`, `Cancelled`). Refund triggered on `Cancelled`.
@@ -1532,430 +2890,66 @@ curl -X PATCH "https://api.example.com/bookings/5f1a2b3c4d5e6f7a8b9c0d1e/status"
 
 ---
 
-## Appointments — `/appointments`
-
-Doctor appointments. Mirrors `/bookings` with a `doctorId` field and doctor-specific endpoints.
-
-### POST /appointments
-
-**Auth:** Bearer (`admin`)
-
-**Request body**
-
-| Field | Type | Required |
-|---|---|---|
-| `appointmentDate` | ISO date | yes |
-| `userId` | string | yes |
-| `slotId` | string | yes |
-| `doctorId` | string | yes |
-| `serviceId` | string | no |
-| `reportId` | string | no |
-| `bypassCredits` | boolean | no |
-
-```bash
-curl -X POST "https://api.example.com/appointments" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{
-    "appointmentDate": "2026-06-01T10:00:00.000Z",
-    "userId": "5f1a2b3c4d5e6f7a8b9c0d1e",
-    "slotId": "5f1a2b3c4d5e6f7a8b9c0d2f",
-    "doctorId": "5f1a2b3c4d5e6f7a8b9c0d3a"
-  }'
-```
-
-```ts
-await axios.post(
-  "https://api.example.com/appointments",
-  { appointmentDate, userId, slotId, doctorId },
-  { headers: { Authorization: `Bearer ${token}` } }
-);
-```
-
-**Success (201):** `{ "message": "Appointment created", "appointment": { /* ... */ }, "credits": { "consumed": 1, "bypassed": false } }`
-
-### GET /appointments
-
-**Auth:** Bearer (`admin`) — list all.
-
-```bash
-curl "https://api.example.com/appointments" -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** `{ "appointments": [ /* ... */ ] }`
-
-### GET /appointments/me
-
-**Auth:** Bearer (`doctor`) — appointments assigned to the requesting doctor.
-
-```bash
-curl "https://api.example.com/appointments/me" -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** `{ "appointments": [ /* ... */ ] }`
-
-### GET /appointments/:id
-
-**Auth:** Bearer (`admin`)
-
-```bash
-curl "https://api.example.com/appointments/5f1a2b3c4d5e6f7a8b9c0d1e" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** `{ "appointment": { /* ... */ } }`
-
-### PATCH /appointments/:id
-
-**Auth:** Bearer (`admin`, `user` — users may update their own only).
-
-**Request body:** any of `appointmentDate`, `slotId`, `doctorId`, `serviceId`, `reportId`.
-
-```bash
-curl -X PATCH "https://api.example.com/appointments/5f1a2b3c4d5e6f7a8b9c0d1e" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{ "appointmentDate": "2026-06-02T10:00:00.000Z" }'
-```
-
-**Success (200):** `{ "message": "Appointment updated", "appointment": { /* ... */ } }`
-
-### DELETE /appointments/:id
-
-**Auth:** Bearer (`admin`)
-
-```bash
-curl -X DELETE "https://api.example.com/appointments/5f1a2b3c4d5e6f7a8b9c0d1e" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** `{ "message": "Appointment deleted" }`
-
-### PATCH /appointments/:id/status
-
-**Auth:** Bearer (`admin`, `doctor` — doctors can only update their own).
-
-**Request body:** `{ status: number }` (`BookingStatus` index).
-
-```bash
-curl -X PATCH "https://api.example.com/appointments/5f1a2b3c4d5e6f7a8b9c0d1e/status" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{ "status": 3 }'
-```
-
-**Success (200):** `{ "message": "Appointment status updated", "appointment": { /* ... */ }, "credits": { "refunded": 0 } }`
-
----
-
-## Expert Appointments — `/expert-appointments`
-
-Specialized appointment scheduling for booking Sports Scientist and Nutritionist consultations during and after onboarding.
-
-### User Routes — `/expert-appointments`
-
-These endpoints require `Authorization: Bearer <token>` with the role `user`.
-
-#### GET /expert-appointments/availability
-
-Query available slot dates and times for a specific expert type.
-
-**Query parameters**
-
-| Parameter | Type | Required | Constraints |
-|---|---|---|---|
-| `expertType` | string | yes | `sports_scientist` \| `nutritionist` |
-| `startDate` | string | yes | `YYYY-MM-DD` |
-| `endDate` | string | yes | `YYYY-MM-DD` |
-| `timezone` | string | yes | IANA timezone string (e.g. `Asia/Kolkata`) |
-
-**Example request**
-```bash
-curl "https://api.example.com/expert-appointments/availability?expertType=nutritionist&startDate=2026-05-27&endDate=2026-06-09&timezone=Asia/Kolkata" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success response (200)**
-```json
-{
-  "days": [
-    {
-      "date": "2026-05-27",
-      "slots": [
-        {
-          "start": "2026-05-27T10:00:00.000Z",
-          "end": "2026-05-27T10:30:00.000Z"
-        }
-      ]
-    }
-  ]
-}
-```
-
-#### POST /expert-appointments/book
-
-Book a selected availability slot. Marks the corresponding onboarding step complete.
-
-**Request body**
-
-| Field | Type | Required | Constraints |
-|---|---|---|---|
-| `expertType` | string | yes | `sports_scientist` \| `nutritionist` |
-| `slotStart` | string | yes | ISO-8601 timestamp (e.g., `2026-05-27T10:00:00.000Z`) |
-| `timezone` | string | yes | IANA timezone string (e.g. `Asia/Kolkata`) |
-| `idempotencyKey` | string | no | Custom unique string to prevent duplicate booking |
-
-**Example request**
-```bash
-curl -X POST "https://api.example.com/expert-appointments/book" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{
-    "expertType": "nutritionist",
-    "slotStart": "2026-05-27T10:00:00.000Z",
-    "timezone": "Asia/Kolkata"
-  }'
-```
-
-**Success response (201)**
-```json
-{
-  "message": "Appointment booked",
-  "appointment": {
-    "_id": "6a155160963fc70a99e94cb2",
-    "userId": "6a154915d00ec8d02047e53d",
-    "expertType": "nutritionist",
-    "bookingStatus": "Confirmed",
-    "appointmentStart": "2026-05-27T10:00:00.000Z",
-    "appointmentEnd": "2026-05-27T10:30:00.000Z",
-    "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
-    "webhookSyncStatus": "SYNCED"
-  }
-}
-```
-
-#### GET /expert-appointments/me
-
-Retrieve the authenticated user's own expert appointments categorized by their temporal status.
-
-**Example request**
-```bash
-curl "https://api.example.com/expert-appointments/me" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success response (200)**
-```json
-{
-  "upcoming": [
-    {
-      "_id": "6a155160963fc70a99e94cb2",
-      "userId": "6a154915d00ec8d02047e53d",
-      "expertType": "nutritionist",
-      "bookingStatus": "Confirmed",
-      "appointmentStart": "2026-05-27T10:00:00.000Z",
-      "appointmentEnd": "2026-05-27T10:30:00.000Z",
-      "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
-      "webhookSyncStatus": "SYNCED"
-    }
-  ],
-  "completed": [],
-  "cancelled": [],
-  "missed": []
-}
-```
-
-#### PATCH /expert-appointments/:id/reschedule
-
-Reschedule a confirmed active appointment to a new slot.
-
-**Request body**
-
-| Field | Type | Required | Constraints |
-|---|---|---|---|
-| `slotStart` | string | yes | New ISO-8601 timestamp |
-| `timezone` | string | yes | IANA timezone string |
-| `reason` | string | no | Max 500 characters |
-
-**Example request**
-```bash
-curl -X PATCH "https://api.example.com/expert-appointments/6a155160963fc70a99e94cb2/reschedule" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{
-    "slotStart": "2026-05-27T11:00:00.000Z",
-    "timezone": "Asia/Kolkata"
-  }'
-```
-
-**Success response (200)**
-```json
-{
-  "message": "Appointment rescheduled",
-  "appointment": {
-    "_id": "6a155160963fc70a99e94cb2",
-    "userId": "6a154915d00ec8d02047e53d",
-    "expertType": "nutritionist",
-    "bookingStatus": "Rescheduled",
-    "appointmentStart": "2026-05-27T11:00:00.000Z",
-    "appointmentEnd": "2026-05-27T11:30:00.000Z",
-    "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
-    "webhookSyncStatus": "SYNCED"
-  }
-}
-```
-
-#### PATCH /expert-appointments/:id/cancel
-
-Cancel a confirmed active appointment. Automatically rewinds the corresponding onboarding step if onboarding has not been finalized.
-
-**Request body**
-
-| Field | Type | Required | Constraints |
-|---|---|---|---|
-| `reason` | string | no | Max 500 characters |
-
-**Example request**
-```bash
-curl -X PATCH "https://api.example.com/expert-appointments/6a155160963fc70a99e94cb2/cancel" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{
-    "reason": "Schedule conflict"
-  }'
-```
-
-**Success response (200)**
-```json
-{
-  "message": "Appointment cancelled"
-}
-```
-
----
-
-### Admin Routes — `/admin/expert-appointments`
-
-These endpoints require `Authorization: Bearer <token>` with the role `admin`.
-
-#### GET /admin/expert-appointments
-
-Retrieve a paginated, filterable list of all expert appointments.
-
-**Query parameters**
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `expertType` | string | no | `sports_scientist` \| `nutritionist` |
-| `status` | string | no | Filter by status |
-| `userId` | string | no | Filter by 24-character user ObjectId |
-| `date` | string | no | `YYYY-MM-DD` |
-| `page` | number | no | Default: 1 |
-| `limit` | number | no | Default: 20, max 100 |
-
-**Example request**
-```bash
-curl "https://api.example.com/admin/expert-appointments?expertType=nutritionist&page=1&limit=20" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success response (200)**
-```json
-{
-  "appointments": [
-    {
-      "_id": "6a155160963fc70a99e94cb2",
-      "userId": {
-        "_id": "6a154915d00ec8d02047e53d",
-        "username": "jane.doe",
-        "email": "user@example.com",
-        "phone": "+15555550123"
-      },
-      "expertType": "nutritionist",
-      "bookingStatus": "Confirmed",
-      "appointmentStart": "2026-05-27T10:00:00.000Z",
-      "appointmentEnd": "2026-05-27T10:30:00.000Z",
-      "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
-      "webhookSyncStatus": "SYNCED"
-    }
-  ],
-  "pagination": {
-    "total": 1,
-    "page": 1,
-    "limit": 20,
-    "pages": 1
-  }
-}
-```
-
-#### GET /admin/expert-appointments/:id
-
-Retrieve detailed information for a specific expert appointment, along with its comprehensive audit log history.
-
-**Path parameters:** `id` — appointment ObjectId.
-
-**Example request**
-```bash
-curl "https://api.example.com/admin/expert-appointments/6a155160963fc70a99e94cb2" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success response (200)**
-```json
-{
-  "appointment": {
-    "_id": "6a155160963fc70a99e94cb2",
-    "userId": {
-      "_id": "6a154915d00ec8d02047e53d",
-      "username": "jane.doe",
-      "email": "user@example.com",
-      "phone": "+15555550123"
-    },
-    "expertType": "nutritionist",
-    "bookingStatus": "Confirmed",
-    "appointmentStart": "2026-05-27T10:00:00.000Z",
-    "appointmentEnd": "2026-05-27T10:30:00.000Z",
-    "meetingUrl": "https://meet.google.com/qvi-ufui-kca",
-    "webhookSyncStatus": "SYNCED"
-  },
-  "auditLogs": [
-    {
-      "_id": "6a155165963fc70a99e94cc3",
-      "appointmentId": "6a155160963fc70a99e94cb2",
-      "userId": "6a154915d00ec8d02047e53d",
-      "action": "booked",
-      "actor": "user",
-      "actorId": "6a154915d00ec8d02047e53d",
-      "createdAt": "2026-05-26T13:45:00.000Z"
-    }
-  ]
-}
-```
-
-#### PATCH /admin/expert-appointments/:id/cancel
-
-Cancel an expert appointment as an administrator.
-
-**Request body**
-
-| Field | Type | Required | Constraints |
-|---|---|---|---|
-| `reason` | string | no | Max 500 characters |
-
-**Example request**
-```bash
-curl -X PATCH "https://api.example.com/admin/expert-appointments/6a155160963fc70a99e94cb2/cancel" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{
-    "reason": "Administrative release of slot"
-  }'
-```
-
-**Success response (200)**
-```json
-{
-  "message": "Appointment cancelled"
-}
-
----
-
 ## Credits — `/credits`
 
 Credit ledger. Backed by Membership credit pools + a `CreditTransaction` audit log.
+
+### GET /credits/balance
+
+Credit balance for the calling user, aggregated across their active
+memberships.
+
+**Auth:** Bearer (`user`, `admin`)
+
+```bash
+curl "https://api.example.com/credits/balance" -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200)**
+
+```json
+{
+  "userId": "5f1a2b3c4d5e6f7a8b9c0d1e",
+  "totalIncluded": 60,
+  "totalRemaining": 43,
+  "availableCredits": 43,
+  "memberships": [
+    {
+      "id": "6650f1a2b3c4d5e6f7a8b9c0",
+      "planName": "Gold",
+      "creditsIncluded": 60,
+      "creditsRemaining": 43,
+      "endDate": "2026-11-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+`availableCredits` is a convenience duplicate of `totalRemaining`.
+
+**Errors:** 401 `Unauthorized`.
+
+### GET /credits/ledger
+
+Credit transaction history for the calling user, newest first.
+
+**Auth:** Bearer (`user`, `admin`)
+
+**Query params**
+
+| Param | Type | Default | Constraints |
+|---|---|---|---|
+| `limit` | number | `50` | integer 1–200 |
+| `sourceType` | `CreditTransactionSource` | — | `Booking` \| `Appointment` \| `Admin` |
+
+**Success (200):** the ledger object — entries carry `amount`, `type`
+(`CreditTransactionType`), `sourceType`, `sourceId`, and `createdAt`.
+
+**Errors:** 400 validation, 401 `Unauthorized`.
+
+> `/credits/balance` and `/credits/ledger` are the shared-role equivalents of
+> the `user`-only `/credits/me/balance` and `/credits/me/history` below. All four
+> scope to the caller.
 
 ### GET /credits/me/balance
 
@@ -2149,9 +3143,248 @@ curl -X DELETE "https://api.example.com/memberships/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 ---
 
+## Membership plans — `/membership-plans`
+
+Admin-defined plan catalogue that `Membership` records are sold from. From
+[membershipPlan.routes.ts](../src/routes/membershipPlan.routes.ts).
+
+> `GET /membership-plans` is declared **before** `router.use(authenticateToken)`,
+> making it the only public route in this file. Every other route requires a JWT.
+
+### GET /membership-plans
+
+Full plan catalogue. Returns every plan, including `active: false` ones — there
+is no filtering or pagination.
+
+**Auth:** Public
+
+```bash
+curl "https://api.example.com/membership-plans"
+```
+
+**Success (200)**
+
+```json
+{
+  "plans": [
+    {
+      "_id": "6650f1a2b3c4d5e6f7a8b9c0",
+      "name": "Gold",
+      "description": "Unlimited classes",
+      "price": 4999,
+      "currency": "INR",
+      "creditsIncluded": 60,
+      "features": ["All group classes", "1 nutritionist consult"],
+      "active": true,
+      "gymId": "hsr-layout",
+      "durationMonths": 3,
+      "benefits": {}
+    }
+  ]
+}
+```
+
+### GET /membership-plans/:id
+
+**Auth:** Bearer (`admin`, `user`, `trainer`)
+
+**Success (200):** `{ "plan": { /* ... */ } }`
+
+**Errors:** `400 { "message": "Invalid id" }`, `404 { "message": "Membership plan not found" }`.
+
+### POST /membership-plans
+
+**Auth:** Bearer (`admin`)
+
+**Request body**
+
+| Field | Type | Required | Default | Constraints |
+|---|---|---|---|---|
+| `name` | string | yes | — | min 1 |
+| `price` | number | yes | — | ≥ 0 |
+| `gymId` | string | yes | — | min 1 |
+| `description` | string | no | — | |
+| `currency` | string | no | `"USD"` | min 1 |
+| `creditsIncluded` | number | no | `0` | integer ≥ 0 |
+| `features` | string[] | no | `[]` | each non-empty |
+| `active` | boolean | no | model default `true` | |
+| `durationMonths` | number | no | `1` | integer ≥ 1 |
+| `benefits` | object | no | `{}` | Arbitrary key/value map |
+
+**Success (201):** `{ "message": "Membership plan created", "plan": { /* ... */ }, "requestId": "..." }`
+
+**Errors**
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `INVALID_PAYLOAD` | Zod validation failed |
+| 409 | `DUPLICATE_RESOURCE` | Plan already exists (duplicate key) |
+| 500 | `INTERNAL_ERROR` | `Failed to create membership plan` |
+
+### PATCH /membership-plans/:id
+
+Partial update — at least one field required.
+
+**Auth:** Bearer (`admin`)
+
+**Success (200):** `{ "message": "Membership plan updated", "plan": { /* ... */ }, "requestId": "..." }`
+
+**Errors:** 400 `Invalid id`, 400 `INVALID_PAYLOAD`, 404, 409 `DUPLICATE_RESOURCE`.
+
+### DELETE /membership-plans/:id
+
+**Auth:** Bearer (`admin`)
+
+**Errors:** 400 `Invalid id`, 404 `Membership plan not found`.
+
+---
+
+## Invoices — `/invoices`
+
+Billing for the FrontDesk dashboard. Also mounted at `/api/invoices` (see
+[Appendix B](#appendix-b-path-aliases)). Rate-limited by `apiRateLimit`.
+
+Every route is `admin` + `frontdesk`. From
+[invoice.routes.ts](../src/routes/invoice.routes.ts).
+
+### Payment status machine
+
+Transitions are enforced by `isValidStatusTransition` in
+[invoice.validator.ts](../src/validators/invoice.validator.ts). Anything not
+listed is rejected with `409 CONFLICT`.
+
+| From | Allowed next |
+|---|---|
+| `DRAFT` | `PENDING`, `PAID`, `CANCELLED` |
+| `PENDING` | `PAID`, `FAILED`, `CANCELLED` |
+| `PAID` | `REFUNDED` |
+| `FAILED` | `CANCELLED` |
+| `CANCELLED` | *(terminal)* |
+| `REFUNDED` | *(terminal)* |
+
+### POST /invoices
+
+Create an invoice. `subtotal` and `total` are computed server-side from `items`,
+`tax`, and `discount`; `invoiceNumber` is generated.
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+**Request body**
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `items` | array | yes | — | min 1; each `{ name, price ≥ 0, quantity ≥ 1 }` |
+| `planSnapshot` | object | yes | — | `{ name, durationInDays ≥ 1, price ≥ 0, includedCredits ≥ 0 }` — frozen copy of the plan as sold |
+| `userId` | ObjectId | conditional | — | **`userId` or `leadId` is required** |
+| `leadId` | ObjectId | conditional | — | Must resolve to an existing Lead |
+| `tax` | number | no | `0` | ≥ 0 |
+| `discount` | number | no | `0` | ≥ 0 |
+| `paymentMethod` | `InvoicePaymentMethod` | no | `NONE` | |
+| `paymentStatus` | string | no | `DRAFT` | **On create, only `DRAFT` or `PENDING` are accepted** |
+| `issuedAt` | string | no | — | Parseable date |
+
+```bash
+curl -X POST "https://api.example.com/invoices" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "leadId": "6650f1a2b3c4d5e6f7a8b9c0",
+    "items": [{ "name": "Gold plan — 3 months", "price": 4999, "quantity": 1 }],
+    "tax": 899,
+    "planSnapshot": { "name": "Gold", "durationInDays": 90, "price": 4999, "includedCredits": 60 },
+    "paymentMethod": "UPI",
+    "paymentStatus": "PENDING"
+  }'
+```
+
+**Success (201):** `{ "message": "Invoice created", "invoice": { /* ... */ } }`
+
+**Errors**
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Zod validation failed |
+| 400 | `BAD_REQUEST` | Invalid `userId`/`leadId`/`issuedAt`, or neither id supplied |
+| 404 | `NOT_FOUND` | `Lead not found` |
+
+### GET /invoices
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+**Query params:** `paymentStatus` (`InvoicePaymentStatus`), `userId`, `from`, `to`
+— all optional.
+
+**Success (200):** `{ "invoices": [ /* ... */ ] }`
+
+**Errors:** `400 BAD_REQUEST` — `Invalid query parameters`.
+
+### GET /invoices/:id
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+**Success (200):** `{ "invoice": { /* ... */ } }`
+
+**Errors:** 400 `Invalid invoice id`, 404 `Invoice not found`.
+
+### PATCH /invoices/:id/status
+
+Move an invoice through the status machine.
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `paymentStatus` | `InvoicePaymentStatus` | yes | Must be a legal transition from the current status |
+| `paymentMethod` | `InvoicePaymentMethod` | no | |
+
+> **Transitioning to `PAID` has side effects.** It converts the linked Lead and
+> activates the membership, returning `lead` and `membership` alongside the
+> invoice.
+
+**Success (200) — non-`PAID`:** `{ "message": "Invoice status updated to CANCELLED", "invoice": { /* ... */ } }`
+
+**Success (200) — `PAID`:**
+
+```json
+{
+  "message": "Invoice marked as PAID. Lead converted and membership activated.",
+  "invoice": { /* ... */ },
+  "lead": { /* ... */ },
+  "membership": { /* ... */ }
+}
+```
+
+**Success (200) — no-op:** submitting the current status returns
+`{ "message": "No status change", "invoice": { /* ... */ } }` without side effects.
+
+**Errors**
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `BAD_REQUEST` / `VALIDATION_ERROR` | Invalid id or body |
+| 404 | `NOT_FOUND` | No such invoice |
+| 409 | `CONFLICT` | `Cannot transition invoice from X to Y`, or `Invoice was already marked as PAID` |
+
+### GET /invoices/:id/pdf
+
+Stream the invoice as a PDF.
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+**Response:** `Content-Type: application/pdf` with
+`Content-Disposition: attachment; filename="<invoiceNumber>.pdf"`. The body is
+the PDF stream, **not** JSON.
+
+`Content-Disposition` is exposed to browsers via `Access-Control-Expose-Headers`.
+
+**Errors:** 400 `Invalid invoice id`, 404 `Invoice not found` — these *are* JSON.
+
+---
+
 ## Schedules — `/schedules`
 
-Per-user daily todo list. Users may manage their own schedule; staff (`doctor`, `trainer`, `admin`) may manage any.
+Per-user daily todo list. Users may manage their own schedule; staff (`trainer`, `admin`) may manage any.
 
 ### GET /schedules/my-schedule
 
@@ -2344,6 +3577,34 @@ curl -X DELETE "https://api.example.com/exercises/5f1a2b3c4d5e6f7a8b9c0d1e" \
 ## Workouts — `/workouts`
 
 Workout sessions with nested exercises and set logs. All routes require `user` role unless noted.
+
+### GET /workouts/active
+
+The caller's currently-running session for **today** — status `Active`, dated to
+today's normalized UTC date — with a live elapsed-time counter.
+
+**Auth:** Bearer (`user`)
+
+```bash
+curl "https://api.example.com/workouts/active" -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200) — session in progress:** the fully-expanded session (exercises
+and set logs), plus seconds since `startedAt`.
+
+```json
+{ "session": { /* session with exercises + sets */ }, "elapsedSeconds": 1847 }
+```
+
+**Success (200) — nothing running.** Note this is a `200`, not a `404`:
+
+```json
+{ "session": null, "elapsedSeconds": 0 }
+```
+
+> Differs from [`GET /workouts/today`](#get-workoutstoday), which returns
+> today's session whatever its status. `/active` returns only a session still in
+> progress, which is what a resume-workout prompt should key on.
 
 ### GET /workouts/today
 
@@ -2704,7 +3965,7 @@ await axios.post(
 
 Create a lead (back office).
 
-**Auth:** Bearer (`admin`, `doctor`, `trainer`)
+**Auth:** Bearer (`admin`, `frontdesk`, `trainer`)
 
 **Request body**
 
@@ -2763,7 +4024,7 @@ curl "https://api.example.com/leads/stats" -H "Authorization: Bearer $TOKEN"
 
 ### GET /leads/:id
 
-**Auth:** Bearer (`admin`, `doctor`, `trainer`)
+**Auth:** Bearer (`admin`, `frontdesk`, `trainer`)
 
 ```bash
 curl "https://api.example.com/leads/5f1a2b3c4d5e6f7a8b9c0d1e" \
@@ -2774,7 +4035,7 @@ curl "https://api.example.com/leads/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 ### PATCH /leads/:id
 
-**Auth:** Bearer (`admin`, `doctor`, `trainer`)
+**Auth:** Bearer (`admin`, `frontdesk`, `trainer`)
 
 **Request body:** any of POST fields.
 
@@ -2858,6 +4119,25 @@ curl -X POST "https://api.example.com/webhook/email" \
 
 **Errors:** 401 invalid secret, 400 malformed payload.
 
+### GET /webhook/reports/me
+
+The calling user's own HPOD reports, newest first, with `rawBody` stripped.
+
+**Auth:** Bearer (`user`)
+
+> Declared **before** the router's `authorize(["admin"])` guard, which is what
+> makes it reachable by a `user`. Every `/webhook/reports*` route declared after
+> that line is admin-only. Keep this ordering when editing
+> [webhook.route.ts](../src/routes/webhook.route.ts).
+
+```bash
+curl "https://api.example.com/webhook/reports/me" -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200):** `{ "reports": [ /* HpodReport docs, no rawBody */ ] }`
+
+**Errors:** 401 `UNAUTHORIZED`, 500 `INTERNAL_ERROR`.
+
 ### GET /webhook/reports
 
 **Auth:** Bearer (`admin`)
@@ -2889,6 +4169,53 @@ curl "https://api.example.com/webhook/reports/user/5f1a2b3c4d5e6f7a8b9c0d1e" \
 ```
 
 **Success (200):** `{ "reports": [ /* filtered by user */ ] }`
+
+---
+
+## Dashboard — `/dashboard`
+
+Aggregate counters for the FrontDesk dashboard landing page. From
+[dashboard.routes.ts](../src/routes/dashboard.routes.ts).
+
+### GET /dashboard/metrics
+
+A single roll-up across leads, invoices, memberships, and users. Takes no
+parameters and is not paginated.
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+```bash
+curl "https://api.example.com/dashboard/metrics" -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200)**
+
+```json
+{
+  "leads": {
+    "byStatus": { "New": 42, "Contacted": 17, "Converted": 9 },
+    "recentCount": 23
+  },
+  "invoices": {
+    "byStatus": { "PAID": 31, "PENDING": 4, "DRAFT": 2 },
+    "totalsByStatus": { "PAID": 154_900, "PENDING": 19_996, "DRAFT": 9_998 }
+  },
+  "memberships": { "activeCount": 128 },
+  "users": { "totalCount": 640 }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `leads.byStatus` | Lead count keyed by `LeadStatus`, descending by count |
+| `leads.recentCount` | Leads created in the **last 30 days** |
+| `invoices.byStatus` | Invoice count keyed by `InvoicePaymentStatus` |
+| `invoices.totalsByStatus` | Sum of `invoice.total` keyed by the same status |
+| `memberships.activeCount` | Memberships with `status: "Active"` |
+| `users.totalCount` | All user documents, with no filtering |
+
+Statuses with no matching documents are **absent** from the maps rather than
+present with `0`. A null status is bucketed under the key `"unknown"`.
 
 ---
 
@@ -3035,6 +4362,130 @@ curl -X POST "https://api.example.com/nutrition/foods" \
 #### DELETE /nutrition/foods/:id — STAFF
 #### POST /nutrition/admin/foods — ADMIN (system food creation; same body as POST /nutrition/foods)
 
+### Recipe catalog (browse)
+
+Read-only catalogue of pre-built recipes and their categories, used both by
+members browsing food ideas and by staff building templates.
+
+Role alias **BROWSE** = `nutritionist`, `admin`, `user`.
+
+> These static paths are declared **before** any parameterized template route so
+> that `from-category` / `from-recipe` are never captured by `/:id`. Preserve
+> that ordering when editing
+> [nutrition.routes.ts](../src/routes/nutrition.routes.ts).
+
+#### GET /nutrition/categories — BROWSE
+
+All recipe categories.
+
+**Success (200):** `{ "categories": [ /* ... */ ] }`
+
+#### GET /nutrition/categories/:categoryId/recipes — BROWSE
+
+Recipes within one category, paginated.
+
+**Query params**
+
+| Param | Type | Default | Constraints |
+|---|---|---|---|
+| `page` | number | `1` | integer ≥ 1 |
+| `limit` | number | `50` | integer 1–200 |
+| `isVeg` | string | — | `"true"` / `"false"`; anything else is ignored |
+
+**Success (200):** the paginated result object.
+
+**Errors:** 400 `VALIDATION_ERROR`, 404 `Category not found`.
+
+#### GET /nutrition/recipes — BROWSE
+
+All recipes, same query params as above.
+
+#### GET /nutrition/recipes/:id — BROWSE
+
+One recipe with its ingredients and computed macro totals.
+
+**Errors:** 404 `Recipe not found`.
+
+### Template builders
+
+Create a reusable template from catalogue content instead of authoring days by
+hand. Both are **STAFF**.
+
+#### POST /nutrition/templates/from-category/:categoryId — STAFF
+
+Build a template from every recipe in a category.
+
+**Request body**
+
+| Field | Type | Required | Default |
+|---|---|---|---|
+| `name` | string | yes | — |
+| `goal` | `NutritionGoal` | yes | — |
+| `tags` | string[] | no | `[]` |
+
+**Success (201)**
+
+```json
+{
+  "message": "Template created from category",
+  "template": { /* ... */ },
+  "recipeCount": 14,
+  "skippedIngredients": ["Amaranth leaves"]
+}
+```
+
+`skippedIngredients` lists ingredients that could not be matched to a food in
+the catalogue — they are omitted from the template rather than failing the
+build, so always surface this to the author.
+
+**Errors:** 400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`, 404 `Category not found`.
+
+#### POST /nutrition/templates/from-recipe/:recipeId — STAFF
+
+Build a template from a single recipe. Same request body.
+
+**Success (201)**
+
+```json
+{
+  "message": "Template created from recipe",
+  "template": { /* ... */ },
+  "totals": { "caloriesKcal": 512, "proteinG": 28, "carbsG": 61, "fatG": 17, "fiberG": 9, "sugarG": 6 },
+  "skippedIngredients": []
+}
+```
+
+**Errors:** 400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`, 404 `Recipe not found`.
+
+#### POST /nutrition/templates/copy — STAFF
+
+Copy one day's meal structure onto other days of the week. Works on **either** a
+user plan or a template — the `planId` is looked up in `UserNutritionPlan`
+first, then `NutritionTemplate`.
+
+**Request body**
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `planId` | string | yes | 24-char hex |
+| `sourceDayOfWeek` | string | yes | `Sunday` … `Saturday` |
+| `targetDaysOfWeek` | string[] | yes | Same day names |
+| `strategy` | string | yes | `replicate` \| `alternate` \| `split_week` |
+
+```bash
+curl -X POST "https://api.example.com/nutrition/templates/copy" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "planId": "6650f1a2b3c4d5e6f7a8b9c0",
+    "sourceDayOfWeek": "Monday",
+    "targetDaysOfWeek": ["Wednesday", "Friday"],
+    "strategy": "replicate"
+  }'
+```
+
+**Errors:** 400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`, 404
+`Plan or template not found`.
+
 ### Templates
 
 #### POST /nutrition/templates — STAFF
@@ -3080,17 +4531,6 @@ curl "https://api.example.com/nutrition/templates?goal=WeightLoss" \
 
 **Success (200):** `{ "templates": [ /* ... */ ] }`
 
-#### GET /nutrition/templates/recommend — STAFF
-
-**Query params:** `userId` (required, ObjectId).
-
-```bash
-curl "https://api.example.com/nutrition/templates/recommend?userId=5f1a2b3c4d5e6f7a8b9c0d1e" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Success (200):** `{ "templates": [ /* ranked */ ] }`
-
 #### GET /nutrition/templates/:id — STAFF
 #### PATCH /nutrition/templates/:id — STAFF
 #### DELETE /nutrition/templates/:id — STAFF
@@ -3115,23 +4555,22 @@ curl -X POST "https://api.example.com/nutrition/templates/5f1a2b3c4d5e6f7a8b9c0d
 
 **Success (201):** `{ "message": "Template assigned", "plan": { /* ... */ }, "warnings": [] }`
 
-#### POST /nutrition/templates/:id/filter — STAFF
+### Not routed
 
-Preview a template filtered for a user's preferences/allergies.
+Two nutrition template handlers exist in
+[nutrition-template.controller.ts](../src/controllers/nutrition-template.controller.ts)
+but are **not mounted on any route**, so there is no HTTP endpoint for them:
 
-**Request body** (one of):
+| Handler | Would-be path | Status |
+|---|---|---|
+| `recommendTemplatesHandler` | `GET /nutrition/templates/recommend` | Unrouted — returns 404 |
+| Template preview/filter | `POST /nutrition/templates/:id/filter` | Unrouted — returns 404 |
 
-```ts
-{ userId?: ObjectId, profile?: { dietaryPreference?, allergies?, dislikedFoods?, goal? } }
-```
-
-```bash
-curl -X POST "https://api.example.com/nutrition/templates/5f1a2b3c4d5e6f7a8b9c0d1e/filter" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{ "profile": { "dietaryPreference": "Vegan", "allergies": ["peanut"] } }'
-```
-
-**Success (200):** filtered template with food substitutions.
+Earlier revisions of this document described both as live endpoints. They are
+not. If either is wired up, add it to
+[nutrition.routes.ts](../src/routes/nutrition.routes.ts) **before** the
+`/templates/:id` routes so the static segment wins the match, then document it
+here and in the [Endpoint index](#endpoint-index).
 
 ### Plans (managed)
 
@@ -3372,63 +4811,291 @@ curl -X POST "https://api.example.com/nutrition/admin/adherence/rebuild" \
 
 ## Nutritionist bookings — `/nutritionist`
 
-Slot-based nutritionist booking workflow. All routes require authentication.
+Slot-based nutritionist consultation workflow, covering the onboarding booking,
+admin acceptance, rescheduling, and the online consultation room.
 
-### GET /nutritionist/my-booking
+From [nutritionist-booking.routes.ts](../src/routes/nutritionist-booking.routes.ts).
+This router is mounted **at the app root and again at `/api/v1`**, so every path
+below also exists with an `/api/v1` prefix. Several handlers are additionally
+bound to more than one method or spelling — see the table at the end of this
+section and [Appendix B](#appendix-b-path-aliases).
 
-Return the authenticated user's active booking (or latest booking if none active).
+All routes require a JWT.
+
+### Booking status machine
+
+`NutritionistBookingStatus`:
+
+| Status | Set by | Meaning |
+|---|---|---|
+| `PENDING` | `bookNutritionist`, `rescheduleMyBooking` | Awaiting staff acceptance |
+| `ACCEPTED` | `acceptBooking` | Confirmed; `acceptedAt` stamped |
+| `REJECTED` | `rejectBooking` | Declined; slot capacity released |
+| `COMPLETED` | `completeBooking` | Consultation finished |
+| `RESCHEDULE_REQUIRED` | `acceptBooking` | Accept failed because the slot vanished or expired — the user must pick a new time |
+| `EXPIRED` | — | Declared in the enum; not written by any handler |
+
+`meetingStatus` (`MeetingStatus`) tracks the call itself: `SCHEDULED` on create,
+`COMPLETED` when the booking is completed.
+
+> **`zegoRoomId` is auto-generated** as `nutri_session_<bookingId>` whenever
+> `appointmentMode` is `ONLINE` — at create, at accept, and on switch-to-online.
+> Clients never supply it.
+
+### POST /nutritionist/book
+
+Submit a consultation request. Also answers at
+`POST /onboarding/nutritionist/book`.
 
 **Auth:** Bearer (`user`)
 
+**Request body**
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `date` | string | yes | — | Must parse as a date |
+| `slotId` | ObjectId | no | — | When valid and the slot exists, `startTime`/`endTime` are taken from the slot and its capacity is decremented |
+| `startTime` | string | no | `"10:00"` | Ignored when `slotId` resolves |
+| `endTime` | string | no | `"10:30"` | Ignored when `slotId` resolves |
+| `appointmentMode` | `AppointmentMode` | no | `ONLINE` | `IN_PERSON` \| `ONLINE` |
+| `clinicLocation` | string | no | `null` | For `IN_PERSON` |
+| `notes` | string | no | `null` | |
+
+> An **unknown or malformed `slotId` is silently ignored** — the booking is
+> created with the default or supplied times and `slotId: null`. Only a slot that
+> exists *and* is full produces an error.
+
 ```bash
-curl "https://api.example.com/nutritionist/my-booking" -H "Authorization: Bearer $TOKEN"
+curl -X POST "https://api.example.com/nutritionist/book" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "slotId": "6650f1a2b3c4d5e6f7a8b9c0",
+    "date": "2026-08-14",
+    "appointmentMode": "ONLINE",
+    "notes": "Vegetarian, training for a 10k"
+  }'
 ```
 
-**Success (200):** `{ "booking": { /* NutritionistBooking */ } }`
+**Success (201)**
+
+```json
+{
+  "message": "Nutritionist booking submitted successfully",
+  "booking": {
+    "_id": "6650aaa2b3c4d5e6f7a8b9c0",
+    "userId": "5f1a2b3c4d5e6f7a8b9c0d1e",
+    "slotId": "6650f1a2b3c4d5e6f7a8b9c0",
+    "bookingDate": "2026-08-14T00:00:00.000Z",
+    "startTime": "10:00",
+    "endTime": "10:30",
+    "appointmentMode": "ONLINE",
+    "clinicLocation": null,
+    "zegoRoomId": "nutri_session_6650aaa2b3c4d5e6f7a8b9c0",
+    "assignedNutritionistId": null,
+    "assignedNutritionistName": null,
+    "meetingStatus": "SCHEDULED",
+    "status": "PENDING",
+    "notes": "Vegetarian, training for a 10k",
+    "acceptedAt": null,
+    "completedAt": null
+  }
+}
+```
+
+**Onboarding side effect:** sets `onboardingStatus.nutritionistBooked = true`,
+and calls `advanceStep(NUTRITIONIST_BOOKING)` when the caller's current step is
+`REPORT_UPLOAD` or `NUTRITIONIST_BOOKING`. Wrapped in a `try`/`catch` that
+swallows failures, so a post-onboarding user booking a follow-up still gets
+`201`.
+
+**Errors:** 400 `BAD_REQUEST` (validation; Zod tree under `details`), 400
+`SLOT_FULL` (`Selected slot is fully booked`), 401 `UNAUTHORIZED`.
+
+### GET /nutritionist/my-booking
+
+The caller's most recent booking whose status is **not** `REJECTED`.
+
+**Auth:** Bearer (`user`)
+
+**Success (200):** `{ "booking": { /* ... */ } }`
+
+**404** — note the body carries an explicit `booking: null`:
+
+```json
+{ "error": "No active nutritionist booking found", "code": "NOT_FOUND", "booking": null }
+```
+
+### GET /nutritionist/my-bookings
+
+Full history for the caller, newest first, **including** rejected bookings.
+
+**Auth:** Bearer (`user`)
+
+**Success (200):** `{ "bookings": [ /* ... */ ] }` — empty array when there are none.
+
+### PATCH, POST /nutritionist/my-booking/reschedule
+
+Move a booking to a new slot. Also answers at
+`/onboarding/nutritionist/reschedule`, on both methods.
+
+**Auth:** Bearer (`user`)
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `slotId` | ObjectId | yes | The new slot |
+| `date` | string | no | New booking date; ignored if unparseable |
+
+> **Only a booking in `RESCHEDULE_REQUIRED` can be rescheduled** — the exact
+> state `acceptBooking` sets when the original slot is gone. A `PENDING` or
+> `ACCEPTED` booking returns `404 NOT_FOUND`.
+
+Slot handling is ordered so a failure leaves everything unchanged: the new slot
+is reserved atomically (`findOneAndUpdate` with `remainingCapacity > 0`) *before*
+the booking is touched, and the old slot is released last inside its own
+`try`/`catch`. The booking returns to `PENDING` with `acceptedAt` cleared, so it
+needs staff acceptance again.
+
+**Success (200):** `{ "message": "Booking rescheduled — awaiting admin acceptance", "booking": { /* ... */ } }`
+
+**Errors**
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `BAD_REQUEST` | Missing/invalid `slotId` |
+| 404 | `NOT_FOUND` | `No booking awaiting reschedule was found` |
+| 409 | `SLOT_FULL` | `Selected slot is fully booked or does not exist` |
+
+### PATCH, POST /nutritionist/my-booking/switch-to-online
+
+Convert the caller's latest non-rejected booking to `ONLINE`, generating
+`zegoRoomId` if absent.
+
+**Auth:** Bearer (`user`)
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `notes` | string | no | Replaces `notes` when non-empty |
+
+**Success (200):** `{ "message": "Switched to online mode successfully", "booking": { /* ... */ } }`
+
+**Errors:** 400 validation, 404 `No active nutritionist booking found to switch to online mode`.
 
 ### GET /nutritionist/bookings
 
-List bookings for admin/frontdesk review.
+Staff queue. All bookings, newest first, with `userId` populated to
+`username`, `email`, `phone`.
 
-**Auth:** Bearer (`admin`)
+**Auth:** Bearer (`admin`, `nutritionist`, `frontdesk`)
 
 **Query params**
 
-| Name | Type | Required | Notes |
-|---|---|---|---|
-| `status` | `NutritionistBookingStatus` | no | `PENDING`, `ACCEPTED`, `REJECTED`, `COMPLETED` |
-| `date` | string | no | `YYYY-MM-DD` (UTC day) |
+| Name | Type | Notes |
+|---|---|---|
+| `status` | `NutritionistBookingStatus` | Optional. Upper-cased before matching, so `?status=pending` works |
 
-**Success (200):** `{ "bookings": [ /* ... */ ], "total": 12 }`
+There is **no** `date` filter and **no** pagination; the response has no `total`.
+
+**Success (200):** `{ "bookings": [ /* ... */ ] }`
+
+**Errors:** `400 BAD_REQUEST` — `Invalid status filter`.
 
 ### PATCH /nutritionist/bookings/:id/accept
 
-Accept a pending booking.
+Confirm a booking. Also answers at `/admin/nutrition/bookings/:id/accept` on both
+`PATCH` and `POST`.
 
-**Auth:** Bearer (`admin`)
+**Auth:** Bearer (`admin`, `nutritionist`, `frontdesk`)
 
-**Request body**
+**Request body** — all optional; an empty body is valid.
 
-| Field | Type | Required |
+| Field | Type | Notes |
 |---|---|---|
-| `meetingLink` | string (url) | no |
-| `clinicLocation` | string | no |
+| `clinicLocation` | string | Overwrites the booking's location |
+| `assignedNutritionistId` | ObjectId | When set and `assignedNutritionistName` is absent, the name is looked up from the User |
+| `assignedNutritionistName` | string | |
+| `meetingLink` | string | **Accepted by the validator but never read by the handler** — it is not persisted |
+
+**Re-validation before accepting.** Between booking and acceptance the slot may
+have been deleted or its time may have passed, so accept re-checks it. Each
+failure flips the booking to `RESCHEDULE_REQUIRED`, saves it, and returns `409`
+**with the updated booking in the body** so the dashboard can reflect the new
+state immediately:
+
+| Code | Condition |
+|---|---|
+| `SLOT_REQUIRED` | Booking has neither `slotId` nor `bookingDate` |
+| `SLOT_NO_LONGER_AVAILABLE` | Slot is missing, or its `capacity` is ≤ 0 |
+| `SLOT_EXPIRED_RESCHEDULE_REQUIRED` | The appointment's end instant is already in the past |
+
+On success: `status` → `ACCEPTED`, `acceptedAt` stamped, and `zegoRoomId`
+generated if the mode is `ONLINE` and it is missing.
 
 **Success (200):** `{ "message": "Nutritionist booking accepted", "booking": { /* ... */ } }`
 
+**Errors:** 400 `BAD_REQUEST` (invalid id or body), 404 `NOT_FOUND`, plus the
+three `409`s above.
+
 ### PATCH /nutritionist/bookings/:id/reject
 
-Reject a booking and release slot capacity.
+Decline a booking and release the slot it reserved (`remainingCapacity += 1`,
+`isBooked: false`), mirroring the decrement at creation.
 
-**Auth:** Bearer (`admin`)
+**Auth:** Bearer (`admin`, `nutritionist`, `frontdesk`)
 
-**Request body**
+**Request body:** none — no body is parsed. There is no `reason` field.
 
-| Field | Type | Required |
+**Success (200):** `{ "message": "Nutritionist booking rejected", "booking": { /* ... */ } }`
+
+**Errors**
+
+| Status | Code | When |
 |---|---|---|
-| `reason` | string | no |
+| 400 | `BAD_REQUEST` | Invalid booking id |
+| 400 | `INVALID_STATUS_TRANSITION` | Already `REJECTED` or `COMPLETED` |
+| 404 | `NOT_FOUND` | No such booking |
 
-**Success (200):** `{ "message": "Nutritionist booking rejected; slot capacity restored", "booking": { /* ... */ } }`
+### PATCH /nutritionist/bookings/:id/complete
+
+Mark a consultation finished. Sets `status: COMPLETED`,
+`meetingStatus: COMPLETED`, and `completedAt`.
+
+**Auth:** Bearer (`admin`, `nutritionist`, `frontdesk`)
+
+**Request body:** none.
+
+**Success (200):** `{ "message": "Nutritionist consultation marked complete", "booking": { /* ... */ } }`
+
+**Errors:** 400 `BAD_REQUEST` (invalid id), 400 `INVALID_STATUS_TRANSITION`
+(`Only an accepted booking can be marked completed`), 404 `NOT_FOUND`.
+
+### Joining an online consultation
+
+An `ONLINE` booking is a Zego session like any other. Use
+[`POST /api/v1/zego/sessions/:sessionId/token`](#post-apiv1zegosessionssessionidtoken)
+with the booking id; `resolveSessionAccess` recognizes nutritionist bookings and
+resolves the assigned nutritionist as `host`. Host presence is reported through
+the same [host-presence](#post-apiv1zegosessionssessionidhost-presence)
+endpoint, which writes `hostLiveAt`/`hostLastSeenAt` onto the booking document.
+
+### Route bindings
+
+Every declaration in this router, since the duplication is easy to miss:
+
+| Handler | Methods | Paths (each also under `/api/v1`) |
+|---|---|---|
+| `bookNutritionist` | POST | `/nutritionist/book`, `/onboarding/nutritionist/book` |
+| `getMemberBooking` | GET | `/nutritionist/my-booking` |
+| `getMyBookings` | GET | `/nutritionist/my-bookings` |
+| `rescheduleMyBooking` | POST, PATCH | `/nutritionist/my-booking/reschedule`, `/onboarding/nutritionist/reschedule` |
+| `switchToOnline` | POST, PATCH | `/nutritionist/my-booking/switch-to-online` |
+| `getAllBookingsForAdmin` | GET | `/nutritionist/bookings` |
+| `acceptBooking` | POST, PATCH | `/admin/nutrition/bookings/:id/accept`; PATCH also `/nutritionist/bookings/:id/accept` |
+| `rejectBooking` | PATCH | `/nutritionist/bookings/:id/reject` |
+| `completeBooking` | PATCH | `/nutritionist/bookings/:id/complete` |
 
 ---
 
@@ -3511,13 +5178,60 @@ curl -X POST "https://api.example.com/internal/reminders/tick" \
 
 **Errors:** 401 unauthorized, 503 not configured.
 
+### POST /internal/sessions/lifecycle/tick
+
+Drives the video-room lifecycle. Called **every minute** by an external
+scheduler — the Vercel Cron entry only runs daily, far too coarse for a
+lead-time / expiry-grace room lifecycle.
+
+**Auth:** `X-Internal-Secret` (or `X-Webhook-Secret`)
+
+Runs three independent sweeps in parallel, over both `group_class` and
+`live_stream` sessions:
+
+| Sweep | Effect |
+|---|---|
+| `prepareDueRooms` | At `start − lead`, stamps `videoRoomId` and flips `roomStatus` to `READY` |
+| `verifyHostPresence` | Self-heals `hostLiveAt` against Zego's room membership, for a host whose client never called the host-presence endpoint |
+| `expireDueRooms` | At `end + grace`, kicks everyone, sets `roomStatus: EXPIRED` and `status: COMPLETED` |
+
+```bash
+curl -X POST "https://api.example.com/internal/sessions/lifecycle/tick" \
+  -H "X-Internal-Secret: $REMINDER_TICK_SECRET"
+```
+
+**Success (200):** `{ "ok": true, "prepared": { /* ... */ }, "hostPresence": { /* ... */ }, "expired": { /* ... */ } }`
+
+**Errors:** 401 `UNAUTHORIZED`, 500 `INTERNAL_ERROR` (`Session lifecycle tick failed`),
+503 `NOT_CONFIGURED`.
+
+> **A missed tick is not a correctness problem.** All three sweeps are pure
+> side-effect passes. Join/deny gating in `resolveSessionAccess` is arithmetic
+> plus the `hostLiveAt` read that the host's own client writes on the fast path,
+> so it never depends on this route having run. A missed tick degrades to
+> stale-looking room state, not a wrongly admitted or wrongly refused join.
+
+### POST /internal/leads/followup
+
+Triggers queued lead follow-ups.
+
+**Auth:** `X-Internal-Secret` (or `X-Webhook-Secret`)
+
+**Success (200):** `{ "ok": true, ...result }`
+
+**Errors:** 401 `UNAUTHORIZED`, 500 `INTERNAL_ERROR` (`Lead follow-up processing failed`),
+503 `NOT_CONFIGURED`.
+
 ---
 
-## Health check — `/health`
+## Health & diagnostics
+
+Declared inline in [src/app.ts](../src/app.ts) rather than in a route file.
 
 ### GET /health
 
-Liveness probe. Always returns `{ ok: true }` when the process is running.
+Liveness probe. Always returns `{ ok: true }` when the process is running. It
+does **not** check the database connection.
 
 **Auth:** Public
 
@@ -3531,27 +5245,199 @@ curl "https://api.example.com/health"
 { "ok": true }
 ```
 
+### POST /test/firebase
+
+Diagnostic probe that initializes the Firebase Admin SDK and reports whether it
+came up. Used to debug phone auth and FCM push in a deployed environment.
+
+**Auth:** Public — takes no body and returns no user data, but it is
+unauthenticated and unmetered. Consider restricting it at the edge in
+production.
+
+```bash
+curl -X POST "https://api.example.com/test/firebase"
+```
+
+**Success (200)**
+
+```json
+{
+  "success": true,
+  "message": "Firebase Admin initialized successfully",
+  "projectName": "fitflix-prod"
+}
+```
+
+`projectName` falls back to `"unknown"` when the credential carries no project id.
+
+**Failure (500)** — initialization returned no app (usually missing or
+malformed service-account credentials), or threw:
+
+```json
+{
+  "success": false,
+  "message": "Firebase Admin initialization failed or was disabled (check server logs)"
+}
+```
+
+```json
+{
+  "success": false,
+  "message": "Firebase Admin test threw an exception",
+  "error": "Failed to parse service account json"
+}
+```
+
 ---
 
 ## Appendix A: Onboarding step order
 
-Steps are enforced server-side via [src/utils/onboarding.service.ts](../src/utils/onboarding.service.ts). Calling a later step before earlier steps complete returns `403 STEP_NOT_ALLOWED`.
+Enforced server-side by [src/utils/onboarding.service.ts](../src/utils/onboarding.service.ts).
+Submitting anything other than the current step returns `403 STEP_NOT_ALLOWED`.
 
-| Order | Step | Endpoint | Notes |
+`STEP_ORDER` — the sequence `advanceStep` actually walks — is **four steps plus
+a terminal marker**:
+
+| Order | Step | Endpoint | Sets flag |
 |---|---|---|---|
-| 1 | `HEALTH_MARKERS` | `POST /onboarding/health-markers` | BMI computed server-side |
-| 2 | `HEALTH_GOALS` | `POST /onboarding/health-goals` | |
-| 3 | `CONSENT` | `POST /onboarding/consent` | Captures IP automatically |
-| 4 | `REPORT_UPLOAD` | `POST /onboarding/reports` | Multiple submissions allowed |
-| 5 | `SPORTS_SCIENTIST_BOOKING` | `POST /expert-appointments/book` (`expertType: "sports_scientist"`) or `POST /onboarding/sports-scientist` | Must precede step 6 |
-| 6 | `NUTRITIONIST_BOOKING` | `POST /expert-appointments/book` (`expertType: "nutritionist"`) or `POST /onboarding/nutritionist` or `POST /onboarding/nutritionist/book` | |
-| 7 | `COMPLETED` | `POST /onboarding/complete` | Sets `user.onboarded = true` |
+| 1 | `HEALTH_MARKERS` | `POST /onboarding/health-markers` | `healthMarkersCompleted` |
+| 2 | `HEALTH_GOALS` | `POST /onboarding/health-goals` | `healthGoalsCompleted` |
+| 3 | `CONSENT` | `POST /onboarding/consent` | `consentCompleted` |
+| 4 | `REPORT_UPLOAD` | `POST /onboarding/reports` | `reportsUploaded` |
+| — | `COMPLETED` | `POST /onboarding/complete` | `onboardingCompleted`, `user.onboarded = true` |
+
+### Where `NUTRITIONIST_BOOKING` fits
+
+`NUTRITIONIST_BOOKING` is a member of the `OnboardingStep` enum but is **not**
+in `STEP_ORDER`, so `getNextStep` never advances *into* it and the linear step
+machine never blocks on it. Instead:
+
+- `POST /nutritionist/book` (and its `/onboarding/nutritionist/book` alias) sets
+  `onboardingStatus.nutritionistBooked = true` directly, and calls
+  `advanceStep(NUTRITIONIST_BOOKING)` only when the current step is
+  `REPORT_UPLOAD` or `NUTRITIONIST_BOOKING`. Because `NUTRITIONIST_BOOKING` has
+  no `STEP_FLAG_MAP` entry and no successor, that call only appends to
+  `completedSteps`.
+- `POST /onboarding/complete` independently requires a booking: it fails with
+  `MISSING_STEPS` unless a non-`REJECTED` `NutritionistBooking` exists **or**
+  `onboardingStatus.nutritionistBooked` is true.
+
+Net effect: the booking can be made at any point, but onboarding cannot be
+finalized without one.
+
+`SPORTS_SCIENTIST_BOOKING` was removed from the enum — there is no sports
+scientist step, endpoint, or model in the codebase.
+
+### `POST /onboarding/complete` preconditions
+
+`MISSING_STEPS` lists whichever of these are unmet, by flag name:
+`healthMarkersCompleted`, `healthGoalsCompleted`, `consentCompleted`,
+`reportsUploaded`, `nutritionistBooked`.
 
 Legacy single-step alternative: `PATCH /users/:id/onboard` — still supported but bypasses the granular step tracking. New clients should use the steps above.
 
 ---
 
+## Appendix B: Path aliases
+
+Several routers are mounted at more than one prefix in
+[src/app.ts](../src/app.ts). Aliases are **exact duplicates** — same handlers,
+same auth, same roles — kept so the Flutter app and the FrontDesk dashboard can
+migrate to `/api/v1` independently.
+
+| Router | Primary | Aliases |
+|---|---|---|
+| `booking.routes.ts` | `/bookings` | `/api/v1/bookings`, `/api/v1/admin/bookings` |
+| `credit.routes.ts` | `/credits` | `/api/v1/credits` |
+| `invoice.routes.ts` | `/invoices` | `/api/invoices` |
+| `nutritionist-booking.routes.ts` | *(app root)* | `/api/v1` |
+
+Notes:
+
+- `/api/v1/admin/bookings` is **not** an admin-scoped variant. It maps onto the
+  same router, so `/api/v1/admin/bookings/me` exists and is `user`-only, while
+  `/api/v1/admin/bookings` (GET) is `admin`-only. The prefix carries no
+  authorization meaning of its own.
+- The nutritionist-booking router is mounted at the app root, which is why its
+  routes appear under unrelated-looking prefixes: `/nutritionist/...`,
+  `/onboarding/nutritionist/...`, and `/admin/nutrition/bookings/...` are all
+  declared inside that one file, and each also exists under `/api/v1`.
+
+Within the nutritionist-booking router several handlers are additionally bound
+to more than one method or spelling — for example `rescheduleMyBooking` answers
+on both `POST` and `PATCH`, at both `/nutritionist/my-booking/reschedule` and
+`/onboarding/nutritionist/reschedule`. See the
+[Endpoint index](#endpoint-index) for the exhaustive list.
+
+### Full alias expansion
+
+Every aliased path, spelled out. The [Endpoint index](#endpoint-index) lists only
+the primary spelling to keep diffs readable; this table is the searchable
+expansion.
+
+**`booking.routes.ts`** — mounted at `/bookings`, `/api/v1/bookings`, `/api/v1/admin/bookings`
+
+| Primary path | Also available at |
+|---|---|
+| `/bookings` | `/api/v1/bookings`<br>`/api/v1/admin/bookings` |
+| `/bookings/me` | `/api/v1/bookings/me`<br>`/api/v1/admin/bookings/me` |
+| `/bookings/:id` | `/api/v1/bookings/:id`<br>`/api/v1/admin/bookings/:id` |
+| `/bookings/:id/cancel` | `/api/v1/bookings/:id/cancel`<br>`/api/v1/admin/bookings/:id/cancel` |
+| `/bookings/:id/attendance` | `/api/v1/bookings/:id/attendance`<br>`/api/v1/admin/bookings/:id/attendance` |
+| `/bookings/:id/status` | `/api/v1/bookings/:id/status`<br>`/api/v1/admin/bookings/:id/status` |
+
+**`credit.routes.ts`** — mounted at `/credits`, `/api/v1/credits`
+
+| Primary path | Also available at |
+|---|---|
+| `/credits/balance` | `/api/v1/credits/balance` |
+| `/credits/ledger` | `/api/v1/credits/ledger` |
+| `/credits/me/balance` | `/api/v1/credits/me/balance` |
+| `/credits/me/history` | `/api/v1/credits/me/history` |
+| `/credits/users/:userId/balance` | `/api/v1/credits/users/:userId/balance` |
+| `/credits/users/:userId/history` | `/api/v1/credits/users/:userId/history` |
+| `/credits/users/:userId/topup` | `/api/v1/credits/users/:userId/topup` |
+
+**`invoice.routes.ts`** — mounted at `/invoices`, `/api/invoices`
+
+| Primary path | Also available at |
+|---|---|
+| `/invoices` | `/api/invoices` |
+| `/invoices/:id` | `/api/invoices/:id` |
+| `/invoices/:id/status` | `/api/invoices/:id/status` |
+| `/invoices/:id/pdf` | `/api/invoices/:id/pdf` |
+
+**`nutritionist-booking.routes.ts`** — mounted at `(root)`, `/api/v1`
+
+| Primary path | Also available at |
+|---|---|
+| `/onboarding/nutritionist/book` | `/api/v1/onboarding/nutritionist/book` |
+| `/nutritionist/book` | `/api/v1/nutritionist/book` |
+| `/nutritionist/my-booking` | `/api/v1/nutritionist/my-booking` |
+| `/nutritionist/my-bookings` | `/api/v1/nutritionist/my-bookings` |
+| `/nutritionist/my-booking/switch-to-online` | `/api/v1/nutritionist/my-booking/switch-to-online` |
+| `/nutritionist/my-booking/reschedule` | `/api/v1/nutritionist/my-booking/reschedule` |
+| `/onboarding/nutritionist/reschedule` | `/api/v1/onboarding/nutritionist/reschedule` |
+| `/nutritionist/bookings` | `/api/v1/nutritionist/bookings` |
+| `/admin/nutrition/bookings/:id/accept` | `/api/v1/admin/nutrition/bookings/:id/accept` |
+| `/nutritionist/bookings/:id/accept` | `/api/v1/nutritionist/bookings/:id/accept` |
+| `/nutritionist/bookings/:id/reject` | `/api/v1/nutritionist/bookings/:id/reject` |
+| `/nutritionist/bookings/:id/complete` | `/api/v1/nutritionist/bookings/:id/complete` |
+
+---
+
 ## Changelog
 
+- **2026-08-09** — Synchronized with the codebase. Removed the `/doctors`,
+  `/appointments`, and `/expert-appointments` sections (no such routes,
+  controllers, or models exist). Added `/delete-account`, `/membership-plans`,
+  `/invoices`, `/dashboard`, `/api/v1/classes`, `/api/v1/classes/schedule`,
+  `/api/v1/zego`, `/api/v1/admin/settings`, phone auth, admin deletion
+  requests, and the missing nutrition/booking/credit/workout endpoints.
+  Corrected the role list (`frontdesk`, `nutritionist`; `doctor` unused),
+  the `OnboardingStep` enum (no `SPORTS_SCIENTIST_BOOKING`), the
+  `GET /onboarding/status` response shape, and `NutritionistBookingStatus`.
+  Added the [Endpoint index](#endpoint-index) and
+  [Appendix B: Path aliases](#appendix-b-path-aliases).
 - **2026-05-27** — Added missing endpoints (logout, slots availability, nutritionist bookings, notifications, internal, Cal ID webhook) and refreshed enums.
 - **2026-05-22** — Initial consolidated reference covering all 17 routers and `/health`.
