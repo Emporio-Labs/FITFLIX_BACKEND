@@ -81,6 +81,14 @@ export const ROOM_EXPIRY_GRACE_MINUTES = Number(
 	process.env.SESSION_ROOM_EXPIRY_MINUTES ?? 30,
 );
 
+/// How long after a nutritionist appointment's scheduled end an ACCEPTED
+/// booking is still allowed to be honoured before the expiry sweep marks it
+/// EXPIRED. Covers the case where the appointment was confirmed but the
+/// nutritionist never hosted it — see expireStaleNutritionistBookings.
+export const NUTRI_EXPIRY_GRACE_MINUTES = Number(
+	process.env.NUTRITIONIST_EXPIRY_GRACE_MINUTES ?? 5,
+);
+
 /// Sessions are stored as a UTC-midnight `sessionDate` plus an "HH:mm" string,
 /// and that string is gym wall-clock time, not UTC. Reading it as UTC shifts
 /// every class by the zone offset — 5h30m for IST, which is long enough to
