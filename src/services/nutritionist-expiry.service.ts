@@ -1,19 +1,32 @@
-import { NutritionistBookingStatus } from "../models/Enums";
+import { MeetingStatus, NutritionistBookingStatus } from "../models/Enums";
 import NutritionistBooking from "../models/NutritionistBooking";
 import Slot from "../models/Slots";
-import { combineSessionDateTime } from "../utils/zego-room";
+import {
+	combineSessionDateTime,
+	NUTRI_EXPIRY_GRACE_MINUTES,
+} from "../utils/zego-room";
 
 /**
- * Auto-expire PENDING nutritionist bookings whose appointment start time has
- * already passed in business timezone. The user's approved policy: if the
- * admin has not accepted by the moment the appointment was supposed to begin,
- * the booking is expired and the slot's capacity is released so it can be
- * reused. No credits are involved.
+ * Two independent staleness rules for nutritionist bookings, both terminal.
  *
- * Called from processReminders() every 60s. Per-row try/catch keeps one bad
- * document from halting the sweep.
+ * 1. PENDING past its *start* time, zero grace: the admin never accepted, so
+ *    the booking becomes RESCHEDULE_REQUIRED and the slot's capacity is
+ *    released so it can be reused. No credits are involved.
+ *
+ * 2. ACCEPTED past its *end* time plus NUTRI_EXPIRY_GRACE_MINUTES: the
+ *    appointment was confirmed but the meeting never happened (the
+ *    nutritionist never hosted it, and nothing marked the session complete),
+ *    so it becomes EXPIRED. The slot seat is NOT released here — unlike rule
+ *    1, an accepted appointment genuinely consumed it.
+ *
+ * Both rules write status and nothing else: bookingDate, startTime, endTime,
+ * zegoRoomId and acceptedAt are left exactly as they were, so an expired
+ * booking stays a faithful historical record.
+ *
+ * Called from processReminders(). Per-row try/catch keeps one bad document
+ * from halting the sweep.
  */
-export async function expireStalePendingBookings(
+export async function expireStaleNutritionistBookings(
 	now: Date = new Date(),
 ): Promise<{ expired: number; skipped: number }> {
 	let expired = 0;
@@ -66,6 +79,52 @@ export async function expireStalePendingBookings(
 		} catch (err) {
 			console.error(
 				`[nutritionist-expiry] Failed to expire booking ${String(row._id)}`,
+				err,
+			);
+			skipped++;
+		}
+	}
+
+	// Rule 2: ACCEPTED bookings whose scheduled end (plus grace) has passed
+	// without the meeting ever taking place.
+	const graceMs = NUTRI_EXPIRY_GRACE_MINUTES * 60_000;
+
+	const accepted = await NutritionistBooking.find({
+		status: NutritionistBookingStatus.ACCEPTED,
+	})
+		.limit(500)
+		.lean();
+
+	for (const row of accepted) {
+		try {
+			// A session that actually ran is history, not a miss — never reopen it.
+			if (row.meetingStatus === MeetingStatus.COMPLETED) {
+				continue;
+			}
+
+			const endInstant = combineSessionDateTime(row.bookingDate, row.endTime);
+			if (!endInstant) {
+				continue; // no usable end time — leave it alone rather than guess
+			}
+			if (endInstant.getTime() + graceMs >= now.getTime()) {
+				continue; // still inside the appointment window or its grace period
+			}
+
+			// Atomic status transition — a concurrent complete/cancel/reject wins.
+			const claimed = await NutritionistBooking.findOneAndUpdate(
+				{ _id: row._id, status: NutritionistBookingStatus.ACCEPTED },
+				{ $set: { status: NutritionistBookingStatus.EXPIRED } },
+				{ returnDocument: "after" },
+			);
+			if (!claimed) {
+				skipped++;
+				continue;
+			}
+
+			expired++;
+		} catch (err) {
+			console.error(
+				`[nutritionist-expiry] Failed to expire accepted booking ${String(row._id)}`,
 				err,
 			);
 			skipped++;

@@ -13,7 +13,7 @@ import User from "../models/User";
 import Admin from "../models/Admin";
 import Notification from "../models/Notification";
 import { notify } from "./notification.service";
-import { expireStalePendingBookings } from "./nutritionist-expiry.service";
+import { expireStaleNutritionistBookings } from "./nutritionist-expiry.service";
 import {
 	expireDueRooms,
 	prepareDueRooms,
@@ -171,11 +171,15 @@ export async function processReminders(): Promise<{
 		console.error("[reminder-poller] checkMembershipExpiries failed", err);
 	}
 
-	// Auto-expire PENDING nutritionist bookings whose slot start has passed.
+	// Auto-expire stale nutritionist bookings: PENDING past its start time, and
+	// ACCEPTED past its end time + grace where the meeting never happened.
 	try {
-		await expireStalePendingBookings(now);
+		await expireStaleNutritionistBookings(now);
 	} catch (err) {
-		console.error("[reminder-poller] expireStalePendingBookings failed", err);
+		console.error(
+			"[reminder-poller] expireStaleNutritionistBookings failed",
+			err,
+		);
 	}
 
 	// Group-class / live-stream room lifecycle: stamp room IDs at (start -
