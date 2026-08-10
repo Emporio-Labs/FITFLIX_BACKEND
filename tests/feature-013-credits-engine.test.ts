@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { Gender, UserStatus } from "../src/models/Enums";
 import User from "../src/models/User";
 import {
 	allocatePlanCredits,
@@ -25,13 +26,13 @@ async function runFeature013Tests() {
 			username: "credits_test_user",
 			email: "credits.user@fitflix.test",
 			phone: "+12345678999",
-			gender: "Male",
+			gender: Gender.Male,
 			age: 26,
 			passwordHash: "hash123",
 			firstName: "Credits",
 			lastName: "Tester",
 			role: "user",
-			status: "ACTIVE",
+			status: UserStatus.Active,
 			isActive: true,
 			membershipStatus: "ACTIVE",
 		});

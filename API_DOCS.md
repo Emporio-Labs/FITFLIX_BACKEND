@@ -60,6 +60,7 @@ Tokens are issued by `POST /auth/login` and can be refreshed via `POST /auth/ref
 
 **Webhook/Internal Auth Notes:**
 - `/webhook/email` uses `X-Webhook-Secret` instead of JWT.
+- `/webhooks/cal` uses `X-Cal-Signature-256` (HMAC signature on raw body).
 - `/internal/*` uses `X-Internal-Secret` (or `X-Webhook-Secret` alias) instead of JWT.
 
 ### Migration Notes (Basic Auth → JWT)
@@ -90,7 +91,6 @@ The system supports 5 role types:
 | `/doctors` | Doctor management | ✅ Public list + Admin + role-based | 7 endpoints |
 | `/trainers` | Trainer management | ✅ Public list + Admin + role-based | 7 endpoints |
 | `/slots` | Time slot management | ✅ Authenticated read, Admin write | 6 endpoints |
-| `/api/v1/classes` | Group class & capacity management | ✅ Admin write/read, Member active list | 7 endpoints |
 | `/memberships` | Membership plans per user | ✅ Admin + User (self) | 6 endpoints |
 | `/services` | Catalog of services | ✅ Admin write, all roles read | 5 endpoints |
 | `/therapies` | Catalog of therapies | ✅ Public list + Admin write | 7 endpoints |
@@ -107,6 +107,7 @@ The system supports 5 role types:
 | `/nutritionist` | Nutritionist bookings | ✅ Admin + User | 4 endpoints |
 | `/notifications` | Notifications | ✅ All authenticated | 4 endpoints |
 | `/webhook` | HPOD webhook + reports | ✅ Webhook secret + Admin read | 4 endpoints |
+| `/webhooks/cal` | Cal ID webhook | ✅ Signature header | 1 endpoint |
 | `/internal` | Internal cron hooks | ✅ Internal secret | 1 endpoint |
 | `/onboarding` | Onboarding workflow — health markers, goals, dual-consent, reports, appointments | ✅ User only (+ 1 admin cancel) | 11 endpoints |
 | `/health` | Health check | ❌ Public | 1 endpoint |
@@ -1247,137 +1248,6 @@ DELETE /trainers/:id
 ```
 
 **Authorization:** Admin only
-
----
-
-## Group Class Routes
-
-### Base Path: `/api/v1`
-
-**Global Requirements:**
-- ✅ JWT Bearer token required for all endpoints
-- ✅ Admin role required for `/admin/classes` CRUD & Publish endpoints
-- ✅ Authenticated members (`user`, `trainer`, `doctor`, `admin`) can view active/published classes
-
-#### 1. Create Group Class
-```
-POST /api/v1/admin/classes
-```
-
-**Authorization:** Admin only
-
-**Request Body:**
-```json
-{
-  "name": "Spinning Class Updated",
-  "description": "High intensity cycling workout",
-  "status": "ACTIVE",
-  "creditCost": 4,
-  "mode": "offline",
-  "instructor": "Jane Doe",
-  "durationMinutes": 60,
-  "maxParticipants": 20,
-  "tags": ["spin", "cardio"],
-  "scheduleInfo": "Weekly: Mon, Wed 07:00 – 08:00",
-  "slots": ["slot_uuid_1", "slot_uuid_2"],
-  "locationAddress": "Room 2B, Main Gym",
-  "enableWaitlist": false,
-  "isPublished": true
-}
-```
-
-**Response (201 Created):**
-```json
-{
-  "message": "Class created",
-  "class": {
-    "_id": "010db997-dfd7-4798-9da9-b332765c0670",
-    "name": "Spinning Class Updated",
-    "description": "High intensity cycling workout",
-    "status": "ACTIVE",
-    "creditCost": 4,
-    "isPublished": true,
-    "createdAt": "2026-07-27T10:00:00.000Z",
-    "updatedAt": "2026-07-27T10:00:00.000Z"
-  }
-}
-```
-
----
-
-#### 2. Get All Group Classes (Admin)
-```
-GET /api/v1/admin/classes
-```
-
-**Authorization:** Admin only  
-**Description:** Retrieves all group classes regardless of status or publish state (includes drafts & retired classes).
-
----
-
-#### 3. Update Group Class
-```
-PUT /api/v1/admin/classes/:id
-```
-
-**Authorization:** Admin only
-
-**Request Body:**
-```json
-{
-  "name": "HIIT Masterclass",
-  "creditCost": 5,
-  "maxParticipants": 15,
-  "isPublished": true
-}
-```
-
----
-
-#### 4. Publish / Unpublish Group Class
-```
-PATCH /api/v1/admin/classes/:id/publish
-PATCH /api/v1/admin/classes/schedule/:id/publish
-```
-
-**Authorization:** Admin only  
-**Description:** Toggles the `isPublished` state of a class/schedule session. Setting `isPublished: false` immediately hides the session from member app listings.
-
-**Request Body:**
-```json
-{
-  "isPublished": false
-}
-```
-
----
-
-#### 5. Soft Delete / Retire Group Class
-```
-DELETE /api/v1/admin/classes/:id
-```
-
-**Authorization:** Admin only  
-**Description:** Marks the class status as `INACTIVE`.
-
----
-
-#### 6. Get Active & Published Group Classes (Members)
-```
-GET /api/v1/classes
-```
-
-**Authorization:** Authenticated Users (`user`, `trainer`, `doctor`, `admin`)  
-**Description:** Retrieves only active (`status: ACTIVE`) and published (`isPublished: true`) group classes for member display.
-
----
-
-#### 7. Get Group Class Details by ID
-```
-GET /api/v1/classes/:id
-```
-
-**Authorization:** Authenticated Users
 
 ---
 
@@ -3729,7 +3599,7 @@ For full field-level schemas and examples, see [docs/API_REFERENCE.md](docs/API_
 - `GET /nutritionist/my-booking` (User)
 - `PATCH /nutritionist/my-booking/switch-to-online` (User) — body: const {} (switches appointment mode to ONLINE and generates meeting URL)
 - `GET /nutritionist/bookings` (Admin) — query: `status`, `date`
-- `PATCH /nutritionist/bookings/:id/accept` (Admin) — body: `meetingLink`, `clinicLocation`
+- `PATCH /nutritionist/bookings/:id/accept` (Admin) — body: `meetingLink`, `clinicLocation`, `calBookingId`
 - `PATCH /nutritionist/bookings/:id/reject` (Admin) — body: `reason`
 - `PATCH /nutritionist/bookings/:id/complete` (Admin) — body: const {} (marks booking as Completed)
 
@@ -3754,6 +3624,10 @@ For full field-level schemas and examples, see [docs/API_REFERENCE.md](docs/API_
 - `GET /webhook/reports` (Admin)
 - `GET /webhook/reports/:id` (Admin)
 - `GET /webhook/reports/user/:userId` (Admin)
+
+### Cal ID Webhook: `/webhooks/cal`
+
+- `POST /webhooks/cal` — header: `X-Cal-Signature-256`
 
 ---
 
@@ -4081,12 +3955,13 @@ POST /onboarding/sports-scientist
 ```json
 {
   "appointmentDate": "2026-06-01T10:00:00Z",
-  "meetingLink": "https://meet.google.com/xyz-uvwx-yza"
+  "meetingLink": "https://cal.id/fitflix/sports-scientist",
+  "calComBookingId": "booking_abc123"
 }
 ```
 
 **Validation Notes:**
-- `appointmentDate` and `meetingLink` are optional.
+- `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.id integration).
 - Submitting again **upserts** the existing appointment (no duplicates).
 
 **Response (201 Created):**
@@ -4099,7 +3974,8 @@ POST /onboarding/sports-scientist
     "expertType": "sports_scientist",
     "bookingStatus": "Pending",
     "appointmentDate": "2026-06-01T10:00:00Z",
-    "meetingLink": "https://meet.google.com/xyz-uvwx-yza",
+    "meetingLink": "https://cal.id/fitflix/sports-scientist",
+    "calComBookingId": "booking_abc123",
     "createdAt": "2026-05-15T09:20:00Z",
     "updatedAt": "2026-05-15T09:20:00Z"
   }
@@ -4123,7 +3999,8 @@ POST /onboarding/nutritionist
 ```json
 {
   "appointmentDate": "2026-06-03T11:00:00Z",
-  "meetingLink": null
+  "meetingLink": null,
+  "calComBookingId": null
 }
 ```
 
@@ -4138,6 +4015,7 @@ POST /onboarding/nutritionist
     "bookingStatus": "Pending",
     "appointmentDate": "2026-06-03T11:00:00Z",
     "meetingLink": null,
+    "calComBookingId": null,
     "createdAt": "2026-05-15T09:25:00Z",
     "updatedAt": "2026-05-15T09:25:00Z"
   }
@@ -4189,14 +4067,15 @@ POST /onboarding/appointments
 {
   "expertType": "sports_scientist",
   "appointmentDate": "2026-06-01T10:00:00Z",
-  "meetingLink": "https://meet.google.com/xyz-uvwx-yza"
+  "meetingLink": "https://cal.id/fitflix/sports-scientist",
+  "calComBookingId": "booking_abc123"
 }
 ```
 
 **Validation Notes:**
 - `expertType` must be one of: `sports_scientist`, `nutritionist`.
 - Sports scientist **must be booked before** nutritionist — attempting nutritionist first returns `403 STEP_NOT_ALLOWED`.
-- `appointmentDate` and `meetingLink` are optional.
+- `appointmentDate`, `meetingLink`, and `calComBookingId` are optional (for Cal.id integration).
 - Submitting the same `expertType` again **upserts** the existing appointment (no duplicates).
 
 **Error Responses:**

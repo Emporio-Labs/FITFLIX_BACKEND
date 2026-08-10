@@ -7,9 +7,11 @@ out
 dist
 *.tgz
 
-
+mongo.txt
 Standardized Meal Plan.Fitflix^L.xlsx
 fitflix-storage-user_accessKeys.csv
+mongo.txt
+
 
 # code coverage
 coverage

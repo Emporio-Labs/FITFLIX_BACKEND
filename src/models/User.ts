@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { applyIdTransform } from "../utils/mongoose-serialization";
-import { Gender, OnboardingStep } from "./Enums";
+import { CommunityRole, Gender, OnboardingStep, UserStatus } from "./Enums";
 
 const userSchema = new mongoose.Schema(
 	{
@@ -21,12 +21,28 @@ const userSchema = new mongoose.Schema(
 		emergencyContact: { type: String, default: undefined },
 		address: { type: String, default: undefined },
 		passwordHash: { type: String, select: false },
+		// Community account gate. Insider/outsider is DERIVED from membership;
+		// this only governs suspend/ban. Legacy users without the field read as
+		// active (default applied on hydration; treat undefined as active in code).
 		status: {
 			type: String,
-			enum: ["ACTIVE", "INACTIVE", "SUSPENDED", "ARCHIVED"],
-			default: "ACTIVE",
+			enum: Object.values(UserStatus),
+			default: UserStatus.Active,
+		},
+		// Suspension end date (set alongside status = suspended).
+		suspendedUntil: { type: Date, default: null },
+		// Admin-granted community elevation ("trainer") — overrides the derived
+		// insider/outsider role in the community feed. NULL for regular members.
+		communityRole: {
+			type: String,
+			enum: [...Object.values(CommunityRole), null],
+			default: null,
 		},
 		isActive: { type: Boolean, default: true },
+		// Distinct from `status` above: `status` is the community suspend/ban
+		// gate, this is the membership lifecycle. Read by
+		// booking-rules-engine.service.ts to refuse group-class bookings for
+		// EXPIRED/CANCELLED memberships — do not fold the two together.
 		membershipStatus: { type: String, default: "ACTIVE" },
 		onboarded: { type: Boolean, default: false },
 		fcmTokens: {
@@ -65,6 +81,11 @@ userSchema.index(
 	{ phone: 1 },
 	{ unique: true, partialFilterExpression: { firebaseUid: { $exists: true } } },
 );
+
+// Community people-search looks up members by name. Index only — NO new field,
+// because `GET /users/me` and `/users/:id` serialize the whole document, so
+// anything added to this schema leaks into every existing response.
+userSchema.index({ username: 1 });
 
 applyIdTransform(userSchema);
 

@@ -1,6 +1,7 @@
 import z from "zod";
 import {
 	ExerciseDifficulty,
+	ExerciseSection,
 	PlanGoal,
 	PlanStatus,
 	SplitType,
@@ -13,6 +14,12 @@ const planExerciseSchema = z.object({
 	targetReps: z.coerce.number().int().min(1).max(100),
 	targetWeightKg: z.coerce.number().min(0).max(999.99).optional().default(0),
 	restSeconds: z.coerce.number().int().min(0).max(600).optional().default(60),
+	section: z
+		.enum(Object.values(ExerciseSection) as [string, ...string[]])
+		.optional()
+		.default(ExerciseSection.Workout),
+	durationSeconds: z.number().int().min(0).nullable().optional(),
+	notes: z.string().max(1000).nullable().optional(),
 });
 
 const planDaySchema = z.object({
@@ -106,6 +113,14 @@ export const listPlansQuerySchema = z.object({
 		z
 			.enum(Object.values(ExerciseDifficulty) as [string, ...string[]])
 			.optional(),
+	),
+	isTemplate: z.preprocess(
+		optionalEnumPreprocess,
+		z.enum(["true", "false"]).optional(),
+	),
+	search: z.preprocess(
+		optionalEnumPreprocess,
+		z.string().max(200).optional(),
 	),
 });
 

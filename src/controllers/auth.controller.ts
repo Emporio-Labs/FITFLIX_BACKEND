@@ -7,8 +7,10 @@ import TokenBlacklist from "../models/TokenBlacklist";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
 import {
+	ADMIN_EXPIRES_IN,
 	getJwtConfig,
 	getJwtRefreshConfig,
+	signAdminToken,
 	signAuthToken,
 	signRefreshToken,
 	verifyRefreshToken,
@@ -25,6 +27,42 @@ import {
 } from "../validators/auth.validator";
 
 type AppRole = "user" | "admin" | "trainer";
+
+// ── Login lockout (in-memory; staff accounts are the top target) ──────────────
+const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS) || 5;
+const LOGIN_LOCKOUT_MS =
+	(Number(process.env.LOGIN_LOCKOUT_MINUTES) || 15) * 60_000;
+const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
+
+const isLoginLocked = (email: string): boolean => {
+	const entry = loginAttempts.get(email);
+	return entry ? Date.now() < entry.lockedUntil : false;
+};
+const recordLoginFailure = (email: string): void => {
+	const entry = loginAttempts.get(email) ?? { count: 0, lockedUntil: 0 };
+	entry.count += 1;
+	if (entry.count >= LOGIN_MAX_ATTEMPTS) {
+		entry.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+	}
+	loginAttempts.set(email, entry);
+};
+const clearLoginFailures = (email: string): void => {
+	loginAttempts.delete(email);
+};
+
+/**
+ * Login logs are the one place a full address would otherwise land in plaintext
+ * application logs. Mask it: enough to correlate a support ticket, not enough to
+ * harvest. `alice@fitflix.com` → `a***e@fitflix.com`.
+ */
+const maskEmail = (email: string): string => {
+	const at = email.indexOf("@");
+	if (at < 1) return "***";
+	const local = email.slice(0, at);
+	const domain = email.slice(at);
+	if (local.length <= 2) return `${local[0]}***${domain}`;
+	return `${local[0]}***${local[local.length - 1]}${domain}`;
+};
 
 type AuthDocument = {
 	_id: { toString(): string };
@@ -193,9 +231,17 @@ export const login: RequestHandler = async (req, res, next) => {
 
 	const { email, password } = parsedBody.data;
 
+	if (isLoginLocked(email)) {
+		res.status(429).json({
+			message:
+				"Too many failed login attempts. Please try again in a few minutes.",
+		});
+		return;
+	}
+
 	try {
 		console.log("[AUTH][LOGIN] Looking up user/admin/doctor/trainer", {
-			email,
+			email: maskEmail(email),
 		});
 
 		const [user, admin, trainer] = await Promise.all([
@@ -205,7 +251,7 @@ export const login: RequestHandler = async (req, res, next) => {
 		]);
 
 		console.log("[AUTH][LOGIN] Model lookups completed", {
-			email,
+			email: maskEmail(email),
 			userFound: Boolean(user),
 			adminFound: Boolean(admin),
 			trainerFound: Boolean(trainer),
@@ -217,8 +263,9 @@ export const login: RequestHandler = async (req, res, next) => {
 			(await matchAccount(password, "trainer", trainer));
 
 		if (!matchedAccount) {
+			recordLoginFailure(email);
 			console.log("[AUTH][LOGIN] Invalid credentials", {
-				email,
+				email: maskEmail(email),
 				userFound: Boolean(user),
 				adminFound: Boolean(admin),
 			});
@@ -227,6 +274,7 @@ export const login: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		clearLoginFailures(email);
 		req.user = matchedAccount;
 
 		const jwtConfig = getJwtConfig();
@@ -235,7 +283,12 @@ export const login: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const accessToken = signAuthToken(matchedAccount, jwtConfig);
+		// Admins get a short-lived, scoped session; everyone else keeps the long
+		// (240d) member session.
+		const accessToken =
+			matchedAccount.role === "admin"
+				? signAdminToken(matchedAccount, jwtConfig)
+				: signAuthToken(matchedAccount, jwtConfig);
 		const refreshConfig = getJwtRefreshConfig();
 		const refreshToken = refreshConfig
 			? signRefreshToken(matchedAccount, refreshConfig)
@@ -244,7 +297,7 @@ export const login: RequestHandler = async (req, res, next) => {
 		const userPayload = buildLoginUserPayload(matchedAccount, user);
 
 		console.log("[AUTH][LOGIN] Login successful", {
-			email,
+			email: maskEmail(email),
 			userId: req.user.id,
 			role: req.user.role,
 			userPayloadRole: userPayload.role,
@@ -302,12 +355,18 @@ export const refreshAccessToken: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const accessToken = signAuthToken(user, jwtConfig);
+		// Refresh must not upgrade an admin into a long-lived unscoped session:
+		// without this, a refreshed admin token would outlive (240d vs 30m) and
+		// out-scope the one login issues, silently undoing the admin hardening.
+		const isAdmin = user.role === "admin";
+		const accessToken = isAdmin
+			? signAdminToken(user, jwtConfig)
+			: signAuthToken(user, jwtConfig);
 		res.status(200).json({
 			message: "Token refreshed",
 			accessToken,
 			tokenType: "Bearer",
-			expiresIn: jwtConfig.expiresIn,
+			expiresIn: isAdmin ? ADMIN_EXPIRES_IN : jwtConfig.expiresIn,
 		});
 	} catch (error) {
 		next(error);

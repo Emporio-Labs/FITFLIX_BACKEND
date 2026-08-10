@@ -57,10 +57,15 @@ graph TD
     B --> C[2. HEALTH_GOALS <br><i>Target Weight, Workout Experience</i>]
     C --> D[3. CONSENT <br><i>E-Signature & IP Check</i>]
     D --> E[4. REPORT_UPLOAD <br><i>PDF Medical Records</i>]
-    E --> F[5. SPORTS_SCIENTIST_BOOKING <br><i>Initial consultation</i>]
-    F --> G[6. NUTRITIONIST_BOOKING <br><i>Diet plan consultation</i>]
-    G --> H[7. COMPLETED <br><i>Sets user.onboarded = true</i>]
+    E --> H[COMPLETED <br><i>Sets user.onboarded = true</i>]
+    E -.-> N[NUTRITIONIST_BOOKING <br><i>Off the linear path</i>]
+    N -.->|required before completing| H
 ```
+
+`STEP_ORDER` is the four solid steps plus `COMPLETED`. `NUTRITIONIST_BOOKING` is
+not part of that sequence — the booking can be made at any point, but
+`POST /onboarding/complete` fails with `MISSING_STEPS` unless a non-`REJECTED`
+nutritionist booking exists. There is no sports-scientist step.
 
 ### Onboarding API Endpoints (`/onboarding/*`)
 
@@ -70,9 +75,11 @@ graph TD
 | **POST** | `/onboarding/health-markers` | Submits core physical metrics; auto-calculates BMI |
 | **POST** | `/onboarding/health-goals` | Submits dietary preferences, physical limits, and training goals |
 | **POST** | `/onboarding/consent` | Captures digital signature and IP address for terms consent |
-| **POST** | `/onboarding/reports` | Uploads PDF medical reports (S3 metadata registration) |
-| **POST** | `/onboarding/appointments` | Books Sports Scientist and Nutritionist consult slots in order |
+| **POST** | `/onboarding/reports` | Uploads PDF medical reports (multipart `file`) |
 | **POST** | `/onboarding/complete` | Validates that all prerequisites are satisfied and unlocks full app |
+| **POST** | `/nutritionist/book` | Books the nutritionist consult (also at `/onboarding/nutritionist/book`) |
+
+> Full endpoint reference: **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)**.
 
 ---
 

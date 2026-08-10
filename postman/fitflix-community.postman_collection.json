@@ -1,0 +1,543 @@
+{
+  "info": {
+    "_postman_id": "b7c1e9a2-4f3d-4a1b-9c88-2d5e7f0a1b34",
+    "name": "Fitflix Community Posts",
+    "description": "Member-authored community posts, end to end.\n\nRUN ORDER (folder '1. Member posts a post'):\n  1) Login (admin)\n  2) Signup (member)\n  3) Login (member)\n  4) Grant active membership (admin)\n  5) Create post AS MEMBER\nThen open http://localhost:3001/admin/community -> Posts tab -> 'All authors' -> Refresh.\n\nWhy step 4 is required: policy.ts only lets an 'insider' create a post, and roleResolver.ts derives insider from a live Active membership with endDate in the future. Without it, step 5 returns 403.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Member posts a post",
+      "item": [
+        {
+          "name": "Login (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', res.accessToken);",
+                  "  console.log('admin token saved. role =', res.user && res.user.role);",
+                  "} else {",
+                  "  console.warn('No accessToken in response');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Admin token. Needed for the membership grant and every /community/admin/* read."
+          },
+          "response": []
+        },
+        {
+          "name": "Signup (member)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  console.log('member created:', pm.collectionVariables.get('memberEmail'));",
+                  "} else if (pm.response.code === 409) {",
+                  "  console.log('member already exists - fine, continue to Login (member)');",
+                  "} else {",
+                  "  console.warn('signup returned', pm.response.code, pm.response.text());",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{memberUsername}}\",\n  \"phone\": \"{{memberPhone}}\",\n  \"email\": \"{{memberEmail}}\",\n  \"age\": 27,\n  \"gender\": \"male\",\n  \"password\": \"{{memberPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/signup",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "signup"]
+            },
+            "description": "Creates the test member. Safe to re-run: a duplicate email returns 409 and the flow still works."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (member)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken) {",
+                  "  pm.collectionVariables.set('memberToken', res.accessToken);",
+                  "  pm.collectionVariables.set('memberUserId', res.user.id);",
+                  "  console.log('member token saved. userId =', res.user.id, '| role =', res.user.role);",
+                  "} else {",
+                  "  console.warn('member login failed:', pm.response.text());",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{memberEmail}}\",\n  \"password\": \"{{memberPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Saves memberToken + memberUserId. res.user.role is 'user' here - the community role is derived separately per request."
+          },
+          "response": []
+        },
+        {
+          "name": "Grant active membership (admin)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const now = new Date();",
+                  "const later = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('startDate', now.toISOString());",
+                  "pm.collectionVariables.set('endDate', later.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  console.log('membership granted until', pm.collectionVariables.get('endDate'));",
+                  "} else {",
+                  "  console.warn('membership grant failed:', pm.response.code, pm.response.text());",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{memberUserId}}\",\n  \"planName\": \"monthly\",\n  \"creditsIncluded\": 10,\n  \"status\": \"Active\",\n  \"price\": 1000,\n  \"currency\": \"INR\",\n  \"startDate\": \"{{startDate}}\",\n  \"endDate\": \"{{endDate}}\",\n  \"features\": [],\n  \"notes\": \"Postman test member - community posting\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/memberships",
+              "host": ["{{baseUrl}}"],
+              "path": ["memberships"]
+            },
+            "description": "Uses the ADMIN token. Turns the member into a community 'insider' so post:create is allowed. Dates are computed in the pre-request script (now -> +1 year)."
+          },
+          "response": []
+        },
+        {
+          "name": "Create post AS MEMBER",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 403) {",
+                  "  console.warn('403 - the membership grant did not take. Re-run step 4, then retry.');",
+                  "} else {",
+                  "  const res = pm.response.json();",
+                  "  const post = res.post || res;",
+                  "  if (post && post.id) {",
+                  "    pm.collectionVariables.set('postId', post.id);",
+                  "    pm.collectionVariables.set('memberPostId', post.id);",
+                  "    console.log('post created:', post.id, '| author role =', post.author && post.author.role);",
+                  "  } else {",
+                  "    console.warn('unexpected response:', pm.response.text());",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{memberToken}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Hello from Postman - this post was written by a member, not an admin.\",\n  \"description\": \"Testing the member posting flow end to end.\",\n  \"visibility\": \"public\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/community/posts",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "posts"]
+            },
+            "description": "Member router, NOT the admin one. Uses memberToken. Stored with authorRole 'insider'; the dashboard shows it with a Member badge and no Official tag."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Admin views the posts",
+      "item": [
+        {
+          "name": "List posts - all authors",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const posts = pm.response.json().posts || [];",
+                  "console.log('post count:', posts.length);",
+                  "posts.forEach(function (p) {",
+                  "  console.log([p.id, (p.author && p.author.role), (p.author && p.author.name), p.isOfficial ? 'OFFICIAL' : 'user-post', JSON.stringify(p.content), p.createdAt].join(' | '));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/admin/posts?deleted=false&limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "admin", "posts"],
+              "query": [
+                { "key": "deleted", "value": "false" },
+                { "key": "limit", "value": "100" }
+              ]
+            },
+            "description": "The reliable view. Matches the dashboard's 'All authors' + 'Live' filters."
+          },
+          "response": []
+        },
+        {
+          "name": "List posts - members only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const posts = pm.response.json().posts || [];",
+                  "console.log('member post count:', posts.length);",
+                  "posts.forEach(function (p) {",
+                  "  console.log([p.id, (p.author && p.author.name), JSON.stringify(p.content), 'likes=' + p.likeCount, 'comments=' + p.commentCount, p.createdAt].join(' | '));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/admin/posts?role=insider&deleted=false&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "admin", "posts"],
+              "query": [
+                { "key": "role", "value": "insider" },
+                { "key": "deleted", "value": "false" },
+                { "key": "limit", "value": "50" }
+              ]
+            },
+            "description": "NOTE: role must be 'insider', not 'member'. listPostsAdmin matches the filter raw against the stored authorRole, and members are stored as CommunityRole.Insider = 'insider'. The rename to 'member' happens only on the way OUT, in author.ts. So role=member always returns []."
+          },
+          "response": []
+        },
+        {
+          "name": "List posts - admin/official only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/admin/posts?role=admin&deleted=false&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "admin", "posts"],
+              "query": [
+                { "key": "role", "value": "admin" },
+                { "key": "deleted", "value": "false" },
+                { "key": "limit", "value": "50" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List posts - reported only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/admin/posts?reported=true&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "admin", "posts"],
+              "query": [
+                { "key": "reported", "value": "true" },
+                { "key": "limit", "value": "50" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get single post",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/admin/posts/{{postId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "admin", "posts", "{{postId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get post comments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/admin/posts/{{postId}}/comments",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "admin", "posts", "{{postId}}", "comments"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get post edit history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/admin/posts/{{postId}}/versions",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "admin", "posts", "{{postId}}", "versions"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List community users",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const users = pm.response.json().users || [];",
+                  "users.forEach(function (u) {",
+                  "  console.log([u.id, u.username, u.status, u.communityRole].join(' | '));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/admin/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "admin", "users"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get user detail with postCount",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/admin/users/{{memberUserId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "admin", "users", "{{memberUserId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Post metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/admin/metrics/posts",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "admin", "metrics", "posts"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Member's own view",
+      "item": [
+        {
+          "name": "Member feed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const posts = pm.response.json().posts || [];",
+                  "console.log('feed count:', posts.length);",
+                  "posts.forEach(function (p) {",
+                  "  console.log([p.id, (p.author && p.author.role), JSON.stringify(p.content)].join(' | '));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{memberToken}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/feed?limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "feed"],
+              "query": [
+                { "key": "limit", "value": "20" },
+                { "key": "cursor", "value": "", "disabled": true }
+              ]
+            },
+            "description": "What the member sees in the app. Uses memberToken - an insider sees members_only posts too."
+          },
+          "response": []
+        },
+        {
+          "name": "Comment on post AS MEMBER",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{memberToken}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"A member comment, added from Postman.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/community/posts/{{postId}}/comments",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "posts", "{{postId}}", "comments"]
+            },
+            "description": "Gives the dashboard a non-zero comment count to display."
+          },
+          "response": []
+        },
+        {
+          "name": "Like post AS MEMBER",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{memberToken}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/community/posts/{{postId}}/like",
+              "host": ["{{baseUrl}}"],
+              "path": ["community", "posts", "{{postId}}", "like"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "event": [],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "email", "value": "admin@example.com", "type": "string" },
+    { "key": "password", "value": "", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "memberUsername", "value": "postman_member", "type": "string" },
+    { "key": "memberEmail", "value": "postman.member@example.com", "type": "string" },
+    { "key": "memberPhone", "value": "9000000001", "type": "string" },
+    { "key": "memberPassword", "value": "Testpass123", "type": "string" },
+    { "key": "memberToken", "value": "", "type": "string" },
+    { "key": "memberUserId", "value": "", "type": "string" },
+    { "key": "memberPostId", "value": "", "type": "string" },
+    { "key": "postId", "value": "", "type": "string" },
+    { "key": "startDate", "value": "", "type": "string" },
+    { "key": "endDate", "value": "", "type": "string" }
+  ]
+}

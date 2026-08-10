@@ -61,6 +61,7 @@ export async function createAssignmentForUser(
 			targetWeightKg: ex.targetWeightKg ?? 0,
 			restSeconds: ex.restSeconds ?? 60,
 			durationSeconds: ex.durationSeconds ?? null,
+			notes: ex.notes ?? null,
 		})),
 	}));
 

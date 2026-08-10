@@ -5,16 +5,15 @@ import {
 	getAllUsers,
 	getMyMedicalReports,
 	getMyUser,
-	getMyUserHpodMetrics,
-	getMyUserReportPdf,
+	getMyUserBcaMetrics,
 	getMyUserReports,
 	getOnboardingProfile,
 	getReportSignedUrl,
 	getUserById,
 	onboardUser,
+	syncMyBcaMetrics,
 	updateMyPassword,
 	updateUserById,
-	uploadHpodMetrics,
 } from "../controllers/user.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
@@ -31,9 +30,12 @@ userRouter.get(
 userRouter.get("/me", authorize(["user"]), getMyUser);
 userRouter.get("/me/reports", authorize(["user"]), getMyUserReports);
 userRouter.get("/me/medical-reports", authorize(["user"]), getMyMedicalReports);
-userRouter.get("/me/hpod-metrics", authorize(["user"]), getMyUserHpodMetrics);
-userRouter.post("/me/hpod-metrics", authorize(["user"]), uploadHpodMetrics);
-userRouter.get("/me/reports/:id/pdf", authorize(["user"]), getMyUserReportPdf);
+userRouter.get("/me/bca-metrics", authorize(["user"]), getMyUserBcaMetrics);
+userRouter.post(
+	"/me/bca-metrics/sync",
+	authorize(["user"]),
+	syncMyBcaMetrics,
+);
 userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
 userRouter.get(
 	"/:id",
