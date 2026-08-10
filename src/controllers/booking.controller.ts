@@ -2,11 +2,8 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Booking from "../models/Bookings";
 import { BookingStatus, CreditTransactionSource } from "../models/Enums";
-import { HpodReport } from "../models/Hpodreport.model";
 import Service from "../models/Service";
 import Slot from "../models/Slots";
-
-void HpodReport;
 
 import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";

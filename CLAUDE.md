@@ -194,8 +194,7 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 | SetLog | `SetLog.ts` | workoutExercise→WorkoutExercise, reps, weight | |
 | MembershipPlan | `MembershipPlan.ts` | planName, creditsIncluded, price | Admin-defined plans |
 | Lead | `Lead.ts` | leadName, email, phone, status, convertedUser | Sales leads |
-| HpodMetric | `HpodMetric.ts` | userId, metrics, recordedAt | HPOD health pod data |
-| HpodReport | `Hpodreport.model.ts` | userId, subject, aiSummary, hasPdf, receivedAt | Gmail-ingested reports |
+| BcaMetric | `BcaMetric.ts` | userId, vitals, bodyComposition, recordedAt | ActiveX BCA (Body Composition Analysis) data, pulled by phone |
 | **HealthMarkers** | `HealthMarkers.ts` | userId (unique), weight, height, bmi, allergies, medications, diseaseHistory, sleepHours, activityLevel | Onboarding step 1 |
 | **HealthGoals** | `HealthGoals.ts` | userId (unique), goals[], targetWeight, timeline, workoutExperience, foodPreferences | Onboarding step 2 |
 | **ConsentForm** | `ConsentForm.ts` | userId (unique), accepted, acceptedAt, signatureUrl, ipAddress | Onboarding step 3 |
@@ -416,8 +415,9 @@ There is no `/onboarding/appointments`, `/onboarding/sports-scientist`, or
 | `CORS_ALLOWED_ORIGINS` | No | (all in dev) | Comma-separated |
 | `NODE_ENV` | No | — | `production` enables HSTS |
 | `PORT` | No | `3000` | |
-| `ENABLE_GMAIL_WATCH` | No | — | Gmail pub/sub for HPOD reports |
-| `PUBSUB_TOPIC` | No | — | Google Pub/Sub topic |
+| `ACTIVEX_API_KEY` | For BCA sync | — | ActiveX external API key (`x-api-key`) |
+| `ACTIVEX_BASE_URL` | No | `https://api.activex.ai/external/bca` | ActiveX BCA endpoint |
+| `ACTIVEX_BCA_LOOKBACK_DAYS` | No | `365` | Lookback window for the sync `Date` filter |
 
 ---
 

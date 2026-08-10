@@ -47,7 +47,7 @@ console.log("\n--------------------------------------------------");
 console.log("1. Open this URL in your browser:\n");
 console.log(authUrl);
 console.log("\n--------------------------------------------------");
-console.log("2. Login with the Gmail account that receives HPOD emails");
+console.log("2. Login with the Google account used for the Meet integration");
 console.log(
 	"3. After approval, you'll be redirected to localhost (page will fail to load — that's fine)",
 );

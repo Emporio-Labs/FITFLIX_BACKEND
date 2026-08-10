@@ -1,22 +1,27 @@
 {
-	"permissions": {
-		"allow": [
-			"Bash(npx tsc *)",
-			"Bash(mkdir -p docs)",
-			"Bash(bun run *)",
-			"Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Yeshwanth\\\\Yugaas\\\\github_clones\" -Directory)",
-			"Bash(Select-Object -ExpandProperty Name)",
-			"Bash(ls -la \"C:\\\\Users\\\\Yeshwanth\\\\Yugaas\\\\github_clones\" | grep -i \"front\\\\|admin\")",
-			"Bash(rm \"C:/Users/Yeshwanth/Yugaas/github_clones/frontdesk-fitflix/components/nutrition/template-form.tsx\")",
-			"Bash(rm -rf \"/c/Users/Yeshwanth/Yugaas/github_clones/frontdesk-fitflix/.next/types/app/admin/nutrition/templates\")",
-			"PowerShell(Set-Location \"C:\\\\Users\\\\Yeshwanth\\\\Yugaas\\\\github_clones\\\\frontdesk-fitflix\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -notmatch \"bookings/page|leads/page\" } | Select-Object -First 40)",
-			"Bash(bun -e \"import\\('dotenv/config'\\); const m = await import\\('mongoose'\\); const { default: User } = await import\\('./src/models/User.ts'\\); await m.default.connect\\(process.env.MONGODB_URL\\); const users = await User.find\\({}\\).select\\('_id username onboarded onboardingStatus'\\).lean\\(\\); console.log\\(JSON.stringify\\(users.map\\(u => \\({ id: String\\(u._id\\), username: u.username, onboarded: u.onboarded, currentStep: u.onboardingStatus?.currentStep, hasStatus: !!u.onboardingStatus }\\)\\), null, 2\\)\\); await m.default.disconnect\\(\\);\")",
-			"Bash(git merge *)",
-			"Bash(git add *)",
-			"Bash(git commit -m ' *)",
-			"Bash(grep -E \"\\\\.ts$\")",
-			"Bash(grep -E \"\\\\.ts$|total\")",
-			"PowerShell($envFile = Get-Content .env -Raw; $key = \\([regex]::Match\\($envFile, '\\(?m\\)^CAL_API_KEY=\\(.+\\)$'\\)\\).Groups[1].Value.Trim\\(\\); Write-Host \"=== Probe: who does this API key belong to? ===\"; try { $me = Invoke-WebRequest -Uri \"https://api.cal.com/v2/me?apiKey=$key\" -Method GET -Headers @{ \"cal-api-version\"=\"2024-08-13\"; \"Content-Type\"=\"application/json\" } -UseBasicParsing; Write-Host \"STATUS: $\\($me.StatusCode\\)\"; Write-Host $me.Content } catch { Write-Host \"STATUS: $\\($_.Exception.Response.StatusCode.value__\\)\"; try { $sr = New-Object System.IO.StreamReader\\($_.Exception.Response.GetResponseStream\\(\\)\\); Write-Host $sr.ReadToEnd\\(\\) } catch { Write-Host \"\\(no body\\)\" } })"
-		]
-	}
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(mkdir -p docs)",
+      "Bash(bun run *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Yeshwanth\\\\Yugaas\\\\github_clones\" -Directory)",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Bash(ls -la \"C:\\\\Users\\\\Yeshwanth\\\\Yugaas\\\\github_clones\" | grep -i \"front\\\\|admin\")",
+      "Bash(rm \"C:/Users/Yeshwanth/Yugaas/github_clones/frontdesk-fitflix/components/nutrition/template-form.tsx\")",
+      "Bash(rm -rf \"/c/Users/Yeshwanth/Yugaas/github_clones/frontdesk-fitflix/.next/types/app/admin/nutrition/templates\")",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Yeshwanth\\\\Yugaas\\\\github_clones\\\\frontdesk-fitflix\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -notmatch \"bookings/page|leads/page\" } | Select-Object -First 40)",
+      "Bash(bun -e \"import\\('dotenv/config'\\); const m = await import\\('mongoose'\\); const { default: User } = await import\\('./src/models/User.ts'\\); await m.default.connect\\(process.env.MONGODB_URL\\); const users = await User.find\\({}\\).select\\('_id username onboarded onboardingStatus'\\).lean\\(\\); console.log\\(JSON.stringify\\(users.map\\(u => \\({ id: String\\(u._id\\), username: u.username, onboarded: u.onboarded, currentStep: u.onboardingStatus?.currentStep, hasStatus: !!u.onboardingStatus }\\)\\), null, 2\\)\\); await m.default.disconnect\\(\\);\")",
+      "Bash(git merge *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(grep -E \"\\\\.ts$|total\")",
+      "PowerShell($envFile = Get-Content .env -Raw; $key = \\([regex]::Match\\($envFile, '\\(?m\\)^CAL_API_KEY=\\(.+\\)$'\\)\\).Groups[1].Value.Trim\\(\\); Write-Host \"=== Probe: who does this API key belong to? ===\"; try { $me = Invoke-WebRequest -Uri \"https://api.cal.com/v2/me?apiKey=$key\" -Method GET -Headers @{ \"cal-api-version\"=\"2024-08-13\"; \"Content-Type\"=\"application/json\" } -UseBasicParsing; Write-Host \"STATUS: $\\($me.StatusCode\\)\"; Write-Host $me.Content } catch { Write-Host \"STATUS: $\\($_.Exception.Response.StatusCode.value__\\)\"; try { $sr = New-Object System.IO.StreamReader\\($_.Exception.Response.GetResponseStream\\(\\)\\); Write-Host $sr.ReadToEnd\\(\\) } catch { Write-Host \"\\(no body\\)\" } })",
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(bun run scripts/seed-exercises.ts)",
+      "PowerShell(bun run \"C:\\\\Users\\\\YESHWA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Yeshwanth-Yugaas-github-clones-FITFLIX-BACKEND\\\\35ad6a1b-8fef-49f6-ac5b-f971aa6137aa\\\\scratchpad\\\\verify-exercises.ts\")",
+      "PowerShell(bun run scratch/merge-duplicate-exercises-temp.ts)",
+      "PowerShell(bun run scratch/verify-exercises-temp.ts)"
+    ]
+  }
 }

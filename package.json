@@ -33,7 +33,16 @@
 		"test:feature-006": "bun run tests/feature-006-manage-class-capacity.test.ts",
 		"test:feature-007": "bun run tests/feature-007-publish-unpublish-class.test.ts",
 		"test:class-all": "bun run tests/run-all-tests.ts",
-		"migrate:passwords": "bun run scripts/migrate-passwords.ts"
+		"migrate:passwords": "bun run scripts/migrate-passwords.ts",
+		"test:community": "bun run tests/community/community-foundation.test.ts",
+		"test:community-posts": "COMMUNITY_MAX_IMAGE_BYTES=10485760 bun run tests/community/posts-feed.test.ts",
+		"test:community-engagement": "bun run tests/community/engagement.test.ts",
+		"test:community-moderation": "bun run tests/community/moderation.test.ts",
+		"seed:community": "bun run scripts/seed-community.ts",
+		"community:smoke": "bun run scripts/community-smoke.ts",
+		"community:setup": "bun run scripts/community-setup.ts",
+		"community:teardown": "bun run scripts/community-setup.ts --down",
+		"test:community-profiles": "bun run tests/community/profiles.test.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.8",
@@ -56,14 +65,21 @@
 		"express": "^5.2.1",
 		"firebase-admin": "^13.10.0",
 		"googleapis": "^171.4.0",
+		"jimp": "^1.6.1",
 		"jsonwebtoken": "^9.0.2",
 		"mongoose": "^9.3.1",
-		"multer": "^2.1.1",
+		"multer": "^2.2.0",
 		"openai": "^6.33.0",
 		"pdf-parse": "^2.4.5",
 		"pdfkit": "^0.18.0",
 		"socket.io": "^4.8.3",
-		"xlsx": "^0.18.5",
+		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
 		"zod": "^4.3.6"
+	},
+	"overrides": {
+		"form-data": "^2.5.6",
+		"protobufjs": "^7.6.3",
+		"ws": "^8.21.0",
+		"uuid": "^11.1.1"
 	}
 }

@@ -1,4 +1,5 @@
 import ClassModel from "../models/Class";
+import { UserStatus } from "../models/Enums";
 import ScheduledSession from "../models/ScheduledSession";
 import User from "../models/User";
 
@@ -107,8 +108,16 @@ export async function evaluateBookingRules(params: {
 	const rawStatus = (user as any).status || (user as any).accountStatus;
 	const isActive = (user as any).isActive;
 
+	// `User.status` is the community suspend/ban gate (UserStatus enum,
+	// lowercase values — "active"/"suspended"/"banned"), not a membership
+	// field. Older code paths wrote uppercase "ACTIVE"/"Active" before the
+	// User model adopted the enum; both forms are accepted here so neither a
+	// freshly-created account nor a pre-existing document is wrongly blocked.
+	const normalizedStatus =
+		typeof rawStatus === "string" ? rawStatus.toLowerCase() : rawStatus;
+
 	if (
-		(rawStatus && rawStatus !== "ACTIVE" && rawStatus !== "Active") ||
+		(normalizedStatus && normalizedStatus !== UserStatus.Active) ||
 		isActive === false
 	) {
 		return {

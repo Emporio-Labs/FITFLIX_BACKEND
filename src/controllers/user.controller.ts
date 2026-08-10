@@ -7,10 +7,14 @@ import {
 } from "../models/Enums";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
-import HpodMetric from "../models/HpodMetric";
-import { HpodReport } from "../models/Hpodreport.model";
+import BcaMetric from "../models/BcaMetric";
 import MedicalReport from "../models/MedicalReport";
 import User from "../models/User";
+import {
+	ActiveXError,
+	fetchBcaRecords,
+	mapActiveXRecordToBcaMetric,
+} from "../utils/activex.service";
 import { buildApiErrorEnvelope } from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { generateSignedUrl } from "../utils/s3.service";
@@ -52,71 +56,6 @@ const getValidationDetails = (
 	}
 
 	return details;
-};
-
-const getStringArray = (value: unknown): string[] => {
-	if (!Array.isArray(value)) {
-		return [];
-	}
-
-	return value
-		.filter((item): item is string => typeof item === "string")
-		.map((item) => item.trim())
-		.filter(Boolean);
-};
-
-const buildReportSuggestions = (
-	aiSummary: Record<string, unknown> | null,
-): string[] => {
-	if (!aiSummary) {
-		return [];
-	}
-
-	const suggestions = getStringArray(aiSummary.suggestions);
-	if (suggestions.length > 0) {
-		return suggestions;
-	}
-
-	const recommendations = getStringArray(aiSummary.recommendations);
-	if (recommendations.length > 0) {
-		return recommendations;
-	}
-
-	const insights = getStringArray(aiSummary.insights);
-	if (insights.length > 0) {
-		return insights;
-	}
-
-	const concerns = getStringArray(aiSummary.concerns);
-	if (concerns.length > 0) {
-		return concerns.map((concern) => `Follow up on: ${concern}`);
-	}
-
-	return [];
-};
-
-const buildReportSummary = (
-	aiSummary: Record<string, unknown> | null,
-): string => {
-	if (!aiSummary) {
-		return "Your personalized report summary is being generated.";
-	}
-
-	if (
-		typeof aiSummary.healthInsight === "string" &&
-		aiSummary.healthInsight.trim().length > 0
-	) {
-		return aiSummary.healthInsight.trim();
-	}
-
-	if (
-		typeof aiSummary.summary === "string" &&
-		aiSummary.summary.trim().length > 0
-	) {
-		return aiSummary.summary.trim();
-	}
-
-	return "Your personalized report summary is being generated.";
 };
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
@@ -951,38 +890,9 @@ export const getMyUserReports: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const [hpodReports, medicalReports] = await Promise.all([
-			HpodReport.find({ userId: req.user.id }).sort({ receivedAt: -1 }),
-			MedicalReport.find({ userId: req.user.id }).sort({ uploadedAt: -1 }),
-		]);
-
-		const origin = `${req.protocol}://${req.get("host") ?? "localhost"}`;
-
-		// Format HPOD Reports
-		const formattedHpod = hpodReports.map((report) => {
-			const reportId = report._id.toString();
-			const aiSummary =
-				report.aiSummary && typeof report.aiSummary === "object"
-					? (report.aiSummary as Record<string, unknown>)
-					: null;
-			const suggestions = buildReportSuggestions(aiSummary);
-			const generatedDate = report.summaryGeneratedAt ?? report.receivedAt;
-			const title = report.subject?.trim()
-				? report.subject
-				: `Health report ${generatedDate.toISOString().slice(0, 10)}`;
-
-			return {
-				id: reportId,
-				title,
-				type: "HPOD",
-				summary: buildReportSummary(aiSummary),
-				suggestions,
-				recommendations: suggestions,
-				insights: suggestions,
-				generated_date: generatedDate.toISOString(),
-				pdf_url: `${origin}/users/me/reports/${reportId}/pdf`,
-			};
-		});
+		const medicalReports = await MedicalReport.find({
+			userId: req.user.id,
+		}).sort({ uploadedAt: -1 });
 
 		// Format Medical Reports (including DNA, Blood Test, etc.)
 		const formattedMedical = await Promise.all(
@@ -1019,8 +929,8 @@ export const getMyUserReports: RequestHandler = async (req, res, next) => {
 			}),
 		);
 
-		// Combine and sort by date descending
-		const allReports = [...formattedHpod, ...formattedMedical].sort(
+		// Sort by date descending
+		const allReports = [...formattedMedical].sort(
 			(a, b) =>
 				new Date(b.generated_date).getTime() -
 				new Date(a.generated_date).getTime(),
@@ -1077,7 +987,7 @@ export const getMyMedicalReports: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getMyUserHpodMetrics: RequestHandler = async (req, res, next) => {
+export const getMyUserBcaMetrics: RequestHandler = async (req, res, next) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -1087,9 +997,9 @@ export const getMyUserHpodMetrics: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const history = await HpodMetric.find({ userId: req.user.id })
+		const history = await BcaMetric.find({ userId: req.user.id })
 			.sort({ recordedAt: -1 })
-			.select("-gmailMessageId -userId -__v");
+			.select("-userId -__v");
 
 		res.status(200).json({ history });
 	} catch (error) {
@@ -1097,7 +1007,12 @@ export const getMyUserHpodMetrics: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const uploadHpodMetrics: RequestHandler = async (req, res, next) => {
+/**
+ * Pull the latest Body Composition Analysis records from the ActiveX API for
+ * the caller's phone number, upsert them into `bca_metrics`, and return the
+ * refreshed history.
+ */
+export const syncMyBcaMetrics: RequestHandler = async (req, res, next) => {
 	if (!req.user || req.user.role !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
@@ -1107,124 +1022,49 @@ export const uploadHpodMetrics: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const { weight_kg, body_fat_percent, skeletal_muscle_mass_kg, age } = req.body;
+		const user = await User.findById(req.user.id).select("phone");
+		const phone = user?.phone?.trim();
 
-		if (
-			weight_kg === undefined ||
-			body_fat_percent === undefined ||
-			skeletal_muscle_mass_kg === undefined ||
-			age === undefined
-		) {
+		if (!phone) {
 			res.status(400).json({
-				error: "All fields (weight_kg, body_fat_percent, skeletal_muscle_mass_kg, age) are required",
-				code: "BAD_REQUEST",
+				error: "No phone number is associated with this account.",
+				code: "NO_PHONE",
 			});
 			return;
 		}
 
-		const metric = new HpodMetric({
-			userId: req.user.id,
-			recordedAt: new Date(),
-			receivedAt: new Date(),
-			age: age ? age.toString() : null,
-			source: "manual",
-			vitals: {
-				weight_kg: Number(weight_kg),
-				height_cm: null,
-				bmi: null,
-				bmi_category: null,
-				spo2_percent: null,
-				body_temperature_f: null,
-				pulse: null,
-				blood_pressure: null,
-			},
-			bodyComposition: {
-				body_fat_mass_kg: null,
-				body_fat_percent: Number(body_fat_percent),
-				total_body_water_L: null,
-				protein_kg: null,
-				minerals_kg: null,
-				skeletal_muscle_mass_kg: Number(skeletal_muscle_mass_kg),
-				visceral_fat_cm2: null,
-				basal_metabolic_rate_cal: null,
-				intracellular_water_L: null,
-				extracellular_water_L: null,
-			},
-			ecg: {
-				pr_interval: null,
-				qrs_interval: null,
-				qtc_interval: null,
-				heart_rate: null,
-			},
-			idealBodyWeight_kg: null,
-			weightToLose_kg: null,
-			testsNotTaken: [],
-			healthInsight: "",
-			concerns: [],
-		});
+		const records = await fetchBcaRecords(phone);
+		const userObjectId = new mongoose.Types.ObjectId(req.user.id);
+		const receivedAt = new Date();
 
-		await metric.save();
+		let synced = 0;
+		for (const record of records) {
+			const payload = mapActiveXRecordToBcaMetric(
+				record,
+				userObjectId,
+				receivedAt,
+			);
+			await BcaMetric.updateOne(
+				{ userId: userObjectId, recordedAt: payload.recordedAt },
+				{ $set: payload },
+				{ upsert: true },
+			);
+			synced += 1;
+		}
 
-		res.status(201).json({
-			success: true,
-			metric,
-		});
+		const history = await BcaMetric.find({ userId: req.user.id })
+			.sort({ recordedAt: -1 })
+			.select("-userId -__v");
+
+		res.status(200).json({ success: true, synced, history });
 	} catch (error) {
-		next(error);
-	}
-};
-
-export const getMyUserReportPdf: RequestHandler = async (req, res, next) => {
-	if (!req.user || req.user.role !== "user") {
-		res.status(403).json({
-			error: "Only users can access this endpoint",
-			code: "FORBIDDEN",
-		});
-		return;
-	}
-
-	const reportId = getIdParam(req.params.id);
-
-	if (!reportId) {
-		res.status(400).json({
-			error: "Validation failed",
-			code: "VALIDATION_ERROR",
-			details: { id: "Invalid report id" },
-		});
-		return;
-	}
-
-	try {
-		const report =
-			await HpodReport.findById(reportId).select("_id userId hasPdf");
-
-		if (!report) {
-			res.status(404).json({
-				error: "Report not found",
-				code: "NOT_FOUND",
+		if (error instanceof ActiveXError) {
+			res.status(error.status).json({
+				error: error.message,
+				code: error.code,
 			});
 			return;
 		}
-
-		if (!report.userId || report.userId.toString() !== req.user.id) {
-			res.status(403).json({
-				error: "Not authorized to access this report",
-				code: "FORBIDDEN",
-			});
-			return;
-		}
-
-		res.status(501).json(
-			buildApiErrorEnvelope({
-				error: "Report PDF endpoint is not available yet",
-				code: "NOT_IMPLEMENTED",
-				details: {
-					id: reportId,
-					hasPdf: report.hasPdf,
-				},
-			}),
-		);
-	} catch (error) {
 		next(error);
 	}
 };

@@ -1,5 +1,11 @@
 import mongoose from "mongoose";
-import { ExerciseDifficulty, PlanGoal, PlanStatus, SplitType } from "./Enums";
+import {
+	ExerciseDifficulty,
+	ExerciseSection,
+	PlanGoal,
+	PlanStatus,
+	SplitType,
+} from "./Enums";
 
 const planExerciseSchema = new mongoose.Schema(
 	{
@@ -13,6 +19,13 @@ const planExerciseSchema = new mongoose.Schema(
 		targetReps: { type: Number, required: true },
 		targetWeightKg: { type: Number, default: 0 },
 		restSeconds: { type: Number, default: 60 },
+		section: {
+			type: String,
+			enum: Object.values(ExerciseSection),
+			default: ExerciseSection.Workout,
+		},
+		durationSeconds: { type: Number, default: null },
+		notes: { type: String, default: null },
 	},
 	{ _id: false },
 );

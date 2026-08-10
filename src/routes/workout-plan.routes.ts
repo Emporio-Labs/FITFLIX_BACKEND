@@ -12,6 +12,7 @@ import {
 	assignUsers,
 	createPlan,
 	deletePlan,
+	duplicatePlan,
 	getPlan,
 	listPlans,
 	updatePlan,
@@ -65,6 +66,11 @@ workoutPlanRouter.post(
 	"/:id/assign",
 	authorize(["admin", "trainer"]),
 	assignUsers,
+);
+workoutPlanRouter.post(
+	"/:id/duplicate",
+	authorize(["admin", "trainer"]),
+	duplicatePlan,
 );
 workoutPlanRouter.post(
 	"/:planId/assign-to-me",

@@ -133,6 +133,11 @@ export enum NotificationKind {
 	AppointmentReminder = "appointment_reminder",
 	OnboardingStepUpdated = "onboarding_step_updated",
 	MembershipExpiryReminder = "membership_expiry_reminder",
+	// Community engagement. Kept as distinct kinds rather than one
+	// "community" bucket so the client can badge and route each one.
+	CommunityPostLiked = "community_post_liked",
+	CommunityPostCommented = "community_post_commented",
+	CommunityCommentReplied = "community_comment_replied",
 }
 
 export enum ReminderKind {
@@ -308,4 +313,105 @@ export enum DeletionRequestStatus {
 	Pending = "Pending",
 	Processed = "Processed",
 	Cancelled = "Cancelled",
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Community module
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Account status gate. Insider/outsider is DERIVED from membership, not stored. */
+export enum UserStatus {
+	Active = "active",
+	Suspended = "suspended",
+	Banned = "banned",
+}
+
+/**
+ * Effective community role, resolved per request (never stored on the user and
+ * never placed in the JWT). Precedence: admin > trainer > insider > outsider.
+ * Insider = a User with an unexpired active Membership; outsider = without one.
+ */
+export enum CommunityRole {
+	Outsider = "outsider",
+	Insider = "insider",
+	Trainer = "trainer",
+	Admin = "admin",
+}
+
+export enum PostVisibility {
+	Public = "public",
+	MembersOnly = "members_only",
+}
+
+export enum PostStatus {
+	Draft = "draft",
+	Scheduled = "scheduled",
+	Published = "published",
+	Archived = "archived",
+}
+
+export enum PostMediaKind {
+	Image = "image",
+	Video = "video",
+	Audio = "audio",
+	File = "file",
+}
+
+export enum LikeTargetType {
+	Post = "post",
+	Comment = "comment",
+}
+
+export enum ShareChannel {
+	Copy = "copy",
+	WhatsApp = "whatsapp",
+	Instagram = "instagram",
+	Facebook = "facebook",
+	Twitter = "twitter",
+	Other = "other",
+}
+
+export enum ReportTargetType {
+	Post = "post",
+	Comment = "comment",
+	User = "user",
+}
+
+export enum ReportStatus {
+	Pending = "pending",
+	Reviewing = "reviewing",
+	Resolved = "resolved",
+	Dismissed = "dismissed",
+}
+
+export enum ModerationTargetType {
+	Post = "post",
+	Comment = "comment",
+	User = "user",
+}
+
+export enum ModerationActionType {
+	Edit = "edit",
+	Delete = "delete",
+	Restore = "restore",
+	Pin = "pin",
+	Unpin = "unpin",
+	CreateOfficial = "create_official",
+	DeleteComment = "delete_comment",
+	Suspend = "suspend",
+	Unsuspend = "unsuspend",
+	Ban = "ban",
+	Unban = "unban",
+	RoleAssign = "role_assign",
+	RoleRevoke = "role_revoke",
+	Warn = "warn",
+	ResolveReport = "resolve_report",
+	DismissReport = "dismiss_report",
+	// Retained from Day 1.
+	Hide = "hide",
+	Unhide = "unhide",
+}
+
+export enum BlockTargetType {
+	User = "user",
 }

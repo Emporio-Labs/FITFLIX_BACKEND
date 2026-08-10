@@ -3,10 +3,6 @@ import app from "./src/app";
 import { initSocketIO } from "./src/services/realtime.service";
 import { startReminderPoller } from "./src/services/reminder.service";
 import connectDB from "./src/utils/db";
-import {
-	hasGmailWatchCredentials,
-	registerGmailWatch,
-} from "./src/utils/email.service";
 
 // --- Startup environment validation ---
 const REQUIRED_ENV_VARS = ["MONGODB_URL", "JWT_SECRET"] as const;
@@ -40,32 +36,6 @@ const start = async () => {
 	// Create HTTP server so Socket.io can share it
 	const httpServer = createServer(app);
 	initSocketIO(httpServer);
-
-	const pubsubTopic = process.env.PUBSUB_TOPIC;
-	const gmailWatchEnabled = process.env.ENABLE_GMAIL_WATCH === "true";
-
-	if (!gmailWatchEnabled) {
-		console.log(
-			"Gmail watch registration disabled. Set ENABLE_GMAIL_WATCH=true to enable it.",
-		);
-	} else if (!pubsubTopic) {
-		console.warn(
-			"ENABLE_GMAIL_WATCH is true but PUBSUB_TOPIC is not set. Gmail watch registration is skipped.",
-		);
-	} else if (!hasGmailWatchCredentials()) {
-		console.warn(
-			"ENABLE_GMAIL_WATCH is true but Gmail OAuth env vars are incomplete. Gmail watch registration is skipped.",
-		);
-	} else {
-		await registerGmailWatch(pubsubTopic);
-
-		setInterval(
-			() => {
-				void registerGmailWatch(pubsubTopic);
-			},
-			6 * 24 * 60 * 60 * 1000,
-		);
-	}
 
 	// Start reminder poller (non-serverless env only; Vercel uses /internal/reminders/tick cron)
 	const isServerless = process.env.VERCEL === "1";

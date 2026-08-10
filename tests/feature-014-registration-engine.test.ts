@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Bookings from "../src/models/Bookings";
 import ClassModel from "../src/models/Class";
 import ScheduledSession from "../src/models/ScheduledSession";
+import { Gender, UserStatus } from "../src/models/Enums";
 import User from "../src/models/User";
 import {
 	assert,
@@ -30,13 +31,13 @@ async function runFeature014Tests() {
 			username: "registration_m1",
 			email: "reg.m1@fitflix.test",
 			phone: "+12345677001",
-			gender: "Male",
+			gender: Gender.Male,
 			age: 27,
 			passwordHash: "hash123",
 			firstName: "Reg",
 			lastName: "One",
 			role: "user",
-			status: "ACTIVE",
+			status: UserStatus.Active,
 			isActive: true,
 			membershipStatus: "ACTIVE",
 		});
@@ -47,13 +48,13 @@ async function runFeature014Tests() {
 			username: "registration_m2",
 			email: "reg.m2@fitflix.test",
 			phone: "+12345677002",
-			gender: "Female",
+			gender: Gender.Female,
 			age: 29,
 			passwordHash: "hash123",
 			firstName: "Reg",
 			lastName: "Two",
 			role: "user",
-			status: "ACTIVE",
+			status: UserStatus.Active,
 			isActive: true,
 			membershipStatus: "ACTIVE",
 		});

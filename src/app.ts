@@ -1,3 +1,4 @@
+import path from "node:path";
 import { config } from "dotenv";
 import express from "express";
 import { apiRateLimit } from "./middleware/rate-limit.middleware";
@@ -7,6 +8,9 @@ import bookingRouter from "./routes/booking.routes";
 import classRouter from "./routes/class.routes";
 import classScheduleRouter from "./routes/class-schedule.routes";
 
+import communityAdminRouter from "./routes/community-admin.routes";
+import communityPublicRouter from "./routes/community-public.routes";
+import communityRouter from "./routes/community.routes";
 import creditRouter from "./routes/credit.routes";
 import dashboardRouter from "./routes/dashboard.routes";
 import deleteAccountRouter from "./routes/delete-account.routes";
@@ -27,7 +31,6 @@ import slotRouter from "./routes/slot.routes";
 import therapyRouter from "./routes/therapy.routes";
 import trainerRouter from "./routes/trainer.routes";
 import userRouter from "./routes/user.routes";
-import webhookRouter from "./routes/webhook.route";
 import workoutRouter from "./routes/workout.routes";
 import workoutPlanRouter from "./routes/workout-plan.routes";
 import zegoRouter from "./routes/zego.routes";
@@ -42,6 +45,12 @@ import {
 config();
 
 const app = express();
+
+// Behind a tunnel/proxy (ngrok in dev, Vercel in prod) the socket is local —
+// without this, `req.protocol` reads "http" and `req.ip` reads the proxy, so
+// absolute URLs handed to the app come back as cleartext links that Android
+// blocks. Trusting X-Forwarded-Proto / -For fixes both.
+app.set("trust proxy", true);
 
 const isProduction = process.env.NODE_ENV === "production";
 const isCorsDebugEnabled = process.env.CORS_DEBUG === "true";
@@ -112,7 +121,7 @@ app.use((req, res, next) => {
 	);
 	res.setHeader(
 		"Access-Control-Allow-Headers",
-		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret",
+		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token, ngrok-skip-browser-warning",
 	);
 	res.setHeader(
 		"Access-Control-Expose-Headers",
@@ -153,7 +162,9 @@ app.use((req, res, next) => {
 	next();
 });
 
-app.use(express.json());
+// Body cap raised well past express's 100kb default: a post now carries an
+// unbounded number of image references, and each one is a handful of URLs.
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "25mb" }));
 app.use((_req, res, next) => {
 	const originalJson = res.json.bind(res);
 	res.json = ((body: unknown) => {
@@ -217,10 +228,15 @@ app.use(nutritionistBookingRouter);
 app.use("/api/v1", nutritionistBookingRouter);
 app.use("/nutrition", nutritionRouter);
 app.use("/dashboard", dashboardRouter);
-app.use("/webhook", webhookRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
 app.use("/notifications", notificationRouter);
+// Admin moderation and the unauthenticated public surface must both be mounted
+// BEFORE the member router — that one authenticates every request, so anything
+// falling through to it answers 401 instead of reaching its own handler.
+app.use("/community/admin", communityAdminRouter);
+app.use("/community/public", communityPublicRouter);
+app.use("/community", communityRouter);
 app.use("/internal", internalRouter);
 
 app.get("/health", (_req, res) => {

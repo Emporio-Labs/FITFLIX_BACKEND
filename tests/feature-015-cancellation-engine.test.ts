@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Bookings from "../src/models/Bookings";
 import ClassModel from "../src/models/Class";
 import ScheduledSession from "../src/models/ScheduledSession";
+import { Gender, UserStatus } from "../src/models/Enums";
 import User from "../src/models/User";
 import { cancelBooking } from "../src/services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../src/services/registration-engine.service";
@@ -35,13 +36,13 @@ async function runFeature015Tests() {
 			username: "cancellation_member",
 			email: "cancel.member@fitflix.test",
 			phone: "+12345677099",
-			gender: "Male",
+			gender: Gender.Male,
 			age: 30,
 			passwordHash: "hash123",
 			firstName: "Cancel",
 			lastName: "Tester",
 			role: "user",
-			status: "ACTIVE",
+			status: UserStatus.Active,
 			isActive: true,
 			membershipStatus: "ACTIVE",
 		});

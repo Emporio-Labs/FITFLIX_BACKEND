@@ -78,6 +78,9 @@ function mapKindToUserEvent(kind: NotificationKind): UserEvent {
 		[NotificationKind.AppointmentReminder]: "appointment_reminder",
 		[NotificationKind.OnboardingStepUpdated]: "onboarding_step_updated",
 		[NotificationKind.MembershipExpiryReminder]: "membership_expiry_reminder",
+		[NotificationKind.CommunityPostLiked]: "community_post_liked",
+		[NotificationKind.CommunityPostCommented]: "community_post_commented",
+		[NotificationKind.CommunityCommentReplied]: "community_comment_replied",
 	};
 	return map[kind];
 }

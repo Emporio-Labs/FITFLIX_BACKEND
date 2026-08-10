@@ -75,3 +75,4831 @@ Issues: [
   }
 ]
 
+[2026-07-02T06:48:00.755Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "asdfg",
+  "description": "ertyui",
+  "difficulty": "Intermediate",
+  "duration": 1,
+  "goal": "GeneralFitness",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a1d6418fc2efa1c9b961cbf",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-02T06:48:05.224Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "asdfg",
+  "description": "ertyui",
+  "difficulty": "Intermediate",
+  "duration": 1,
+  "goal": "GeneralFitness",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a1d6418fc2efa1c9b961cbf",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-02T06:48:06.081Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "asdfg",
+  "description": "ertyui",
+  "difficulty": "Intermediate",
+  "duration": 1,
+  "goal": "GeneralFitness",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a1d6418fc2efa1c9b961cbf",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-02T06:48:06.668Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "asdfg",
+  "description": "ertyui",
+  "difficulty": "Intermediate",
+  "duration": 1,
+  "goal": "GeneralFitness",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a1d6418fc2efa1c9b961cbf",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-02T06:48:06.956Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "asdfg",
+  "description": "ertyui",
+  "difficulty": "Intermediate",
+  "duration": 1,
+  "goal": "GeneralFitness",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a1d6418fc2efa1c9b961cbf",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-02T06:48:07.163Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "asdfg",
+  "description": "ertyui",
+  "difficulty": "Intermediate",
+  "duration": 1,
+  "goal": "GeneralFitness",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a1d6418fc2efa1c9b961cbf",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-02T06:48:19.370Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "asdfg",
+  "description": "ertyui",
+  "difficulty": "Intermediate",
+  "duration": 1,
+  "goal": "GeneralFitness",
+  "splitType": "BroSplit",
+  "status": "Draft",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a1d6418fc2efa1c9b961cbf",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-02T06:48:20.767Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "asdfg",
+  "description": "ertyui",
+  "difficulty": "Intermediate",
+  "duration": 1,
+  "goal": "GeneralFitness",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a1d6418fc2efa1c9b961cbf",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-05T11:18:16.927Z] Endpoint: POST /workout-plans/6a4a3d78af6d20981985a1b8/assign
+Body: {
+  "userIds": [
+    null
+  ]
+}
+Issues: [
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "userIds",
+      0
+    ],
+    "message": "Invalid input: expected string, received null"
+  }
+]
+
+[2026-07-06T04:58:24.947Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "sonu",
+  "description": "",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "Mobility",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029d",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bf",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c6",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d2",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        }
+      ]
+    },
+    {
+      "dayNumber": 2,
+      "name": "Day 2",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 3,
+      "name": "Day 3",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 4,
+      "name": "Day 4",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c7",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 5,
+      "name": "Day 5",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d4",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a0",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a1",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    },
+    {
+      "dayNumber": 6,
+      "name": "Day 6",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 7,
+      "name": "Day 7",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-06T04:58:29.620Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "sonu",
+  "description": "",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "Mobility",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029d",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bf",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c6",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d2",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        }
+      ]
+    },
+    {
+      "dayNumber": 2,
+      "name": "Day 2",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 3,
+      "name": "Day 3",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 4,
+      "name": "Day 4",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c7",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 5,
+      "name": "Day 5",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d4",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a0",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a1",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    },
+    {
+      "dayNumber": 6,
+      "name": "Day 6",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 7,
+      "name": "Day 7",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-06T04:58:30.610Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "sonu",
+  "description": "",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "Mobility",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029d",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bf",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c6",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d2",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        }
+      ]
+    },
+    {
+      "dayNumber": 2,
+      "name": "Day 2",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 3,
+      "name": "Day 3",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 4,
+      "name": "Day 4",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c7",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 5,
+      "name": "Day 5",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d4",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a0",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a1",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    },
+    {
+      "dayNumber": 6,
+      "name": "Day 6",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 7,
+      "name": "Day 7",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-06T04:58:52.263Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "sonu",
+  "description": "",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "Mobility",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029d",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bf",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c6",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d2",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        }
+      ]
+    },
+    {
+      "dayNumber": 2,
+      "name": "Day 2",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 3,
+      "name": "Day 3",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 4,
+      "name": "Day 4",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c7",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 5,
+      "name": "Day 5",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d4",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a0",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a1",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    },
+    {
+      "dayNumber": 6,
+      "name": "Day 6",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 7,
+      "name": "Day 7",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-06T04:58:53.134Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "sonu",
+  "description": "",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "Mobility",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029d",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bf",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c6",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d2",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        }
+      ]
+    },
+    {
+      "dayNumber": 2,
+      "name": "Day 2",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 3,
+      "name": "Day 3",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 4,
+      "name": "Day 4",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c7",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 5,
+      "name": "Day 5",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d4",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a0",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a1",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    },
+    {
+      "dayNumber": 6,
+      "name": "Day 6",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 7,
+      "name": "Day 7",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-06T04:59:01.209Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "sonu",
+  "description": "gvukvg",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "Mobility",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029d",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bf",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c6",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d2",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        }
+      ]
+    },
+    {
+      "dayNumber": 2,
+      "name": "Day 2",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 3,
+      "name": "Day 3",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 4,
+      "name": "Day 4",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c7",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 5,
+      "name": "Day 5",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d4",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a0",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a1",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    },
+    {
+      "dayNumber": 6,
+      "name": "Day 6",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 7,
+      "name": "Day 7",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-06T04:59:02.221Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "sonu",
+  "description": "gvukvg",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "Mobility",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029d",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bf",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c6",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d2",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        }
+      ]
+    },
+    {
+      "dayNumber": 2,
+      "name": "Day 2",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 3,
+      "name": "Day 3",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 4,
+      "name": "Day 4",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c7",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 5,
+      "name": "Day 5",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d4",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a0",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a1",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    },
+    {
+      "dayNumber": 6,
+      "name": "Day 6",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 7,
+      "name": "Day 7",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-06T04:59:15.315Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "sonu",
+  "description": "gvukvg",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "Mobility",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029d",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bf",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c6",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d2",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        }
+      ]
+    },
+    {
+      "dayNumber": 2,
+      "name": "Day 2",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 3,
+      "name": "Day 3",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 4,
+      "name": "Day 4",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c7",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 5,
+      "name": "Day 5",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d4",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a0",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a1",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    },
+    {
+      "dayNumber": 6,
+      "name": "Day 6",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 7,
+      "name": "Day 7",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-06T04:59:16.774Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "sonu",
+  "description": "gvukvg",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "Mobility",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029d",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bf",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c6",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d2",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        }
+      ]
+    },
+    {
+      "dayNumber": 2,
+      "name": "Day 2",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 3,
+      "name": "Day 3",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 4,
+      "name": "Day 4",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c7",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 5,
+      "name": "Day 5",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d4",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a0",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a1",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    },
+    {
+      "dayNumber": 6,
+      "name": "Day 6",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 7,
+      "name": "Day 7",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+
+[2026-07-06T04:59:17.631Z] Endpoint: POST /workout-plans
+Body: {
+  "name": "sonu",
+  "description": "gvukvg",
+  "difficulty": "Intermediate",
+  "duration": 4,
+  "goal": "Mobility",
+  "splitType": "BroSplit",
+  "status": "Active",
+  "isTemplate": true,
+  "days": [
+    {
+      "dayNumber": 1,
+      "name": "Day 1",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029c",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bb",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 6,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 7,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029d",
+          "orderIndex": 8,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17bf",
+          "orderIndex": 9,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c6",
+          "orderIndex": 10,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d2",
+          "orderIndex": 11,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        }
+      ]
+    },
+    {
+      "dayNumber": 2,
+      "name": "Day 2",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 3,
+      "name": "Day 3",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 4,
+      "name": "Day 4",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17ca",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c8",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17c7",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "stretching"
+        }
+      ]
+    },
+    {
+      "dayNumber": 5,
+      "name": "Day 5",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d4",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d3",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a0",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029b",
+          "orderIndex": 4,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a1",
+          "orderIndex": 5,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    },
+    {
+      "dayNumber": 6,
+      "name": "Day 6",
+      "isRestDay": true,
+      "exercises": []
+    },
+    {
+      "dayNumber": 7,
+      "name": "Day 7",
+      "isRestDay": false,
+      "exercises": [
+        {
+          "exerciseId": "6a116de3fa2c57818f8c029a",
+          "orderIndex": 0,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17d0",
+          "orderIndex": 1,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "warmup"
+        },
+        {
+          "exerciseId": "6a116de3fa2c57818f8c02a2",
+          "orderIndex": 2,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        },
+        {
+          "exerciseId": "6a15326f416ad78488de17be",
+          "orderIndex": 3,
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSeconds": 60,
+          "section": "workout"
+        }
+      ]
+    }
+  ]
+}
+Issues: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "Strength",
+      "Hypertrophy",
+      "Endurance",
+      "WeightLoss",
+      "Maintenance",
+      "Custom"
+    ],
+    "path": [
+      "goal"
+    ],
+    "message": "Invalid option: expected one of \"Strength\"|\"Hypertrophy\"|\"Endurance\"|\"WeightLoss\"|\"Maintenance\"|\"Custom\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "FullBody",
+      "UpperLower",
+      "PushPull",
+      "PushPullLegs",
+      "Custom"
+    ],
+    "path": [
+      "splitType"
+    ],
+    "message": "Invalid option: expected one of \"FullBody\"|\"UpperLower\"|\"PushPull\"|\"PushPullLegs\"|\"Custom\""
+  }
+]
+

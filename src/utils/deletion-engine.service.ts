@@ -4,8 +4,7 @@ import User from "../models/User";
 import ConsentForm from "../models/ConsentForm";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
-import HpodMetric from "../models/HpodMetric";
-import { HpodReport } from "../models/Hpodreport.model";
+import BcaMetric from "../models/BcaMetric";
 import MedicalReport from "../models/MedicalReport";
 import Schedule from "../models/Schedule";
 import SetLog from "../models/SetLog";
@@ -20,7 +19,7 @@ import NutritionProfile from "../models/nutrition-profile.model";
 import NutritionProgress from "../models/nutrition-progress.model";
 
 /**
- * Permanently deletes all personal data (consent, health goals/markers, hpod metrics/reports,
+ * Permanently deletes all personal data (consent, health goals/markers, BCA metrics,
  * medical reports, schedules, workouts, sets, nutrition progress/logs) and deletes files from S3.
  * Anonymizes the core User document to maintain legal/compliance transaction continuity.
  *
@@ -70,8 +69,7 @@ export const deleteAndAnonymizeUserData = async (
 		ConsentForm.deleteMany({ userId: userObjectId }),
 		HealthGoals.deleteMany({ userId: userObjectId }),
 		HealthMarkers.deleteMany({ userId: userObjectId }),
-		HpodMetric.deleteMany({ userId: userObjectId }),
-		HpodReport.deleteMany({ userId: userObjectId }),
+		BcaMetric.deleteMany({ userId: userObjectId }),
 		MedicalReport.deleteMany({ userId: userObjectId }),
 		Schedule.deleteMany({ user: userObjectId }),
 	]);
