@@ -18,6 +18,7 @@ import {
 	updateWorkoutExercise,
 } from "../controllers/workout.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
+import { workoutRateLimit } from "../middleware/rate-limit.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 import { subjectIsSelf } from "../middleware/workoutSubject.middleware";
 import type { AppUserRole } from "../types/auth";
@@ -34,6 +35,13 @@ export const buildWorkoutRouter = (
 ): Router => {
 	const router = Router({ mergeParams: true });
 	const guard = authorize(roles);
+
+	// Applied here rather than at the mount site so both mounts are covered —
+	// the member's own routes and the trainer's PT-logging routes. Both parent
+	// routers run `authenticateToken` before mounting, which is what makes the
+	// per-user key available; mounting this in app.ts instead would run it
+	// before authentication and silently degrade every request to an IP bucket.
+	router.use(workoutRateLimit);
 
 	// Static paths before parameterized
 	router.get("/active", guard, subjectResolver, getActiveSession);
