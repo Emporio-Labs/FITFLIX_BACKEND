@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { MealLogSource, MealLogStatus } from "./Enums";
+import { MealLogSource, MealLogStatus, MealType } from "./Enums";
 import { macroTotalsSchema } from "./nutrition-shared.schema";
 
 // Actual consumed food. foodId is nullable here — ad-hoc/AI/scan logs may
@@ -19,6 +19,12 @@ const loggedItemSchema = new mongoose.Schema(
 		fatG: { type: Number, required: true },
 		fiberG: { type: Number, default: null },
 		sugarG: { type: Number, default: null },
+		// Display metadata for household-portion logging ("2 rotis"). quantityG
+		// stays the canonical value everything else derives from.
+		servingLabel: { type: String, default: null },
+		servingCount: { type: Number, default: null },
+		// Whitelisted micronutrients (config/nutrition-micros.ts), scaled the same way macros are.
+		micros: { type: Map, of: Number, default: {} },
 	},
 	{ _id: false },
 );
@@ -57,6 +63,14 @@ const nutritionMealLogSchema = new mongoose.Schema(
 		},
 		logDate: { type: Date, required: true },
 		dayNumber: { type: Number, default: null },
+		// Null for legacy/plan logs that predate this field. markMealCompleted
+		// populates it from the prescribed meal; free-form logs set it directly
+		// so the diary can group by breakfast/lunch/dinner without a plan.
+		mealType: {
+			type: String,
+			enum: Object.values(MealType),
+			default: null,
+		},
 		plannedMealRef: { type: plannedMealRefSchema, default: null },
 		status: {
 			type: String,
@@ -66,6 +80,8 @@ const nutritionMealLogSchema = new mongoose.Schema(
 		consumedAt: { type: Date, default: Date.now },
 		items: { type: [loggedItemSchema], default: [] },
 		totals: { type: macroTotalsSchema, default: () => ({}) },
+		// Sum of items[].micros for the day's log — mirrors totals above.
+		microTotals: { type: Map, of: Number, default: {} },
 		photoUrls: { type: [String], default: [] },
 		notes: { type: String, default: "" },
 		source: {

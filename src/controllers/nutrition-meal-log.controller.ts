@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import type { MealLogSource, MealLogStatus } from "../models/Enums";
+import type { MealLogSource, MealLogStatus, MealType } from "../models/Enums";
 import {
 	getValidationDetails,
 	handleNutritionError,
@@ -42,6 +42,7 @@ export const createMealLog: RequestHandler = async (req, res, next) => {
 				...parsed.data,
 				status: parsed.data.status as MealLogStatus | undefined,
 				source: parsed.data.source as MealLogSource | undefined,
+				mealType: parsed.data.mealType as MealType | undefined,
 			},
 			requester.id,
 		);
@@ -136,6 +137,7 @@ export const patchMealLog: RequestHandler = async (req, res, next) => {
 			{
 				...parsed.data,
 				status: parsed.data.status as MealLogStatus | undefined,
+				mealType: parsed.data.mealType as MealType | undefined,
 			},
 			requester.id,
 		);

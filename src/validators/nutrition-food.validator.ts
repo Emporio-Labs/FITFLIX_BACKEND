@@ -1,4 +1,5 @@
 import z from "zod";
+import { MICRO_KEYS } from "../config/nutrition-micros";
 import { NutritionFoodSource } from "../models/Enums";
 import { optionalNutritionString } from "./nutrition-shared.validator";
 
@@ -18,6 +19,10 @@ export const createFoodBodySchema = z.object({
 	fatG: z.coerce.number().min(0).max(10000),
 	fiberG: z.coerce.number().min(0).max(10000).nullable().optional(),
 	sugarG: z.coerce.number().min(0).max(10000).nullable().optional(),
+	// Whitelisted keys only (config/nutrition-micros.ts) — this was previously
+	// absent from both the validator and FoodInput, which is why the model's
+	// micros field has stayed dead since it was added.
+	micros: z.record(z.enum(MICRO_KEYS), z.number().min(0)).optional(),
 	barcode: optionalNutritionString.nullable(),
 	isVeg: z.boolean().optional(),
 	allergens: z.array(z.string().trim().min(1)).optional(),
@@ -34,6 +39,18 @@ export const foodSearchQuerySchema = z.object({
 	limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
+// GET /nutrition/foods/search — the unified local + Open Food Facts search.
+// Capped lower than foodSearchQuerySchema since every hit here may also cost
+// a live OFF request.
+export const unifiedFoodSearchQuerySchema = z.object({
+	query: z.string().trim().min(1, "query is required"),
+	page: z.coerce.number().int().min(1).optional(),
+	limit: z.coerce.number().int().min(1).max(50).optional(),
+});
+
 export type CreateFoodBody = z.infer<typeof createFoodBodySchema>;
 export type UpdateFoodBody = z.infer<typeof updateFoodBodySchema>;
 export type FoodSearchQuery = z.infer<typeof foodSearchQuerySchema>;
+export type UnifiedFoodSearchQuery = z.infer<
+	typeof unifiedFoodSearchQuerySchema
+>;

@@ -242,6 +242,7 @@ export enum DietaryPreference {
 export enum NutritionFoodSource {
 	System = "System",
 	Custom = "Custom",
+	External = "External",
 }
 
 export enum MealLogStatus {

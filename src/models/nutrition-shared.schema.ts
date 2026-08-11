@@ -121,3 +121,16 @@ export const planDaySchema = new mongoose.Schema(
 	},
 	{ _id: false },
 );
+
+// A household portion for a NutritionFood ("1 roti", "1 cup", "1 medium
+// banana"). gramsPerUnit converts the label to grams so all macro math still
+// flows through scaleMacros() — this is a display/input layer only, never a
+// second macro engine.
+export const servingSchema = new mongoose.Schema(
+	{
+		label: { type: String, required: true },
+		gramsPerUnit: { type: Number, required: true },
+		isDefault: { type: Boolean, default: false },
+	},
+	{ _id: false },
+);
