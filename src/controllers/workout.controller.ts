@@ -4,6 +4,7 @@ import { type ExerciseSection, WorkoutSessionStatus } from "../models/Enums";
 import Exercise from "../models/Exercise";
 import SetLog from "../models/SetLog";
 import WorkoutExercise from "../models/WorkoutExercise";
+import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import WorkoutSession from "../models/WorkoutSession";
 import type { AppUserRole } from "../types/auth";
 import { actorModelForRole } from "../utils/actor-model";
@@ -296,8 +297,14 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			}
 
 			if ((plan as any).days && (plan as any).days.length > 0) {
-				const firstDay = (plan as any).days[0];
-				exercisesToAdd = firstDay.exercises.map((planEx: any) => ({
+				const requestedDay = parsed.data.planDayNumber;
+				const day =
+					(requestedDay != null
+						? (plan as any).days.find(
+								(d: any) => d.dayNumber === requestedDay,
+							)
+						: undefined) ?? (plan as any).days[0];
+				exercisesToAdd = day.exercises.map((planEx: any) => ({
 					exerciseId: planEx.exerciseId.toString(),
 					targetSets: planEx.targetSets,
 					targetReps: planEx.targetReps,
@@ -486,13 +493,36 @@ export const addExerciseToSession: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const exercise = await Exercise.findOne({
+		let exercise = await Exercise.findOne({
 			_id: exerciseId,
 			$or: [
 				{ isSystem: true },
 				{ createdBy: new mongoose.Types.ObjectId(req.user!.id) },
 			],
 		});
+
+		if (!exercise) {
+			// Not system-owned and not authored by whoever is calling this. Still
+			// valid if the member's active plan assignment names this exercise —
+			// that means a trainer picked it for them, and seeding a plan day runs
+			// as the member, not the trainer who created the exercise, so the
+			// `createdBy` check above always misses trainer-authored exercises on
+			// that path.
+			const exerciseObjectId = new mongoose.Types.ObjectId(exerciseId);
+			const assignment = await WorkoutPlanAssignment.findOne({
+				userId: new mongoose.Types.ObjectId(req.subjectUserId!),
+				status: "active",
+				isDeleted: { $ne: true },
+				"userDays.exercises.exerciseId": exerciseObjectId,
+			}).select("_id");
+
+			if (assignment) {
+				exercise = await Exercise.findOne({
+					_id: exerciseObjectId,
+					isDeleted: { $ne: true },
+				});
+			}
+		}
 
 		if (!exercise) {
 			res.status(404).json({ message: "Exercise not found" });

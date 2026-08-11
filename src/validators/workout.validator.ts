@@ -21,6 +21,10 @@ export const createSessionBodySchema = z.object({
 	notes: z.string().max(1000).optional(),
 	exercises: z.array(exerciseInSessionSchema).optional().default([]),
 	planId: z.string().optional().nullable(),
+	// Which day of the plan's template to seed. Optional and defaults to the
+	// first day — this endpoint has no scheduling data of its own to infer
+	// "today" from, unlike the per-user WorkoutPlanAssignment flow.
+	planDayNumber: z.coerce.number().int().min(1).optional(),
 });
 
 export const updateSessionBodySchema = z
