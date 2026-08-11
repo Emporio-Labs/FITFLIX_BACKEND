@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Membership from "../models/Membership";
 import { MembershipStatus } from "../models/Enums";
 
@@ -9,13 +10,25 @@ import { MembershipStatus } from "../models/Enums";
  */
 export async function getActiveMembership(userId: string) {
 	const now = new Date();
+	const userQuery = mongoose.Types.ObjectId.isValid(userId)
+		? [{ user: userId }, { user: new mongoose.Types.ObjectId(userId) }]
+		: [{ user: userId }];
 
 	return Membership.findOne({
-		user: userId,
+		$or: userQuery,
 		status: MembershipStatus.Active,
 		startDate: { $lte: now },
-		$or: [{ endDate: null }, { endDate: { $exists: false } }, { endDate: { $gte: now } }],
+		$and: [
+			{
+				$or: [
+					{ endDate: null },
+					{ endDate: { $exists: false } },
+					{ endDate: { $gte: now } },
+				],
+			},
+		],
 	})
 		.select("_id planName endDate creditsRemaining")
 		.lean();
 }
+

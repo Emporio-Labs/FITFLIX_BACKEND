@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
 	checkInMember,
 	checkOutVisit,
+	deleteVisit,
 	getMyVisits,
 	getVisitAnalytics,
 	listCurrentlyIn,
@@ -38,6 +39,11 @@ gymVisitRouter.patch(
 	"/:id/check-out",
 	authorize(["admin", "frontdesk"]),
 	checkOutVisit,
+);
+gymVisitRouter.delete(
+	"/:id",
+	authorize(["admin", "frontdesk"]),
+	deleteVisit,
 );
 
 export default gymVisitRouter;
