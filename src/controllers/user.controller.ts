@@ -1229,6 +1229,13 @@ export const updateAssignedTrainer: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({ message: "Assigned trainer updated", user });
 	} catch (error) {
+		if (error instanceof ActiveXError) {
+			res.status(error.status).json({
+				error: error.message,
+				code: error.code,
+			});
+			return;
+		}
 		next(error);
 	}
 };

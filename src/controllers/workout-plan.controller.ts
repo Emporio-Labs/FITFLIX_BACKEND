@@ -2,7 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import Admin from "../models/Admin";
 import { PlanStatus } from "../models/Enums";
+import User from "../models/User";
 import WorkoutPlan from "../models/WorkoutPlan";
 import { createAssignmentForUser } from "../services/planAssignment.service";
 import { actorModelForRole } from "../utils/actor-model";
@@ -86,12 +88,18 @@ export const listPlans: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const { page, limit, status, goal, difficulty } = parsed.data;
+		const { page, limit, status, goal, difficulty, isTemplate, search } =
+			parsed.data;
 		const filter: Record<string, unknown> = {};
 
 		if (status) filter.status = status;
 		if (goal) filter.goal = goal;
 		if (difficulty) filter.difficulty = difficulty;
+		if (isTemplate) filter.isTemplate = isTemplate === "true";
+		if (search) {
+			const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			filter.name = { $regex: escaped, $options: "i" };
+		}
 
 		// Trainers see their own plans plus reusable templates, not the
 		// full catalogue — admins are unrestricted.
@@ -104,14 +112,50 @@ export const listPlans: RequestHandler = async (req, res, next) => {
 				.sort({ updatedAt: -1 })
 				.skip((page - 1) * limit)
 				.limit(limit)
-				.populate("createdBy", "name email trainerName imageUrl specialities")
 				.populate("assignedUsers", "name email")
 				.lean(),
 			WorkoutPlan.countDocuments(filter),
 		]);
 
+		// Resolve creators manually: plans are created by Admins (separate
+		// collection), so populate against the User ref would return null.
+		const creatorIds = [
+			...new Set(
+				plans
+					.map((p) => p.createdBy?.toString())
+					.filter((id): id is string => Boolean(id)),
+			),
+		];
+		const [creatorUsers, creatorAdmins] = await Promise.all([
+			User.find({ _id: { $in: creatorIds } })
+				.select("username email")
+				.lean(),
+			Admin.find({ _id: { $in: creatorIds } })
+				.select("adminName email")
+				.lean(),
+		]);
+		const creatorMap = new Map<string, unknown>();
+		for (const u of creatorUsers) {
+			creatorMap.set(u._id.toString(), {
+				_id: u._id,
+				name: u.username,
+				email: u.email,
+			});
+		}
+		for (const a of creatorAdmins) {
+			creatorMap.set(a._id.toString(), {
+				_id: a._id,
+				name: a.adminName,
+				email: a.email,
+			});
+		}
+		const plansWithCreators = plans.map((p) => ({
+			...p,
+			createdBy: creatorMap.get(p.createdBy?.toString() ?? "") ?? p.createdBy,
+		}));
+
 		res.json({
-			plans,
+			plans: plansWithCreators,
 			pagination: {
 				page,
 				limit,
@@ -273,9 +317,11 @@ export const deletePlan: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		if (plan.status !== PlanStatus.Draft) {
+		// Templates can always be deleted (assignments hold their own copy of
+		// the days, so removing a template never breaks assigned users).
+		if (plan.status !== PlanStatus.Draft && !plan.isTemplate) {
 			res.status(400).json({
-				error: "Only draft plans can be deleted",
+				error: "Only draft plans or templates can be deleted",
 				code: "VALIDATION_ERROR",
 			});
 			return;
@@ -283,6 +329,53 @@ export const deletePlan: RequestHandler = async (req, res, next) => {
 
 		await plan.deleteOne();
 		res.json({ message: "Plan deleted" });
+	} catch (error) {
+		next(error);
+	}
+};
+
+// ── POST /workout-plans/:id/duplicate ─────────────────────────────────────────
+// Creates a fresh Draft copy of a plan/template (source stays untouched).
+
+export const duplicatePlan: RequestHandler = async (req, res, next) => {
+	try {
+		const id = getIdParam(req.params.id);
+		if (!id) {
+			res.status(400).json({
+				error: "Invalid plan ID",
+				code: "VALIDATION_ERROR",
+			});
+			return;
+		}
+
+		const createdBy = req.user?.id;
+		if (!createdBy) {
+			res.status(403).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+			return;
+		}
+
+		const source = await WorkoutPlan.findById(id).lean();
+		if (!source) {
+			res.status(404).json({ error: "Plan not found" });
+			return;
+		}
+
+		const copy = await WorkoutPlan.create({
+			name: `${source.name} (Copy)`,
+			description: source.description,
+			difficulty: source.difficulty,
+			duration: source.duration,
+			goal: source.goal,
+			splitType: source.splitType,
+			status: PlanStatus.Draft,
+			isTemplate: false,
+			templateCategory: null,
+			createdBy,
+			assignedUsers: [],
+			days: source.days,
+		});
+
+		res.status(201).json(copy);
 	} catch (error) {
 		next(error);
 	}

@@ -14,7 +14,10 @@ export type UserEvent =
 	| "appointment_cancelled"
 	| "appointment_reminder"
 	| "onboarding_step_updated"
-	| "membership_expiry_reminder";
+	| "membership_expiry_reminder"
+	| "community_post_liked"
+	| "community_post_commented"
+	| "community_comment_replied";
 
 export type NutritionistEvent =
 	| "new_user_assigned"

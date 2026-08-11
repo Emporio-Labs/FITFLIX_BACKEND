@@ -1,3 +1,4 @@
+import type { CommunityUser } from "../services/community/roleResolver";
 import type { AuthenticatedUser } from "./auth";
 
 declare global {
@@ -9,6 +10,8 @@ declare global {
 			// trainer/admin is acting on a member's behalf (e.g. PT logging).
 			// Set by subjectIsSelf / subjectIsMember middleware.
 			subjectUserId?: string;
+			// Effective community identity, attached by attachCommunityContext.
+			communityUser?: CommunityUser;
 		}
 	}
 }
