@@ -15,6 +15,8 @@
 		"export:meal-plan": "bun run scripts/export-meal-plan.ts",
 		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
 		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts",
+		"migrate:passwords": "bun run scripts/migrate-passwords.ts",
+		"migrate:plan-actor-refs": "bun run scripts/migrate-plan-actor-refs.ts",
 		"test:community": "bun run tests/community/community-foundation.test.ts",
 		"test:community-posts": "COMMUNITY_MAX_IMAGE_BYTES=10485760 bun run tests/community/posts-feed.test.ts",
 		"test:community-engagement": "bun run tests/community/engagement.test.ts",
@@ -23,7 +25,6 @@
 		"community:smoke": "bun run scripts/community-smoke.ts",
 		"community:setup": "bun run scripts/community-setup.ts",
 		"community:teardown": "bun run scripts/community-setup.ts --down",
-		"migrate:passwords": "bun run scripts/migrate-passwords.ts",
 		"test:community-profiles": "bun run tests/community/profiles.test.ts"
 	},
 	"devDependencies": {

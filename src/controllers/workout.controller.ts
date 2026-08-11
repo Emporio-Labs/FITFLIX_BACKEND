@@ -4,7 +4,10 @@ import { type ExerciseSection, WorkoutSessionStatus } from "../models/Enums";
 import Exercise from "../models/Exercise";
 import SetLog from "../models/SetLog";
 import WorkoutExercise from "../models/WorkoutExercise";
+import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import WorkoutSession from "../models/WorkoutSession";
+import type { AppUserRole } from "../types/auth";
+import { actorModelForRole } from "../utils/actor-model";
 import {
 	addExerciseBodySchema,
 	createSessionBodySchema,
@@ -32,6 +35,17 @@ const normalizeToUtcDate = (value: Date): Date =>
 		Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
 	);
 
+const touchSession = async (
+	sessionId: mongoose.Types.ObjectId,
+	actorId: string,
+	actorRole: string,
+): Promise<void> => {
+	await WorkoutSession.findByIdAndUpdate(sessionId, {
+		lastTouchedBy: new mongoose.Types.ObjectId(actorId),
+		lastTouchedByModel: actorModelForRole(actorRole as AppUserRole),
+	});
+};
+
 const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 	const session = await WorkoutSession.findById(sessionId).lean();
 	if (!session) return null;
@@ -43,6 +57,8 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 		.lean();
 
 	const exerciseIds = workoutExercises.map((we) => we.exerciseId);
+	// Name resolution, so it must not filter on `isDeleted` — a session in
+	// progress has to keep rendering an exercise the trainer deleted mid-plan.
 	const exercises = await Exercise.find({ _id: { $in: exerciseIds } }).lean();
 	const exerciseMap = new Map(exercises.map((e) => [e._id.toString(), e]));
 
@@ -68,6 +84,7 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 			...we,
 			exercise: exercise
 				? {
+						_id: exercise._id.toString(),
 						name: exercise.name,
 						muscleGroup: exercise.muscleGroup,
 						difficulty: exercise.difficulty,
@@ -87,7 +104,7 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 
 export const getActiveSession: RequestHandler = async (req, res, next) => {
 	try {
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
 		const today = normalizeToUtcDate(new Date());
 
 		const session = await WorkoutSession.findOne({
@@ -116,7 +133,7 @@ export const getActiveSession: RequestHandler = async (req, res, next) => {
 export const getTodaySession: RequestHandler = async (req, res, next) => {
 	try {
 		const today = normalizeToUtcDate(new Date());
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
 
 		let session = await WorkoutSession.findOne({
 			userId,
@@ -130,6 +147,8 @@ export const getTodaySession: RequestHandler = async (req, res, next) => {
 				date: today,
 				status: WorkoutSessionStatus.Active,
 				startedAt: new Date(),
+				lastTouchedBy: new mongoose.Types.ObjectId(req.user!.id),
+				lastTouchedByModel: actorModelForRole(req.user!.role as AppUserRole),
 			});
 		}
 
@@ -153,7 +172,7 @@ export const listMySessions: RequestHandler = async (req, res, next) => {
 		}
 
 		const { page, limit, status } = parsed.data;
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
 
 		const filter: Record<string, unknown> = { userId };
 		if (status) filter.status = status;
@@ -195,7 +214,7 @@ export const getSessionById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		if (session.userId.toString() !== req.user!.id) {
+		if (session.userId.toString() !== req.subjectUserId!) {
 			res.status(403).json({ message: "Not authorized" });
 			return;
 		}
@@ -219,7 +238,8 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
+		const actorObjectId = new mongoose.Types.ObjectId(req.user!.id);
 		const date = normalizeToUtcDate(parsed.data.date || new Date());
 
 		const existing = await WorkoutSession.findOne({
@@ -250,6 +270,8 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			planId: parsed.data.planId
 				? new mongoose.Types.ObjectId(parsed.data.planId)
 				: null,
+			lastTouchedBy: actorObjectId,
+			lastTouchedByModel: actorModelForRole(req.user!.role as AppUserRole),
 		});
 
 		let exercisesToAdd = parsed.data.exercises;
@@ -267,7 +289,7 @@ export const createSession: RequestHandler = async (req, res, next) => {
 				(id: any) => id.toString() === userId.toString(),
 			);
 			const isCreator =
-				(plan as any).createdBy.toString() === userId.toString();
+				(plan as any).createdBy.toString() === req.user!.id;
 
 			if (!isAssigned && !isCreator) {
 				res.status(403).json({ error: "Not authorized to use this plan" });
@@ -275,8 +297,14 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			}
 
 			if ((plan as any).days && (plan as any).days.length > 0) {
-				const firstDay = (plan as any).days[0];
-				exercisesToAdd = firstDay.exercises.map((planEx: any) => ({
+				const requestedDay = parsed.data.planDayNumber;
+				const day =
+					(requestedDay != null
+						? (plan as any).days.find(
+								(d: any) => d.dayNumber === requestedDay,
+							)
+						: undefined) ?? (plan as any).days[0];
+				exercisesToAdd = day.exercises.map((planEx: any) => ({
 					exerciseId: planEx.exerciseId.toString(),
 					targetSets: planEx.targetSets,
 					targetReps: planEx.targetReps,
@@ -290,7 +318,7 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			const exerciseIds = exercisesToAdd.map((e) => e.exerciseId);
 			const validExercises = await Exercise.find({
 				_id: { $in: exerciseIds },
-				$or: [{ isSystem: true }, { createdBy: userId }],
+				$or: [{ isSystem: true }, { createdBy: actorObjectId }],
 			});
 			const validIds = new Set(validExercises.map((e) => e._id.toString()));
 
@@ -345,7 +373,7 @@ export const updateSession: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		if (session.userId.toString() !== req.user!.id) {
+		if (session.userId.toString() !== req.subjectUserId!) {
 			res.status(403).json({ message: "Not authorized" });
 			return;
 		}
@@ -360,7 +388,11 @@ export const updateSession: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const update: Record<string, unknown> = { ...parsed.data };
+		const update: Record<string, unknown> = {
+			...parsed.data,
+			lastTouchedBy: new mongoose.Types.ObjectId(req.user!.id),
+			lastTouchedByModel: actorModelForRole(req.user!.role as AppUserRole),
+		};
 		if (parsed.data.status === WorkoutSessionStatus.Completed) {
 			update.completedAt = new Date();
 		}
@@ -389,7 +421,7 @@ export const deleteSession: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		if (session.userId.toString() !== req.user!.id) {
+		if (session.userId.toString() !== req.subjectUserId!) {
 			res.status(403).json({ message: "Not authorized" });
 			return;
 		}
@@ -445,7 +477,7 @@ export const addExerciseToSession: RequestHandler = async (req, res, next) => {
 		}
 
 		const session = await WorkoutSession.findById(sessionId);
-		if (!session || session.userId.toString() !== req.user!.id) {
+		if (!session || session.userId.toString() !== req.subjectUserId!) {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
@@ -461,13 +493,36 @@ export const addExerciseToSession: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const exercise = await Exercise.findOne({
+		let exercise = await Exercise.findOne({
 			_id: exerciseId,
 			$or: [
 				{ isSystem: true },
 				{ createdBy: new mongoose.Types.ObjectId(req.user!.id) },
 			],
 		});
+
+		if (!exercise) {
+			// Not system-owned and not authored by whoever is calling this. Still
+			// valid if the member's active plan assignment names this exercise —
+			// that means a trainer picked it for them, and seeding a plan day runs
+			// as the member, not the trainer who created the exercise, so the
+			// `createdBy` check above always misses trainer-authored exercises on
+			// that path.
+			const exerciseObjectId = new mongoose.Types.ObjectId(exerciseId);
+			const assignment = await WorkoutPlanAssignment.findOne({
+				userId: new mongoose.Types.ObjectId(req.subjectUserId!),
+				status: "active",
+				isDeleted: { $ne: true },
+				"userDays.exercises.exerciseId": exerciseObjectId,
+			}).select("_id");
+
+			if (assignment) {
+				exercise = await Exercise.findOne({
+					_id: exerciseObjectId,
+					isDeleted: { $ne: true },
+				});
+			}
+		}
 
 		if (!exercise) {
 			res.status(404).json({ message: "Exercise not found" });
@@ -497,6 +552,8 @@ export const addExerciseToSession: RequestHandler = async (req, res, next) => {
 			notes: parsed.data.notes ?? null,
 		});
 
+		await touchSession(session._id, req.user!.id, req.user!.role);
+
 		res.status(201).json(workoutExercise);
 	} catch (error) {
 		next(error);
@@ -523,7 +580,7 @@ export const updateWorkoutExercise: RequestHandler = async (req, res, next) => {
 		}
 
 		const session = await WorkoutSession.findById(sessionId);
-		if (!session || session.userId.toString() !== req.user!.id) {
+		if (!session || session.userId.toString() !== req.subjectUserId!) {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
@@ -552,6 +609,8 @@ export const updateWorkoutExercise: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		await touchSession(session._id, req.user!.id, req.user!.role);
+
 		res.status(200).json(workoutExercise);
 	} catch (error) {
 		next(error);
@@ -568,7 +627,7 @@ export const deleteWorkoutExercise: RequestHandler = async (req, res, next) => {
 		}
 
 		const session = await WorkoutSession.findById(sessionId);
-		if (!session || session.userId.toString() !== req.user!.id) {
+		if (!session || session.userId.toString() !== req.subjectUserId!) {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
@@ -585,6 +644,8 @@ export const deleteWorkoutExercise: RequestHandler = async (req, res, next) => {
 
 		await SetLog.deleteMany({ workoutExerciseId: workoutExercise._id });
 		await WorkoutExercise.findByIdAndDelete(id);
+
+		await touchSession(session._id, req.user!.id, req.user!.role);
 
 		res.status(200).json({ message: "Exercise removed from session" });
 	} catch (error) {
@@ -611,7 +672,7 @@ export const reorderExercises: RequestHandler = async (req, res, next) => {
 		}
 
 		const session = await WorkoutSession.findById(sessionId);
-		if (!session || session.userId.toString() !== req.user!.id) {
+		if (!session || session.userId.toString() !== req.subjectUserId!) {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
@@ -631,6 +692,8 @@ export const reorderExercises: RequestHandler = async (req, res, next) => {
 		const updated = await WorkoutExercise.find({ sessionId: session._id })
 			.sort({ orderIndex: 1 })
 			.lean();
+
+		await touchSession(session._id, req.user!.id, req.user!.role);
 
 		res.status(200).json(updated);
 	} catch (error) {
@@ -660,7 +723,7 @@ export const logSet: RequestHandler = async (req, res, next) => {
 		}
 
 		const session = await WorkoutSession.findById(sessionId);
-		if (!session || session.userId.toString() !== req.user!.id) {
+		if (!session || session.userId.toString() !== req.subjectUserId!) {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
@@ -705,6 +768,8 @@ export const logSet: RequestHandler = async (req, res, next) => {
 			isWarmup: parsed.data.isWarmup,
 			completedAt: new Date(),
 			notes: parsed.data.notes ?? null,
+			loggedBy: new mongoose.Types.ObjectId(req.user!.id),
+			loggedByModel: actorModelForRole(req.user!.role as AppUserRole),
 		});
 
 		const nonWarmupCount = await SetLog.countDocuments({
@@ -723,6 +788,8 @@ export const logSet: RequestHandler = async (req, res, next) => {
 				isCompleted: true,
 			});
 		}
+
+		await touchSession(session._id, req.user!.id, req.user!.role);
 
 		res.status(201).json({
 			...setLog.toObject(),
@@ -755,7 +822,7 @@ export const updateSet: RequestHandler = async (req, res, next) => {
 		}
 
 		const session = await WorkoutSession.findById(sessionId);
-		if (!session || session.userId.toString() !== req.user!.id) {
+		if (!session || session.userId.toString() !== req.subjectUserId!) {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
@@ -781,6 +848,8 @@ export const updateSet: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		await touchSession(session._id, req.user!.id, req.user!.role);
+
 		res.status(200).json(setLog);
 	} catch (error) {
 		next(error);
@@ -798,7 +867,7 @@ export const deleteSet: RequestHandler = async (req, res, next) => {
 		}
 
 		const session = await WorkoutSession.findById(sessionId);
-		if (!session || session.userId.toString() !== req.user!.id) {
+		if (!session || session.userId.toString() !== req.subjectUserId!) {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
@@ -852,6 +921,8 @@ export const deleteSet: RequestHandler = async (req, res, next) => {
 			});
 		}
 
+		await touchSession(session._id, req.user!.id, req.user!.role);
+
 		res.status(200).json({ message: "Set deleted" });
 	} catch (error) {
 		next(error);
@@ -862,7 +933,7 @@ export const deleteSet: RequestHandler = async (req, res, next) => {
 
 export const getMyStats: RequestHandler = async (req, res, next) => {
 	try {
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
 		const now = new Date();
 
 		// Current week (Monday-Sunday)
@@ -1057,7 +1128,7 @@ export const getMyHistory: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const userId = new mongoose.Types.ObjectId(req.user!.id);
+		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
 		const { limit, cursor } = parsed.data;
 		const now = new Date();
 		const from = parsed.data.from || new Date(now.getTime() - 365 * 86400000);

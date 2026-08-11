@@ -66,8 +66,16 @@ const workoutPlanAssignmentSchema = new mongoose.Schema(
 		},
 		assignedBy: {
 			type: mongoose.Schema.Types.ObjectId,
-			ref: "User",
+			refPath: "assignedByModel",
 			required: true,
+		},
+		// Whoever assigned this plan can be a trainer or admin (or, via
+		// assign-to-me, the member themself) — separate collections, so
+		// populate() needs refPath rather than a static ref.
+		assignedByModel: {
+			type: String,
+			enum: ["User", "Trainer", "Admin"],
+			default: "User",
 		},
 		startDate: { type: Date, required: true },
 		currentDayIndex: { type: Number, default: 0 },

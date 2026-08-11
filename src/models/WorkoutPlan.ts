@@ -69,8 +69,15 @@ const workoutPlanSchema = new mongoose.Schema(
 		templateCategory: { type: String, default: null },
 		createdBy: {
 			type: mongoose.Schema.Types.ObjectId,
-			ref: "User",
+			refPath: "createdByModel",
 			required: true,
+		},
+		// A plan's author can be a member, a trainer, or an admin — these live
+		// in separate collections, so a static `ref` can't resolve populate().
+		createdByModel: {
+			type: String,
+			enum: ["User", "Trainer", "Admin"],
+			default: "User",
 		},
 		assignedUsers: [
 			{

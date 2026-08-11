@@ -12,6 +12,7 @@ import {
 	getUserById,
 	onboardUser,
 	syncMyBcaMetrics,
+	updateAssignedTrainer,
 	updateMyPassword,
 	updateUserById,
 } from "../controllers/user.controller";
@@ -24,7 +25,7 @@ userRouter.use(authenticateToken);
 userRouter.post("/", authorize(["admin"]), createUser);
 userRouter.get(
 	"/",
-	authorize(["admin", "doctor", "nutritionist"]),
+	authorize(["admin", "doctor", "nutritionist", "trainer"]),
 	getAllUsers,
 );
 userRouter.get("/me", authorize(["user"]), getMyUser);
@@ -39,20 +40,25 @@ userRouter.post(
 userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
 userRouter.get(
 	"/:id",
-	authorize(["admin", "doctor", "nutritionist", "user"]),
+	authorize(["admin", "doctor", "nutritionist", "user", "trainer"]),
 	getUserById,
 );
 userRouter.get(
 	"/:id/onboarding-profile",
-	authorize(["admin", "doctor", "nutritionist", "user"]),
+	authorize(["admin", "doctor", "nutritionist", "user", "trainer"]),
 	getOnboardingProfile,
 );
 userRouter.get(
 	"/:id/reports/:reportId/url",
-	authorize(["admin", "doctor", "nutritionist"]),
+	authorize(["admin", "doctor", "nutritionist", "trainer"]),
 	getReportSignedUrl,
 );
 userRouter.patch("/:id/onboard", authorize(["admin", "user"]), onboardUser);
+userRouter.patch(
+	"/:id/assigned-trainer",
+	authorize(["admin"]),
+	updateAssignedTrainer,
+);
 userRouter.patch("/:id", authorize(["admin", "user"]), updateUserById);
 userRouter.delete("/:id", authorize(["admin"]), deleteUserById);
 

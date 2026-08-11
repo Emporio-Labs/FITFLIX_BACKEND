@@ -23,6 +23,19 @@ const workoutSessionSchema = new mongoose.Schema(
 			default: null,
 		},
 		isDeleted: { type: Boolean, default: false, index: true },
+		// Bumped alongside `updatedAt` on every mutation to this session or
+		// its exercises/sets, so a trainer's phone and the member's app can
+		// each poll and detect "the other side changed something".
+		lastTouchedBy: {
+			type: mongoose.Schema.Types.ObjectId,
+			refPath: "lastTouchedByModel",
+			default: null,
+		},
+		lastTouchedByModel: {
+			type: String,
+			enum: ["User", "Trainer", "Admin"],
+			default: "User",
+		},
 	},
 	{ timestamps: true },
 );

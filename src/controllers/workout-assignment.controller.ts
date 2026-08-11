@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Exercise from "../models/Exercise";
 import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import { createAssignmentForUser } from "../services/planAssignment.service";
+import { actorModelForRole } from "../utils/actor-model";
 import {
 	advancePastMissedDays,
 	completeDayAndShift,
@@ -42,6 +43,14 @@ export const getMyAssignment: RequestHandler = async (req, res, next) => {
 			isDeleted: { $ne: true },
 		})
 			.select("-userDays.exercises")
+			.populate({
+				path: "assignedBy",
+				select: "name imageUrl specialities keySentence title bio",
+			})
+			.populate({
+				path: "planId",
+				select: "name goal splitType description durationWeeks",
+			})
 			.lean();
 
 		if (!assignment) {
@@ -50,6 +59,136 @@ export const getMyAssignment: RequestHandler = async (req, res, next) => {
 		}
 
 		res.json(assignment);
+	} catch (error) {
+		next(error);
+	}
+};
+
+// ── GET /workout-plans/assignments/user/:userId ──────────────────────────────
+
+export const getUserAssignment: RequestHandler = async (req, res, next) => {
+	try {
+		const userIdParam = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+		if (!userIdParam || !mongoose.Types.ObjectId.isValid(userIdParam)) {
+			res.status(400).json({ error: "Invalid user ID" });
+			return;
+		}
+
+		const userId = new mongoose.Types.ObjectId(userIdParam);
+		const assignment = await WorkoutPlanAssignment.findOne({
+			userId,
+			status: "active",
+			isDeleted: { $ne: true },
+		})
+			.populate({
+				path: "assignedBy",
+				select: "name imageUrl specialities keySentence title bio",
+			})
+			.populate({
+				path: "planId",
+				select: "name goal splitType description durationWeeks",
+			})
+			.lean();
+
+		if (!assignment) {
+			res.status(404).json({ error: "No active assignment found for user" });
+			return;
+		}
+
+		const exerciseIds = new Set<string>();
+		for (const day of assignment.userDays) {
+			for (const ex of day.exercises) {
+				if (ex.exerciseId) exerciseIds.add(ex.exerciseId.toString());
+			}
+		}
+
+		// Deliberately not filtered on `isDeleted`: an assignment that references
+		// a since-deleted exercise still has to render its name. Pickers filter
+		// it out instead (see listExercises).
+		const exerciseDocs = await Exercise.find({
+			_id: { $in: Array.from(exerciseIds).map((id) => new mongoose.Types.ObjectId(id)) },
+		})
+			.select("_id name muscleGroup difficulty equipment caloriesPerSet")
+			.lean();
+
+		const exMap = new Map(exerciseDocs.map((e) => [e._id.toString(), e]));
+
+		const userDaysDetailed = assignment.userDays.map((day) => ({
+			...day,
+			exercises: day.exercises.map((ex) => {
+				const info = exMap.get(ex.exerciseId.toString());
+				return {
+					...ex,
+					name: info?.name ?? "Deleted exercise",
+					muscleGroup: info?.muscleGroup ?? "FullBody",
+					// The referenced Exercise document no longer exists, so its
+					// name is unrecoverable and a trainer has to pick a
+					// replacement. Flagged rather than left to look like a
+					// rendering glitch.
+					...(info ? {} : { exerciseMissing: true }),
+				};
+			}),
+		}));
+
+		res.json({
+			...assignment,
+			userDays: userDaysDetailed,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+// ── PATCH /workout-plans/assignments/user/:userId/days/:dayNumber ─────────────
+
+export const updateUserDayExercises: RequestHandler = async (req, res, next) => {
+	try {
+		const userIdParam = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+		const dayNumber = parseInt(String(req.params.dayNumber), 10);
+		if (!userIdParam || !mongoose.Types.ObjectId.isValid(userIdParam) || isNaN(dayNumber) || dayNumber < 1) {
+			res.status(400).json({ error: "Invalid parameters" });
+			return;
+		}
+
+		const parsed = updateAssignmentDayBodySchema.safeParse(req.body);
+		if (!parsed.success) {
+			res.status(400).json({
+				error: "Validation failed",
+				code: "VALIDATION_ERROR",
+				details: parsed.error.issues,
+			});
+			return;
+		}
+
+		const userId = new mongoose.Types.ObjectId(userIdParam);
+		const assignment = await WorkoutPlanAssignment.findOne({
+			userId,
+			status: "active",
+			isDeleted: { $ne: true },
+		});
+
+		if (!assignment) {
+			res.status(404).json({ error: "No active assignment found" });
+			return;
+		}
+
+		const dayIdx = assignment.userDays.findIndex((d) => d.dayNumber === dayNumber);
+		if (dayIdx < 0) {
+			res.status(404).json({ error: "Day not found in assignment" });
+			return;
+		}
+
+		const userDay = assignment.userDays[dayIdx];
+		if (!userDay) {
+			res.status(404).json({ error: "Day not found in assignment" });
+			return;
+		}
+
+		userDay.exercises = parsed.data.exercises as any;
+		assignment.markModified("userDays");
+		await assignment.save();
+
+		res.json({ message: "Member day exercises updated successfully" });
 	} catch (error) {
 		next(error);
 	}
@@ -255,6 +394,7 @@ export const assignPlan: RequestHandler = async (req, res, next) => {
 				planId,
 				userId: req.user?.id ?? "",
 				assignedBy: req.user?.id ?? "",
+				assignedByModel: actorModelForRole(req.user?.role ?? "user"),
 				startDate: parsed.data.startDate,
 			});
 			res.status(201).json(assignment);

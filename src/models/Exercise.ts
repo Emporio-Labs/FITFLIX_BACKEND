@@ -30,6 +30,14 @@ const exerciseSchema = new mongoose.Schema(
 		},
 		imageUrl: { type: String, default: null },
 		isSystem: { type: Boolean, default: false },
+		// Soft delete. Plans and assignments store only `exerciseId`, and every
+		// read re-joins against this collection to resolve the name, so removing
+		// a row orphans every plan day and assignment day that referenced it —
+		// they render as "Deleted exercise" with no way to recover the name.
+		// Deleting therefore only sets this flag: name-resolution joins ignore
+		// it so existing references keep working, and the list/detail endpoints
+		// filter on it so the exercise disappears from every picker.
+		isDeleted: { type: Boolean, default: false },
 		createdBy: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "User",
@@ -39,6 +47,7 @@ const exerciseSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
+exerciseSchema.index({ isDeleted: 1, name: 1 });
 exerciseSchema.index({ muscleGroup: 1 });
 exerciseSchema.index({ createdBy: 1 });
 exerciseSchema.index({ sectionTypes: 1 });

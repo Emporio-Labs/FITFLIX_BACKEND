@@ -12,6 +12,7 @@ import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import BcaMetric from "../models/BcaMetric";
 import MedicalReport from "../models/MedicalReport";
+import Trainer from "../models/Trainer";
 import User from "../models/User";
 import {
 	ActiveXError,
@@ -20,8 +21,10 @@ import {
 } from "../utils/activex.service";
 import { buildApiErrorEnvelope } from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
+import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import { generateSignedUrl } from "../utils/s3.service";
 import {
+	assignTrainerBodySchema,
 	createUserBodySchema,
 	listUsersQuerySchema,
 	updateMyPasswordBodySchema,
@@ -105,13 +108,10 @@ export const createUser: RequestHandler = async (req, res, next) => {
 		}
 
 		if (sanitizedEmail) {
-			const existingUser = await User.findOne({
-				email: sanitizedEmail,
-			}).select("_id");
-
-			if (existingUser) {
+			const emailCheck = await isEmailInUseAcrossSystem(sanitizedEmail);
+			if (emailCheck.exists) {
 				res.status(409).json({
-					error: "User with this email already exists",
+					error: `An account with this email already exists as a ${emailCheck.accountType}`,
 					code: "CONFLICT",
 				});
 				return;
@@ -794,14 +794,10 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 		}
 
 		if (sanitizedEmail) {
-			const existingUser = await User.findOne({
-				email: sanitizedEmail,
-				_id: { $ne: id },
-			}).select("_id");
-
-			if (existingUser) {
+			const emailCheck = await isEmailInUseAcrossSystem(sanitizedEmail, id);
+			if (emailCheck.exists) {
 				res.status(409).json({
-					error: "User with this email already exists",
+					error: `An account with this email already exists as a ${emailCheck.accountType}`,
 					code: "CONFLICT",
 				});
 				return;
@@ -1156,6 +1152,82 @@ export const syncMyBcaMetrics: RequestHandler = async (req, res, next) => {
 			.select("-userId -__v");
 
 		res.status(200).json({ success: true, synced, history });
+	} catch (error) {
+		if (error instanceof ActiveXError) {
+			res.status(error.status).json({
+				error: error.message,
+				code: error.code,
+			});
+			return;
+		}
+		next(error);
+	}
+};
+
+// ── PATCH /users/:id/assigned-trainer ────────────────────────────────────
+// Admin-only: set or clear a member's primary trainer.
+
+export const updateAssignedTrainer: RequestHandler = async (req, res, next) => {
+	const id = getIdParam(req.params.id);
+	if (!id) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: { id: "Invalid user id" },
+		});
+		return;
+	}
+
+	const parsedBody = assignTrainerBodySchema.safeParse(req.body);
+	if (!parsedBody.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsedBody.error.issues),
+		});
+		return;
+	}
+
+	try {
+		const { trainerId } = parsedBody.data;
+
+		if (trainerId) {
+			if (!mongoose.Types.ObjectId.isValid(trainerId)) {
+				res.status(400).json({
+					error: "Validation failed",
+					code: "VALIDATION_ERROR",
+					details: { trainerId: "Invalid trainer id" },
+				});
+				return;
+			}
+
+			const trainerExists = await Trainer.exists({ _id: trainerId });
+			if (!trainerExists) {
+				res.status(404).json({
+					error: "Trainer not found",
+					code: "NOT_FOUND",
+				});
+				return;
+			}
+		}
+
+		const user = await User.findByIdAndUpdate(
+			id,
+			{
+				$set: {
+					assignedTrainer: trainerId ?? null,
+					assignedTrainerAt: trainerId ? new Date() : null,
+				},
+			},
+			{ new: true },
+		).select("username assignedTrainer assignedTrainerAt");
+
+		if (!user) {
+			res.status(404).json({ error: "User not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		res.status(200).json({ message: "Assigned trainer updated", user });
 	} catch (error) {
 		if (error instanceof ActiveXError) {
 			res.status(error.status).json({
