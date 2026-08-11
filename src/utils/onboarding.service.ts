@@ -24,6 +24,7 @@ const STEP_ORDER: OnboardingStep[] = [
 	OnboardingStep.HEALTH_GOALS,
 	OnboardingStep.CONSENT,
 	OnboardingStep.REPORT_UPLOAD,
+	OnboardingStep.NUTRITIONIST_BOOKING,
 	OnboardingStep.COMPLETED,
 ];
 
@@ -32,6 +33,7 @@ const STEP_FLAG_MAP: Record<string, string> = {
 	[OnboardingStep.HEALTH_GOALS]: "healthGoalsCompleted",
 	[OnboardingStep.CONSENT]: "consentCompleted",
 	[OnboardingStep.REPORT_UPLOAD]: "reportsUploaded",
+	[OnboardingStep.NUTRITIONIST_BOOKING]: "nutritionistBooked",
 };
 
 const getNextStep = (currentStep: OnboardingStep): OnboardingStep | null => {

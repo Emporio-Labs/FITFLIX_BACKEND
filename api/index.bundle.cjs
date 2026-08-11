@@ -592118,13 +592118,15 @@ var STEP_ORDER = [
   "HEALTH_GOALS" /* HEALTH_GOALS */,
   "CONSENT" /* CONSENT */,
   "REPORT_UPLOAD" /* REPORT_UPLOAD */,
+  "NUTRITIONIST_BOOKING" /* NUTRITIONIST_BOOKING */,
   "COMPLETED" /* COMPLETED */
 ];
 var STEP_FLAG_MAP = {
   ["HEALTH_MARKERS" /* HEALTH_MARKERS */]: "healthMarkersCompleted",
   ["HEALTH_GOALS" /* HEALTH_GOALS */]: "healthGoalsCompleted",
   ["CONSENT" /* CONSENT */]: "consentCompleted",
-  ["REPORT_UPLOAD" /* REPORT_UPLOAD */]: "reportsUploaded"
+  ["REPORT_UPLOAD" /* REPORT_UPLOAD */]: "reportsUploaded",
+  ["NUTRITIONIST_BOOKING" /* NUTRITIONIST_BOOKING */]: "nutritionistBooked"
 };
 var getNextStep = (currentStep) => {
   const currentIndex = STEP_ORDER.indexOf(currentStep);
@@ -597514,11 +597516,21 @@ var resolveSessionAccess = async ({
     if (!startsAt2) {
       return deny("NO_SCHEDULE");
     }
+    if (now.getTime() < startsAt2.getTime()) {
+      return deny("NOT_OPEN_YET", { startsAt: startsAt2, endsAt: endsAt2 });
+    }
+    if (now.getTime() >= endsAt2.getTime()) {
+      return deny("ENDED", { startsAt: startsAt2, endsAt: endsAt2 });
+    }
     if (role2 === "member" && !nutriBooking.hostLiveAt) {
       return deny("HOST_NOT_STARTED", { startsAt: startsAt2, endsAt: endsAt2 });
     }
     const roomId2 = nutriBooking.zegoRoomId || `nutri_session_${nutriBooking._id}`;
-    const ttlSeconds2 = Math.max(MIN_TTL_SECONDS, Math.min(MAX_TTL_SECONDS, Math.floor((endsAt2.getTime() - now.getTime()) / 1000) + 30 * 60));
+    const remainingSeconds2 = Math.floor((endsAt2.getTime() - now.getTime()) / 1000);
+    if (remainingSeconds2 < MIN_TTL_SECONDS) {
+      return deny("ENDED", { startsAt: startsAt2, endsAt: endsAt2 });
+    }
+    const ttlSeconds2 = Math.min(remainingSeconds2, MAX_TTL_SECONDS);
     return {
       ok: true,
       role: role2,

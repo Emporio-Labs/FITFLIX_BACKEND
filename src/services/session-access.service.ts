@@ -175,19 +175,26 @@ export const resolveSessionAccess = async ({
 			return deny("NO_SCHEDULE");
 		}
 
+		if (now.getTime() < startsAt.getTime()) {
+			return deny("NOT_OPEN_YET", { startsAt, endsAt });
+		}
+		if (now.getTime() >= endsAt.getTime()) {
+			return deny("ENDED", { startsAt, endsAt });
+		}
+
 		// Host presence check: Member cannot enter until host has joined/started
 		if (role === "member" && !nutriBooking.hostLiveAt) {
 			return deny("HOST_NOT_STARTED", { startsAt, endsAt });
 		}
 
 		const roomId = nutriBooking.zegoRoomId || `nutri_session_${nutriBooking._id}`;
-		const ttlSeconds = Math.max(
-			MIN_TTL_SECONDS,
-			Math.min(
-				MAX_TTL_SECONDS,
-				Math.floor((endsAt.getTime() - now.getTime()) / 1000) + 30 * 60,
-			),
+		const remainingSeconds = Math.floor(
+			(endsAt.getTime() - now.getTime()) / 1000,
 		);
+		if (remainingSeconds < MIN_TTL_SECONDS) {
+			return deny("ENDED", { startsAt, endsAt });
+		}
+		const ttlSeconds = Math.min(remainingSeconds, MAX_TTL_SECONDS);
 
 		return {
 			ok: true,
