@@ -3,6 +3,7 @@ import type {
 	MacroTotals,
 	ScalableFood,
 } from "../../types/nutrition";
+import { NutritionServiceError } from "./nutrition-errors";
 
 type MealFoodItem = {
 	foodId: unknown;
@@ -116,4 +117,79 @@ export const sumMacros = (
 		fiberG: round(totals.fiberG),
 		sugarG: round(totals.sugarG),
 	};
+};
+
+type ServingCapableFood = {
+	servings?: { label: string; gramsPerUnit: number }[];
+};
+
+// Household-portion resolution — an input/display layer only, never a
+// second macro engine. Always resolves to grams before scaleMacros runs, so
+// the base = 100g invariant never changes shape. Throws rather than
+// silently falling back to a bare quantityG=0 log entry on a typo'd label.
+export const resolveQuantityG = (
+	food: ServingCapableFood,
+	input: { servingLabel?: string; servingCount?: number; quantityG?: number },
+): number => {
+	if (input.servingLabel) {
+		const match = food.servings?.find((s) => s.label === input.servingLabel);
+		if (!match) {
+			throw new NutritionServiceError(
+				"BAD_REQUEST",
+				`Unknown serving "${input.servingLabel}" for this food`,
+			);
+		}
+		const count = input.servingCount ?? 1;
+		return round(match.gramsPerUnit * count);
+	}
+
+	if (input.quantityG !== undefined) {
+		return input.quantityG;
+	}
+
+	throw new NutritionServiceError(
+		"BAD_REQUEST",
+		"Provide quantityG, or both servingLabel and servingCount",
+	);
+};
+
+type MicroCapableFood = {
+	micros?: Map<string, number> | Record<string, number>;
+};
+
+const microEntries = (
+	micros: MicroCapableFood["micros"],
+): [string, number][] =>
+	micros instanceof Map
+		? Array.from(micros.entries())
+		: Object.entries(micros ?? {});
+
+// Mirrors scaleMacros for the whitelisted micronutrient set. Same basePer
+// scaling, only present keys are emitted — a food missing a given micro
+// simply omits it rather than reporting a false zero.
+export const scaleMicros = (
+	food: { basePer: number } & MicroCapableFood,
+	quantityG: number,
+): Record<string, number> => {
+	const base = food.basePer > 0 ? food.basePer : 100;
+	const factor = quantityG / base;
+	const result: Record<string, number> = {};
+	for (const [key, value] of microEntries(food.micros)) {
+		result[key] = round(value * factor);
+	}
+	return result;
+};
+
+export const sumMicros = (
+	items: ReadonlyArray<{
+		micros?: Map<string, number> | Record<string, number>;
+	}>,
+): Record<string, number> => {
+	const totals: Record<string, number> = {};
+	for (const item of items) {
+		for (const [key, value] of microEntries(item.micros)) {
+			totals[key] = round((totals[key] ?? 0) + value);
+		}
+	}
+	return totals;
 };

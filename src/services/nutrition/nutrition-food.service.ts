@@ -14,12 +14,13 @@ export type FoodInput = {
 	fatG: number;
 	fiberG?: number | null;
 	sugarG?: number | null;
+	micros?: Record<string, number>;
 	barcode?: string | null;
 };
 
 export type FoodSearchOptions = {
 	query?: string;
-	source?: NutritionFoodSource;
+	source?: NutritionFoodSource | NutritionFoodSource[];
 	createdBy?: string;
 	// When set, restricts results to system foods + this owner's custom
 	// foods (the nutritionist catalog view).
@@ -52,7 +53,9 @@ export const searchFoods = async (options: FoodSearchOptions) => {
 	const filter: Record<string, unknown> = { isActive: true };
 
 	if (options.source) {
-		filter.source = options.source;
+		filter.source = Array.isArray(options.source)
+			? { $in: options.source }
+			: options.source;
 	}
 
 	if (options.createdBy) {

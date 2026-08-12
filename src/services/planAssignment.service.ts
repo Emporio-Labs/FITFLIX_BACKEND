@@ -12,6 +12,7 @@ export interface CreateAssignmentArgs {
 	planId: string;
 	userId: string;
 	assignedBy: string;
+	assignedByModel: "User" | "Trainer" | "Admin";
 	startDate?: Date;
 }
 
@@ -97,6 +98,7 @@ export async function createAssignmentForUser(
 		existing.userDays = userDays as any;
 		existing.dayProgress = dayProgress as any;
 		existing.assignedBy = new mongoose.Types.ObjectId(args.assignedBy) as any;
+		existing.assignedByModel = args.assignedByModel;
 		await existing.save();
 
 		return { assignment: existing, created: false };
@@ -112,6 +114,7 @@ export async function createAssignmentForUser(
 		userId: userObjId,
 		planId: planObjId,
 		assignedBy: args.assignedBy,
+		assignedByModel: args.assignedByModel,
 		startDate,
 		currentDayIndex: 0,
 		status: "active",

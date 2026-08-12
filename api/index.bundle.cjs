@@ -3632,7 +3632,7 @@ var require_dbcs_codec = __commonJS((exports2) => {
           if (resCode !== undefined) {
             dbcsCode = resCode;
             nextChar = uCode;
-          }
+          } else {}
         }
         seqObj = undefined;
       } else if (uCode >= 0) {
@@ -3697,7 +3697,7 @@ var require_dbcs_codec = __commonJS((exports2) => {
           newBuf[j++] = dbcsCode >> 8;
           newBuf[j++] = dbcsCode & 255;
         }
-      }
+      } else {}
       this.seqObj = undefined;
     }
     if (this.leadSurrogate !== -1) {
@@ -15657,116 +15657,143 @@ var require_type_is = __commonJS((exports2, module2) => {
   }
 });
 
-// node_modules/content-type/index.js
-var require_content_type = __commonJS((exports2) => {
+// node_modules/body-parser/node_modules/content-type/dist/index.js
+var require_dist2 = __commonJS((exports2) => {
   /*!
    * content-type
    * Copyright(c) 2015 Douglas Christopher Wilson
    * MIT Licensed
    */
-  var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
-  var TEXT_REGEXP = /^[\u000b\u0020-\u007e\u0080-\u00ff]+$/;
-  var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-  var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
-  var QUOTE_REGEXP = /([\\"])/g;
-  var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  Object.defineProperty(exports2, "__esModule", { value: true });
   exports2.format = format;
   exports2.parse = parse;
+  var TEXT_REGEXP = /^[\u0009\u0020-\u007e\u0080-\u00ff]*$/;
+  var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  var QUOTE_REGEXP = /[\\"]/g;
+  var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  var NullObject = /* @__PURE__ */ (() => {
+    const C = function() {};
+    C.prototype = Object.create(null);
+    return C;
+  })();
   function format(obj) {
-    if (!obj || typeof obj !== "object") {
-      throw new TypeError("argument obj is required");
-    }
-    var parameters = obj.parameters;
-    var type = obj.type;
+    const { type, parameters } = obj;
     if (!type || !TYPE_REGEXP.test(type)) {
-      throw new TypeError("invalid type");
+      throw new TypeError(`Invalid type: ${type}`);
     }
-    var string = type;
-    if (parameters && typeof parameters === "object") {
-      var param;
-      var params = Object.keys(parameters).sort();
-      for (var i = 0;i < params.length; i++) {
-        param = params[i];
+    let result = type;
+    if (parameters) {
+      for (const param of Object.keys(parameters)) {
         if (!TOKEN_REGEXP.test(param)) {
-          throw new TypeError("invalid parameter name");
+          throw new TypeError(`Invalid parameter name: ${param}`);
         }
-        string += "; " + param + "=" + qstring(parameters[param]);
+        result += `; ${param}=${qstring(parameters[param])}`;
       }
     }
-    return string;
+    return result;
   }
-  function parse(string) {
-    if (!string) {
-      throw new TypeError("argument string is required");
-    }
-    var header = typeof string === "object" ? getcontenttype(string) : string;
-    if (typeof header !== "string") {
-      throw new TypeError("argument string is required to be a string");
-    }
-    var index = header.indexOf(";");
-    var type = index !== -1 ? header.slice(0, index).trim() : header.trim();
-    if (!TYPE_REGEXP.test(type)) {
-      throw new TypeError("invalid media type");
-    }
-    var obj = new ContentType(type.toLowerCase());
-    if (index !== -1) {
-      var key;
-      var match;
-      var value;
-      PARAM_REGEXP.lastIndex = index;
-      while (match = PARAM_REGEXP.exec(header)) {
-        if (match.index !== index) {
-          throw new TypeError("invalid parameter format");
-        }
-        index += match[0].length;
-        key = match[1].toLowerCase();
-        value = match[2];
-        if (value.charCodeAt(0) === 34) {
-          value = value.slice(1, -1);
-          if (value.indexOf("\\") !== -1) {
-            value = value.replace(QESC_REGEXP, "$1");
+  function parse(header, options) {
+    const len = header.length;
+    let index = skipOWS(header, 0, len);
+    const valueStart = index;
+    index = skipValue(header, index, len);
+    const valueEnd = trailingOWS(header, valueStart, index);
+    const type = header.slice(valueStart, valueEnd).toLowerCase();
+    const parameters = options?.parameters === false ? new NullObject : parseParameters(header, index, len);
+    return { type, parameters };
+  }
+  var SP = 32;
+  var HTAB = 9;
+  var SEMI = 59;
+  var EQ = 61;
+  var DQUOTE = 34;
+  var BSLASH = 92;
+  function parseParameters(header, index, len) {
+    const parameters = new NullObject;
+    parameter:
+      while (index < len) {
+        index = skipOWS(header, index + 1, len);
+        const keyStart = index;
+        while (index < len) {
+          const code = header.charCodeAt(index);
+          if (code === SEMI)
+            continue parameter;
+          if (code === EQ) {
+            const keyEnd = trailingOWS(header, keyStart, index);
+            const key = header.slice(keyStart, keyEnd).toLowerCase();
+            index = skipOWS(header, index + 1, len);
+            if (index < len && header.charCodeAt(index) === DQUOTE) {
+              index++;
+              let value = "";
+              while (index < len) {
+                const code2 = header.charCodeAt(index++);
+                if (code2 === DQUOTE) {
+                  index = skipValue(header, index, len);
+                  if (parameters[key] === undefined)
+                    parameters[key] = value;
+                  break;
+                }
+                if (code2 === BSLASH && index < len) {
+                  value += header[index++];
+                  continue;
+                }
+                value += String.fromCharCode(code2);
+              }
+              continue parameter;
+            }
+            const valueStart = index;
+            index = skipValue(header, index, len);
+            if (parameters[key] === undefined) {
+              const valueEnd = trailingOWS(header, valueStart, index);
+              parameters[key] = header.slice(valueStart, valueEnd);
+            }
+            continue parameter;
           }
+          index++;
         }
-        obj.parameters[key] = value;
       }
-      if (index !== header.length) {
-        throw new TypeError("invalid parameter format");
-      }
-    }
-    return obj;
+    return parameters;
   }
-  function getcontenttype(obj) {
-    var header;
-    if (typeof obj.getHeader === "function") {
-      header = obj.getHeader("content-type");
-    } else if (typeof obj.headers === "object") {
-      header = obj.headers && obj.headers["content-type"];
+  function skipValue(str, index, len) {
+    while (index < len) {
+      const char = str.charCodeAt(index);
+      if (char === SEMI)
+        break;
+      index++;
     }
-    if (typeof header !== "string") {
-      throw new TypeError("content-type header is missing from object");
-    }
-    return header;
+    return index;
   }
-  function qstring(val) {
-    var str = String(val);
-    if (TOKEN_REGEXP.test(str)) {
+  function skipOWS(header, index, len) {
+    while (index < len) {
+      const char = header.charCodeAt(index);
+      if (char !== SP && char !== HTAB)
+        break;
+      index++;
+    }
+    return index;
+  }
+  function trailingOWS(header, start, end) {
+    while (end > start) {
+      const char = header.charCodeAt(end - 1);
+      if (char !== SP && char !== HTAB)
+        break;
+      end--;
+    }
+    return end;
+  }
+  function qstring(str) {
+    if (TOKEN_REGEXP.test(str))
       return str;
-    }
-    if (str.length > 0 && !TEXT_REGEXP.test(str)) {
-      throw new TypeError("invalid parameter value");
-    }
-    return '"' + str.replace(QUOTE_REGEXP, "\\$1") + '"';
-  }
-  function ContentType(type) {
-    this.parameters = Object.create(null);
-    this.type = type;
+    if (TEXT_REGEXP.test(str))
+      return `"${str.replace(QUOTE_REGEXP, "\\$&")}"`;
+    throw new TypeError(`Invalid parameter value: ${str}`);
   }
 });
 
 // node_modules/body-parser/lib/utils.js
 var require_utils = __commonJS((exports2, module2) => {
   var bytes = require_bytes();
-  var contentType = require_content_type();
+  var contentType = require_dist2();
   var typeis = require_type_is();
   module2.exports = {
     getCharset,
@@ -15774,11 +15801,10 @@ var require_utils = __commonJS((exports2, module2) => {
     passthrough
   };
   function getCharset(req) {
-    try {
-      return (contentType.parse(req).parameters.charset || "").toLowerCase();
-    } catch {
+    const header = req.headers["content-type"];
+    if (!header)
       return;
-    }
+    return contentType.parse(header).parameters.charset?.toLowerCase();
   }
   function typeChecker(type) {
     return function checkType(req) {
@@ -15789,15 +15815,18 @@ var require_utils = __commonJS((exports2, module2) => {
     if (!defaultType) {
       throw new TypeError("defaultType must be provided");
     }
-    var inflate = options?.inflate !== false;
-    var limit = typeof options?.limit !== "number" ? bytes.parse(options?.limit || "100kb") : options?.limit;
-    var type = options?.type || defaultType;
-    var verify = options?.verify || false;
-    var defaultCharset = options?.defaultCharset || "utf-8";
+    const inflate = options?.inflate !== false;
+    const limit = typeof options?.limit === "undefined" || options?.limit === null ? 102400 : bytes.parse(options.limit);
+    const type = options?.type || defaultType;
+    const verify = options?.verify || false;
+    const defaultCharset = options?.defaultCharset || "utf-8";
+    if (limit === null) {
+      throw new TypeError(`option limit "${String(options.limit)}" is invalid`);
+    }
     if (verify !== false && typeof verify !== "function") {
       throw new TypeError("option verify must be function");
     }
-    var shouldParse = typeof type !== "function" ? typeChecker(type) : type;
+    const shouldParse = typeof type !== "function" ? typeChecker(type) : type;
     return {
       inflate,
       limit,
@@ -15846,7 +15875,7 @@ var require_read = __commonJS((exports2, module2) => {
       next();
       return;
     }
-    var encoding = null;
+    let encoding = null;
     if (options?.skipCharset !== true) {
       encoding = getCharset(req) || options.defaultCharset;
       if (!!options?.isValidCharset && !options.isValidCharset(encoding)) {
@@ -15858,10 +15887,10 @@ var require_read = __commonJS((exports2, module2) => {
         return;
       }
     }
-    var length;
-    var opts = options;
-    var stream;
-    var verify = opts.verify;
+    let length;
+    const opts = options;
+    let stream;
+    const verify = opts.verify;
     try {
       stream = contentstream(req, debug, opts.inflate);
       length = stream.length;
@@ -15880,7 +15909,7 @@ var require_read = __commonJS((exports2, module2) => {
     debug("read body");
     getBody(stream, opts, function(error, body) {
       if (error) {
-        var _error;
+        let _error;
         if (error.type === "encoding.unsupported") {
           _error = createError(415, 'unsupported charset "' + encoding.toUpperCase() + '"', {
             charset: encoding.toLowerCase(),
@@ -15910,7 +15939,7 @@ var require_read = __commonJS((exports2, module2) => {
           return;
         }
       }
-      var str = body;
+      let str = body;
       try {
         debug("parse body");
         str = typeof body !== "string" && encoding !== null ? iconv.decode(body, encoding) : body;
@@ -15926,8 +15955,8 @@ var require_read = __commonJS((exports2, module2) => {
     });
   }
   function contentstream(req, debug, inflate) {
-    var encoding = (req.headers["content-encoding"] || "identity").toLowerCase();
-    var length = req.headers["content-length"];
+    const encoding = (req.headers["content-encoding"] || "identity").toLowerCase();
+    const length = req.headers["content-length"];
     debug('content-encoding "%s"', encoding);
     if (inflate === false && encoding !== "identity") {
       throw createError(415, "content encoding unsupported", {
@@ -15939,7 +15968,7 @@ var require_read = __commonJS((exports2, module2) => {
       req.length = length;
       return req;
     }
-    var stream = createDecompressionStream(encoding, debug);
+    const stream = createDecompressionStream(encoding, debug);
     req.pipe(stream);
     return stream;
   }
@@ -15988,18 +16017,42 @@ var require_json = __commonJS((exports2, module2) => {
   var JSON_SYNTAX_REGEXP = /#+/g;
   function json(options) {
     const normalizedOptions = normalizeOptions(options, "application/json");
-    var reviver = options?.reviver;
-    var strict = options?.strict !== false;
-    function parse(body) {
-      if (body.length === 0) {
-        return {};
-      }
-      if (strict) {
-        var first = firstchar(body);
+    const parse = createJsonParser(options);
+    const readOptions = {
+      ...normalizedOptions,
+      isValidCharset: (charset) => charset.slice(0, 4) === "utf-"
+    };
+    return function jsonParser(req, res, next) {
+      read(req, res, next, parse, debug, readOptions);
+    };
+  }
+  function createJsonParser(options) {
+    const reviver = options?.reviver;
+    const strict = options?.strict !== false;
+    if (strict) {
+      return function parse(body) {
+        if (body.length === 0) {
+          return {};
+        }
+        const first = firstchar(body);
         if (first !== "{" && first !== "[") {
           debug("strict violation");
           throw createStrictSyntaxError(body, first);
         }
+        try {
+          debug("parse json");
+          return JSON.parse(body, reviver);
+        } catch (e) {
+          throw normalizeJsonSyntaxError(e, {
+            message: e.message,
+            stack: e.stack
+          });
+        }
+      };
+    }
+    return function parse(body) {
+      if (body.length === 0) {
+        return {};
       }
       try {
         debug("parse json");
@@ -16010,18 +16063,11 @@ var require_json = __commonJS((exports2, module2) => {
           stack: e.stack
         });
       }
-    }
-    const readOptions = {
-      ...normalizedOptions,
-      isValidCharset: (charset) => charset.slice(0, 4) === "utf-"
-    };
-    return function jsonParser(req, res, next) {
-      read(req, res, next, parse, debug, readOptions);
     };
   }
   function createStrictSyntaxError(str, char) {
-    var index = str.indexOf(char);
-    var partial = "";
+    const index = str.indexOf(char);
+    let partial = "";
     if (index !== -1) {
       partial = str.substring(0, index) + JSON_SYNTAX_CHAR.repeat(str.length - index);
     }
@@ -16038,13 +16084,13 @@ var require_json = __commonJS((exports2, module2) => {
     }
   }
   function firstchar(str) {
-    var match = FIRST_CHAR_REGEXP.exec(str);
+    const match = FIRST_CHAR_REGEXP.exec(str);
     return match ? match[1] : undefined;
   }
   function normalizeJsonSyntaxError(error, obj) {
-    var keys = Object.getOwnPropertyNames(error);
-    for (var i = 0;i < keys.length; i++) {
-      var key = keys[i];
+    const keys = Object.getOwnPropertyNames(error);
+    for (let i = 0;i < keys.length; i++) {
+      const key = keys[i];
       if (key !== "stack" && key !== "message") {
         delete error[key];
       }
@@ -18414,10 +18460,7 @@ var require_urlencoded = __commonJS((exports2, module2) => {
     if (normalizedOptions.defaultCharset !== "utf-8" && normalizedOptions.defaultCharset !== "iso-8859-1") {
       throw new TypeError("option defaultCharset must be either utf-8 or iso-8859-1");
     }
-    var queryparse = createQueryParser(options);
-    function parse(body, encoding) {
-      return body.length ? queryparse(body, encoding) : {};
-    }
+    const parse = createQueryParser(options);
     const readOptions = {
       ...normalizedOptions,
       isValidCharset: (charset) => charset === "utf-8" || charset === "iso-8859-1"
@@ -18427,11 +18470,11 @@ var require_urlencoded = __commonJS((exports2, module2) => {
     };
   }
   function createQueryParser(options) {
-    var extended = Boolean(options?.extended);
-    var parameterLimit = options?.parameterLimit !== undefined ? options?.parameterLimit : 1000;
-    var charsetSentinel = options?.charsetSentinel;
-    var interpretNumericEntities = options?.interpretNumericEntities;
-    var depth = extended ? options?.depth !== undefined ? options?.depth : 32 : 0;
+    const extended = Boolean(options?.extended);
+    let parameterLimit = options?.parameterLimit !== undefined ? options?.parameterLimit : 1000;
+    const charsetSentinel = options?.charsetSentinel;
+    const interpretNumericEntities = options?.interpretNumericEntities;
+    const depth = extended ? options?.depth !== undefined ? options?.depth : 32 : 0;
     if (isNaN(parameterLimit) || parameterLimit < 1) {
       throw new TypeError("option parameterLimit must be a positive number");
     }
@@ -18441,15 +18484,17 @@ var require_urlencoded = __commonJS((exports2, module2) => {
     if (isFinite(parameterLimit)) {
       parameterLimit = parameterLimit | 0;
     }
-    return function queryparse(body, encoding) {
-      var paramCount = parameterCount(body, parameterLimit);
+    return function parse(body, encoding) {
+      if (!body.length)
+        return {};
+      const paramCount = parameterCount(body, parameterLimit);
       if (paramCount === undefined) {
         debug("too many parameters");
         throw createError(413, "too many parameters", {
           type: "parameters.too.many"
         });
       }
-      var arrayLimit = extended ? Math.max(100, paramCount) : paramCount;
+      const arrayLimit = extended ? Math.max(100, paramCount) : paramCount;
       debug("parse " + (extended ? "extended " : "") + "urlencoding");
       try {
         return qs.parse(body, {
@@ -18494,26 +18539,10 @@ var require_body_parser = __commonJS((exports2, module2) => {
    * MIT Licensed
    */
   exports2 = module2.exports = bodyParser;
-  Object.defineProperty(exports2, "json", {
-    configurable: true,
-    enumerable: true,
-    get: () => require_json()
-  });
-  Object.defineProperty(exports2, "raw", {
-    configurable: true,
-    enumerable: true,
-    get: () => require_raw()
-  });
-  Object.defineProperty(exports2, "text", {
-    configurable: true,
-    enumerable: true,
-    get: () => require_text()
-  });
-  Object.defineProperty(exports2, "urlencoded", {
-    configurable: true,
-    enumerable: true,
-    get: () => require_urlencoded()
-  });
+  exports2.json = require_json();
+  exports2.raw = require_raw();
+  exports2.text = require_text();
+  exports2.urlencoded = require_urlencoded();
   function bodyParser() {
     throw new Error("The bodyParser() generic has been split into individual middleware to use instead.");
   }
@@ -18923,6 +18952,112 @@ var require_view = __commonJS((exports2, module2) => {
     } catch (e) {
       return;
     }
+  }
+});
+
+// node_modules/content-type/index.js
+var require_content_type = __commonJS((exports2) => {
+  /*!
+   * content-type
+   * Copyright(c) 2015 Douglas Christopher Wilson
+   * MIT Licensed
+   */
+  var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
+  var TEXT_REGEXP = /^[\u000b\u0020-\u007e\u0080-\u00ff]+$/;
+  var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
+  var QUOTE_REGEXP = /([\\"])/g;
+  var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  exports2.format = format;
+  exports2.parse = parse;
+  function format(obj) {
+    if (!obj || typeof obj !== "object") {
+      throw new TypeError("argument obj is required");
+    }
+    var parameters = obj.parameters;
+    var type = obj.type;
+    if (!type || !TYPE_REGEXP.test(type)) {
+      throw new TypeError("invalid type");
+    }
+    var string = type;
+    if (parameters && typeof parameters === "object") {
+      var param;
+      var params = Object.keys(parameters).sort();
+      for (var i = 0;i < params.length; i++) {
+        param = params[i];
+        if (!TOKEN_REGEXP.test(param)) {
+          throw new TypeError("invalid parameter name");
+        }
+        string += "; " + param + "=" + qstring(parameters[param]);
+      }
+    }
+    return string;
+  }
+  function parse(string) {
+    if (!string) {
+      throw new TypeError("argument string is required");
+    }
+    var header = typeof string === "object" ? getcontenttype(string) : string;
+    if (typeof header !== "string") {
+      throw new TypeError("argument string is required to be a string");
+    }
+    var index = header.indexOf(";");
+    var type = index !== -1 ? header.slice(0, index).trim() : header.trim();
+    if (!TYPE_REGEXP.test(type)) {
+      throw new TypeError("invalid media type");
+    }
+    var obj = new ContentType(type.toLowerCase());
+    if (index !== -1) {
+      var key;
+      var match;
+      var value;
+      PARAM_REGEXP.lastIndex = index;
+      while (match = PARAM_REGEXP.exec(header)) {
+        if (match.index !== index) {
+          throw new TypeError("invalid parameter format");
+        }
+        index += match[0].length;
+        key = match[1].toLowerCase();
+        value = match[2];
+        if (value.charCodeAt(0) === 34) {
+          value = value.slice(1, -1);
+          if (value.indexOf("\\") !== -1) {
+            value = value.replace(QESC_REGEXP, "$1");
+          }
+        }
+        obj.parameters[key] = value;
+      }
+      if (index !== header.length) {
+        throw new TypeError("invalid parameter format");
+      }
+    }
+    return obj;
+  }
+  function getcontenttype(obj) {
+    var header;
+    if (typeof obj.getHeader === "function") {
+      header = obj.getHeader("content-type");
+    } else if (typeof obj.headers === "object") {
+      header = obj.headers && obj.headers["content-type"];
+    }
+    if (typeof header !== "string") {
+      throw new TypeError("content-type header is missing from object");
+    }
+    return header;
+  }
+  function qstring(val) {
+    var str = String(val);
+    if (TOKEN_REGEXP.test(str)) {
+      return str;
+    }
+    if (str.length > 0 && !TEXT_REGEXP.test(str)) {
+      throw new TypeError("invalid parameter value");
+    }
+    return '"' + str.replace(QUOTE_REGEXP, "\\$1") + '"';
+  }
+  function ContentType(type) {
+    this.parameters = Object.create(null);
+    this.type = type;
   }
 });
 
@@ -20017,7 +20152,7 @@ var require_is_promise = __commonJS((exports2, module2) => {
 });
 
 // node_modules/path-to-regexp/dist/index.js
-var require_dist2 = __commonJS((exports2) => {
+var require_dist3 = __commonJS((exports2) => {
   Object.defineProperty(exports2, "__esModule", { value: true });
   exports2.PathError = exports2.TokenData = undefined;
   exports2.parse = parse;
@@ -20393,7 +20528,7 @@ var require_layer = __commonJS((exports2, module2) => {
    * MIT Licensed
    */
   var isPromise = require_is_promise();
-  var pathRegexp = require_dist2();
+  var pathRegexp = require_dist3();
   var debug = require_src()("router:layer");
   var deprecate = require_depd()("router");
   var TRAILING_SLASH_REGEXP = /\/+$/;
@@ -28249,7 +28384,7 @@ var require_bson = __commonJS((exports2) => {
 // node_modules/mongodb/lib/bson.js
 var require_bson2 = __commonJS((exports2) => {
   Object.defineProperty(exports2, "__esModule", { value: true });
-  exports2.setUint32LE = exports2.readInt32LE = exports2.UUID = exports2.Timestamp = exports2.serialize = exports2.ObjectId = exports2.NumberUtils = exports2.MinKey = exports2.MaxKey = exports2.Long = exports2.Int32 = exports2.EJSON = exports2.Double = exports2.deserialize = exports2.Decimal128 = exports2.DBRef = exports2.Code = exports2.calculateObjectSize = exports2.ByteUtils = exports2.BSONType = exports2.BSONSymbol = exports2.BSONRegExp = exports2.BSONError = exports2.BSON = exports2.Binary = undefined;
+  exports2.setUint32LE = exports2.readUint8 = exports2.readInt32LE = exports2.UUID = exports2.Timestamp = exports2.serialize = exports2.ObjectId = exports2.NumberUtils = exports2.MinKey = exports2.MaxKey = exports2.Long = exports2.Int32 = exports2.EJSON = exports2.Double = exports2.deserialize = exports2.Decimal128 = exports2.DBRef = exports2.Code = exports2.calculateObjectSize = exports2.ByteUtils = exports2.BSONType = exports2.BSONSymbol = exports2.BSONRegExp = exports2.BSONError = exports2.BSON = exports2.Binary = undefined;
   exports2.parseToElementsToArray = parseToElementsToArray;
   exports2.pluckBSONSerializeOptions = pluckBSONSerializeOptions;
   exports2.resolveBSONOptions = resolveBSONOptions;
@@ -28339,6 +28474,11 @@ var require_bson2 = __commonJS((exports2) => {
     return bson_1.NumberUtils.getInt32LE(buffer, offset);
   };
   exports2.readInt32LE = readInt32LE;
+  var readUint8 = (buffer, offset) => {
+    validateBufferInputs(buffer, offset, 1);
+    return buffer[offset];
+  };
+  exports2.readUint8 = readUint8;
   var setUint32LE = (destination, offset, value) => {
     destination[offset] = value;
     value >>>= 8;
@@ -29048,11 +29188,11 @@ var require_constants = __commonJS((exports2) => {
   Object.defineProperty(exports2, "__esModule", { value: true });
   exports2.OP_MSG = exports2.OP_COMPRESSED = exports2.OP_DELETE = exports2.OP_QUERY = exports2.OP_INSERT = exports2.OP_UPDATE = exports2.OP_REPLY = exports2.MIN_SUPPORTED_RAW_DATA_SERVER_VERSION = exports2.MIN_SUPPORTED_RAW_DATA_WIRE_VERSION = exports2.MIN_SUPPORTED_QE_SERVER_VERSION = exports2.MIN_SUPPORTED_QE_WIRE_VERSION = exports2.MAX_SUPPORTED_WIRE_VERSION = exports2.MIN_SUPPORTED_WIRE_VERSION = exports2.MIN_SUPPORTED_SNAPSHOT_READS_SERVER_VERSION = exports2.MIN_SUPPORTED_SNAPSHOT_READS_WIRE_VERSION = exports2.MAX_SUPPORTED_SERVER_VERSION = exports2.MIN_SUPPORTED_SERVER_VERSION = undefined;
   exports2.MIN_SUPPORTED_SERVER_VERSION = "4.2";
-  exports2.MAX_SUPPORTED_SERVER_VERSION = "8.2";
+  exports2.MAX_SUPPORTED_SERVER_VERSION = "9.0";
   exports2.MIN_SUPPORTED_SNAPSHOT_READS_WIRE_VERSION = 13;
   exports2.MIN_SUPPORTED_SNAPSHOT_READS_SERVER_VERSION = "5.0";
   exports2.MIN_SUPPORTED_WIRE_VERSION = 8;
-  exports2.MAX_SUPPORTED_WIRE_VERSION = 27;
+  exports2.MAX_SUPPORTED_WIRE_VERSION = 29;
   exports2.MIN_SUPPORTED_QE_WIRE_VERSION = 21;
   exports2.MIN_SUPPORTED_QE_SERVER_VERSION = "7.0";
   exports2.MIN_SUPPORTED_RAW_DATA_WIRE_VERSION = 27;
@@ -29552,6 +29692,7 @@ var require_utils4 = __commonJS((exports2) => {
   exports2.supportsRetryableWrites = supportsRetryableWrites;
   exports2.shuffle = shuffle;
   exports2.commandSupportsReadConcern = commandSupportsReadConcern;
+  exports2.commandSupportsAfterClusterTime = commandSupportsAfterClusterTime;
   exports2.compareObjectId = compareObjectId;
   exports2.parseInteger = parseInteger;
   exports2.parseUnsignedInteger = parseUnsignedInteger;
@@ -30165,6 +30306,15 @@ var require_utils4 = __commonJS((exports2) => {
   }
   function commandSupportsReadConcern(command) {
     if (command.aggregate || command.count || command.distinct || command.find || command.geoNear) {
+      return true;
+    }
+    return false;
+  }
+  function commandSupportsAfterClusterTime(command) {
+    if (command.aggregate || command.count || command.distinct || command.find || command.geoNear) {
+      return true;
+    }
+    if (command.bulkWrite || command.create || command.createIndexes || command.delete || command.drop || command.dropDatabase || command.dropIndexes || command.findAndModify || command.insert || command.update) {
       return true;
     }
     return false;
@@ -34794,7 +34944,7 @@ var require_sessions = __commonJS((exports2) => {
       if (session.transaction.state !== transactions_1.TxnState.NO_TRANSACTION) {
         session.transaction.transition(transactions_1.TxnState.NO_TRANSACTION);
       }
-      if (session.supports.causalConsistency && session.operationTime && (0, utils_1.commandSupportsReadConcern)(command)) {
+      if (session.supports.causalConsistency && session.operationTime && (0, utils_1.commandSupportsAfterClusterTime)(command)) {
         command.readConcern = command.readConcern || {};
         Object.assign(command.readConcern, { afterClusterTime: session.operationTime });
       } else if (session.snapshotEnabled) {
@@ -38318,7 +38468,7 @@ var require_helpers = __commonJS((exports2) => {
 });
 
 // node_modules/agent-base/dist/index.js
-var require_dist3 = __commonJS((exports2) => {
+var require_dist4 = __commonJS((exports2) => {
   var __createBinding = exports2 && exports2.__createBinding || (Object.create ? function(o, m, k, k2) {
     if (k2 === undefined)
       k2 = k;
@@ -38565,7 +38715,7 @@ var require_parse_proxy_response = __commonJS((exports2) => {
 });
 
 // node_modules/https-proxy-agent/dist/index.js
-var require_dist4 = __commonJS((exports2) => {
+var require_dist5 = __commonJS((exports2) => {
   var __createBinding = exports2 && exports2.__createBinding || (Object.create ? function(o, m, k, k2) {
     if (k2 === undefined)
       k2 = k;
@@ -38607,7 +38757,7 @@ var require_dist4 = __commonJS((exports2) => {
   var tls = __importStar(require("tls"));
   var assert_1 = __importDefault(require("assert"));
   var debug_1 = __importDefault(require_src());
-  var agent_base_1 = require_dist3();
+  var agent_base_1 = require_dist4();
   var url_1 = require("url");
   var parse_proxy_response_1 = require_parse_proxy_response();
   var debug = (0, debug_1.default)("https-proxy-agent");
@@ -45091,7 +45241,7 @@ Content-Type: ${partContentType}\r
     static #proxyAgent;
     static #fetch;
     static async#getProxyAgent() {
-      this.#proxyAgent ||= (await Promise.resolve().then(() => __toESM(require_dist4()))).HttpsProxyAgent;
+      this.#proxyAgent ||= (await Promise.resolve().then(() => __toESM(require_dist5()))).HttpsProxyAgent;
       return this.#proxyAgent;
     }
     static async#getFetch() {
@@ -48087,7 +48237,7 @@ var require_mongo_credentials = __commonJS((exports2) => {
 var require_package2 = __commonJS((exports2, module2) => {
   module2.exports = {
     name: "mongodb",
-    version: "7.2.0",
+    version: "7.5.0",
     description: "The official MongoDB driver for Node.js",
     main: "lib/index.js",
     files: [
@@ -48112,16 +48262,16 @@ var require_package2 = __commonJS((exports2, module2) => {
       email: "dbx-node@mongodb.com"
     },
     dependencies: {
-      "@mongodb-js/saslprep": "^1.3.0",
+      "@mongodb-js/saslprep": "^1.4.11",
       bson: "^7.2.0",
-      "mongodb-connection-string-url": "^7.0.0"
+      "mongodb-connection-string-url": "^7.0.1"
     },
     peerDependencies: {
       "@aws-sdk/credential-providers": "^3.806.0",
       "@mongodb-js/zstd": "^7.0.0",
       "gcp-metadata": "^7.0.1",
       kerberos: "^7.0.0",
-      "mongodb-client-encryption": ">=7.0.0 <7.1.0",
+      "mongodb-client-encryption": "^7.2.0",
       snappy: "^7.3.2",
       socks: "^2.8.6"
     },
@@ -48152,45 +48302,43 @@ var require_package2 = __commonJS((exports2, module2) => {
       "@aws-sdk/credential-providers": "^3.876.0",
       "@iarna/toml": "^2.2.5",
       "@istanbuljs/nyc-config-typescript": "^1.0.2",
-      "@microsoft/api-extractor": "^7.54.0",
-      "@microsoft/tsdoc-config": "^0.17.1",
+      "@microsoft/api-extractor": "^7.58.7",
+      "@microsoft/tsdoc-config": "^0.18.1",
       "@mongodb-js/zstd": "^7.0.0",
-      "@types/chai": "^4.3.17",
       "@types/chai-subset": "^1.3.5",
-      "@types/express": "^5.0.5",
+      "@types/express": "^5.0.6",
       "@types/kerberos": "^1.1.5",
       "@types/mocha": "^10.0.9",
       "@types/node": "^22.15.3",
       "@types/saslprep": "^1.0.3",
       "@types/semver": "^7.7.0",
       "@types/sinon": "^17.0.4",
-      "@types/sinon-chai": "^4.0.0",
       "@types/whatwg-url": "^13.0.0",
-      "@typescript-eslint/eslint-plugin": "^8.46.3",
+      "@typescript-eslint/eslint-plugin": "^8.60.1",
       "@typescript-eslint/parser": "^8.31.1",
       aws4: "^1.13.2",
-      chai: "^4.4.1",
+      chai: "^5.3.3",
       "chai-subset": "^1.6.0",
       chalk: "^4.1.2",
-      esbuild: "^0.27.2",
+      esbuild: "^0.28.0",
       eslint: "^9.39.1",
       "eslint-config-prettier": "^10.1.8",
       "eslint-plugin-mocha": "^10.4.1",
-      "eslint-plugin-prettier": "^5.5.4",
+      "eslint-plugin-prettier": "^5.5.6",
       "eslint-plugin-simple-import-sort": "^12.1.1",
-      "eslint-plugin-tsdoc": "^0.4.0",
-      "eslint-plugin-unused-imports": "^4.2.0",
-      express: "^5.1.0",
+      "eslint-plugin-tsdoc": "^0.5.2",
+      "eslint-plugin-unused-imports": "^4.4.1",
+      express: "^5.2.1",
       "gcp-metadata": "^7.0.1",
-      "js-yaml": "^4.1.0",
-      mocha: "^11.7.5",
+      "js-yaml": "^4.2.0",
+      mocha: "^11.7.6",
       "mocha-sinon": "^2.1.2",
-      "mongodb-client-encryption": "^7.0.0",
+      "mongodb-client-encryption": "^7.2.0",
       nyc: "^17.1.0",
       prettier: "^3.6.2",
       semver: "^7.7.2",
       sinon: "^18.0.1",
-      "sinon-chai": "^3.7.0",
+      "sinon-chai": "^4.0.1",
       snappy: "^7.3.2",
       socks: "^2.8.7",
       "source-map-support": "^0.5.21",
@@ -48228,8 +48376,10 @@ var require_package2 = __commonJS((exports2, module2) => {
       "check:dts": "npm run build:bundle && node ./node_modules/typescript/bin/tsc --target es2023 --module commonjs --noEmit mongodb.d.ts && tsd",
       "check:search-indexes": "npm run build:bundle && nyc mocha --config test/mocha_mongodb.js test/manual/search-index-management.prose.test.ts",
       "check:test": "npm run build:bundle && nyc mocha --config test/mocha_mongodb.js test/integration",
+      "check:test:debug": "npm run mocha:debug -- --config test/mocha_mongodb.js test/integration",
       "check:test-bundled": "MONGODB_BUNDLED=true npm run check:test",
       "check:unit": "npm run build:bundle && nyc mocha test/unit",
+      "check:unit:debug": "npm run mocha:debug -- test/unit",
       "check:unit-bundled": "MONGODB_BUNDLED=true npm run check:unit",
       "check:ts": "node ./node_modules/typescript/bin/tsc -v && node ./node_modules/typescript/bin/tsc --noEmit",
       "check:atlas": "npm run build:bundle && nyc mocha --config test/manual/mocharc.js test/manual/atlas_connectivity.test.ts",
@@ -48244,6 +48394,7 @@ var require_package2 = __commonJS((exports2, module2) => {
       "check:csfle": "npm run build:bundle && nyc mocha --config test/mocha_mongodb.js test/integration/client-side-encryption",
       "check:snappy": "npm run build:bundle && nyc mocha test/unit/assorted/snappy.test.js",
       "check:x509": "npm run build:bundle && nyc mocha test/manual/x509_auth.test.ts",
+      "mocha:debug": "npm run build:bundle && node --inspect --enable-source-maps --no-experimental-strip-types ./node_modules/mocha/bin/mocha.js",
       "build:bundle": "npm run bundle:driver && npm run bundle:types && npm run build:runtime-barrel",
       "build:runtime-barrel": "node etc/build-runtime-barrel.mjs",
       "bundle:driver": "node etc/bundle-driver.mjs",
@@ -53697,7 +53848,7 @@ var require_client_encryption = __commonJS((exports2) => {
       return ClientEncryption.getMongoCrypt().libmongocryptVersion;
     }
     async _encrypt(value, expressionMode, options) {
-      const { algorithm, keyId, keyAltName, contentionFactor, queryType, rangeOptions, textOptions } = options;
+      const { algorithm, keyId, keyAltName, contentionFactor, queryType, rangeOptions, stringOptions, textOptions } = options;
       const contextOptions = {
         expressionMode,
         algorithm
@@ -53723,8 +53874,9 @@ var require_client_encryption = __commonJS((exports2) => {
       if (typeof rangeOptions === "object") {
         contextOptions.rangeOptions = (0, bson_1.serialize)(rangeOptions);
       }
-      if (typeof textOptions === "object") {
-        contextOptions.textOptions = (0, bson_1.serialize)(textOptions);
+      const resolvedStringOptions = stringOptions ?? textOptions;
+      if (typeof resolvedStringOptions === "object") {
+        contextOptions.textOptions = (0, bson_1.serialize)(resolvedStringOptions);
       }
       const valueBuffer = (0, bson_1.serialize)({ v: value });
       const stateMachine = new state_machine_1.StateMachine({
@@ -58956,7 +59108,7 @@ var require_plain = __commonJS((exports2) => {
 });
 
 // node_modules/@mongodb-js/saslprep/dist/index.js
-var require_dist5 = __commonJS((exports2, module2) => {
+var require_dist6 = __commonJS((exports2, module2) => {
   var getCodePoint = (character) => character.codePointAt(0);
   var first = (x2) => x2[0];
   var last = (x2) => x2[x2.length - 1];
@@ -59292,7 +59444,7 @@ var require_node2 = __commonJS((exports2, module2) => {
   var __importDefault = exports2 && exports2.__importDefault || function(mod) {
     return mod && mod.__esModule ? mod : { default: mod };
   };
-  var index_1 = __importDefault(require_dist5());
+  var index_1 = __importDefault(require_dist6());
   var memory_code_points_1 = require_memory_code_points();
   var code_points_data_1 = __importDefault(require_code_points_data());
   var codePoints = (0, memory_code_points_1.createMemoryCodePoints)(code_points_data_1.default);
@@ -59411,11 +59563,10 @@ var require_scram = __commonJS((exports2) => {
     const clientKey = await HMAC(cryptoMethod, saltedPassword, "Client Key");
     const serverKey = await HMAC(cryptoMethod, saltedPassword, "Server Key");
     const storedKey = await H(cryptoMethod, clientKey);
-    const authMessage = [
-      clientFirstMessageBare(username, nonce),
-      payload.toString("utf8"),
-      withoutProof
-    ].join(",");
+    const firstMessageBytes = clientFirstMessageBare(username, nonce);
+    const firstMessage = bson_1.ByteUtils.toUTF8(firstMessageBytes, 0, firstMessageBytes.length, false);
+    const payloadString = bson_1.ByteUtils.toUTF8(payload.buffer, 0, payload.position, false);
+    const authMessage = [firstMessage, payloadString, withoutProof].join(",");
     const clientSignature = await HMAC(cryptoMethod, storedKey, authMessage);
     const clientProof = `p=${xor(clientKey, clientSignature)}`;
     const clientFinal = [withoutProof, clientProof].join(",");
@@ -59441,7 +59592,7 @@ var require_scram = __commonJS((exports2) => {
     await connection.command((0, utils_1.ns)(`${db}.$cmd`), retrySaslContinueCmd, undefined);
   }
   function parsePayload(payload) {
-    const payloadStr = payload.toString("utf8");
+    const payloadStr = bson_1.ByteUtils.toUTF8(payload.buffer, 0, payload.position, false);
     const dict = {};
     const parts = payloadStr.split(",");
     for (let i2 = 0;i2 < parts.length; i2++) {
@@ -60642,7 +60793,7 @@ var require_topology = __commonJS((exports2) => {
     }
     closeCheckedOutConnections() {
       for (const server of this.s.servers.values()) {
-        return server.closeCheckedOutConnections();
+        server.closeCheckedOutConnections();
       }
     }
     close() {
@@ -63978,6 +64129,109 @@ var require_kareem = __commonJS((exports2, module2) => {
   module2.exports = Kareem;
 });
 
+// node_modules/mongoose/lib/helpers/pathTrie.js
+var require_pathTrie = __commonJS((exports2, module2) => {
+  var wildcardSegment = "$*";
+  var numericSegmentRegex = /^\d+$/;
+
+  class PathTrieNode {
+    constructor() {
+      this.children = new Map;
+      this.terminal = false;
+      this.hasWildcard = false;
+    }
+  }
+
+  class PathTrie {
+    constructor(paths) {
+      this.root = new PathTrieNode;
+      if (paths != null) {
+        for (const path of paths) {
+          this.add(path);
+        }
+      }
+    }
+    add(path) {
+      if (path.indexOf(".") === -1) {
+        this._addSegment(this.root, path).terminal = true;
+        return;
+      }
+      let node = this.root;
+      for (const segment of path.split(".")) {
+        node = this._addSegment(node, segment);
+      }
+      node.terminal = true;
+    }
+    _addSegment(node, segment) {
+      let child = node.children.get(segment);
+      if (child == null) {
+        child = new PathTrieNode;
+        node.children.set(segment, child);
+        if (segment === wildcardSegment) {
+          node.hasWildcard = true;
+        }
+      }
+      return child;
+    }
+    matchesPathOrAncestor(path) {
+      return this._walk(path) === true;
+    }
+    overlapsPath(path) {
+      return this._walk(path) !== false;
+    }
+    _walk(path) {
+      if (typeof path === "string") {
+        const next = [];
+        const literal = this.root.children.get(path);
+        if (literal != null) {
+          if (literal.terminal) {
+            return true;
+          }
+          next.push(literal);
+        }
+        if (this.root.hasWildcard) {
+          const wildcard = this.root.children.get(wildcardSegment);
+          if (wildcard.terminal) {
+            return true;
+          }
+          next.push(wildcard);
+        }
+        return next.length === 0 ? false : next;
+      }
+      let nodes = [this.root];
+      for (const segment of path) {
+        const next = [];
+        const isNumericSegment = numericSegmentRegex.test(segment);
+        for (const node of nodes) {
+          if (isNumericSegment) {
+            next.push(node);
+          }
+          const literal = node.children.get(segment);
+          if (literal != null) {
+            if (literal.terminal) {
+              return true;
+            }
+            next.push(literal);
+          }
+          if (node.hasWildcard) {
+            const wildcard = node.children.get(wildcardSegment);
+            if (wildcard.terminal) {
+              return true;
+            }
+            next.push(wildcard);
+          }
+        }
+        if (next.length === 0) {
+          return false;
+        }
+        nodes = next;
+      }
+      return nodes;
+    }
+  }
+  module2.exports = PathTrie;
+});
+
 // node_modules/mongoose/lib/error/messages.js
 var require_messages = __commonJS((exports2, module2) => {
   var msg = module2.exports = exports2 = {};
@@ -64510,7 +64764,7 @@ var require_divergentArray = __commonJS((exports2, module2) => {
 
   class DivergentArrayError extends MongooseError {
     constructor(paths) {
-      const msg = "For your own good, using `document.save()` to update an array " + "which was selected using an $elemMatch projection OR " + "populated using skip, limit, query conditions, or exclusion of " + "the _id field when the operation results in a $pop or $set of " + "the entire array is not supported. The following " + `path(s) would have been modified unsafely:
+      const msg = "For your own good, using `document.save()` to update an array " + "which was selected using an $elemMatch or $slice projection OR " + "populated using skip, limit, query conditions, or exclusion of " + "the _id field when the operation results in a $pop or $set of " + "the entire array is not supported. The following " + `path(s) would have been modified unsafely:
 ` + "  " + paths.join(`
   `) + `
 ` + "Use Model.updateOne() to update these arrays instead. " + "See https://mongoosejs.com/docs/faq.html#divergent-array-error for more information.";
@@ -65076,7 +65330,6 @@ var require_stateMachine = __commonJS((exports2, module2) => {
   StateMachine.ctor = function() {
     const states = [...arguments];
     const ctor = function() {
-      StateMachine.apply(this, arguments);
       this.paths = {};
       this.states = {};
     };
@@ -65095,12 +65348,33 @@ var require_stateMachine = __commonJS((exports2, module2) => {
     if (prevState === nextState) {
       return;
     }
-    const prevBucket = this.states[prevState];
-    if (prevBucket)
-      delete prevBucket[path];
+    if (prevState !== undefined) {
+      const prevBucket = this.states[prevState];
+      if (prevBucket)
+        delete prevBucket[path];
+    }
     this.paths[path] = nextState;
     this.states[nextState] = this.states[nextState] || {};
     this.states[nextState][path] = true;
+  };
+  /*!
+   * ignore
+   */
+  StateMachine.prototype.clearAllExcept = function clearAllExcept(state) {
+    const bucket = this.states[state];
+    const keys = bucket == null ? [] : Object.keys(bucket);
+    if (keys.length === 0) {
+      this.paths = {};
+      this.states = {};
+      return;
+    }
+    this.paths = {};
+    for (const path of keys) {
+      this.paths[path] = state;
+    }
+    this.states = {
+      [state]: this.states[state]
+    };
   };
   /*!
    * ignore
@@ -65110,12 +65384,13 @@ var require_stateMachine = __commonJS((exports2, module2) => {
       return;
     }
     const keys = Object.keys(this.states[state]);
+    if (keys.length === 0) {
+      return;
+    }
+    this.states[state] = {};
     let i2 = keys.length;
-    let path;
     while (i2--) {
-      path = keys[i2];
-      delete this.states[state][path];
-      delete this.paths[path];
+      delete this.paths[keys[i2]];
     }
   };
   /*!
@@ -65531,17 +65806,23 @@ var require_isNestedProjection = __commonJS((exports2, module2) => {
 var require_applyDefaults = __commonJS((exports2, module2) => {
   var isNestedProjection = require_isNestedProjection();
   module2.exports = function applyDefaults(doc, fields, exclude, hasIncludedChildren, isBeforeSetters, pathsToSkip, options) {
-    const paths = Object.keys(doc.$__schema.paths);
-    const plen = paths.length;
+    const schemaPaths = doc.$__schema.paths;
     const skipParentChangeTracking = options?.skipParentChangeTracking;
-    for (let i2 = 0;i2 < plen; ++i2) {
+    const skipId = doc.$__.skipId;
+    let hasPostSetterDefaults = false;
+    for (const p in schemaPaths) {
       let def;
       let curPath = "";
-      const p = paths[i2];
-      if (p === "_id" && doc.$__.skipId) {
+      if (p === "_id" && skipId) {
         continue;
       }
-      const type = doc.$__schema.paths[p];
+      const type = schemaPaths[p];
+      if (type.defaultValue === undefined) {
+        continue;
+      }
+      if (typeof type.defaultValue === "function" && !type.defaultValue.$runBeforeSetters) {
+        hasPostSetterDefaults = true;
+      }
       const path = type.splitPath();
       const len = path.length;
       if (path[len - 1] === "$*") {
@@ -65549,12 +65830,58 @@ var require_applyDefaults = __commonJS((exports2, module2) => {
       }
       let included = false;
       let doc_ = doc._doc;
+      if (len === 1) {
+        if (exclude === true) {
+          if (p in fields) {
+            continue;
+          }
+        } else if (exclude === false && fields) {
+          const hasSubpaths = type.$isSingleNested || type.$isMongooseDocumentArray;
+          if (p in fields && !isNestedProjection(fields[p]) || hasSubpaths && hasIncludedChildren != null && hasIncludedChildren[p]) {
+            included = true;
+          } else if (hasIncludedChildren != null && !hasIncludedChildren[p]) {
+            continue;
+          }
+        }
+        if (doc_[p] !== undefined) {
+          continue;
+        }
+        if (isBeforeSetters != null) {
+          if (typeof type.defaultValue === "function") {
+            if (!type.defaultValue.$runBeforeSetters && isBeforeSetters) {
+              continue;
+            }
+            if (type.defaultValue.$runBeforeSetters && !isBeforeSetters) {
+              continue;
+            }
+          } else if (!isBeforeSetters) {
+            continue;
+          }
+        }
+        if (pathsToSkip && pathsToSkip[p]) {
+          continue;
+        }
+        if (fields && exclude !== null && !(exclude === true || included)) {
+          continue;
+        }
+        try {
+          def = type.getDefault(doc, false);
+        } catch (err) {
+          doc.invalidate(p, err);
+          continue;
+        }
+        if (typeof def !== "undefined") {
+          doc_[p] = def;
+          applyChangeTracking(doc, p, skipParentChangeTracking);
+        }
+        continue;
+      }
       for (let j = 0;j < len; ++j) {
         if (doc_ == null) {
           break;
         }
         const piece = path[j];
-        curPath += (!curPath.length ? "" : ".") + piece;
+        curPath = curPath.length ? curPath + "." + piece : piece;
         if (exclude === true) {
           if (curPath in fields) {
             break;
@@ -65630,6 +65957,7 @@ var require_applyDefaults = __commonJS((exports2, module2) => {
         }
       }
     }
+    return hasPostSetterDefaults;
   };
   /*!
    * ignore
@@ -66118,24 +66446,20 @@ var require_getEmbeddedDiscriminatorPath = __commonJS((exports2, module2) => {
 var require_getKeysInSchemaOrder = __commonJS((exports2, module2) => {
   var get = require_get2();
   module2.exports = function getKeysInSchemaOrder(schema, val, path) {
+    const valKeys = Object.keys(val);
+    if (valKeys.length <= 1) {
+      return valKeys;
+    }
     const schemaKeys = path != null ? Object.keys(get(schema.tree, path, {})) : Object.keys(schema.tree);
-    const valKeys = new Set(Object.keys(val));
-    let keys;
-    if (valKeys.size > 1) {
-      keys = new Set;
-      for (const key of schemaKeys) {
-        if (valKeys.has(key)) {
-          keys.add(key);
-        }
+    const remaining = new Set(valKeys);
+    const keys = [];
+    for (const key of schemaKeys) {
+      if (remaining.delete(key)) {
+        keys.push(key);
       }
-      for (const key of valKeys) {
-        if (!keys.has(key)) {
-          keys.add(key);
-        }
-      }
-      keys = Array.from(keys);
-    } else {
-      keys = Array.from(valKeys);
+    }
+    for (const key of remaining) {
+      keys.push(key);
     }
     return keys;
   };
@@ -66546,6 +66870,9 @@ var require_queryHelpers = __commonJS((exports2) => {
     switch (exclude) {
       case true:
         for (const fieldName of excluded) {
+          if (hasExcludedAncestor(fields, fieldName)) {
+            continue;
+          }
           fields[fieldName] = 0;
         }
         break;
@@ -66667,6 +66994,16 @@ var require_queryHelpers = __commonJS((exports2) => {
       }
       (type.selected ? selected : excluded).push(path);
       return path;
+    }
+    function hasExcludedAncestor(fields2, path) {
+      let i2 = -1;
+      while ((i2 = path.indexOf(".", i2 + 1)) !== -1) {
+        const ancestor = fields2[path.slice(0, i2)];
+        if (ancestor != null && !ancestor) {
+          return true;
+        }
+      }
+      return false;
     }
   };
   function makeLean(val) {
@@ -66965,7 +67302,7 @@ var require_subdocument = __commonJS((exports2, module2) => {
     const ret = Document.prototype.$toObject.call(this, options, json);
     if (utils2.hasOwnKeys(ret) === false && options?._calledWithOptions != null) {
       const minimize = options._calledWithOptions?.minimize ?? this?.$__schemaTypeOptions?.minimize ?? options.minimize;
-      if (minimize && !this.constructor.$__required) {
+      if (minimize && !this.constructor.$__required && !this.$isDocumentArrayElement) {
         return;
       }
     }
@@ -67677,6 +68014,7 @@ var require_methods2 = __commonJS((exports2, module2) => {
   var arrayPathSymbol = require_symbols().arrayPathSymbol;
   var arraySchemaSymbol = require_symbols().arraySchemaSymbol;
   var documentArrayParent = require_symbols().documentArrayParent;
+  var _baseReverse = Array.prototype.reverse;
   var _baseToString = Array.prototype.toString;
   var methods = {
     toBSON() {
@@ -67797,22 +68135,70 @@ var require_methods2 = __commonJS((exports2, module2) => {
       return this.constructor.prototype.toObject.apply(this, arguments);
     },
     push() {
+      const shouldReindex = _shouldReindexAfterPush(arguments);
       const ret = ArrayMethods.push.apply(this, arguments);
+      if (shouldReindex) {
+        _updateSubdocIndexes(this);
+      }
+      _updateParentPopulated(this);
+      return ret;
+    },
+    pop() {
+      const ret = ArrayMethods.pop.apply(this, arguments);
+      _updateParentPopulated(this);
+      return ret;
+    },
+    $pop() {
+      /*!
+         * ignore
+         */
+      const ret = ArrayMethods.$pop.apply(this, arguments);
       _updateParentPopulated(this);
       return ret;
     },
     pull() {
       const ret = ArrayMethods.pull.apply(this, arguments);
+      _updateSubdocIndexes(this);
       _updateParentPopulated(this);
       return ret;
     },
     shift() {
       const ret = ArrayMethods.shift.apply(this, arguments);
+      _updateSubdocIndexes(this);
+      _updateParentPopulated(this);
+      return ret;
+    },
+    $shift() {
+      /*!
+         * ignore
+         */
+      const ret = ArrayMethods.$shift.apply(this, arguments);
+      _updateSubdocIndexes(this);
       _updateParentPopulated(this);
       return ret;
     },
     splice() {
       const ret = ArrayMethods.splice.apply(this, arguments);
+      _updateSubdocIndexes(this);
+      _updateParentPopulated(this);
+      return ret;
+    },
+    reverse() {
+      _baseReverse.call(this.__array);
+      this._registerAtomic("$set", this);
+      _updateSubdocIndexes(this);
+      _updateParentPopulated(this);
+      return this;
+    },
+    sort() {
+      const ret = ArrayMethods.sort.apply(this, arguments);
+      _updateSubdocIndexes(this);
+      _updateParentPopulated(this);
+      return ret;
+    },
+    unshift() {
+      const ret = ArrayMethods.unshift.apply(this, arguments);
+      _updateSubdocIndexes(this);
       _updateParentPopulated(this);
       return ret;
     },
@@ -67893,6 +68279,20 @@ var require_methods2 = __commonJS((exports2, module2) => {
     }
   };
   module2.exports = methods;
+  /*!
+   * ignore
+   */
+  function _updateSubdocIndexes(arr) {
+    const rawArray = utils2.isMongooseArray(arr) ? arr.__array : arr;
+    for (let i2 = 0;i2 < rawArray.length; ++i2) {
+      if (typeof rawArray[i2]?.$setIndex === "function") {
+        rawArray[i2].$setIndex(i2);
+      }
+    }
+  }
+  function _shouldReindexAfterPush(args) {
+    return args[0] != null && utils2.hasUserDefinedProperty(args[0], "$each") && args[0].$position != null;
+  }
   function _updateParentPopulated(arr) {
     const parent = arr[arrayParentSymbol];
     if (!parent || parent.$__.populated == null)
@@ -68003,6 +68403,7 @@ var require_document2 = __commonJS((exports2, module2) => {
   var ObjectExpectedError = require_objectExpected();
   var ObjectParameterError = require_objectParameter();
   var ParallelValidateError = require_parallelValidate();
+  var PathTrie = require_pathTrie();
   var Schema = require_schema2();
   var StrictModeError = require_strict();
   var ValidationError = require_validation();
@@ -68020,7 +68421,6 @@ var require_document2 = __commonJS((exports2, module2) => {
   var getKeysInSchemaOrder = require_getKeysInSchemaOrder();
   var getSubdocumentStrictValue = require_getSubdocumentStrictValue();
   var handleSpreadDoc = require_handleSpreadDoc();
-  var isBsonType = require_isBsonType();
   var isDefiningProjection = require_isDefiningProjection();
   var isExclusive = require_isExclusive();
   var isPathExcluded = require_isPathExcluded();
@@ -68036,6 +68436,7 @@ var require_document2 = __commonJS((exports2, module2) => {
   var isPromise = require_isPromise();
   var deepEqual = utils2.deepEqual;
   var isMongooseObject = utils2.isMongooseObject;
+  var applyDefaultsBeforeSettersOptions = Object.freeze({ skipParentChangeTracking: true });
   var arrayAtomicsBackupSymbol = require_symbols().arrayAtomicsBackupSymbol;
   var arrayAtomicsSymbol = require_symbols().arrayAtomicsSymbol;
   var documentArrayParent = require_symbols().documentArrayParent;
@@ -68059,7 +68460,7 @@ var require_document2 = __commonJS((exports2, module2) => {
     if (typeof options === "boolean") {
       throw new Error("The skipId parameter has been removed. Use { skipId: true } in the options parameter instead.");
     }
-    options = Object.assign({}, options);
+    options = options == null ? {} : Object.assign({}, options);
     let skipId = options.skipId;
     this.$__ = new InternalCache;
     if (this.$__schema == null) {
@@ -68096,7 +68497,7 @@ var require_document2 = __commonJS((exports2, module2) => {
     } else if (schema.options.strict !== true) {
       this.$__.strictMode = schema.options.strict;
     }
-    const requiredPaths = schema.requiredPaths(true);
+    const requiredPaths = schema.requiredPaths();
     for (const path of requiredPaths) {
       this.$__.activePaths.require(path);
     }
@@ -68107,12 +68508,11 @@ var require_document2 = __commonJS((exports2, module2) => {
       this.$__.exclude = exclude;
     }
     const hasIncludedChildren = exclude === false && fields ? $__hasIncludedChildren(fields) : null;
+    let hasPostSetterDefaults = true;
     if (this._doc == null) {
       this.$__buildDoc(obj, fields, skipId, exclude, hasIncludedChildren, false);
       if (defaults) {
-        applyDefaults(this, fields, exclude, hasIncludedChildren, true, null, {
-          skipParentChangeTracking: true
-        });
+        hasPostSetterDefaults = applyDefaults(this, fields, exclude, hasIncludedChildren, true, null, applyDefaultsBeforeSettersOptions);
       }
     }
     if (obj) {
@@ -68121,7 +68521,7 @@ var require_document2 = __commonJS((exports2, module2) => {
       } else {
         this.$set(obj, undefined, true, options);
       }
-      if (obj instanceof Document) {
+      if (obj.$__ != null && obj instanceof Document) {
         this.$isNew = obj.$isNew;
       }
     }
@@ -68129,7 +68529,7 @@ var require_document2 = __commonJS((exports2, module2) => {
       if (options.skipDefaults) {
         this.$__.skipDefaults = options.skipDefaults;
       }
-    } else if (defaults) {
+    } else if (defaults && hasPostSetterDefaults) {
       applyDefaults(this, fields, exclude, hasIncludedChildren, false, options.skipDefaults);
     }
     if (!this.$__.strictMode && obj) {
@@ -68275,22 +68675,24 @@ var require_document2 = __commonJS((exports2, module2) => {
     }
   }
   Document.prototype.$__buildDoc = function(obj, fields, skipId, exclude, hasIncludedChildren) {
+    if (!utils2.hasOwnKeys(this.$__schema.nested)) {
+      this._doc = {};
+      return;
+    }
     const doc = {};
-    const paths = Object.keys(this.$__schema.paths).filter((p) => !p.includes("$*"));
+    const paths = Object.keys(this.$__schema.paths);
     const plen = paths.length;
     let ii = 0;
     for (;ii < plen; ++ii) {
       const p = paths[ii];
-      if (p === "_id") {
-        if (skipId) {
-          continue;
-        }
-        if (obj && "_id" in obj) {
-          continue;
-        }
+      if (p.includes("$*")) {
+        continue;
       }
       const path = this.$__schema.paths[p].splitPath();
       const len = path.length;
+      if (len === 1) {
+        continue;
+      }
       const last = len - 1;
       let curPath = "";
       let doc_ = doc;
@@ -68392,6 +68794,7 @@ var require_document2 = __commonJS((exports2, module2) => {
     let i2;
     const strict = self2.$__.strictMode;
     const docSchema = self2.$__schema;
+    const strictRead = docSchema.options.strictRead;
     for (let index = 0;index < len; ++index) {
       i2 = keys[index];
       if (specialProperties.has(i2)) {
@@ -68403,6 +68806,13 @@ var require_document2 = __commonJS((exports2, module2) => {
         continue;
       }
       const value = obj[i2];
+      if (!schemaType && strictRead && docSchema.pathType(path) === "adhocOrUndefined") {
+        if (strictRead === "throw") {
+          throw new StrictModeError(path, "Field `" + path + "` is not in schema and strictRead is set to throw.");
+        } else if (strictRead === true) {
+          continue;
+        }
+      }
       if (!schemaType && utils2.isPOJO(value)) {
         if (!doc[i2]) {
           doc[i2] = {};
@@ -68414,6 +68824,11 @@ var require_document2 = __commonJS((exports2, module2) => {
         }
         init(self2, value, doc[i2], opts, path + ".");
       } else if (!schemaType) {
+        if (strictRead === "throw") {
+          throw new StrictModeError(path, "Field `" + path + "` is not in schema and strictRead is set to throw.");
+        } else if (strictRead === true) {
+          continue;
+        }
         doc[i2] = value;
         if (!strict && !prefix) {
           self2[i2] = value;
@@ -68596,7 +69011,9 @@ var require_document2 = __commonJS((exports2, module2) => {
         }
         return this;
       }
-      options = Object.assign({}, options, { _skipMinimizeTopLevel: false });
+      if (_skipMinimizeTopLevel) {
+        options = Object.assign({}, options, { _skipMinimizeTopLevel: false });
+      }
       for (let i3 = 0;i3 < len; ++i3) {
         key = keys[i3];
         const pathName = prefix ? prefix + key : key;
@@ -68657,15 +69074,7 @@ var require_document2 = __commonJS((exports2, module2) => {
       }
     }
     val = handleSpreadDoc(val, true);
-    const priorVal = (() => {
-      if (this.$__.priorDoc != null) {
-        return this.$__.priorDoc.$__getValue(path);
-      }
-      if (constructing) {
-        return;
-      }
-      return this.$__getValue(path);
-    })();
+    const priorVal = this.$__.priorDoc != null ? this.$__.priorDoc.$__getValue(path) : constructing ? undefined : this.$__getValue(path);
     if (pathType === "nested" && val) {
       if (typeof val === "object" && val != null) {
         if (val.$__ != null) {
@@ -68801,11 +69210,8 @@ var require_document2 = __commonJS((exports2, module2) => {
     }
     let shouldSet = true;
     try {
-      const refMatches = (() => {
+      const refMatches = !(val instanceof Document) ? false : (() => {
         if (schema.options == null) {
-          return false;
-        }
-        if (!(val instanceof Document)) {
           return false;
         }
         const model = val.constructor;
@@ -69102,7 +69508,11 @@ var require_document2 = __commonJS((exports2, module2) => {
     }
     return this;
   };
-  Document.prototype.$__setValue = function(path, val) {
+  Document.prototype.$__setValue = function $__setValue(path, val) {
+    if (Array.isArray(path) && path.length === 1) {
+      this._doc[path[0]] = val;
+      return this;
+    }
     utils2.setValue(path, val, this._doc);
     return this;
   };
@@ -69115,7 +69525,7 @@ var require_document2 = __commonJS((exports2, module2) => {
       adhoc = this.$__schema.interpretAsType(path, type, this.$__schema.options);
     }
     const noDottedPath = options.noDottedPath;
-    let schema = noDottedPath ? this.$__schema.paths[path] : this.$__path(path);
+    let schema = noDottedPath ? Object.hasOwn(this.$__schema.paths, path) ? this.$__schema.paths[path] : undefined : this.$__path(path);
     if (schema == null) {
       schema = this.$__schema.virtualpath(path);
       if (schema != null) {
@@ -69123,7 +69533,7 @@ var require_document2 = __commonJS((exports2, module2) => {
       }
     }
     if (noDottedPath) {
-      let obj2 = this._doc[path];
+      let obj2 = Object.hasOwn(this._doc, path) ? this._doc[path] : undefined;
       if (adhoc) {
         obj2 = adhoc.cast(obj2);
       }
@@ -69145,7 +69555,10 @@ var require_document2 = __commonJS((exports2, module2) => {
       pieces[0] = this.$__schema.aliases[pieces[0]];
     }
     for (let i2 = 0, l = pieces.length;i2 < l; i2++) {
-      if (obj?._doc) {
+      if (specialProperties.has(pieces[i2])) {
+        return;
+      }
+      if (obj && obj._doc) {
         obj = obj._doc;
       }
       if (obj == null) {
@@ -69163,7 +69576,7 @@ var require_document2 = __commonJS((exports2, module2) => {
     }
     if (schema != null && options.getters !== false) {
       obj = schema.applyGetters(obj, this);
-    } else if (this.$__schema.nested[path] && options.virtuals) {
+    } else if (Object.hasOwn(this.$__schema.nested, path) && options.virtuals) {
       return applyVirtuals(this, clone2(obj) || {}, { path });
     }
     return obj;
@@ -69440,15 +69853,15 @@ var require_document2 = __commonJS((exports2, module2) => {
     if (path in this.$__.selected) {
       return inclusive;
     }
-    const pathDot = path + ".";
+    const pathHasDot = path.indexOf(".") !== -1;
     for (const cur of paths) {
       if (cur === "_id") {
         continue;
       }
-      if (cur.startsWith(pathDot)) {
-        return inclusive || cur !== pathDot;
+      if (cur.charAt(path.length) === "." && cur.slice(0, path.length) === path) {
+        return inclusive || cur !== path + ".";
       }
-      if (pathDot.startsWith(cur + ".")) {
+      if (pathHasDot && path.charAt(cur.length) === "." && path.slice(0, cur.length) === cur) {
         return inclusive;
       }
     }
@@ -69512,11 +69925,18 @@ var require_document2 = __commonJS((exports2, module2) => {
     } else if (!_skipParallelValidateCheck) {
       this.$__.validating = true;
     }
+    const hasValidateHooks = this.$__middleware.hasHooks("validate");
     try {
       try {
-        [options] = await this._execDocumentPreHooks("validate", options, [options]);
+        if (hasValidateHooks) {
+          [options] = await this._execDocumentPreHooks("validate", options, [options]);
+        } else if (!_skipParallelValidateCheck) {
+          await Promise.resolve();
+        }
       } catch (error2) {
-        await this._execDocumentPostHooks("validate", options, error2);
+        if (hasValidateHooks) {
+          await this._execDocumentPostHooks("validate", options, error2);
+        }
         return;
       }
       if (this.$__.saveOptions && this.$__.saveOptions.pathsToSave && !pathsToValidate) {
@@ -69571,7 +69991,11 @@ var require_document2 = __commonJS((exports2, module2) => {
       }
       if (paths.length === 0) {
         const error2 = _completeValidate(this);
-        await this._execDocumentPostHooks("validate", options, error2);
+        if (hasValidateHooks) {
+          await this._execDocumentPostHooks("validate", options, error2);
+        } else if (error2 != null) {
+          throw error2;
+        }
         return;
       }
       const validated = {};
@@ -69635,9 +70059,13 @@ var require_document2 = __commonJS((exports2, module2) => {
         _this.invalidate(paths[i2], validationError, undefined, true);
       }
       const error = _completeValidate(this);
-      await this._execDocumentPostHooks("validate", options, error);
+      if (hasValidateHooks) {
+        await this._execDocumentPostHooks("validate", options, error);
+      } else if (error != null) {
+        throw error;
+      }
     } finally {
-      delete this.$__.validateModifiedOnly;
+      this.$__.validateModifiedOnly = undefined;
       this.$op = null;
       this.$__.validating = null;
     }
@@ -69666,7 +70094,7 @@ var require_document2 = __commonJS((exports2, module2) => {
         error = undefined;
       }
     }
-    doc.$__.cachedRequired = {};
+    doc.$__.cachedRequired = null;
     doc.$emit("validate", doc);
     doc.constructor.emit("validate", doc);
     if (error) {
@@ -69678,62 +70106,77 @@ var require_document2 = __commonJS((exports2, module2) => {
     }
     return error;
   }
-  function _evaluateRequiredFunctions(doc) {
-    const requiredFields = Object.keys(doc.$__.activePaths.getStatePaths("require"));
-    let i2 = 0;
-    const len = requiredFields.length;
-    for (i2 = 0;i2 < len; ++i2) {
-      const path = requiredFields[i2];
-      const p = doc.$__schema.path(path);
-      if (typeof p?.originalRequiredValue === "function") {
-        doc.$__.cachedRequired = doc.$__.cachedRequired || {};
-        try {
-          doc.$__.cachedRequired[path] = p.originalRequiredValue.call(doc, doc);
-        } catch (err) {
-          doc.invalidate(path, err);
-        }
-      }
-    }
-  }
+  var STATES_TO_VALIDATE = Object.freeze(["init", "default", "modify"]);
+  var STAR_CHAR_CODE = 42;
   /*!
    * ignore
    */
   function _getPathsToValidate(doc, pathsToValidate, pathsToSkip, isNestedValidate) {
     const doValidateOptions = {};
-    _evaluateRequiredFunctions(doc);
-    let paths = new Set(Object.keys(doc.$__.activePaths.getStatePaths("require")).filter(function(path) {
-      if (!doc.$__isSelected(path) && !doc.$isModified(path)) {
-        return false;
-      }
-      if (path.endsWith(".$*")) {
-        return false;
-      }
-      if (doc.$__.cachedRequired != null && path in doc.$__.cachedRequired) {
-        return doc.$__.cachedRequired[path];
-      }
-      return true;
-    }));
-    Object.keys(doc.$__.activePaths.getStatePaths("init")).forEach(addToPaths);
-    Object.keys(doc.$__.activePaths.getStatePaths("modify")).forEach(addToPaths);
-    Object.keys(doc.$__.activePaths.getStatePaths("default")).forEach(addToPaths);
-    function addToPaths(p) {
-      if (p.endsWith(".$*")) {
-        return;
-      }
-      const _pathType = doc.$__schema.path(p);
-      if (_pathType) {
-        if (!_pathType.schema && !_pathType.embeddedSchemaType && _pathType.validators.length === 0 && !_pathType.$parentSchemaDocArray && !_pathType.$isSchemaMap && !_pathType.$isSchemaUnion) {
-          return;
-        } else if (_pathType.$isMongooseArray && !_pathType.$isMongooseDocumentArray && !_pathType.embeddedSchemaType.$isMongooseArray && _pathType.validators.length === 0 && _pathType.embeddedSchemaType.validators.length === 0) {
-          return;
+    const schema = doc.$__schema;
+    const schemaPaths = schema.paths;
+    const activeStates = doc.$__.activePaths.states;
+    let _modifiedPaths;
+    const getModifiedPaths = () => _modifiedPaths ??= doc.modifiedPaths();
+    let paths = [];
+    const requireStates = activeStates.require;
+    if (requireStates != null) {
+      let modifiedPaths = null;
+      for (const path in requireStates) {
+        const type = Object.hasOwn(schemaPaths, path) ? schemaPaths[path] : schema.path(path);
+        if (typeof type?.originalRequiredValue === "function") {
+          const cachedRequired2 = doc.$__.cachedRequired ?? (doc.$__.cachedRequired = {});
+          try {
+            cachedRequired2[path] = type.originalRequiredValue.call(doc, doc);
+          } catch (err) {
+            doc.invalidate(path, err);
+          }
+        }
+        if (!doc.$__isSelected(path)) {
+          if (modifiedPaths === null) {
+            modifiedPaths = doc.modifiedPaths();
+          }
+          if (!doc.$isModified(path, null, modifiedPaths)) {
+            continue;
+          }
+        }
+        if (path.charCodeAt(path.length - 1) === STAR_CHAR_CODE && path.endsWith(".$*")) {
+          continue;
+        }
+        const cachedRequired = doc.$__.cachedRequired;
+        if (cachedRequired != null && path in cachedRequired) {
+          if (cachedRequired[path]) {
+            paths.push(path);
+          }
+        } else {
+          paths.push(path);
         }
       }
-      paths.add(p);
     }
-    const onlyPrimitiveValues = doc.$__hasOnlyPrimitiveValues();
-    if (onlyPrimitiveValues && paths.size === 0) {
-      return [[], doValidateOptions];
+    for (let i2 = 0;i2 < STATES_TO_VALIDATE.length; ++i2) {
+      const statePaths = activeStates[STATES_TO_VALIDATE[i2]];
+      if (statePaths == null) {
+        continue;
+      }
+      for (const p in statePaths) {
+        if (p.charCodeAt(p.length - 1) === STAR_CHAR_CODE && p.endsWith(".$*")) {
+          continue;
+        }
+        const _pathType = Object.hasOwn(schemaPaths, p) ? schemaPaths[p] : schema.path(p);
+        if (_pathType) {
+          if (!_pathType.schema && !_pathType.embeddedSchemaType && _pathType.validators.length === 0 && !_pathType.$parentSchemaDocArray && !_pathType.$isSchemaMap && !_pathType.$isSchemaUnion) {
+            continue;
+          } else if (_pathType.$isMongooseArray && !_pathType.$isMongooseDocumentArray && !_pathType.embeddedSchemaType.$isMongooseArray && _pathType.validators.length === 0 && _pathType.embeddedSchemaType.validators.length === 0) {
+            continue;
+          }
+        }
+        paths.push(p);
+      }
     }
+    if (paths.length === 0 && doc.$__hasOnlyPrimitiveValues()) {
+      return [paths, doValidateOptions];
+    }
+    paths = new Set(paths);
     if (!isNestedValidate) {
       const topLevelSubdocs = [];
       for (const path of Object.keys(doc.$__schema.paths)) {
@@ -69754,7 +70197,13 @@ var require_document2 = __commonJS((exports2, module2) => {
           }
         }
       }
-      const modifiedPaths = doc.modifiedPaths();
+      const modifiedPaths = getModifiedPaths();
+      for (const modifiedPath of modifiedPaths) {
+        const modifiedPathType = doc.$__schema.path(modifiedPath);
+        if (modifiedPathType != null && modifiedPathType.$isMongooseDocumentArray && modifiedPathType.validators.length > 0) {
+          paths.add(modifiedPath);
+        }
+      }
       for (const subdoc of topLevelSubdocs) {
         if (subdoc.$basePath) {
           const fullPathToSubdoc = subdoc.$__pathRelativeToParent();
@@ -69779,7 +70228,7 @@ var require_document2 = __commonJS((exports2, module2) => {
         }
       }
     }
-    if (!onlyPrimitiveValues) {
+    if (!doc.$__hasOnlyPrimitiveValues()) {
       for (const path of paths) {
         const _pathType = doc.$__schema.path(path);
         if (_pathType && _pathType.$isMongooseDocumentArray) {
@@ -69807,8 +70256,8 @@ var require_document2 = __commonJS((exports2, module2) => {
         const flat = flatten(_v, pathToCheck, flattenOptions, doc.$__schema);
         const singleNestedPaths = doc.$__schema.singleNestedPaths;
         for (const path of Object.keys(flat)) {
-          if (!Object.hasOwn(singleNestedPaths, path)) {
-            addToPaths(path);
+          if (!Object.hasOwn(singleNestedPaths, path) && !path.endsWith(".$*")) {
+            paths.add(path);
           }
         }
       }
@@ -69866,14 +70315,14 @@ var require_document2 = __commonJS((exports2, module2) => {
   /*!
    * ignore
    */
-  Document.prototype._execDocumentPreHooks = async function _execDocumentPreHooks(opName, options, argsForHooks) {
+  Document.prototype._execDocumentPreHooks = function _execDocumentPreHooks(opName, options, argsForHooks) {
     const filter = buildMiddlewareFilter(options, "pre");
     return this.$__middleware.execPre(opName, this, argsForHooks || [], { filter });
   };
   /*!
    * ignore
    */
-  Document.prototype._execDocumentPostHooks = async function _execDocumentPostHooks(opName, options, error) {
+  Document.prototype._execDocumentPostHooks = function _execDocumentPostHooks(opName, options, error) {
     const filter = buildMiddlewareFilter(options, "post");
     return this.$__middleware.execPost(opName, this, [this], { error, filter });
   };
@@ -69912,7 +70361,14 @@ var require_document2 = __commonJS((exports2, module2) => {
     paths = Array.from(paths).filter((p) => !pathsToSkip.has(p));
     return new Set(paths);
   }
-  Document.prototype.validateSync = function(pathsToValidate, options) {
+  Document.prototype.validateSync = function() {
+    utils2.warn("Mongoose: `Document.prototype.validateSync()` is deprecated and will be removed in Mongoose 10. Use `Document.prototype.validate()` instead.");
+    return this.$__validateSync.apply(this, arguments);
+  };
+  /*!
+   * ignore
+   */
+  Document.prototype.$__validateSync = function(pathsToValidate, options) {
     const _this = this;
     if (arguments.length === 1 && typeof arguments[0] === "object" && !Array.isArray(arguments[0])) {
       options = arguments[0];
@@ -70084,31 +70540,36 @@ var require_document2 = __commonJS((exports2, module2) => {
     }
     return this.$__.validationError.errors[path] == null;
   };
-  Document.prototype.$__reset = function reset() {
-    let _this = this;
-    const onlyPrimitiveValues = this.$__hasOnlyPrimitiveValues();
-    const subdocs = !this.$isSubdocument && !onlyPrimitiveValues ? this.$getAllSubdocs({ useCache: true }) : null;
+  Document.prototype.$__reset = function reset(skipBackup, hasOnlyPrimitiveValues) {
+    hasOnlyPrimitiveValues = hasOnlyPrimitiveValues ?? this.$__hasOnlyPrimitiveValues();
+    const subdocs = !this.$isSubdocument && !hasOnlyPrimitiveValues ? this.$getAllSubdocs({ useCache: true }) : null;
     if (subdocs?.length > 0) {
       for (const subdoc of subdocs) {
-        subdoc.$__reset();
+        subdoc.$__reset(skipBackup);
       }
     }
-    this.$__resetAtomics();
-    this.$__.backup = {};
-    this.$__.backup.activePaths = {
-      modify: Object.assign({}, this.$__.activePaths.getStatePaths("modify")),
-      default: Object.assign({}, this.$__.activePaths.getStatePaths("default"))
-    };
-    this.$__.backup.validationError = this.$__.validationError;
-    this.$__.backup.errors = this.$errors;
-    this.$__.activePaths.clear("modify");
-    this.$__.activePaths.clear("default");
-    this.$__.validationError = undefined;
-    this.$errors = undefined;
-    _this = this;
-    this.$__schema.requiredPaths().forEach(function(path) {
-      _this.$__.activePaths.require(path);
-    });
+    if (!hasOnlyPrimitiveValues) {
+      this.$__resetAtomics();
+    }
+    if (!skipBackup) {
+      this.$__.backup = {};
+      this.$__.backup.activePaths = {
+        modify: Object.assign({}, this.$__.activePaths.getStatePaths("modify")),
+        default: Object.assign({}, this.$__.activePaths.getStatePaths("default"))
+      };
+      this.$__.backup.validationError = this.$__.validationError;
+      this.$__.backup.errors = this.$errors;
+    }
+    this.$__.activePaths.clearAllExcept("init");
+    if (this.$__.validationError) {
+      this.$__.validationError = undefined;
+    }
+    if (this.$errors) {
+      this.$errors = undefined;
+    }
+    for (const path of this.$__schema.requiredPaths()) {
+      this.$__.activePaths.require(path);
+    }
     return this;
   };
   /*!
@@ -70322,9 +70783,6 @@ var require_document2 = __commonJS((exports2, module2) => {
     if (depopulate && options._isNested && this.$__.wasPopulated) {
       return clone2(this.$__.wasPopulated.value || this._doc._id, options);
     }
-    if (depopulate) {
-      options.depopulate = true;
-    }
     if (defaultOptions != null) {
       for (const key of Object.keys(defaultOptions)) {
         if (options[key] == null) {
@@ -70334,10 +70792,9 @@ var require_document2 = __commonJS((exports2, module2) => {
     }
     options._isNested = true;
     options.json = json;
-    options.minimize = _minimize;
     const parentOptions = options._parentOptions;
     options._parentOptions = this.$isSubdocument ? options : null;
-    const schemaFieldsOnly = options._calledWithOptions.schemaFieldsOnly ?? options.schemaFieldsOnly ?? defaultOptions.schemaFieldsOnly ?? false;
+    const schemaFieldsOnly = options._calledWithOptions.schemaFieldsOnly ?? options.schemaFieldsOnly ?? defaultOptions?.schemaFieldsOnly ?? false;
     let ret;
     if (hasOnlyPrimitiveValues && !options.flattenObjectIds) {
       ret = this.$__toObjectShallow(schemaFieldsOnly);
@@ -70367,14 +70824,14 @@ var require_document2 = __commonJS((exports2, module2) => {
     } else {
       ret = clone2(this._doc, options) || {};
     }
-    const getters = options._calledWithOptions.getters ?? options.getters ?? defaultOptions.getters ?? false;
+    const getters = options._calledWithOptions.getters ?? options.getters ?? defaultOptions?.getters ?? false;
     if (getters) {
       applyGetters(this, ret);
       if (options.minimize) {
         ret = minimize(ret) || {};
       }
     }
-    const virtuals = options._calledWithOptions.virtuals ?? defaultOptions.virtuals ?? parentOptions?.virtuals ?? undefined;
+    const virtuals = options._calledWithOptions.virtuals ?? defaultOptions?.virtuals ?? parentOptions?.virtuals ?? undefined;
     if (virtuals || getters && virtuals !== false) {
       applyVirtuals(this, ret, options, options);
     }
@@ -70384,7 +70841,7 @@ var require_document2 = __commonJS((exports2, module2) => {
     const transform = options._calledWithOptions.transform ?? true;
     let transformFunction = undefined;
     if (transform === true) {
-      transformFunction = defaultOptions.transform;
+      transformFunction = defaultOptions?.transform;
     } else if (typeof transform === "function") {
       transformFunction = transform;
     }
@@ -70503,25 +70960,38 @@ var require_document2 = __commonJS((exports2, module2) => {
     }
     while (i2--) {
       path = paths[i2];
+      const schemaType = schema.paths[path];
+      if (!schemaType.getters?.length && !schemaType.embeddedSchemaType?.getters?.length) {
+        continue;
+      }
+      if (!self2.$__isSelected(path)) {
+        continue;
+      }
+      if (path.indexOf(".") === -1) {
+        json[path] = schemaType.applyGetters(json[path], self2);
+        if (Array.isArray(json[path]) && schemaType.embeddedSchemaType) {
+          for (let i3 = 0;i3 < json[path].length; ++i3) {
+            json[path][i3] = schemaType.embeddedSchemaType.applyGetters(json[path][i3], self2);
+          }
+        }
+        continue;
+      }
       const parts = path.split(".");
       const plen = parts.length;
       const last = plen - 1;
       let branch = json;
       let part;
       cur = self2._doc;
-      if (!self2.$__isSelected(path)) {
-        continue;
-      }
       for (let ii = 0;ii < plen; ++ii) {
         part = parts[ii];
         v = cur[part];
         if (branch != null && typeof branch !== "object") {
           break;
         } else if (ii === last) {
-          branch[part] = schema.paths[path].applyGetters(branch[part], self2);
-          if (Array.isArray(branch[part]) && schema.paths[path].embeddedSchemaType) {
+          branch[part] = schemaType.applyGetters(branch[part], self2);
+          if (Array.isArray(branch[part]) && schemaType.embeddedSchemaType) {
             for (let i3 = 0;i3 < branch[part].length; ++i3) {
-              branch[part][i3] = schema.paths[path].embeddedSchemaType.applyGetters(branch[part][i3], self2);
+              branch[part][i3] = schemaType.embeddedSchemaType.applyGetters(branch[part][i3], self2);
             }
           }
         } else if (v == null) {
@@ -70539,9 +71009,9 @@ var require_document2 = __commonJS((exports2, module2) => {
   }
   function applySchemaTypeTransforms(self2, json) {
     const schema = self2.$__schema;
-    const paths = Object.keys(schema.paths || {});
+    const paths = schema.pathsWithTransforms();
     const cur = self2._doc;
-    if (!cur) {
+    if (!cur || !paths) {
       return json;
     }
     for (const path of paths) {
@@ -70851,22 +71321,22 @@ var require_document2 = __commonJS((exports2, module2) => {
     const optimisticConcurrency = this.$__schema.options.optimisticConcurrency;
     if (optimisticConcurrency) {
       if (Array.isArray(optimisticConcurrency)) {
-        if (!this.$__schema.options._optimisticConcurrencySet) {
-          this.$__schema.options._optimisticConcurrencySet = new Set(optimisticConcurrency);
+        if (!this.$__schema.options._optimisticConcurrencyTrie) {
+          this.$__schema.options._optimisticConcurrencyTrie = new PathTrie(optimisticConcurrency);
         }
-        const optimisticConcurrencySet = this.$__schema.options._optimisticConcurrencySet;
+        const optimisticConcurrencyTrie = this.$__schema.options._optimisticConcurrencyTrie;
         const modPaths = this.directModifiedPaths();
-        const hasRelevantModPaths = pathsToSave == null ? modPaths.find((path) => _pathOverlapsSet(path, optimisticConcurrencySet)) : modPaths.find((path) => _pathOverlapsSet(path, optimisticConcurrencySet) && isInPathsToSave(path, pathsToSaveSet, pathsToSave));
+        const hasRelevantModPaths = pathsToSave == null ? modPaths.find((path) => optimisticConcurrencyTrie.overlapsPath(path.indexOf(".") === -1 ? path : path.split("."))) : modPaths.find((path) => optimisticConcurrencyTrie.overlapsPath(path.indexOf(".") === -1 ? path : path.split(".")) && isInPathsToSave(path, pathsToSaveSet, pathsToSave));
         if (hasRelevantModPaths) {
           this.$__.version = dirty.length ? VERSION_ALL : VERSION_WHERE;
         }
       } else if (Array.isArray(optimisticConcurrency?.exclude)) {
-        if (!this.$__schema.options._optimisticConcurrencyExcludeSet) {
-          this.$__schema.options._optimisticConcurrencyExcludeSet = new Set(optimisticConcurrency.exclude);
+        if (!this.$__schema.options._optimisticConcurrencyExcludeTrie) {
+          this.$__schema.options._optimisticConcurrencyExcludeTrie = new PathTrie(optimisticConcurrency.exclude);
         }
-        const optimisticConcurrencyExcludeSet = this.$__schema.options._optimisticConcurrencyExcludeSet;
+        const optimisticConcurrencyExcludeTrie = this.$__schema.options._optimisticConcurrencyExcludeTrie;
         const modPaths = this.directModifiedPaths();
-        const hasRelevantModPaths = pathsToSave == null ? modPaths.find((path) => !_pathOverlapsSet(path, optimisticConcurrencyExcludeSet)) : modPaths.find((path) => !_pathOverlapsSet(path, optimisticConcurrencyExcludeSet) && isInPathsToSave(path, pathsToSaveSet, pathsToSave));
+        const hasRelevantModPaths = pathsToSave == null ? modPaths.find((path) => !optimisticConcurrencyExcludeTrie.matchesPathOrAncestor(path.indexOf(".") === -1 ? path : path.split("."))) : modPaths.find((path) => !optimisticConcurrencyExcludeTrie.matchesPathOrAncestor(path.indexOf(".") === -1 ? path : path.split(".")) && isInPathsToSave(path, pathsToSaveSet, pathsToSave));
         if (hasRelevantModPaths) {
           this.$__.version = dirty.length ? VERSION_ALL : VERSION_WHERE;
         }
@@ -70962,6 +71432,12 @@ var require_document2 = __commonJS((exports2, module2) => {
     const pop = doc.$populated(path, true);
     if (!pop && doc.$__.selected) {
       const top = path.split(".")[0];
+      if (doc.$__.selected[top] && doc.$__.selected[top].$slice != null && utils2.isMongooseArray(array)) {
+        const atomics = array[arrayAtomicsSymbol];
+        if (atomics.$set) {
+          return top;
+        }
+      }
       if (doc.$__.selected[top + ".$"]) {
         return top;
       }
@@ -71136,23 +71612,28 @@ var require_document2 = __commonJS((exports2, module2) => {
    * Check if the given document only has primitive values
    */
   Document.prototype.$__hasOnlyPrimitiveValues = function $__hasOnlyPrimitiveValues() {
-    return !this.$__.populated && !this.$__.wasPopulated && (this._doc == null || Object.values(this._doc).every((v) => {
-      return v == null || typeof v !== "object" || utils2.isNativeObject(v) && !Array.isArray(v) || isBsonType(v, "ObjectId") || isBsonType(v, "Decimal128");
-    }));
-  };
-  /*!
-   * Increment this document's version if necessary.
-   */
-  Document.prototype._applyVersionIncrement = function _applyVersionIncrement() {
-    if (!this.$__.version)
-      return;
-    const doIncrement = VERSION_INC === (VERSION_INC & this.$__.version);
-    this.$__.version = undefined;
-    if (doIncrement) {
-      const key = this.$__schema.options.versionKey;
-      const version = this.$__getValue(key) || 0;
-      this.$__setValue(key, version + 1);
+    if (this.$__.populated) {
+      return false;
     }
+    const doc = this._doc;
+    for (const key in doc) {
+      const v = doc[key];
+      if (v == null || typeof v !== "object") {
+        continue;
+      }
+      if (Array.isArray(v)) {
+        return false;
+      }
+      if (v instanceof Date || v instanceof Boolean || v instanceof Number || v instanceof String) {
+        continue;
+      }
+      const bsontype = v._bsontype;
+      if (bsontype === "ObjectId" || bsontype === "Decimal128") {
+        continue;
+      }
+      return false;
+    }
+    return true;
   };
   /*!
    * Increment this document's version if necessary.
@@ -71171,31 +71652,6 @@ var require_document2 = __commonJS((exports2, module2) => {
   /*!
    * Module exports.
    */
-  /*!
-   * Check if `path`, any of its ancestor paths, or any of its descendant paths
-   * exist in `pathSet`.
-   * For example:
-   *   _pathOverlapsSet('profile.firstName', Set(['profile'])) === true
-   *   _pathOverlapsSet('profile', Set(['profile.firstName'])) === true
-   */
-  function _pathOverlapsSet(path, pathSet) {
-    if (pathSet.has(path)) {
-      return true;
-    }
-    let idx = path.indexOf(".");
-    while (idx !== -1) {
-      if (pathSet.has(path.substring(0, idx))) {
-        return true;
-      }
-      idx = path.indexOf(".", idx + 1);
-    }
-    for (const p of pathSet) {
-      if (p.length > path.length + 1 && p[path.length] === "." && p.slice(0, path.length) === path) {
-        return true;
-      }
-    }
-    return false;
-  }
   Document.VERSION_WHERE = VERSION_WHERE;
   Document.VERSION_INC = VERSION_INC;
   Document.VERSION_ALL = VERSION_ALL;
@@ -71481,10 +71937,7 @@ var require_utils6 = __commonJS((exports2) => {
   exports2.isObject = isObject;
   exports2.isPOJO = require_isPOJO();
   exports2.isNonBuiltinObject = function isNonBuiltinObject(val) {
-    return typeof val === "object" && !exports2.isNativeObject(val) && !exports2.isMongooseType(val) && !(val instanceof UUID) && val != null;
-  };
-  exports2.isNativeObject = function(arg) {
-    return Array.isArray(arg) || arg instanceof Date || arg instanceof Boolean || arg instanceof Number || arg instanceof String;
+    return typeof val === "object" && !Array.isArray(val) && !(val instanceof Date) && !(val instanceof Boolean) && !(val instanceof Number) && !(val instanceof String) && !exports2.isMongooseType(val) && !(val instanceof UUID) && val != null;
   };
   exports2.isEmptyObject = function isEmptyObject(val) {
     if (val == null || typeof val !== "object") {
@@ -71732,11 +72185,12 @@ var require_utils6 = __commonJS((exports2) => {
         ret.push(item);
         primitives.add(item);
       } else if (isBsonType(item, "ObjectId")) {
-        if (ids.has(item.toString())) {
+        const idStr = item.toString();
+        if (ids.has(idStr)) {
           continue;
         }
         ret.push(item);
-        ids.add(item.toString());
+        ids.add(idStr);
       } else {
         ret.push(item);
       }
@@ -71991,6 +72445,14 @@ var require_schemaType = __commonJS((exports2, module2) => {
       return { type };
     }
     return { type: [type, "null"] };
+  };
+  SchemaType.prototype._addJSONSchemaEnum = function _addJSONSchemaEnum(definition) {
+    if (!Array.isArray(this.enumValues) || this.enumValues.length === 0) {
+      return definition;
+    }
+    const allowsNull = Array.isArray(definition.type ?? definition.bsonType);
+    definition.enum = allowsNull ? [...this.enumValues, null] : [...this.enumValues];
+    return definition;
   };
   SchemaType.prototype.validators;
   SchemaType.prototype.isRequired;
@@ -72280,7 +72742,7 @@ var require_schemaType = __commonJS((exports2, module2) => {
     }
     if (typeof this.defaultValue === "function") {
       const context = options?.context ?? parentDoc;
-      if (this.defaultValue === Date.now || this.defaultValue === Array || this.defaultValue.name.toLowerCase() === "objectid") {
+      if (this.defaultValue === Date.now || this.defaultValue === Array || this.defaultValue.name === "ObjectId" || this.defaultValue.name === "ObjectID") {
         ret = this.defaultValue.call(context);
       } else {
         ret = this.defaultValue.call(context, context);
@@ -72289,7 +72751,7 @@ var require_schemaType = __commonJS((exports2, module2) => {
       ret = this.defaultValue;
     }
     if (ret != null) {
-      if (typeof ret === "object" && !this.options?.shared) {
+      if (typeof ret === "object" && ret != null && ret._bsontype !== "ObjectId" && !this.options?.shared) {
         ret = clone2(ret);
       }
       if (options?.skipCast) {
@@ -73024,6 +73486,9 @@ var require_idGetter = __commonJS((exports2, module2) => {
     return schema;
   };
   function idGetter() {
+    if (this._doc) {
+      return this._doc._id?.toString() ?? null;
+    }
     if (this._id != null) {
       return this._id.toString();
     }
@@ -73264,16 +73729,15 @@ var require_applyTimestampsToUpdate = __commonJS((exports2, module2) => {
   /*!
    * ignore
    */
-  var get = require_get2();
   var utils2 = require_utils6();
   module2.exports = applyTimestampsToUpdate;
   /*!
    * ignore
    */
-  function applyTimestampsToUpdate(now, createdAt, updatedAt, currentUpdate, options, isReplace) {
+  function applyTimestampsToUpdate(now, createdAt, updatedAt, currentUpdate, options, upsert, isReplace) {
     const updates = currentUpdate;
     let _updates = updates;
-    const timestamps = get(options, "timestamps", true);
+    const timestamps = options?.timestamps ?? true;
     if (!timestamps || updates == null) {
       return currentUpdate;
     }
@@ -73328,7 +73792,7 @@ var require_applyTimestampsToUpdate = __commonJS((exports2, module2) => {
       }
     }
     if (!skipCreatedAt && createdAt) {
-      const overwriteImmutable = get(options, "overwriteImmutable", false);
+      const overwriteImmutable = options?.overwriteImmutable;
       const hasUserCreatedAt = currentUpdate[createdAt] != null || currentUpdate.$set?.[createdAt] != null || currentUpdate.$setOnInsert?.[createdAt] != null;
       if (overwriteImmutable && hasUserCreatedAt) {
         if (currentUpdate[createdAt] != null) {
@@ -73359,7 +73823,7 @@ var require_applyTimestampsToUpdate = __commonJS((exports2, module2) => {
             }
           }
         }
-        if (!timestampSet) {
+        if (!timestampSet && upsert) {
           updates.$setOnInsert = updates.$setOnInsert || {};
           updates.$setOnInsert[createdAt] = now;
         }
@@ -73478,7 +73942,7 @@ var require_setupTimestamps = __commonJS((exports2, module2) => {
     if (replaceOps.has(this.op) && this.getUpdate() == null) {
       this.setUpdate({});
     }
-    applyTimestampsToUpdate(now, createdAt, updatedAt, this.getUpdate(), this._mongooseOptions, replaceOps.has(this.op));
+    applyTimestampsToUpdate(now, createdAt, updatedAt, this.getUpdate(), this._mongooseOptions, this.options.upsert, replaceOps.has(this.op));
     applyTimestampsToChildren(now, this.getUpdate(), this.model.schema);
   }
   timestampsPreSave[symbols.builtInMiddleware] = true;
@@ -74594,7 +75058,7 @@ var require_cast2 = __commonJS((exports2, module2) => {
           _cast(item, numbertype, context);
           val[nkey] = item;
         } else {
-          val[nkey] = numbertype.castForQuery({ val: item, context });
+          val[nkey] = numbertype.castForQuery(null, item, context);
         }
       }
     }
@@ -74886,7 +75350,7 @@ var require_number2 = __commonJS((exports2, module2) => {
     return val;
   };
   SchemaNumber.prototype.toJSONSchema = function toJSONSchema(options) {
-    return this._createJSONSchemaTypeDefinition("number", "number", options);
+    return this._addJSONSchemaEnum(this._createJSONSchemaTypeDefinition("number", "number", options));
   };
   /*!
    * Module exports.
@@ -75310,9 +75774,9 @@ var require_array2 = __commonJS((exports2, module2) => {
       }
     }
     if (Array.isArray(val)) {
-      this.setters.reverse().forEach((setter) => {
-        val = setter.call(this, val, this);
-      });
+      for (let i2 = this.setters.length - 1;i2 >= 0; i2--) {
+        val = this.setters[i2].call(this, val, this);
+      }
       val = val.map(function(v) {
         if (utils2.isObject(v) && v.$elemMatch) {
           return v;
@@ -76280,7 +76744,7 @@ var require_saveSubdocs = __commonJS((exports2, module2) => {
     schema.s.hooks.pre("save", saveSubdocsPreDeleteOne);
     schema.s.hooks.post("save", saveSubdocsPostDeleteOne);
   };
-  async function saveSubdocsPreSave() {
+  function saveSubdocsPreSave() {
     if (this.$isSubdocument) {
       return;
     }
@@ -76289,12 +76753,13 @@ var require_saveSubdocs = __commonJS((exports2, module2) => {
       return;
     }
     const options = this.$__.saveOptions;
-    await Promise.all(subdocs.map((subdoc) => subdoc._execDocumentPreHooks("save", options, [options])));
-    if (this.$__.saveOptions) {
-      this.$__.saveOptions.__subdocs = null;
-    }
+    return Promise.all(subdocs.map((subdoc) => subdoc._execDocumentPreHooks("save", options, [options]))).then(() => {
+      if (this.$__.saveOptions) {
+        this.$__.saveOptions.__subdocs = null;
+      }
+    });
   }
-  async function saveSubdocsPostSave() {
+  function saveSubdocsPostSave() {
     if (this.$isSubdocument) {
       return;
     }
@@ -76307,9 +76772,9 @@ var require_saveSubdocs = __commonJS((exports2, module2) => {
     for (const subdoc of subdocs) {
       promises.push(subdoc._execDocumentPostHooks("save", options));
     }
-    await Promise.all(promises);
+    return Promise.all(promises);
   }
-  async function saveSubdocsPreDeleteOne() {
+  function saveSubdocsPreDeleteOne() {
     const removedSubdocs = this.$__.removedSubdocs;
     if (!removedSubdocs?.length) {
       return;
@@ -76319,9 +76784,9 @@ var require_saveSubdocs = __commonJS((exports2, module2) => {
     for (const subdoc of removedSubdocs) {
       promises.push(subdoc._execDocumentPreHooks("deleteOne", options));
     }
-    await Promise.all(promises);
+    return Promise.all(promises);
   }
-  async function saveSubdocsPostDeleteOne() {
+  function saveSubdocsPostDeleteOne() {
     const removedSubdocs = this.$__.removedSubdocs;
     if (!removedSubdocs?.length) {
       return;
@@ -76332,7 +76797,7 @@ var require_saveSubdocs = __commonJS((exports2, module2) => {
       promises.push(subdoc._execDocumentPostHooks("deleteOne", options));
     }
     this.$__.removedSubdocs = null;
-    await Promise.all(promises);
+    return Promise.all(promises);
   }
   saveSubdocsPreSave[symbols.builtInMiddleware] = true;
   saveSubdocsPostSave[symbols.builtInMiddleware] = true;
@@ -76432,27 +76897,38 @@ var require_trackTransaction = __commonJS((exports2, module2) => {
   var utils2 = require_utils6();
   module2.exports = function trackTransaction(schema) {
     schema.pre("save", trackTransactionPreSave);
+    schema.pre("deleteOne", { document: true, query: false }, trackTransactionPreDeleteOne);
   };
   function trackTransactionPreSave() {
-    const session = this.$session();
+    _getInitialState(this);
+  }
+  function trackTransactionPreDeleteOne() {
+    const initialState = _getInitialState(this);
+    if (initialState != null && !Object.hasOwn(initialState, "isDeleted")) {
+      initialState.isDeleted = this.$isDeleted();
+    }
+  }
+  function _getInitialState(doc) {
+    const session = doc.$session();
     if (session == null) {
-      return;
+      return null;
     }
     if (session.transaction == null || session[sessionNewDocuments] == null) {
-      return;
+      return null;
     }
-    if (!session[sessionNewDocuments].has(this)) {
+    if (!session[sessionNewDocuments].has(doc)) {
       const initialState = {};
-      if (this.isNew) {
+      if (doc.isNew) {
         initialState.isNew = true;
       }
-      if (this.$__schema.options.versionKey) {
-        initialState.versionKey = this.get(this.$__schema.options.versionKey);
+      if (doc.$__schema.options.versionKey) {
+        initialState.versionKey = doc.get(doc.$__schema.options.versionKey);
       }
-      initialState.modifiedPaths = new Set(Object.keys(this.$__.activePaths.getStatePaths("modify")));
-      initialState.atomics = _getAtomics(this);
-      session[sessionNewDocuments].set(this, initialState);
+      initialState.modifiedPaths = new Set(Object.keys(doc.$__.activePaths.getStatePaths("modify")));
+      initialState.atomics = _getAtomics(doc);
+      session[sessionNewDocuments].set(doc, initialState);
     }
+    return session[sessionNewDocuments].get(doc);
   }
   function _getAtomics(doc, previous) {
     const pathToAtomics = new Map;
@@ -76494,6 +76970,7 @@ var require_trackTransaction = __commonJS((exports2, module2) => {
     return destination;
   }
   trackTransactionPreSave[symbols.builtInMiddleware] = true;
+  trackTransactionPreDeleteOne[symbols.builtInMiddleware] = true;
 });
 
 // node_modules/mongoose/lib/plugins/index.js
@@ -77045,7 +77522,7 @@ var require_subdocument2 = __commonJS((exports2, module2) => {
     if (!value) {
       return;
     }
-    return value.validateSync();
+    return value.$__validateSync();
   };
   SchemaSubdocument.prototype.discriminator = function(name, schema, options) {
     options = options || {};
@@ -77337,7 +77814,7 @@ var require_documentArray2 = __commonJS((exports2, module2) => {
       if (options?.validateModifiedOnly && !doc.$isModified()) {
         continue;
       }
-      const subdocValidateError = doc.validateSync(options);
+      const subdocValidateError = doc.$__validateSync(options);
       if (subdocValidateError && resultError == null) {
         resultError = subdocValidateError;
       }
@@ -78122,7 +78599,11 @@ var require_objectId = __commonJS((exports2, module2) => {
     return v;
   }
   SchemaObjectId.prototype.toJSONSchema = function toJSONSchema(options) {
-    return this._createJSONSchemaTypeDefinition("string", "objectId", options);
+    const jsonSchema = this._createJSONSchemaTypeDefinition("string", "objectId", options);
+    if (!options?.useBsonType) {
+      jsonSchema.pattern = "^[A-Fa-f0-9]{24}$";
+    }
+    return jsonSchema;
   };
   SchemaObjectId.prototype.autoEncryptionType = function autoEncryptionType() {
     return "objectId";
@@ -78456,7 +78937,7 @@ var require_string2 = __commonJS((exports2, module2) => {
     }
   };
   SchemaString.prototype.toJSONSchema = function toJSONSchema(options) {
-    return this._createJSONSchemaTypeDefinition("string", "string", options);
+    return this._addJSONSchemaEnum(this._createJSONSchemaTypeDefinition("string", "string", options));
   };
   SchemaString.prototype.autoEncryptionType = function autoEncryptionType() {
     return "string";
@@ -78740,8 +79221,8 @@ var require_union = __commonJS((exports2, module2) => {
           return schemaTypeError;
         }
       }
-      if (value != null && typeof value.validateSync === "function") {
-        return value.validateSync();
+      if (value != null && typeof value.$__validateSync === "function") {
+        return value.$__validateSync();
       }
     }
     clone() {
@@ -78807,6 +79288,7 @@ var require_schema2 = __commonJS((exports2, module2) => {
   var EventEmitter = require("events").EventEmitter;
   var Kareem = require_kareem();
   var MongooseError = require_mongooseError();
+  var PathTrie = require_pathTrie();
   var SchemaType = require_schemaType();
   var SchemaTypeOptions = require_schemaTypeOptions();
   var VirtualOptions = require_virtualOptions();
@@ -79091,10 +79573,12 @@ var require_schema2 = __commonJS((exports2, module2) => {
     const baseOptions = this.base?.options || {};
     const defaultStrict = baseOptions.strict ?? true;
     const defaultStrictQuery = baseOptions.strictQuery ?? false;
+    const defaultStrictRead = baseOptions.strictRead ?? false;
     const defaultId = baseOptions.id ?? true;
     options = {
       strict: defaultStrict,
       strictQuery: defaultStrictQuery,
+      strictRead: defaultStrictRead,
       bufferCommands: true,
       capped: false,
       versionKey: "__v",
@@ -79163,14 +79647,14 @@ var require_schema2 = __commonJS((exports2, module2) => {
    */
   Schema.prototype._defaultToObjectOptions = function(json) {
     const path = json ? "toJSON" : "toObject";
-    if (this._defaultToObjectOptionsMap && this._defaultToObjectOptionsMap[path]) {
+    if (this._defaultToObjectOptionsMap && path in this._defaultToObjectOptionsMap) {
       return this._defaultToObjectOptionsMap[path];
     }
     const baseOptions = this.base?.options?.[path] || {};
     const schemaOptions = this.options[path] || {};
     const defaultOptions = Object.assign({}, baseOptions, schemaOptions);
     this._defaultToObjectOptionsMap = this._defaultToObjectOptionsMap || {};
-    this._defaultToObjectOptionsMap[path] = defaultOptions;
+    this._defaultToObjectOptionsMap[path] = utils2.hasOwnKeys(defaultOptions) ? defaultOptions : null;
     return defaultOptions;
   };
   Schema.prototype.encryptionType = function encryptionType(encryptionType) {
@@ -79390,7 +79874,7 @@ var require_schema2 = __commonJS((exports2, module2) => {
   reserved.collection = 1;
   Schema.prototype.path = function(path, obj) {
     if (obj === undefined) {
-      if (this.paths[path] != null) {
+      if (Object.hasOwn(this.paths, path)) {
         return this.paths[path];
       }
       const cleanPath = _pathToPositionalSyntax(path);
@@ -79408,16 +79892,19 @@ var require_schema2 = __commonJS((exports2, module2) => {
       }
       return hasNumericSubpathRegex.test(path) ? getPositionalPath(this, path, cleanPath) : undefined;
     }
-    const firstPieceOfPath = path.split(".")[0];
-    if (reserved[firstPieceOfPath] && !this.options.suppressReservedKeysWarning) {
+    const subpaths = path.indexOf(".") === -1 ? [path] : path.split(".");
+    const last = subpaths.pop();
+    if (utils2.specialProperties.has(last)) {
+      throw new MongooseError("Cannot set special property `" + last + "` on a schema");
+    }
+    const firstPieceOfPath = subpaths.length === 0 ? last : subpaths[0];
+    if (Object.hasOwn(reserved, firstPieceOfPath) && !this.options.suppressReservedKeysWarning) {
       const errorMessage = `\`${firstPieceOfPath}\` is a reserved schema pathname and may break some functionality. ` + "You are allowed to use it, but use at your own risk. " + "To disable this warning pass `suppressReservedKeysWarning` as a schema option.";
       utils2.warn(errorMessage);
     }
     if (typeof obj === "object" && utils2.hasUserDefinedProperty(obj, "ref")) {
       validateRef(obj.ref, path);
     }
-    const subpaths = path.split(/\./);
-    const last = subpaths.pop();
     let branch = this.tree;
     let fullPath = "";
     for (const sub of subpaths) {
@@ -79603,7 +80090,7 @@ var require_schema2 = __commonJS((exports2, module2) => {
       } else if (val.schema && path.startsWith(cleanPath + ".")) {
         let remnant = path.slice(cleanPath.length + 1);
         remnant = remnant.slice(remnant.indexOf(".") + 1);
-        return val.schema.paths[remnant];
+        return val.schema.path(remnant);
       } else if (val.$isSchemaMap && path.startsWith(cleanPath + ".")) {
         let remnant = path.slice(cleanPath.length + 1);
         remnant = remnant.slice(remnant.indexOf(".") + 1);
@@ -79794,6 +80281,23 @@ var require_schema2 = __commonJS((exports2, module2) => {
     }
     this._requiredpaths = ret;
     return this._requiredpaths;
+  };
+  Schema.prototype.pathsWithTransforms = function pathsWithTransforms(invalidate) {
+    if (this._pathsWithTransforms !== undefined && !invalidate) {
+      return this._pathsWithTransforms;
+    }
+    const paths = Object.keys(this.paths);
+    const ret = [];
+    for (const path of paths) {
+      const schematype = this.paths[path];
+      const topLevelTransformFunction = schematype.options.transform ?? schematype.constructor?.defaultOptions?.transform;
+      const embeddedSchemaTypeTransformFunction = schematype.embeddedSchemaType?.options?.transform ?? schematype.embeddedSchemaType?.constructor?.defaultOptions?.transform;
+      if (topLevelTransformFunction || embeddedSchemaTypeTransformFunction) {
+        ret.push(path);
+      }
+    }
+    this._pathsWithTransforms = ret.length ? ret : null;
+    return this._pathsWithTransforms;
   };
   Schema.prototype.indexedPaths = function indexedPaths() {
     if (this._indexedpaths) {
@@ -80393,7 +80897,7 @@ var require_schema2 = __commonJS((exports2, module2) => {
             };
           }
           return { schema: foundschema, pathType: "real" };
-        } else if (p === parts.length && schema.nested[trypath]) {
+        } else if (p === parts.length && Object.hasOwn(schema.nested, trypath)) {
           return { schema, pathType: "nested" };
         }
       }
@@ -80431,11 +80935,12 @@ var require_schema2 = __commonJS((exports2, module2) => {
   Schema.prototype._preCompile = function _preCompile() {
     this.plugin(idGetter, { deduplicate: true });
     _precomputeOptimisticConcurrency(this);
+    this.pathsWithTransforms();
   };
   /*!
-   * Build precomputed sets for optimisticConcurrency include/exclude,
-   * expanding user-specified paths to include all schema subpaths so that
-   * lookups at save time are a simple `Set.has()`.
+   * Build precomputed path tries for optimisticConcurrency include/exclude so
+   * that lookups at save time are a single trie walk that handles nested paths
+   * and map wildcards like `settings.$*`.
    */
   function _precomputeOptimisticConcurrency(schema) {
     const opt = schema.options.optimisticConcurrency;
@@ -80443,9 +80948,9 @@ var require_schema2 = __commonJS((exports2, module2) => {
       return;
     }
     if (Array.isArray(opt)) {
-      schema.options._optimisticConcurrencySet = new Set(opt);
+      schema.options._optimisticConcurrencyTrie = new PathTrie(opt);
     } else if (Array.isArray(opt.exclude)) {
-      schema.options._optimisticConcurrencyExcludeSet = new Set(opt.exclude);
+      schema.options._optimisticConcurrencyExcludeTrie = new PathTrie(opt.exclude);
     }
   }
   Schema.prototype.toJSONSchema = function toJSONSchema(options) {
@@ -80474,24 +80979,18 @@ var require_schema2 = __commonJS((exports2, module2) => {
         }
       }
       const lastSubpath = schemaType._presplitPath[schemaType._presplitPath.length - 1];
-      let isRequired = false;
       if (path === "_id") {
         if (!jsonSchemaForPath.required) {
           jsonSchemaForPath.required = [];
         }
         jsonSchemaForPath.required.push("_id");
-        isRequired = true;
       } else if (schemaType.options.required && typeof schemaType.options.required !== "function") {
         if (!jsonSchemaForPath.required) {
           jsonSchemaForPath.required = [];
         }
         jsonSchemaForPath.required.push(lastSubpath);
-        isRequired = true;
       }
       jsonSchemaForPath.properties[lastSubpath] = schemaType.toJSONSchema(options);
-      if (schemaType.options.enum) {
-        jsonSchemaForPath.properties[lastSubpath].enum = isRequired ? schemaType.options.enum : [...schemaType.options.enum, null];
-      }
     }
     if (result.required.length === 0) {
       delete result.required;
@@ -80884,6 +81383,7 @@ var require_castUpdate = __commonJS((exports2, module2) => {
   var getDiscriminatorByValue = require_getDiscriminatorByValue();
   var getEmbeddedDiscriminatorPath = require_getEmbeddedDiscriminatorPath2();
   var handleImmutable = require_handleImmutable2();
+  var isOperator = require_isOperator();
   var moveImmutableProperties = require_moveImmutableProperties();
   var schemaMixedSymbol = require_symbols2().schemaMixedSymbol;
   var setDottedPath = require_setDottedPath();
@@ -81035,8 +81535,18 @@ var require_castUpdate = __commonJS((exports2, module2) => {
     while (i2--) {
       key = keys[i2];
       val = obj[key];
+      const fullPath = prefix + key;
+      const isTopLevelOperator = !prefix && isOperator(key);
+      let fullPathSchema = isTopLevelOperator ? schema._getSchema(fullPath) : null;
+      const isTopLevelNestedDollarPath = isTopLevelOperator && Object.hasOwn(schema.nested, key);
+      if (isTopLevelOperator && fullPathSchema == null && !isTopLevelNestedDollarPath) {
+        throw new MongooseError('Invalid update: Unexpected modifier "' + key + '" as a key in operator "' + op + '". ' + "Did you mean something like { " + op + ": { fieldName: { " + key + ": [...] } } }? " + "Modifiers must appear under a valid field path.");
+      }
       if (op === "$pull") {
-        schematype = schema._getSchema(prefix + key);
+        if (!isTopLevelOperator) {
+          fullPathSchema = schema._getSchema(fullPath);
+        }
+        schematype = fullPathSchema;
         if (schematype == null) {
           const _res = getEmbeddedDiscriminatorPath(schema, obj, filter, prefix + key, options);
           if (_res.schematype != null) {
@@ -81060,8 +81570,11 @@ var require_castUpdate = __commonJS((exports2, module2) => {
           continue;
         }
       }
+      if (!isTopLevelOperator && op !== "$pull") {
+        fullPathSchema = schema._getSchema(fullPath);
+      }
+      schematype = fullPathSchema;
       if (getConstructorName(val) === "Object") {
-        schematype = schema._getSchema(prefix + key);
         if (schematype == null) {
           const _res = getEmbeddedDiscriminatorPath(schema, obj, filter, prefix + key, options);
           if (_res.schematype != null) {
@@ -81152,12 +81665,11 @@ var require_castUpdate = __commonJS((exports2, module2) => {
           hasKeys |= walkUpdatePath(schema, val, op, options, context, filter, prefix + key) || utils2.isObject(val) && utils2.hasOwnKeys(val) === false;
         }
       } else {
-        const isModifier = key === "$each" || key === "$or" || key === "$and" || key === "$in";
-        if (isModifier && !prefix) {
-          throw new MongooseError('Invalid update: Unexpected modifier "' + key + '" as a key in operator. ' + "Did you mean something like { $addToSet: { fieldName: { $each: [...] } } }? " + 'Modifiers such as "$each", "$or", "$and", "$in" must appear under a valid field path.');
+        const isModifier = !isTopLevelNestedDollarPath && schematype == null && (key === "$each" || key === "$or" || key === "$and" || key === "$in");
+        const checkPath = isModifier ? prefix : fullPath;
+        if (isModifier) {
+          schematype = schema._getSchema(checkPath);
         }
-        const checkPath = isModifier ? prefix : prefix + key;
-        schematype = schema._getSchema(checkPath);
         if (op !== "$setOnInsert" && handleImmutable(schematype, strict, obj, key, prefix + key, options, context)) {
           continue;
         }
@@ -81580,7 +82092,7 @@ var require_castBulkWrite = __commonJS((exports2, module2) => {
       applyTimestampsToUpdate(now, createdAt, updatedAt, update, {
         timestamps: updateOne.timestamps,
         overwriteImmutable: updateOne.overwriteImmutable
-      });
+      }, updateOne.upsert);
     }
     if (doInitTimestamps) {
       applyTimestampsToChildren(now, update, model.schema);
@@ -81632,7 +82144,7 @@ var require_castBulkWrite = __commonJS((exports2, module2) => {
       applyTimestampsToUpdate(now, createdAt, updatedAt, updateMany["update"], {
         timestamps: updateMany.timestamps,
         overwriteImmutable: updateMany.overwriteImmutable
-      });
+      }, updateMany.upsert);
     }
     if (doInitTimestamps) {
       applyTimestampsToChildren(now, updateMany["update"], model.schema);
@@ -82062,16 +82574,11 @@ var require_connection2 = __commonJS((exports2, module2) => {
       if (Object.hasOwn(state, "versionKey")) {
         doc.set(doc.schema.options.versionKey, state.versionKey);
       }
-      if (state.modifiedPaths.length > 0 && doc.$__.activePaths.states.modify == null) {
-        doc.$__.activePaths.states.modify = {};
+      if (Object.hasOwn(state, "isDeleted")) {
+        doc.$isDeleted(state.isDeleted);
       }
       for (const path of state.modifiedPaths) {
-        const currentState = doc.$__.activePaths.paths[path];
-        if (currentState != null) {
-          delete doc.$__.activePaths[currentState][path];
-        }
-        doc.$__.activePaths.paths[path] = "modify";
-        doc.$__.activePaths.states.modify[path] = true;
+        doc.$__.activePaths.modify(path);
       }
       for (const path of state.atomics.keys()) {
         const val = doc.$__getValue(path);
@@ -82553,7 +83060,7 @@ var require_package3 = __commonJS((exports2, module2) => {
   module2.exports = {
     name: "mongoose",
     description: "Mongoose MongoDB ODM",
-    version: "9.6.3",
+    version: "9.9.2",
     author: "Guillermo Rauch <guillermo@learnboost.com>",
     keywords: [
       "mongodb",
@@ -82572,15 +83079,16 @@ var require_package3 = __commonJS((exports2, module2) => {
     type: "commonjs",
     license: "MIT",
     dependencies: {
+      "@standard-schema/spec": "^1.1.0",
       kareem: "3.3.0",
-      mongodb: "~7.2",
+      mongodb: "~7.5",
       mpath: "0.9.0",
       mquery: "6.0.0",
       ms: "2.1.3",
       sift: "17.1.3"
     },
     devDependencies: {
-      "@ark/attest": "0.56.0",
+      "@ark/attest": "0.56.3",
       "@eslint/js": "^9.39.3",
       "@mongodb-js/mongodb-downloader": "^1.0.0",
       "@types/node": "^20.19.0",
@@ -82588,34 +83096,35 @@ var require_package3 = __commonJS((exports2, module2) => {
       "acquit-ignore": "0.2.2",
       "acquit-require": "0.1.1",
       ajv: "8.20.0",
-      c8: "11.0.0",
+      c8: "12.0.0",
       cheerio: "1.2.0",
       dox: "1.0.0",
-      eslint: "10.2.1",
+      eslint: "10.8.0",
       "eslint-plugin-mocha-no-only": "1.2.0",
-      express: "4.22.1",
-      "fs-extra": "~11.3.0",
-      globals: "^17.4.0",
+      express: "5.2.1",
+      "fs-extra": "~11.4.0",
       glob: "^13.0.6",
+      globals: "^17.4.0",
       "highlight.js": "11.11.1",
-      linkinator: "7.x",
+      linkinator: "8.x",
       "lodash.isequal": "4.5.0",
       "lodash.isequalwith": "4.4.0",
-      "markdownlint-cli2": "0.22.1",
-      marked: "18.0.2",
+      "markdownlint-cli2": "0.23.2",
+      marked: "18.0.7",
       mkdirp: "^3.0.1",
-      mocha: "12.0.0-beta-10",
+      mocha: "12.0.0-rc.5",
       moment: "2.30.1",
-      "mongodb-client-encryption": "~7.0",
-      "mongodb-memory-server": "11.1.0",
+      "mongodb-client-encryption": "^7.2.0",
+      "mongodb-memory-server": "11.2.0",
       "mongodb-runner": "^6.0.0",
       ncp: "^2.0.0",
       pug: "3.0.4",
-      sinon: "21.1.2",
+      sinon: "22.1.0",
       tstyche: "^7.0.0",
       typescript: "5.9.3",
       "typescript-eslint": "^8.31.1",
-      uuid: "14.0.0"
+      uuid: "14.0.1",
+      xss: "1.0.15"
     },
     directories: {
       lib: "./lib/mongoose"
@@ -82649,17 +83158,17 @@ var require_package3 = __commonJS((exports2, module2) => {
       mongo: "node ./tools/repl.js",
       "publish-7x": "npm publish --tag 7x",
       "create-separate-require-instance": "rm -rf ./node_modules/mongoose-separate-require-instance && node ./scripts/create-tarball && tar -xzf mongoose.tgz -C ./node_modules && mv ./node_modules/package ./node_modules/mongoose-separate-require-instance",
-      test: "mocha --exit ./test/*.test.js",
-      "test:ci": "npm run test -- --reporter min",
+      test: 'mocha --exit --ignore "test/encryption/**/*.test.js" "./test/**/*.test.js"',
+      "test:ci": "npm run test -- --reporter min --timeout 10000",
       "test-deno": "deno run --allow-env --allow-read --allow-net --allow-run --allow-sys --allow-write ./test/deno.mjs",
       "test-deno:ci": "npm run test-deno -- --reporter min",
-      "test-rs": "START_REPLICA_SET=1 mocha --timeout 30000 --exit ./test/*.test.js",
+      "test-rs": 'START_REPLICA_SET=1 mocha --timeout 30000 --exit --ignore "test/encryption/**/*.test.js" "./test/**/*.test.js"',
       "test-rs:ci": "npm run test-rs -- --reporter min",
       "test:types": "tstyche",
       "setup-test-encryption": "node scripts/setup-encryption-tests.js",
       "test-encryption": "mocha --exit ./test/encryption/*.test.js",
       "test-encryption:ci": "npm run test-encryption -- --reporter min",
-      tdd: "mocha --watch --inspect --recursive ./test/*.test.js --watch-files lib/**/*.js test/**/*.js",
+      tdd: 'mocha --watch --inspect --ignore "test/encryption/**/*.test.js" "./test/**/*.test.js" --watch-files lib/**/*.js test/**/*.js',
       "test-coverage": "c8 --reporter=html --reporter=text npm test",
       "test-coverage:ci": "c8 --reporter=html --reporter=text npm run test:ci",
       "ts-benchmark": "cd ./benchmarks/typescript/simple && npm install && npm run benchmark | node ../../../scripts/tsc-diagnostics-check",
@@ -83105,6 +83614,7 @@ var require_validOptions = __commonJS((exports2, module2) => {
     "strict",
     "strictPopulate",
     "strictQuery",
+    "strictRead",
     "timestamps.createdAt.immutable",
     "toJSON",
     "toObject",
@@ -83307,6 +83817,33 @@ var require_eachAsync = __commonJS((exports2, module2) => {
   }
 });
 
+// node_modules/mongoose/lib/tracing.js
+var require_tracing = __commonJS((exports2, module2) => {
+  var dc;
+  try {
+    dc = typeof process !== "undefined" && "getBuiltinModule" in process ? process.getBuiltinModule("node:diagnostics_channel") : require("node:diagnostics_channel");
+  } catch {}
+  var hasTracingChannel = !!dc && typeof dc.tracingChannel === "function";
+  function shouldTrace(channel) {
+    return !!channel && channel.hasSubscribers !== false;
+  }
+  function createTracedChannel(name) {
+    const ch = hasTracingChannel ? dc.tracingChannel(name) : undefined;
+    function trace(fn, contextFactory) {
+      if (!shouldTrace(ch)) {
+        return fn();
+      }
+      const traced = ch.tracePromise(fn, contextFactory());
+      return traced;
+    }
+    return { channel: ch, trace };
+  }
+  module2.exports = {
+    createTracedChannel,
+    cursorNextChannel: createTracedChannel("mongoose:cursor:next")
+  };
+});
+
 // node_modules/mongoose/lib/cursor/queryCursor.js
 var require_queryCursor = __commonJS((exports2, module2) => {
   /*!
@@ -83320,6 +83857,7 @@ var require_queryCursor = __commonJS((exports2, module2) => {
   var immediate = require_immediate();
   var { once } = require("events");
   var util = require("util");
+  var { cursorNextChannel } = require_tracing();
   function QueryCursor(query) {
     Readable.call(this, { autoDestroy: true, objectMode: true });
     this.cursor = null;
@@ -83466,14 +84004,29 @@ var require_queryCursor = __commonJS((exports2, module2) => {
     if (this._closed) {
       throw new MongooseError("Cannot call `next()` on a closed cursor");
     }
-    return new Promise((resolve, reject) => {
-      _next(this, function(error, doc) {
-        if (error) {
-          return reject(error);
-        }
-        resolve(doc);
+    const _this = this;
+    return cursorNextChannel.trace(function maybeTracedQueryCursorNext() {
+      return new Promise((resolve, reject) => {
+        _next(_this, function(error, doc) {
+          if (error) {
+            return reject(error);
+          }
+          resolve(doc);
+        });
       });
-    });
+    }, () => ({
+      operation: _this.query.op || "find",
+      collection: _this.query.mongooseCollection.name,
+      database: _this.model.db?.name,
+      serverAddress: _this.model.db?.host,
+      serverPort: _this.model.db?.port,
+      batchSize: _this.options.batchSize || _this.query.options?.batchSize,
+      tailable: _this.options.tailable || _this.query.options?.tailable || false,
+      args: {
+        filter: _this.query.getFilter(),
+        options: _this.query._mongooseOptions
+      }
+    }));
   };
   QueryCursor.prototype.eachAsync = function(fn, opts) {
     if (typeof arguments[2] === "function") {
@@ -85650,6 +86203,8 @@ var require_query = __commonJS((exports2, module2) => {
   var util = require("util");
   var utils2 = require_utils6();
   var queryMiddlewareFunctions = require_constants3().queryMiddlewareFunctions;
+  var { createTracedChannel } = require_tracing();
+  var { trace: traceQuery } = createTracedChannel("mongoose:query");
   var queryOptionMethods = new Set([
     "allowDiskUse",
     "batchSize",
@@ -86658,11 +87213,7 @@ var require_query = __commonJS((exports2, module2) => {
   };
   Query.prototype._countDocuments = async function _countDocuments() {
     this._applyTranslateAliases();
-    try {
-      this.cast(this.model);
-    } catch (err) {
-      this.error(err);
-    }
+    this._castConditions();
     if (this.error()) {
       throw this.error();
     }
@@ -87562,35 +88113,49 @@ var require_query = __commonJS((exports2, module2) => {
       throw new MongooseError("Query was already executed: " + str);
     }
     this._execCount++;
-    let skipWrappedFunction = null;
-    try {
-      await this._hooks.execPre("exec", this, []);
-    } catch (err) {
-      if (err instanceof Kareem.skipWrappedFunction) {
-        skipWrappedFunction = err;
-      } else {
-        throw err;
+    const _this = this;
+    return traceQuery(async function maybeTracedQueryExec() {
+      let skipWrappedFunction = null;
+      try {
+        await _this._hooks.execPre("exec", _this, []);
+      } catch (err) {
+        if (err instanceof Kareem.skipWrappedFunction) {
+          skipWrappedFunction = err;
+        } else {
+          throw err;
+        }
       }
-    }
-    let res;
-    let error = null;
-    try {
-      await _executePreHooks(this);
-      res = skipWrappedFunction ? skipWrappedFunction.args[0] : await this[thunk]();
-      for (const fn of this._transforms) {
-        res = fn(res);
+      let res;
+      let error = null;
+      try {
+        await _executePreHooks(_this);
+        res = skipWrappedFunction ? skipWrappedFunction.args[0] : await _this[thunk]();
+        for (const fn of _this._transforms) {
+          res = fn(res);
+        }
+      } catch (err) {
+        if (err instanceof Kareem.skipWrappedFunction) {
+          res = err.args[0];
+        } else {
+          error = err;
+        }
+        error = _this.model.schema._transformDuplicateKeyError(error);
       }
-    } catch (err) {
-      if (err instanceof Kareem.skipWrappedFunction) {
-        res = err.args[0];
-      } else {
-        error = err;
+      res = await _executePostHooks(_this, res, error);
+      await _this._hooks.execPost("exec", _this, []);
+      return res;
+    }, () => ({
+      operation: _this.op,
+      collection: _this.mongooseCollection.name,
+      database: _this.model.db?.name,
+      serverAddress: _this.model.db?.host,
+      serverPort: _this.model.db?.port,
+      args: {
+        filter: _this.getFilter(),
+        fields: _this._fields,
+        options: _this._mongooseOptions
       }
-      error = this.model.schema._transformDuplicateKeyError(error);
-    }
-    res = await _executePostHooks(this, res, error);
-    await this._hooks.execPost("exec", this, []);
-    return res;
+    }));
   };
   /*!
    * ignore
@@ -87814,9 +88379,12 @@ var require_query = __commonJS((exports2, module2) => {
       this.setOptions(opts);
     }
     try {
-      this.cast(this.model);
+      this._castConditions();
     } catch (err) {
       return new QueryCursor(this)._markError(err);
+    }
+    if (this.error()) {
+      return new QueryCursor(this)._markError(this.error());
     }
     return new QueryCursor(this);
   };
@@ -87936,6 +88504,7 @@ var require_aggregationCursor = __commonJS((exports2, module2) => {
   var immediate = require_immediate();
   var kareem = require_kareem();
   var util = require("util");
+  var { cursorNextChannel } = require_tracing();
   function AggregationCursor(agg) {
     Readable.call(this, { autoDestroy: true, objectMode: true });
     this.cursor = null;
@@ -87957,13 +88526,7 @@ var require_aggregationCursor = __commonJS((exports2, module2) => {
    * ignore
    */
   function _init(model, c, agg) {
-    if (!model.collection.buffer) {
-      model.hooks.execPre("aggregate", agg).then(() => onPreComplete(null), (err) => onPreComplete(err));
-    } else {
-      model.collection.emitter.once("queue", function() {
-        model.hooks.execPre("aggregate", agg).then(() => onPreComplete(null), (err) => onPreComplete(err));
-      });
-    }
+    model.hooks.execPre("aggregate", agg).then(() => onPreComplete(null), (err) => onPreComplete(err));
     function onPreComplete(err) {
       if (err != null) {
         _handlePreHookError(c, err);
@@ -87972,8 +88535,26 @@ var require_aggregationCursor = __commonJS((exports2, module2) => {
       if (typeof agg.options?.cursor?.transform === "function") {
         c._transforms.push(agg.options.cursor.transform);
       }
-      c.cursor = model.collection.aggregate(agg._pipeline, agg.options || {});
-      c.emit("cursor", c.cursor);
+      if (model.collection._shouldBufferCommands() && model.collection.buffer) {
+        model.collection.queue.push([
+          () => _getRawCursor(model, c, agg)
+        ]);
+      } else {
+        _getRawCursor(model, c, agg);
+      }
+    }
+  }
+  /*!
+   * ignore
+   */
+  function _getRawCursor(model, aggregationCursor, agg) {
+    try {
+      const cursor = model.collection.aggregate(agg._pipeline, agg.options || {});
+      aggregationCursor.cursor = cursor;
+      aggregationCursor.emit("cursor", cursor);
+    } catch (err) {
+      aggregationCursor._markError(err);
+      aggregationCursor.listeners("error").length > 0 && aggregationCursor.emit("error", aggregationCursor._error);
     }
   }
   function _handlePreHookError(queryCursor, err) {
@@ -88061,14 +88642,30 @@ var require_aggregationCursor = __commonJS((exports2, module2) => {
     if (typeof arguments[0] === "function") {
       throw new MongooseError("AggregationCursor.prototype.next() no longer accepts a callback");
     }
-    return new Promise((resolve, reject) => {
-      _next(this, (err, res) => {
-        if (err != null) {
-          return reject(err);
-        }
-        resolve(res);
+    const _this = this;
+    const model = this.agg._model;
+    return cursorNextChannel.trace(function maybeTracedAggCursorNext() {
+      return new Promise((resolve, reject) => {
+        _next(_this, (err, res) => {
+          if (err != null) {
+            return reject(err);
+          }
+          resolve(res);
+        });
       });
-    });
+    }, () => ({
+      operation: "aggregate",
+      collection: model?.collection?.name,
+      database: model?.db?.name,
+      serverAddress: model?.db?.host,
+      serverPort: model?.db?.port,
+      batchSize: _this.agg.options?.cursor?.batchSize,
+      tailable: false,
+      args: {
+        pipeline: _this.agg._pipeline,
+        options: _this.agg.options
+      }
+    }));
   };
   AggregationCursor.prototype.eachAsync = function(fn, opts) {
     if (typeof arguments[2] === "function") {
@@ -88256,6 +88853,8 @@ var require_aggregate2 = __commonJS((exports2, module2) => {
   var stringifyFunctionOperators = require_stringifyFunctionOperators();
   var utils2 = require_utils6();
   var { modelSymbol } = require_symbols();
+  var { createTracedChannel } = require_tracing();
+  var { trace: traceAggregate } = createTracedChannel("mongoose:aggregate");
   var read = Query.prototype.read;
   var readConcern = Query.prototype.readConcern;
   var validRedactStringValues = new Set(["$$DESCEND", "$$PRUNE", "$$KEEP"]);
@@ -88565,8 +89164,20 @@ var require_aggregate2 = __commonJS((exports2, module2) => {
         throw new MongooseError("Aggregate has empty pipeline");
       }
       this._optionsForExec();
-      const cursor = await this._connection.client.db().aggregate(this._pipeline, this.options);
-      return await cursor.toArray();
+      const _this2 = this;
+      return traceAggregate(async function maybeTracedConnectionAggregate() {
+        const cursor = await _this2._connection.client.db().aggregate(_this2._pipeline, _this2.options);
+        return await cursor.toArray();
+      }, () => ({
+        operation: "aggregate",
+        database: _this2._connection.name,
+        serverAddress: _this2._connection.host,
+        serverPort: _this2._connection.port,
+        args: {
+          pipeline: _this2._pipeline,
+          options: _this2.options
+        }
+      }));
     }
     const model = this._model;
     const collection = this._model.collection;
@@ -88578,27 +89189,40 @@ var require_aggregate2 = __commonJS((exports2, module2) => {
     }
     prepareDiscriminatorPipeline(this._pipeline, this._model.schema);
     stringifyFunctionOperators(this._pipeline);
-    const preFilter = buildMiddlewareFilter(this.options, "pre");
-    const postFilter = buildMiddlewareFilter(this.options, "post");
-    try {
-      await model.hooks.execPre("aggregate", this, [], { filter: preFilter });
-    } catch (error) {
-      return await model.hooks.execPost("aggregate", this, [null], { error, filter: postFilter });
-    }
-    if (!this._pipeline.length) {
-      throw new MongooseError("Aggregate has empty pipeline");
-    }
-    const options = clone2(this.options || {});
-    delete options.middleware;
-    let result;
-    try {
-      const cursor = await collection.aggregate(this._pipeline, options);
-      result = await cursor.toArray();
-    } catch (error) {
-      return await model.hooks.execPost("aggregate", this, [null], { error, filter: postFilter });
-    }
-    await model.hooks.execPost("aggregate", this, [result], { error: null, filter: postFilter });
-    return result;
+    const _this = this;
+    return traceAggregate(async function maybeTracedAggregateExec() {
+      const preFilter = buildMiddlewareFilter(_this.options, "pre");
+      const postFilter = buildMiddlewareFilter(_this.options, "post");
+      try {
+        await model.hooks.execPre("aggregate", _this, [], { filter: preFilter });
+      } catch (error) {
+        return await model.hooks.execPost("aggregate", _this, [null], { error, filter: postFilter });
+      }
+      if (!_this._pipeline.length) {
+        throw new MongooseError("Aggregate has empty pipeline");
+      }
+      const options = clone2(_this.options || {});
+      delete options.middleware;
+      let result;
+      try {
+        const cursor = await collection.aggregate(_this._pipeline, options);
+        result = await cursor.toArray();
+      } catch (error) {
+        return await model.hooks.execPost("aggregate", _this, [null], { error, filter: postFilter });
+      }
+      await model.hooks.execPost("aggregate", _this, [result], { error: null, filter: postFilter });
+      return result;
+    }, () => ({
+      operation: "aggregate",
+      collection: collection.name,
+      database: model.db?.name,
+      serverAddress: model.db?.host,
+      serverPort: model.db?.port,
+      args: {
+        pipeline: _this._pipeline,
+        options: _this.options
+      }
+    }));
   };
   Aggregate.prototype.then = function(resolve, reject) {
     return this.exec().then(resolve, reject);
@@ -90405,6 +91029,26 @@ var require_assignVals = __commonJS((exports2, module2) => {
   }
 });
 
+// node_modules/mongoose/lib/standardSchema/convertErrorToIssues.js
+var require_convertErrorToIssues = __commonJS((exports2, module2) => {
+  var ValidationError = require_validation();
+  module2.exports = function convertErrorToIssues(error) {
+    if (error instanceof ValidationError) {
+      return Object.keys(error.errors).map((path) => {
+        const err = error.errors[path];
+        return {
+          message: err.message,
+          path: path.split(".").map((part) => {
+            const num = +part;
+            return Number.isInteger(num) && String(num) === part ? num : part;
+          })
+        };
+      });
+    }
+    return [{ message: error.message }];
+  };
+});
+
 // node_modules/mongoose/lib/helpers/populate/createPopulateQueryFilter.js
 var require_createPopulateQueryFilter = __commonJS((exports2, module2) => {
   var SkipPopulateValue = require_skipPopulateValue();
@@ -90427,7 +91071,13 @@ var require_createPopulateQueryFilter = __commonJS((exports2, module2) => {
       for (let i2 = 0;i2 < _parentPaths.length - 1; ++i2) {
         const cur = _parentPaths[i2];
         if (match[cur] != null && match[cur].$elemMatch != null) {
-          match[cur].$elemMatch[foreignField.slice(cur.length + 1)] = trusted({ $in: ids });
+          match[cur] = {
+            ...match[cur],
+            $elemMatch: {
+              ...match[cur].$elemMatch,
+              [foreignField.slice(cur.length + 1)]: trusted({ $in: ids })
+            }
+          };
           delete match[foreignField];
           break;
         }
@@ -91129,8 +91779,7 @@ var require_getModelsMapForPopulate = __commonJS((exports2, module2) => {
       if (data.isRefPath && Array.isArray(ret) && ret.length === modelNamesForRefPath.length) {
         ids = matchIdsToRefPaths(ret, modelNamesForRefPath, modelName);
       }
-      const perDocumentLimit = options.perDocumentLimit == null ? get(options, "options.perDocumentLimit", null) : options.perDocumentLimit;
-      if (!available[modelName] || perDocumentLimit != null) {
+      if (!available[modelName]) {
         const currentOptions = {
           model: Model
         };
@@ -91156,6 +91805,7 @@ var require_getModelsMapForPopulate = __commonJS((exports2, module2) => {
           isVirtual: data.isVirtual,
           virtual: data.virtual,
           count: data.count,
+          isRefPath: !!data.isRefPath,
           [populateModelSymbol]: Model
         };
         map.push(available[modelName]);
@@ -91166,6 +91816,7 @@ var require_getModelsMapForPopulate = __commonJS((exports2, module2) => {
         available[modelName].ids.push(ids);
         available[modelName].allIds.push(ret);
         available[modelName].unpopulatedValues.push(unpopulatedValue);
+        available[modelName].isRefPath = available[modelName].isRefPath || !!data.isRefPath;
         if (data.hasMatchFunction) {
           available[modelName].match.push(data.match);
         }
@@ -91470,29 +92121,50 @@ var require_getRelatedIndexes = __commonJS((exports2, module2) => {
 var require_parallelLimit = __commonJS((exports2, module2) => {
   module2.exports = parallelLimit;
   /*!
-   * ignore
+   * Run `fn` over every entry of `params` with at most `limit` calls in flight at
+   * a time, resolving to the results in input order. Currently only used by
+   * `Model.insertMany()` to bound how many documents validate concurrently.
    */
   async function parallelLimit(params, fn, limit) {
     if (limit <= 0) {
       throw new Error("Limit must be positive");
     }
-    if (params.length === 0) {
+    const length = params.length;
+    if (length === 0) {
       return [];
     }
-    const results = [];
-    const executing = new Set;
-    for (let index = 0;index < params.length; index++) {
-      const param = params[index];
-      const p = fn(param, index);
-      results.push(p);
-      executing.add(p);
-      const clean = () => executing.delete(p);
-      p.then(clean).catch(clean);
-      if (executing.size >= limit) {
-        await Promise.race(executing);
+    const results = new Array(length);
+    if (limit >= length) {
+      for (let i2 = 0;i2 < length; ++i2) {
+        results[i2] = fn(params[i2], i2);
       }
+      return Promise.all(results);
     }
-    return Promise.all(results);
+    let nextIndex = 0;
+    let firstError = null;
+    function worker() {
+      if (nextIndex >= length || firstError !== null) {
+        return;
+      }
+      const index = nextIndex++;
+      return Promise.resolve(fn(params[index], index)).then((val) => {
+        results[index] = val;
+        return worker();
+      }, (err) => {
+        if (firstError === null) {
+          firstError = err;
+        }
+      });
+    }
+    const workers = new Array(Math.min(limit, length));
+    for (let i2 = 0;i2 < workers.length; ++i2) {
+      workers[i2] = worker();
+    }
+    await Promise.all(workers);
+    if (firstError !== null) {
+      throw firstError;
+    }
+    return results;
   }
 });
 
@@ -91540,6 +92212,76 @@ var require_removeDeselectedForeignField = __commonJS((exports2, module2) => {
   };
 });
 
+// node_modules/mongoose/lib/helpers/populate/splitPopulateQuery.js
+var require_splitPopulateQuery = __commonJS((exports2, module2) => {
+  var createPopulateQueryFilter = require_createPopulateQueryFilter();
+  var get = require_get2();
+  var utils2 = require_utils6();
+  module2.exports = splitPopulateQuery;
+  /*!
+   * If a single populate query would have more than this many elements in its `$in` filter,
+   * Mongoose splits the populate into a separate query per document to avoid going over
+   * MongoDB's 16 MB BSON size limit on queries. Overwritable for testing purposes. See gh-5890.
+   */
+  splitPopulateQuery.maxInFilterLength = 50000;
+  /*!
+   * Split a populate models-map entry into a separate query per document if either:
+   *
+   * 1. The `perDocumentLimit` option is set, so each document needs its own query with its
+   *    own `limit` (gh-7318), or
+   * 2. A single populate query for `mod` would have too many elements in its `$in` filter
+   *    (gh-5890). With multiple foreign fields, `createPopulateQueryFilter()` repeats the ids
+   *    under `$or` once per foreign field, so the threshold counts one copy of `ids` per
+   *    foreign field.
+   *
+   * Returns a list of `[mod, match, select, assignmentOpts]` params, one per document, for
+   * `_execPopulateQuery()`. Returns `null` if the populate query doesn't need to be split.
+   * A `null` `match` means the document has no ids to query: `_execPopulateQuery()` skips
+   * executing a query, and `_assign()` just sets the document's populated path to the
+   * default value.
+   *
+   * Splitting on document boundaries means each document's populated value is the result of
+   * exactly one query, so split entries can typically be assigned from only their own query's
+   * results (`_assignFromOwnResults`) rather than scanning every populate query's results.
+   * refPath is the exception: a single document's array can contain ids for multiple models,
+   * so assigning refPath populate results relies on every query's results being available for
+   * every document. refPath entries are therefore only split when `perDocumentLimit` requires
+   * it, not to keep the `$in` filter small. A single document whose ids alone overflow the
+   * BSON size limit cannot be split.
+   */
+  function splitPopulateQuery(mod, ids, select, assignmentOpts) {
+    if (mod.docs.length <= 1) {
+      return null;
+    }
+    const perDocumentLimit = mod.options.perDocumentLimit == null ? get(mod.options, "options.perDocumentLimit", null) : mod.options.perDocumentLimit;
+    const numInFilterElements = ids.length * mod.foreignField.size;
+    if (perDocumentLimit == null && (numInFilterElements <= splitPopulateQuery.maxInFilterLength || mod.isRefPath)) {
+      return null;
+    }
+    return mod.docs.map((doc, i2) => {
+      const subMod = {
+        ...mod,
+        docs: [doc],
+        ids: [mod.ids[i2]],
+        allIds: [mod.allIds[i2]],
+        unpopulatedValues: [mod.unpopulatedValues[i2]],
+        match: Array.isArray(mod.match) ? [mod.match[i2]] : mod.match,
+        _assignFromOwnResults: !mod.isRefPath
+      };
+      let subIds = utils2.array.flatten(subMod.ids, flatten);
+      subIds = utils2.array.unique(subIds);
+      const match = subIds.length === 0 || subIds.every(utils2.isNullOrUndefined) ? null : createPopulateQueryFilter(subIds, subMod.match, subMod.foreignField, subMod.model, subMod.options.skipInvalidIds);
+      return [subMod, match, select, assignmentOpts];
+    });
+  }
+  /*!
+   * ignore
+   */
+  function flatten(item) {
+    return item !== undefined;
+  }
+});
+
 // node_modules/mongoose/lib/model.js
 var require_model = __commonJS((exports2, module2) => {
   /*!
@@ -91548,6 +92290,10 @@ var require_model = __commonJS((exports2, module2) => {
   var Aggregate = require_aggregate2();
   var ChangeStream = require_changeStream();
   var Document = require_document2();
+  var { createTracedChannel } = require_tracing();
+  var { trace: traceSave } = createTracedChannel("mongoose:model:save");
+  var { trace: traceInsertMany } = createTracedChannel("mongoose:model:insertMany");
+  var { trace: traceBulkWrite } = createTracedChannel("mongoose:model:bulkWrite");
   var DocumentNotFoundError = require_notFound();
   var EventEmitter = require("events").EventEmitter;
   var Kareem = require_kareem();
@@ -91578,6 +92324,7 @@ var require_model = __commonJS((exports2, module2) => {
   var assignVals = require_assignVals();
   var castBulkWrite = require_castBulkWrite();
   var clone2 = require_clone();
+  var convertErrorToStandardSchemaIssues = require_convertErrorToIssues();
   var createPopulateQueryFilter = require_createPopulateQueryFilter();
   var decorateUpdateWithVersionKey = require_decorateUpdateWithVersionKey();
   var getDefaultBulkwriteResult = require_getDefaultBulkwriteResult();
@@ -91607,6 +92354,7 @@ var require_model = __commonJS((exports2, module2) => {
   var pushNestedArrayPaths = require_pushNestedArrayPaths();
   var removeDeselectedForeignField = require_removeDeselectedForeignField();
   var setDottedPath = require_setDottedPath();
+  var splitPopulateQuery = require_splitPopulateQuery();
   var { buildMiddlewareFilter } = require_buildMiddlewareFilter();
   var util = require("util");
   var utils2 = require_utils6();
@@ -91746,16 +92494,17 @@ var require_model = __commonJS((exports2, module2) => {
     try {
       const saveOptions = _createSaveOptions(this, options);
       if (this.$isNew) {
-        const obj = this.$__hasOnlyPrimitiveValues() ? this.$__toObjectShallow() : this.toObject(saveToObjectOptions);
+        const hasOnlyPrimitiveValues = this.$__hasOnlyPrimitiveValues();
+        const obj = hasOnlyPrimitiveValues ? this.$__toObjectShallow() : this.toObject(saveToObjectOptions);
         if ((obj || {})._id === undefined) {
           throw new MongooseError("document must have an _id before saving");
         }
         this.$__version(true, obj);
         this.$__reset();
-        _setIsNew(this, false);
+        _setIsNew(this, false, hasOnlyPrimitiveValues);
         this.$__.inserting = true;
         result = await this[modelCollectionSymbol].insertOne(obj, saveOptions).catch((err) => {
-          _setIsNew(this, true);
+          _setIsNew(this, true, hasOnlyPrimitiveValues);
           throw err;
         });
       } else {
@@ -91914,18 +92663,28 @@ var require_model = __commonJS((exports2, module2) => {
       throw parallelSave;
     }
     this.$__.saveOptions = options;
-    try {
-      await this.$__save(options);
-    } catch (error) {
-      this.$__handleReject(error);
-      throw error;
-    } finally {
-      this.$__.saving = null;
-      this.$__.saveOptions = null;
-      this.$__.$versionError = null;
-      this.$op = null;
-    }
-    return this;
+    const _this = this;
+    return traceSave(async function maybeTracedSave() {
+      try {
+        await _this.$__save(options);
+      } catch (error) {
+        _this.$__handleReject(error);
+        throw error;
+      } finally {
+        _this.$__.saving = null;
+        _this.$__.saveOptions = null;
+        _this.$__.$versionError = null;
+        _this.$op = null;
+      }
+      return _this;
+    }, () => ({
+      operation: "save",
+      collection: _this.constructor.collection.name,
+      database: _this.constructor.db?.name,
+      serverAddress: _this.constructor.db?.host,
+      serverPort: _this.constructor.db?.port,
+      args: { options }
+    }));
   };
   Model.prototype.$save = Model.prototype.save;
   Model.prototype.$__version = function(where, delta) {
@@ -92840,50 +93599,65 @@ var require_model = __commonJS((exports2, module2) => {
     if (typeof options === "function" || typeof arguments[2] === "function") {
       throw new MongooseError("Model.insertMany() no longer accepts a callback");
     }
+    const ThisModel = this;
+    return traceInsertMany(function maybeTracedInsertMany() {
+      return _insertMany.call(ThisModel, arr, options);
+    }, () => ({
+      operation: "insertMany",
+      collection: ThisModel.collection.name,
+      database: ThisModel.db?.name,
+      serverAddress: ThisModel.db?.host,
+      serverPort: ThisModel.db?.port,
+      args: { docs: arr, options }
+    }));
+  };
+  async function _insertMany(arr, options) {
     options = options || {};
-    const preFilter = buildMiddlewareFilter(options, "pre");
-    const postFilter = buildMiddlewareFilter(options, "post");
-    try {
-      [arr] = await this._middleware.execPre("insertMany", this, [arr], { filter: preFilter });
-    } catch (error) {
-      await this._middleware.execPost("insertMany", this, [arr], { error, filter: postFilter });
+    const hasInsertManyHooks = this._middleware.hasHooks("insertMany");
+    const preFilter = hasInsertManyHooks ? buildMiddlewareFilter(options, "pre") : null;
+    const postFilter = hasInsertManyHooks ? buildMiddlewareFilter(options, "post") : null;
+    if (hasInsertManyHooks) {
+      try {
+        [arr] = await this._middleware.execPre("insertMany", this, [arr], { filter: preFilter });
+      } catch (error) {
+        await this._middleware.execPost("insertMany", this, [arr], { error, filter: postFilter });
+      }
     }
     const ThisModel = this;
     const limit = options.limit || 1000;
     const rawResult = !!options.rawResult;
-    const ordered = typeof options.ordered === "boolean" ? options.ordered : true;
-    const throwOnValidationError = typeof options.throwOnValidationError === "boolean" ? options.throwOnValidationError : false;
+    const ordered = options.ordered == null ? true : !!options.ordered;
+    const throwOnValidationError = !!options.throwOnValidationError;
     const lean = !!options.lean;
     const asyncLocalStorage = this.db.base.transactionAsyncLocalStorage?.getStore();
-    if ((!options || !Object.hasOwn(options, "session")) && asyncLocalStorage?.session != null) {
+    if (!Object.hasOwn(options, "session") && asyncLocalStorage?.session != null) {
       options = { ...options, session: asyncLocalStorage.session };
     }
     if (!Array.isArray(arr)) {
       arr = [arr];
     }
     const validationErrors = [];
-    const validationErrorsToOriginalOrder = new Map;
     const results = ordered ? null : new Array(arr.length);
-    async function validateDoc(doc, index) {
+    const session = options.session;
+    function validateDoc(doc, index) {
       if (lean) {
         return doc;
       }
       let createdNewDoc = false;
       if (!(doc instanceof ThisModel)) {
         if (doc != null && typeof doc !== "object") {
-          throw new ObjectParameterError(doc, "arr." + index, "insertMany");
+          return Promise.reject(new ObjectParameterError(doc, "arr." + index, "insertMany"));
         }
         doc = new ThisModel(doc);
         createdNewDoc = true;
       }
-      if (options.session != null) {
-        doc.$session(options.session);
+      if (session != null) {
+        doc.$session(session);
       }
       return doc.$validate(createdNewDoc ? { _skipParallelValidateCheck: true } : null).then(() => doc).catch((error) => {
         if (ordered === false) {
           error.index = index;
           validationErrors.push(error);
-          validationErrorsToOriginalOrder.set(error, index);
           results[index] = error;
           return;
         }
@@ -92891,20 +93665,33 @@ var require_model = __commonJS((exports2, module2) => {
       });
     }
     const docs = await parallelLimit(arr, validateDoc, limit);
-    const originalDocIndex = new Map;
-    const validDocIndexToOriginalIndex = new Map;
+    const validDocIndexToOriginalIndex = {};
+    const docAttributes = [];
+    const docObjects = lean ? docAttributes : [];
+    const versionKeyPath = ThisModel.schema.options.versionKey ? ThisModel.schema.paths[ThisModel.schema.options.versionKey]?.splitPath() : null;
+    const timestamps = options.timestamps;
     for (let i2 = 0;i2 < docs.length; ++i2) {
-      originalDocIndex.set(docs[i2], i2);
+      const doc = docs[i2];
+      if (doc == null) {
+        continue;
+      }
+      validDocIndexToOriginalIndex[docAttributes.length] = i2;
+      docAttributes.push(doc);
+      if (lean) {
+        continue;
+      }
+      if (versionKeyPath) {
+        doc.$__setValue(versionKeyPath, 0);
+      }
+      const shouldSetTimestamps = timestamps !== false && doc.initializeTimestamps && (!doc.$__ || doc.$__.timestamps !== false);
+      if (shouldSetTimestamps) {
+        doc.initializeTimestamps(timestamps);
+      }
+      docObjects.push(doc.$__hasOnlyPrimitiveValues() ? doc.$__toObjectShallow() : doc.toObject(internalToObjectOptions));
     }
-    const docAttributes = docs.filter(function(doc) {
-      return doc != null;
-    });
-    for (let i2 = 0;i2 < docAttributes.length; ++i2) {
-      validDocIndexToOriginalIndex.set(i2, originalDocIndex.get(docAttributes[i2]));
-    }
-    if (validationErrors.length > 0) {
+    if (validationErrors.length > 0 && ordered === false) {
       validationErrors.sort((err1, err2) => {
-        return validationErrorsToOriginalOrder.get(err1) - validationErrorsToOriginalOrder.get(err2);
+        return err1.index - err2.index;
       });
     }
     if (docAttributes.length === 0) {
@@ -92922,19 +93709,6 @@ var require_model = __commonJS((exports2, module2) => {
       }
       return [];
     }
-    const docObjects = lean ? docAttributes : docAttributes.map(function(doc) {
-      if (doc.$__schema.options.versionKey) {
-        doc[doc.$__schema.options.versionKey] = 0;
-      }
-      const shouldSetTimestamps = options?.timestamps !== false && doc.initializeTimestamps && (!doc.$__ || doc.$__.timestamps !== false);
-      if (shouldSetTimestamps) {
-        doc.initializeTimestamps(options?.timestamps);
-      }
-      if (doc.$__hasOnlyPrimitiveValues()) {
-        return doc.$__toObjectShallow();
-      }
-      return doc.toObject(internalToObjectOptions);
-    });
     let res;
     try {
       res = await this.$__collection.insertMany(docObjects, options);
@@ -92946,7 +93720,7 @@ var require_model = __commonJS((exports2, module2) => {
       const erroredIndexes = new Set((error?.writeErrors || []).map((err) => err.index));
       if (error.writeErrors != null) {
         for (let i2 = 0;i2 < error.writeErrors.length; ++i2) {
-          const originalIndex = validDocIndexToOriginalIndex.get(error.writeErrors[i2].index);
+          const originalIndex = validDocIndexToOriginalIndex[error.writeErrors[i2].index];
           error.writeErrors[i2] = { ...error.writeErrors[i2], index: originalIndex };
           if (!ordered) {
             results[originalIndex] = error.writeErrors[i2];
@@ -92977,19 +93751,24 @@ var require_model = __commonJS((exports2, module2) => {
         if (lean) {
           return doc;
         }
-        doc.$__reset();
+        doc.$__reset(true);
         _setIsNew(doc, false);
         return doc;
       });
       if (rawResult && ordered === false) {
         decorateBulkWriteResult(error, validationErrors, results);
       }
-      await this._middleware.execPost("insertMany", this, [arr], { error, filter: postFilter });
+      if (hasInsertManyHooks) {
+        await this._middleware.execPost("insertMany", this, [arr], { error, filter: postFilter });
+      } else {
+        throw error;
+      }
     }
     if (!lean) {
       for (const attribute of docAttributes) {
-        attribute.$__reset();
-        _setIsNew(attribute, false);
+        const hasOnlyPrimitiveValues = attribute.$__hasOnlyPrimitiveValues();
+        attribute.$__reset(true, hasOnlyPrimitiveValues);
+        _setIsNew(attribute, false, hasOnlyPrimitiveValues);
       }
     }
     if (ordered === false && throwOnValidationError && validationErrors.length > 0) {
@@ -93019,16 +93798,25 @@ var require_model = __commonJS((exports2, module2) => {
         throw err;
       });
     }
-    const [result] = await this._middleware.execPost("insertMany", this, [docAttributes], { filter: postFilter });
-    return result;
-  };
+    if (hasInsertManyHooks) {
+      const [result] = await this._middleware.execPost("insertMany", this, [docAttributes], { filter: postFilter });
+      return result;
+    }
+    return docAttributes;
+  }
   /*!
-   * ignore
+   * @param {Document} doc The document to set `$isNew` on.
+   * @param {boolean} val The value to set `$isNew` to.
+   * @param {boolean} [hasOnlyPrimitiveValues] Skip getting subdocs for performance if we know there are none.
+   * @api private
    */
-  function _setIsNew(doc, val) {
+  function _setIsNew(doc, val, hasOnlyPrimitiveValues) {
     doc.$isNew = val;
     doc.$emit("isNew", val);
     doc.constructor.emit("isNew", val);
+    if (hasOnlyPrimitiveValues) {
+      return;
+    }
     const subdocs = doc.$getAllSubdocs({ useCache: true });
     for (const subdoc of subdocs) {
       subdoc.$isNew = val;
@@ -93040,6 +93828,19 @@ var require_model = __commonJS((exports2, module2) => {
     if (typeof options === "function" || typeof arguments[2] === "function") {
       throw new MongooseError("Model.bulkWrite() no longer accepts a callback");
     }
+    const ThisModel = this;
+    return traceBulkWrite(function maybeTracedBulkWrite() {
+      return _bulkWrite.call(ThisModel, ops, options);
+    }, () => ({
+      operation: "bulkWrite",
+      collection: ThisModel.collection.name,
+      database: ThisModel.db?.name,
+      serverAddress: ThisModel.db?.host,
+      serverPort: ThisModel.db?.port,
+      args: { ops, options }
+    }));
+  };
+  async function _bulkWrite(ops, options) {
     options = options || {};
     const preFilter = buildMiddlewareFilter(options, "pre");
     const postFilter = buildMiddlewareFilter(options, "post");
@@ -93147,7 +93948,7 @@ var require_model = __commonJS((exports2, module2) => {
     }
     await this.hooks.execPost("bulkWrite", this, [res], { filter: postFilter });
     return res;
-  };
+  }
   Model.bulkSave = async function bulkSave(documents, options) {
     options = options || {};
     if (options.timestamps != null) {
@@ -93161,6 +93962,11 @@ var require_model = __commonJS((exports2, module2) => {
           document2.$__.saveOptions = document2.$__.saveOptions || {};
           document2.$__.saveOptions.timestamps = document2.$__.timestamps;
         }
+      }
+    }
+    if (Object.hasOwn(options, "session")) {
+      for (const document2 of documents) {
+        document2.$session(options.session);
       }
     }
     await Promise.all(documents.map((doc) => buildPreSavePromise(doc, options)));
@@ -93200,11 +94006,14 @@ var require_model = __commonJS((exports2, module2) => {
     }
   }
   async function handleSuccessfulWrite(document2, options) {
-    if (document2.$isNew) {
+    const wasNew = document2.$isNew;
+    if (wasNew) {
       _setIsNew(document2, false);
     }
     document2.$__reset();
-    document2._applyVersionIncrement();
+    if (!wasNew) {
+      document2._applyVersionIncrement();
+    }
     const postFilter = buildMiddlewareFilter(options, "post");
     return document2.schema.s.hooks.execPost("save", document2, [document2], { filter: postFilter });
   }
@@ -93333,7 +94142,7 @@ var require_model = __commonJS((exports2, module2) => {
           throw new MongooseError(`documents.${i2} was not a mongoose document, documents must be an array of mongoose documents (instanceof mongoose.Document).`);
         }
         if (options.validateBeforeSave == null || options.validateBeforeSave) {
-          const err = document2.validateSync();
+          const err = document2.$__validateSync();
           if (err != null) {
             throw err;
           }
@@ -93341,6 +94150,10 @@ var require_model = __commonJS((exports2, module2) => {
       }
       const isANewDocument = document2.isNew;
       if (isANewDocument) {
+        const versionKey = document2.$__schema.options.versionKey;
+        if (versionKey) {
+          document2.$__setValue(versionKey, 0);
+        }
         const writeOperation = { insertOne: { document: document2 } };
         utils2.injectTimestampsOption(writeOperation.insertOne, options.timestamps);
         return writeOperation;
@@ -93512,6 +94325,18 @@ var require_model = __commonJS((exports2, module2) => {
     }
     return obj;
   };
+  Object.defineProperty(Model, "~standard", {
+    configurable: true,
+    get() {
+      return {
+        version: 1,
+        vendor: "mongoose",
+        validate: (value, options) => {
+          return this.validate(value, options?.libraryOptions).then((value2) => ({ value: value2 }), (error) => ({ issues: convertErrorToStandardSchemaIssues(error) }));
+        }
+      };
+    }
+  });
   Model.populate = async function populate(docs, paths) {
     _checkContext(this, "populate");
     if (typeof paths === "function" || typeof arguments[2] === "function") {
@@ -93587,7 +94412,6 @@ var require_model = __commonJS((exports2, module2) => {
         mod.foreignField.clear();
         mod.foreignField.add(populateOptions.foreignField);
       }
-      const match = createPopulateQueryFilter(ids, mod.match, mod.foreignField, mod.model, mod.options.skipInvalidIds);
       if (assignmentOpts.excludeId) {
         if (typeof select === "string") {
           select = select.replace(excludeIdRegGlobal, " ");
@@ -93603,6 +94427,12 @@ var require_model = __commonJS((exports2, module2) => {
       } else if (mod.options.limit != null) {
         assignmentOpts.originalLimit = mod.options.limit;
       }
+      const splitParams = splitPopulateQuery(mod, ids, select, assignmentOpts);
+      if (splitParams != null) {
+        params.push(...splitParams);
+        continue;
+      }
+      const match = createPopulateQueryFilter(ids, mod.match, mod.foreignField, mod.model, mod.options.skipInvalidIds);
       params.push([mod, match, select, assignmentOpts]);
     }
     if (!hasOne) {
@@ -93618,11 +94448,15 @@ var require_model = __commonJS((exports2, module2) => {
       return;
     }
     const deferredPopulatesPerParam = new Map;
+    const valsByParam = [];
     if (populateOptions.ordered) {
       for (let i2 = 0;i2 < params.length; i2++) {
         const arr = params[i2];
         const { docs: docs2, deferredPopulates } = await _execPopulateQuery.apply(null, arr);
-        vals = vals.concat(docs2);
+        valsByParam.push(docs2);
+        if (!arr[0]._assignFromOwnResults) {
+          vals = vals.concat(docs2);
+        }
         if (deferredPopulates.length > 0) {
           deferredPopulatesPerParam.set(i2, deferredPopulates);
         }
@@ -93635,19 +94469,24 @@ var require_model = __commonJS((exports2, module2) => {
       const results = await Promise.all(promises);
       for (let i2 = 0;i2 < results.length; i2++) {
         const { docs: docs2, deferredPopulates } = results[i2];
-        vals = vals.concat(docs2);
+        valsByParam.push(docs2);
+        if (!params[i2][0]._assignFromOwnResults) {
+          vals = vals.concat(docs2);
+        }
         if (deferredPopulates.length > 0) {
           deferredPopulatesPerParam.set(i2, deferredPopulates);
         }
       }
     }
-    for (const arr of params) {
+    for (let i2 = 0;i2 < params.length; i2++) {
+      const arr = params[i2];
       const mod = arr[0];
       const assignmentOpts = arr[3];
-      for (const val of vals) {
+      const valsForMod = mod._assignFromOwnResults ? valsByParam[i2] : vals;
+      for (const val of valsForMod) {
         mod.options._childDocs.push(val);
       }
-      _assign(model, vals, mod, assignmentOpts);
+      _assign(model, valsForMod, mod, assignmentOpts);
     }
     if (deferredPopulatesPerParam.size > 0) {
       for (let i2 = 0;i2 < params.length; i2++) {
@@ -93676,13 +94515,15 @@ var require_model = __commonJS((exports2, module2) => {
         }
       }
     }
-    for (const arr of params) {
-      removeDeselectedForeignField(arr[0].foreignField, arr[0].options, vals);
+    for (let i2 = 0;i2 < params.length; i2++) {
+      const mod = params[i2][0];
+      removeDeselectedForeignField(mod.foreignField, mod.options, mod._assignFromOwnResults ? valsByParam[i2] : vals);
     }
-    for (const arr of params) {
-      const mod = arr[0];
+    for (let i2 = 0;i2 < params.length; i2++) {
+      const mod = params[i2][0];
       if (mod.options?.options?._leanTransform) {
-        for (const doc of vals) {
+        const valsForMod = mod._assignFromOwnResults ? valsByParam[i2] : vals;
+        for (const doc of valsForMod) {
           mod.options.options._leanTransform(doc);
         }
       }
@@ -93692,6 +94533,9 @@ var require_model = __commonJS((exports2, module2) => {
    * ignore
    */
   function _execPopulateQuery(mod, match, select) {
+    if (match == null) {
+      return Promise.resolve({ docs: [], deferredPopulates: [] });
+    }
     let subPopulate = clone2(mod.options.populate);
     const queryOptions = {};
     if (mod.options.skip !== undefined) {
@@ -94731,6 +95575,404 @@ var require_mongoose2 = __commonJS((exports2, module2) => {
   module2.exports.trusted = mongoose.trusted;
   module2.exports.skipMiddlewareFunction = mongoose.skipMiddlewareFunction;
   module2.exports.overwriteMiddlewareResult = mongoose.overwriteMiddlewareResult;
+});
+
+// src/utils/mongoose-serialization.ts
+var applyIdTransform = (schema) => {
+  schema.set("toJSON", {
+    virtuals: true,
+    transform: (_doc, ret) => {
+      delete ret._id;
+      delete ret.__v;
+      return ret;
+    }
+  });
+};
+
+// src/models/Enums.ts
+var Gender, BookingStatus, MembershipStatus, TodoStatus, LeadStatus, CreditTransactionType, CreditTransactionSource, MuscleGroup, ExerciseDifficulty, ExerciseSection, WorkoutSessionStatus, OnboardingStep, ExpertType, NotificationChannel, NotificationKind, ReminderKind, ReminderStatus, PlanGoal, PlanStatus, SplitType, NutritionGoal, NutritionPlanStatus, IngredientUnit, MealType, DietaryPreference, NutritionFoodSource, MealLogStatus, MealLogSource, ProgressRecordedBy, ConsentType, AppointmentMode, MeetingStatus, NutritionistBookingStatus, InvoicePaymentStatus, InvoicePaymentMethod, DeletionRequestStatus, UserStatus, CommunityRole, PostVisibility, PostStatus, PostMediaKind, LikeTargetType, ShareChannel, ReportTargetType, ReportStatus, ModerationTargetType, ModerationActionType;
+var init_Enums = __esm(() => {
+  ((Gender2) => {
+    Gender2["Male"] = "Male";
+    Gender2["Female"] = "Female";
+    Gender2["Other"] = "Other";
+  })(Gender ||= {});
+  ((BookingStatus2) => {
+    BookingStatus2[BookingStatus2["Booked"] = 0] = "Booked";
+    BookingStatus2[BookingStatus2["Confirmed"] = 1] = "Confirmed";
+    BookingStatus2[BookingStatus2["Cancelled"] = 2] = "Cancelled";
+    BookingStatus2[BookingStatus2["Attended"] = 3] = "Attended";
+    BookingStatus2[BookingStatus2["Unattended"] = 4] = "Unattended";
+  })(BookingStatus ||= {});
+  ((MembershipStatus2) => {
+    MembershipStatus2["Active"] = "Active";
+    MembershipStatus2["Paused"] = "Paused";
+    MembershipStatus2["Cancelled"] = "Cancelled";
+    MembershipStatus2["Expired"] = "Expired";
+  })(MembershipStatus ||= {});
+  ((TodoStatus2) => {
+    TodoStatus2[TodoStatus2["Todo"] = 0] = "Todo";
+    TodoStatus2[TodoStatus2["Doing"] = 1] = "Doing";
+    TodoStatus2[TodoStatus2["Done"] = 2] = "Done";
+  })(TodoStatus ||= {});
+  ((LeadStatus2) => {
+    LeadStatus2["New"] = "New";
+    LeadStatus2["Contacted"] = "Contacted";
+    LeadStatus2["Qualified"] = "Qualified";
+    LeadStatus2["Warm"] = "Warm";
+    LeadStatus2["Hot"] = "Hot";
+    LeadStatus2["Cold"] = "Cold";
+    LeadStatus2["Converted"] = "Converted";
+    LeadStatus2["Lost"] = "Lost";
+  })(LeadStatus ||= {});
+  ((CreditTransactionType2) => {
+    CreditTransactionType2["Consume"] = "Consume";
+    CreditTransactionType2["Refund"] = "Refund";
+    CreditTransactionType2["AdminTopUp"] = "AdminTopUp";
+    CreditTransactionType2["Void"] = "Void";
+  })(CreditTransactionType ||= {});
+  ((CreditTransactionSource2) => {
+    CreditTransactionSource2["Booking"] = "Booking";
+    CreditTransactionSource2["Appointment"] = "Appointment";
+    CreditTransactionSource2["Admin"] = "Admin";
+  })(CreditTransactionSource ||= {});
+  ((MuscleGroup2) => {
+    MuscleGroup2["Chest"] = "Chest";
+    MuscleGroup2["Back"] = "Back";
+    MuscleGroup2["Legs"] = "Legs";
+    MuscleGroup2["Shoulders"] = "Shoulders";
+    MuscleGroup2["Arms"] = "Arms";
+    MuscleGroup2["Core"] = "Core";
+    MuscleGroup2["FullBody"] = "FullBody";
+  })(MuscleGroup ||= {});
+  ((ExerciseDifficulty2) => {
+    ExerciseDifficulty2["Beginner"] = "Beginner";
+    ExerciseDifficulty2["Intermediate"] = "Intermediate";
+    ExerciseDifficulty2["Advanced"] = "Advanced";
+  })(ExerciseDifficulty ||= {});
+  ((ExerciseSection2) => {
+    ExerciseSection2["Warmup"] = "warmup";
+    ExerciseSection2["Workout"] = "workout";
+    ExerciseSection2["Stretching"] = "stretching";
+  })(ExerciseSection ||= {});
+  ((WorkoutSessionStatus2) => {
+    WorkoutSessionStatus2["Active"] = "Active";
+    WorkoutSessionStatus2["Completed"] = "Completed";
+    WorkoutSessionStatus2["Abandoned"] = "Abandoned";
+  })(WorkoutSessionStatus ||= {});
+  ((OnboardingStep2) => {
+    OnboardingStep2["HEALTH_MARKERS"] = "HEALTH_MARKERS";
+    OnboardingStep2["HEALTH_GOALS"] = "HEALTH_GOALS";
+    OnboardingStep2["CONSENT"] = "CONSENT";
+    OnboardingStep2["REPORT_UPLOAD"] = "REPORT_UPLOAD";
+    OnboardingStep2["NUTRITIONIST_BOOKING"] = "NUTRITIONIST_BOOKING";
+    OnboardingStep2["COMPLETED"] = "COMPLETED";
+  })(OnboardingStep ||= {});
+  ((ExpertType2) => {
+    ExpertType2["Nutritionist"] = "nutritionist";
+  })(ExpertType ||= {});
+  ((NotificationChannel2) => {
+    NotificationChannel2["InApp"] = "INAPP";
+    NotificationChannel2["Push"] = "PUSH";
+    NotificationChannel2["Socket"] = "SOCKET";
+  })(NotificationChannel ||= {});
+  ((NotificationKind2) => {
+    NotificationKind2["AppointmentBooked"] = "appointment_booked";
+    NotificationKind2["AppointmentRescheduled"] = "appointment_rescheduled";
+    NotificationKind2["AppointmentCancelled"] = "appointment_cancelled";
+    NotificationKind2["AppointmentReminder"] = "appointment_reminder";
+    NotificationKind2["OnboardingStepUpdated"] = "onboarding_step_updated";
+    NotificationKind2["MembershipExpiryReminder"] = "membership_expiry_reminder";
+    NotificationKind2["CommunityPostLiked"] = "community_post_liked";
+    NotificationKind2["CommunityPostCommented"] = "community_post_commented";
+    NotificationKind2["CommunityCommentReplied"] = "community_comment_replied";
+  })(NotificationKind ||= {});
+  ((ReminderKind2) => {
+    ReminderKind2["TMinus24H"] = "T_MINUS_24H";
+    ReminderKind2["TMinus1H"] = "T_MINUS_1H";
+    ReminderKind2["TMinus15M"] = "T_MINUS_15M";
+  })(ReminderKind ||= {});
+  ((ReminderStatus2) => {
+    ReminderStatus2["Scheduled"] = "SCHEDULED";
+    ReminderStatus2["Fired"] = "FIRED";
+    ReminderStatus2["Cancelled"] = "CANCELLED";
+  })(ReminderStatus ||= {});
+  ((PlanGoal2) => {
+    PlanGoal2["Strength"] = "Strength";
+    PlanGoal2["Hypertrophy"] = "Hypertrophy";
+    PlanGoal2["Endurance"] = "Endurance";
+    PlanGoal2["WeightLoss"] = "WeightLoss";
+    PlanGoal2["Maintenance"] = "Maintenance";
+    PlanGoal2["Custom"] = "Custom";
+  })(PlanGoal ||= {});
+  ((PlanStatus2) => {
+    PlanStatus2["Draft"] = "Draft";
+    PlanStatus2["Active"] = "Active";
+    PlanStatus2["Paused"] = "Paused";
+    PlanStatus2["Completed"] = "Completed";
+    PlanStatus2["Archived"] = "Archived";
+  })(PlanStatus ||= {});
+  ((SplitType2) => {
+    SplitType2["FullBody"] = "FullBody";
+    SplitType2["UpperLower"] = "UpperLower";
+    SplitType2["PushPull"] = "PushPull";
+    SplitType2["PushPullLegs"] = "PushPullLegs";
+    SplitType2["Custom"] = "Custom";
+  })(SplitType ||= {});
+  ((NutritionGoal2) => {
+    NutritionGoal2["WeightLoss"] = "WeightLoss";
+    NutritionGoal2["MuscleGain"] = "MuscleGain";
+    NutritionGoal2["Maintenance"] = "Maintenance";
+    NutritionGoal2["Endurance"] = "Endurance";
+    NutritionGoal2["Medical"] = "Medical";
+    NutritionGoal2["Custom"] = "Custom";
+  })(NutritionGoal ||= {});
+  ((NutritionPlanStatus2) => {
+    NutritionPlanStatus2["Draft"] = "Draft";
+    NutritionPlanStatus2["Scheduled"] = "Scheduled";
+    NutritionPlanStatus2["Active"] = "Active";
+    NutritionPlanStatus2["Paused"] = "Paused";
+    NutritionPlanStatus2["Completed"] = "Completed";
+    NutritionPlanStatus2["Archived"] = "Archived";
+  })(NutritionPlanStatus ||= {});
+  ((IngredientUnit2) => {
+    IngredientUnit2["Gram"] = "g";
+    IngredientUnit2["Milliliter"] = "ml";
+  })(IngredientUnit ||= {});
+  ((MealType2) => {
+    MealType2["Breakfast"] = "Breakfast";
+    MealType2["Lunch"] = "Lunch";
+    MealType2["Dinner"] = "Dinner";
+    MealType2["Snack"] = "Snack";
+    MealType2["PreWorkout"] = "PreWorkout";
+    MealType2["PostWorkout"] = "PostWorkout";
+    MealType2["EarlyMorning"] = "EarlyMorning";
+    MealType2["DuringWorkout"] = "DuringWorkout";
+    MealType2["EveningSnack"] = "EveningSnack";
+    MealType2["Bedtime"] = "Bedtime";
+  })(MealType ||= {});
+  ((DietaryPreference2) => {
+    DietaryPreference2["Veg"] = "Veg";
+    DietaryPreference2["NonVeg"] = "NonVeg";
+    DietaryPreference2["Vegan"] = "Vegan";
+    DietaryPreference2["Eggetarian"] = "Eggetarian";
+  })(DietaryPreference ||= {});
+  ((NutritionFoodSource2) => {
+    NutritionFoodSource2["System"] = "System";
+    NutritionFoodSource2["Custom"] = "Custom";
+    NutritionFoodSource2["External"] = "External";
+  })(NutritionFoodSource ||= {});
+  ((MealLogStatus2) => {
+    MealLogStatus2["Logged"] = "Logged";
+    MealLogStatus2["Skipped"] = "Skipped";
+    MealLogStatus2["Partial"] = "Partial";
+    MealLogStatus2["Pending"] = "Pending";
+  })(MealLogStatus ||= {});
+  ((MealLogSource2) => {
+    MealLogSource2["Manual"] = "Manual";
+    MealLogSource2["AI"] = "AI";
+    MealLogSource2["Wearable"] = "Wearable";
+    MealLogSource2["Scan"] = "Scan";
+  })(MealLogSource ||= {});
+  ((ProgressRecordedBy2) => {
+    ProgressRecordedBy2["User"] = "User";
+    ProgressRecordedBy2["Nutritionist"] = "Nutritionist";
+  })(ProgressRecordedBy ||= {});
+  ((ConsentType2) => {
+    ConsentType2["WELLNESS_SERVICES"] = "WELLNESS_SERVICES";
+    ConsentType2["GYM_FITNESS"] = "GYM_FITNESS";
+  })(ConsentType ||= {});
+  ((AppointmentMode2) => {
+    AppointmentMode2["IN_PERSON"] = "IN_PERSON";
+    AppointmentMode2["ONLINE"] = "ONLINE";
+  })(AppointmentMode ||= {});
+  ((MeetingStatus2) => {
+    MeetingStatus2["SCHEDULED"] = "SCHEDULED";
+    MeetingStatus2["IN_PROGRESS"] = "IN_PROGRESS";
+    MeetingStatus2["COMPLETED"] = "COMPLETED";
+  })(MeetingStatus ||= {});
+  ((NutritionistBookingStatus2) => {
+    NutritionistBookingStatus2["PENDING"] = "PENDING";
+    NutritionistBookingStatus2["ACCEPTED"] = "ACCEPTED";
+    NutritionistBookingStatus2["REJECTED"] = "REJECTED";
+    NutritionistBookingStatus2["COMPLETED"] = "COMPLETED";
+    NutritionistBookingStatus2["EXPIRED"] = "EXPIRED";
+    NutritionistBookingStatus2["RESCHEDULE_REQUIRED"] = "RESCHEDULE_REQUIRED";
+  })(NutritionistBookingStatus ||= {});
+  ((InvoicePaymentStatus2) => {
+    InvoicePaymentStatus2["DRAFT"] = "DRAFT";
+    InvoicePaymentStatus2["PENDING"] = "PENDING";
+    InvoicePaymentStatus2["PAID"] = "PAID";
+    InvoicePaymentStatus2["FAILED"] = "FAILED";
+    InvoicePaymentStatus2["CANCELLED"] = "CANCELLED";
+    InvoicePaymentStatus2["REFUNDED"] = "REFUNDED";
+  })(InvoicePaymentStatus ||= {});
+  ((InvoicePaymentMethod2) => {
+    InvoicePaymentMethod2["CASH"] = "CASH";
+    InvoicePaymentMethod2["UPI"] = "UPI";
+    InvoicePaymentMethod2["CARD"] = "CARD";
+    InvoicePaymentMethod2["BANK_TRANSFER"] = "BANK_TRANSFER";
+    InvoicePaymentMethod2["NONE"] = "NONE";
+  })(InvoicePaymentMethod ||= {});
+  ((DeletionRequestStatus2) => {
+    DeletionRequestStatus2["Pending"] = "Pending";
+    DeletionRequestStatus2["Processed"] = "Processed";
+    DeletionRequestStatus2["Cancelled"] = "Cancelled";
+  })(DeletionRequestStatus ||= {});
+  ((UserStatus2) => {
+    UserStatus2["Active"] = "active";
+    UserStatus2["Suspended"] = "suspended";
+    UserStatus2["Banned"] = "banned";
+  })(UserStatus ||= {});
+  ((CommunityRole2) => {
+    CommunityRole2["Outsider"] = "outsider";
+    CommunityRole2["Insider"] = "insider";
+    CommunityRole2["Trainer"] = "trainer";
+    CommunityRole2["Admin"] = "admin";
+  })(CommunityRole ||= {});
+  ((PostVisibility2) => {
+    PostVisibility2["Public"] = "public";
+    PostVisibility2["MembersOnly"] = "members_only";
+  })(PostVisibility ||= {});
+  ((PostStatus2) => {
+    PostStatus2["Draft"] = "draft";
+    PostStatus2["Scheduled"] = "scheduled";
+    PostStatus2["Published"] = "published";
+    PostStatus2["Archived"] = "archived";
+  })(PostStatus ||= {});
+  ((PostMediaKind2) => {
+    PostMediaKind2["Image"] = "image";
+    PostMediaKind2["Video"] = "video";
+    PostMediaKind2["Audio"] = "audio";
+    PostMediaKind2["File"] = "file";
+  })(PostMediaKind ||= {});
+  ((LikeTargetType2) => {
+    LikeTargetType2["Post"] = "post";
+    LikeTargetType2["Comment"] = "comment";
+  })(LikeTargetType ||= {});
+  ((ShareChannel2) => {
+    ShareChannel2["Copy"] = "copy";
+    ShareChannel2["WhatsApp"] = "whatsapp";
+    ShareChannel2["Instagram"] = "instagram";
+    ShareChannel2["Facebook"] = "facebook";
+    ShareChannel2["Twitter"] = "twitter";
+    ShareChannel2["Other"] = "other";
+  })(ShareChannel ||= {});
+  ((ReportTargetType2) => {
+    ReportTargetType2["Post"] = "post";
+    ReportTargetType2["Comment"] = "comment";
+    ReportTargetType2["User"] = "user";
+  })(ReportTargetType ||= {});
+  ((ReportStatus2) => {
+    ReportStatus2["Pending"] = "pending";
+    ReportStatus2["Reviewing"] = "reviewing";
+    ReportStatus2["Resolved"] = "resolved";
+    ReportStatus2["Dismissed"] = "dismissed";
+  })(ReportStatus ||= {});
+  ((ModerationTargetType2) => {
+    ModerationTargetType2["Post"] = "post";
+    ModerationTargetType2["Comment"] = "comment";
+    ModerationTargetType2["User"] = "user";
+  })(ModerationTargetType ||= {});
+  ((ModerationActionType2) => {
+    ModerationActionType2["Edit"] = "edit";
+    ModerationActionType2["Delete"] = "delete";
+    ModerationActionType2["Restore"] = "restore";
+    ModerationActionType2["Pin"] = "pin";
+    ModerationActionType2["Unpin"] = "unpin";
+    ModerationActionType2["CreateOfficial"] = "create_official";
+    ModerationActionType2["DeleteComment"] = "delete_comment";
+    ModerationActionType2["Suspend"] = "suspend";
+    ModerationActionType2["Unsuspend"] = "unsuspend";
+    ModerationActionType2["Ban"] = "ban";
+    ModerationActionType2["Unban"] = "unban";
+    ModerationActionType2["RoleAssign"] = "role_assign";
+    ModerationActionType2["RoleRevoke"] = "role_revoke";
+    ModerationActionType2["Warn"] = "warn";
+    ModerationActionType2["ResolveReport"] = "resolve_report";
+    ModerationActionType2["DismissReport"] = "dismiss_report";
+    ModerationActionType2["Hide"] = "hide";
+    ModerationActionType2["Unhide"] = "unhide";
+  })(ModerationActionType ||= {});
+});
+
+// src/models/User.ts
+var exports_User = {};
+__export(exports_User, {
+  default: () => User_default
+});
+var import_mongoose2, userSchema, User_default;
+var init_User = __esm(() => {
+  init_Enums();
+  import_mongoose2 = __toESM(require_mongoose2(), 1);
+  userSchema = new import_mongoose2.default.Schema({
+    username: { type: String, required: true },
+    phone: { type: String, required: true },
+    firebaseUid: { type: String, unique: true, sparse: true, default: undefined },
+    phoneVerified: { type: Boolean, default: false },
+    email: { type: String, unique: true, sparse: true, default: undefined },
+    age: { type: Number, required: true, min: 0 },
+    gender: { type: String, enum: Object.values(Gender), required: true },
+    goal: { type: String, default: undefined },
+    healthGoals: { type: [String], default: [] },
+    dateOfBirth: { type: Date, default: undefined },
+    emergencyContact: { type: String, default: undefined },
+    address: { type: String, default: undefined },
+    passwordHash: { type: String, select: false },
+    status: {
+      type: String,
+      enum: Object.values(UserStatus),
+      default: "active" /* Active */
+    },
+    suspendedUntil: { type: Date, default: null },
+    communityRole: {
+      type: String,
+      enum: [...Object.values(CommunityRole), null],
+      default: null
+    },
+    isActive: { type: Boolean, default: true },
+    membershipStatus: { type: String, default: "ACTIVE" },
+    onboarded: { type: Boolean, default: false },
+    fcmTokens: {
+      type: [
+        {
+          token: { type: String, required: true },
+          platform: { type: String, enum: ["ios", "android"], required: true },
+          lastSeenAt: { type: Date, default: Date.now }
+        }
+      ],
+      default: [],
+      select: false
+    },
+    onboardingStatus: {
+      currentStep: {
+        type: String,
+        enum: Object.values(OnboardingStep),
+        default: "HEALTH_MARKERS" /* HEALTH_MARKERS */
+      },
+      completedSteps: [{ type: String, enum: Object.values(OnboardingStep) }],
+      healthMarkersCompleted: { type: Boolean, default: false },
+      healthGoalsCompleted: { type: Boolean, default: false },
+      consentCompleted: { type: Boolean, default: false },
+      reportsUploaded: { type: Boolean, default: false },
+      sportsScientistBooked: { type: Boolean, default: false },
+      nutritionistBooked: { type: Boolean, default: false },
+      onboardingCompleted: { type: Boolean, default: false },
+      startedAt: { type: Date, default: undefined },
+      completedAt: { type: Date, default: undefined }
+    },
+    assignedTrainer: {
+      type: import_mongoose2.default.Schema.Types.ObjectId,
+      ref: "Trainer",
+      default: null
+    },
+    assignedTrainerAt: { type: Date, default: null }
+  }, { timestamps: true });
+  userSchema.index({ assignedTrainer: 1 });
+  userSchema.index({ phone: 1 }, { unique: true, partialFilterExpression: { firebaseUid: { $exists: true } } });
+  userSchema.index({ username: 1 });
+  applyIdTransform(userSchema);
+  User_default = import_mongoose2.default.models.User || import_mongoose2.default.model("User", userSchema);
 });
 
 // node_modules/@smithy/types/dist-cjs/index.js
@@ -104912,7 +106154,7 @@ var require_es5 = __commonJS((exports2, module2) => {
 
 // node_modules/@aws-sdk/core/dist-cjs/submodules/client/index.js
 var require_client2 = __commonJS((exports2) => {
-  var __dirname = "/Users/sammetasagunvarma/YUGAAS/FITFLIX_BACKEND/node_modules/@aws-sdk/core/dist-cjs/submodules/client";
+  var __dirname = "C:\\Yugaas\\hybrid_human_backend\\node_modules\\@aws-sdk\\core\\dist-cjs\\submodules\\client";
   var retry = require_retry2();
   var protocols = require_protocols();
   var lambdaInvokeStore = require_invoke_store();
@@ -129437,18 +130679,18 @@ __export(exports_HealthGoals, {
   default: () => HealthGoals_default,
   WorkoutExperience: () => WorkoutExperience
 });
-var import_mongoose6, WorkoutExperience, healthGoalsSchema, HealthGoals_default;
+var import_mongoose7, WorkoutExperience, healthGoalsSchema, HealthGoals_default;
 var init_HealthGoals = __esm(() => {
-  import_mongoose6 = __toESM(require_mongoose2(), 1);
+  import_mongoose7 = __toESM(require_mongoose2(), 1);
   ((WorkoutExperience2) => {
     WorkoutExperience2["None"] = "None";
     WorkoutExperience2["Beginner"] = "Beginner";
     WorkoutExperience2["Intermediate"] = "Intermediate";
     WorkoutExperience2["Advanced"] = "Advanced";
   })(WorkoutExperience ||= {});
-  healthGoalsSchema = new import_mongoose6.default.Schema({
+  healthGoalsSchema = new import_mongoose7.default.Schema({
     userId: {
-      type: import_mongoose6.default.Schema.Types.ObjectId,
+      type: import_mongoose7.default.Schema.Types.ObjectId,
       ref: "User",
       required: true,
       unique: true
@@ -129463,7 +130705,7 @@ var init_HealthGoals = __esm(() => {
     },
     foodPreferences: { type: [String], default: [] }
   }, { timestamps: true });
-  HealthGoals_default = import_mongoose6.default.models.HealthGoals || import_mongoose6.default.model("HealthGoals", healthGoalsSchema);
+  HealthGoals_default = import_mongoose7.default.models.HealthGoals || import_mongoose7.default.model("HealthGoals", healthGoalsSchema);
 });
 
 // src/models/HealthMarkers.ts
@@ -129472,9 +130714,9 @@ __export(exports_HealthMarkers, {
   default: () => HealthMarkers_default,
   ActivityLevel: () => ActivityLevel
 });
-var import_mongoose7, ActivityLevel, healthMarkersSchema, HealthMarkers_default;
+var import_mongoose8, ActivityLevel, healthMarkersSchema, HealthMarkers_default;
 var init_HealthMarkers = __esm(() => {
-  import_mongoose7 = __toESM(require_mongoose2(), 1);
+  import_mongoose8 = __toESM(require_mongoose2(), 1);
   ((ActivityLevel2) => {
     ActivityLevel2["Sedentary"] = "Sedentary";
     ActivityLevel2["Light"] = "Light";
@@ -129482,9 +130724,9 @@ var init_HealthMarkers = __esm(() => {
     ActivityLevel2["Active"] = "Active";
     ActivityLevel2["VeryActive"] = "VeryActive";
   })(ActivityLevel ||= {});
-  healthMarkersSchema = new import_mongoose7.default.Schema({
+  healthMarkersSchema = new import_mongoose8.default.Schema({
     userId: {
-      type: import_mongoose7.default.Schema.Types.ObjectId,
+      type: import_mongoose8.default.Schema.Types.ObjectId,
       ref: "User",
       required: true,
       unique: true
@@ -129503,7 +130745,97 @@ var init_HealthMarkers = __esm(() => {
       default: undefined
     }
   }, { timestamps: true });
-  HealthMarkers_default = import_mongoose7.default.models.HealthMarkers || import_mongoose7.default.model("HealthMarkers", healthMarkersSchema);
+  HealthMarkers_default = import_mongoose8.default.models.HealthMarkers || import_mongoose8.default.model("HealthMarkers", healthMarkersSchema);
+});
+
+// src/models/nutrition-shared.schema.ts
+var import_mongoose16, macroTargetSchema, macroTotalsSchema, mealFoodItemSchema, mealOptionSchema, lifestyleRecommendationSchema, templateMealSchema, planDaySchema, servingSchema;
+var init_nutrition_shared_schema = __esm(() => {
+  init_Enums();
+  import_mongoose16 = __toESM(require_mongoose2(), 1);
+  macroTargetSchema = new import_mongoose16.default.Schema({
+    proteinG: { type: Number, default: null },
+    carbsG: { type: Number, default: null },
+    fatG: { type: Number, default: null },
+    fiberG: { type: Number, default: null },
+    sugarG: { type: Number, default: null }
+  }, { _id: false });
+  macroTotalsSchema = new import_mongoose16.default.Schema({
+    caloriesKcal: { type: Number, default: 0 },
+    proteinG: { type: Number, default: 0 },
+    carbsG: { type: Number, default: 0 },
+    fatG: { type: Number, default: 0 },
+    fiberG: { type: Number, default: 0 },
+    sugarG: { type: Number, default: 0 }
+  }, { _id: false });
+  mealFoodItemSchema = new import_mongoose16.default.Schema({
+    foodId: {
+      type: import_mongoose16.default.Schema.Types.ObjectId,
+      ref: "NutritionFood",
+      required: true
+    },
+    foodName: { type: String, required: true },
+    quantityG: { type: Number, required: true },
+    unit: {
+      type: String,
+      enum: Object.values(IngredientUnit),
+      default: "g" /* Gram */
+    },
+    caloriesKcal: { type: Number, required: true },
+    proteinG: { type: Number, required: true },
+    carbsG: { type: Number, required: true },
+    fatG: { type: Number, required: true },
+    fiberG: { type: Number, default: null },
+    sugarG: { type: Number, default: null },
+    recipeSource: { type: String, default: null }
+  }, { _id: false });
+  mealOptionSchema = new import_mongoose16.default.Schema({
+    title: { type: String, required: true },
+    isDefault: { type: Boolean, default: false },
+    foods: { type: [mealFoodItemSchema], default: [] },
+    macros: { type: macroTotalsSchema, default: () => ({}) },
+    reasoning: { type: String, default: "" },
+    cookingDirections: { type: [String], default: [] },
+    prepTimeMinutes: { type: Number, default: null },
+    recipeId: {
+      type: String,
+      default: null
+    },
+    recipeName: { type: String, default: null }
+  });
+  lifestyleRecommendationSchema = new import_mongoose16.default.Schema({
+    title: { type: String, required: true },
+    description: { type: String, default: "" },
+    category: { type: String, default: "" }
+  }, { _id: false });
+  templateMealSchema = new import_mongoose16.default.Schema({
+    mealType: {
+      type: String,
+      enum: Object.values(MealType),
+      required: true
+    },
+    name: { type: String, required: true },
+    recipeId: {
+      type: import_mongoose16.default.Schema.Types.ObjectId,
+      ref: "Recipe",
+      default: null
+    },
+    timeOfDay: { type: String, default: null },
+    notes: { type: String, default: "" },
+    items: { type: [mealFoodItemSchema], default: [] },
+    options: { type: [mealOptionSchema], default: [] },
+    cookingDirections: { type: [String], default: [] },
+    prepTimeMinutes: { type: Number, default: null }
+  }, { _id: false });
+  planDaySchema = new import_mongoose16.default.Schema({
+    dayNumber: { type: Number, required: true },
+    meals: { type: [templateMealSchema], default: [] }
+  }, { _id: false });
+  servingSchema = new import_mongoose16.default.Schema({
+    label: { type: String, required: true },
+    gramsPerUnit: { type: Number, required: true },
+    isDefault: { type: Boolean, default: false }
+  }, { _id: false });
 });
 
 // src/models/nutrition-hydration.model.ts
@@ -129511,17 +130843,17 @@ var exports_nutrition_hydration_model = {};
 __export(exports_nutrition_hydration_model, {
   default: () => nutrition_hydration_model_default
 });
-var import_mongoose17, hydrationEntrySchema, nutritionHydrationLogSchema, NutritionHydrationLog, nutrition_hydration_model_default;
+var import_mongoose18, hydrationEntrySchema, nutritionHydrationLogSchema, NutritionHydrationLog, nutrition_hydration_model_default;
 var init_nutrition_hydration_model = __esm(() => {
-  import_mongoose17 = __toESM(require_mongoose2(), 1);
-  hydrationEntrySchema = new import_mongoose17.default.Schema({
+  import_mongoose18 = __toESM(require_mongoose2(), 1);
+  hydrationEntrySchema = new import_mongoose18.default.Schema({
     amountMl: { type: Number, required: true },
     at: { type: Date, default: Date.now },
     source: { type: String, default: "Manual" }
   }, { _id: false });
-  nutritionHydrationLogSchema = new import_mongoose17.default.Schema({
+  nutritionHydrationLogSchema = new import_mongoose18.default.Schema({
     userId: {
-      type: import_mongoose17.default.Schema.Types.ObjectId,
+      type: import_mongoose18.default.Schema.Types.ObjectId,
       ref: "User",
       required: true
     },
@@ -129531,8 +130863,192 @@ var init_nutrition_hydration_model = __esm(() => {
     entries: { type: [hydrationEntrySchema], default: [] }
   }, { timestamps: true });
   nutritionHydrationLogSchema.index({ userId: 1, logDate: 1 }, { unique: true });
-  NutritionHydrationLog = import_mongoose17.default.models.NutritionHydrationLog || import_mongoose17.default.model("NutritionHydrationLog", nutritionHydrationLogSchema);
+  NutritionHydrationLog = import_mongoose18.default.models.NutritionHydrationLog || import_mongoose18.default.model("NutritionHydrationLog", nutritionHydrationLogSchema);
   nutrition_hydration_model_default = NutritionHydrationLog;
+});
+
+// src/models/nutrition-meal-log.model.ts
+var import_mongoose19, loggedItemSchema, plannedMealRefSchema, nutritionMealLogSchema, NutritionMealLog, nutrition_meal_log_model_default;
+var init_nutrition_meal_log_model = __esm(() => {
+  init_Enums();
+  init_nutrition_shared_schema();
+  import_mongoose19 = __toESM(require_mongoose2(), 1);
+  loggedItemSchema = new import_mongoose19.default.Schema({
+    foodId: {
+      type: import_mongoose19.default.Schema.Types.ObjectId,
+      ref: "NutritionFood",
+      default: null
+    },
+    foodName: { type: String, required: true },
+    quantityG: { type: Number, required: true },
+    caloriesKcal: { type: Number, required: true },
+    proteinG: { type: Number, required: true },
+    carbsG: { type: Number, required: true },
+    fatG: { type: Number, required: true },
+    fiberG: { type: Number, default: null },
+    sugarG: { type: Number, default: null },
+    servingLabel: { type: String, default: null },
+    servingCount: { type: Number, default: null },
+    micros: { type: Map, of: Number, default: {} }
+  }, { _id: false });
+  plannedMealRefSchema = new import_mongoose19.default.Schema({
+    dayNumber: { type: Number, required: true },
+    mealIndex: { type: Number, required: true },
+    selectedOptionId: {
+      type: import_mongoose19.default.Schema.Types.ObjectId,
+      default: null
+    },
+    completedOptionId: {
+      type: import_mongoose19.default.Schema.Types.ObjectId,
+      default: null
+    }
+  }, { _id: false });
+  nutritionMealLogSchema = new import_mongoose19.default.Schema({
+    userId: {
+      type: import_mongoose19.default.Schema.Types.ObjectId,
+      ref: "User",
+      required: true
+    },
+    planId: {
+      type: import_mongoose19.default.Schema.Types.ObjectId,
+      ref: "UserNutritionPlan",
+      default: null
+    },
+    logDate: { type: Date, required: true },
+    dayNumber: { type: Number, default: null },
+    mealType: {
+      type: String,
+      enum: Object.values(MealType),
+      default: null
+    },
+    plannedMealRef: { type: plannedMealRefSchema, default: null },
+    status: {
+      type: String,
+      enum: Object.values(MealLogStatus),
+      default: "Logged" /* Logged */
+    },
+    consumedAt: { type: Date, default: Date.now },
+    items: { type: [loggedItemSchema], default: [] },
+    totals: { type: macroTotalsSchema, default: () => ({}) },
+    microTotals: { type: Map, of: Number, default: {} },
+    photoUrls: { type: [String], default: [] },
+    notes: { type: String, default: "" },
+    source: {
+      type: String,
+      enum: Object.values(MealLogSource),
+      default: "Manual" /* Manual */
+    }
+  }, { timestamps: true });
+  nutritionMealLogSchema.index({ userId: 1, logDate: -1 });
+  nutritionMealLogSchema.index({ planId: 1, logDate: 1 });
+  nutritionMealLogSchema.index({ userId: 1, planId: 1, logDate: 1 });
+  NutritionMealLog = import_mongoose19.default.models.NutritionMealLog || import_mongoose19.default.model("NutritionMealLog", nutritionMealLogSchema);
+  nutrition_meal_log_model_default = NutritionMealLog;
+});
+
+// src/models/nutrition-plan.model.ts
+var import_mongoose20, userNutritionPlanSchema, UserNutritionPlan, nutrition_plan_model_default;
+var init_nutrition_plan_model = __esm(() => {
+  init_Enums();
+  init_nutrition_shared_schema();
+  import_mongoose20 = __toESM(require_mongoose2(), 1);
+  userNutritionPlanSchema = new import_mongoose20.default.Schema({
+    userId: {
+      type: import_mongoose20.default.Schema.Types.ObjectId,
+      ref: "User",
+      required: true
+    },
+    nutritionistId: {
+      type: import_mongoose20.default.Schema.Types.ObjectId,
+      ref: "User",
+      required: true
+    },
+    sourceTemplateId: {
+      type: import_mongoose20.default.Schema.Types.ObjectId,
+      ref: "NutritionTemplate",
+      default: null
+    },
+    name: { type: String, required: true },
+    goal: {
+      type: String,
+      enum: Object.values(NutritionGoal),
+      required: true
+    },
+    status: {
+      type: String,
+      enum: Object.values(NutritionPlanStatus),
+      default: "Active" /* Active */
+    },
+    startDate: { type: Date, required: false },
+    endDate: { type: Date, default: null },
+    targetCaloriesKcal: { type: Number, default: null },
+    targetMacros: { type: macroTargetSchema, default: () => ({}) },
+    durationDays: { type: Number, default: 7 },
+    days: { type: [planDaySchema], default: [] },
+    lifestyleRecommendations: {
+      type: [lifestyleRecommendationSchema],
+      default: []
+    },
+    hasPdf: { type: Boolean, default: false },
+    pdfUrl: { type: String, default: null },
+    pdfGeneratedAt: { type: Date, default: null },
+    pdfStorageKey: { type: String, default: null }
+  }, { timestamps: true });
+  userNutritionPlanSchema.index({ userId: 1, status: 1 });
+  userNutritionPlanSchema.index({ nutritionistId: 1, status: 1 });
+  userNutritionPlanSchema.index({ userId: 1, startDate: -1 });
+  userNutritionPlanSchema.index({ sourceTemplateId: 1 });
+  UserNutritionPlan = import_mongoose20.default.models.UserNutritionPlan || import_mongoose20.default.model("UserNutritionPlan", userNutritionPlanSchema);
+  nutrition_plan_model_default = UserNutritionPlan;
+});
+
+// src/models/nutrition-profile.model.ts
+var exports_nutrition_profile_model = {};
+__export(exports_nutrition_profile_model, {
+  default: () => nutrition_profile_model_default
+});
+var import_mongoose21, nutritionProfileSchema, NutritionProfile, nutrition_profile_model_default;
+var init_nutrition_profile_model = __esm(() => {
+  init_Enums();
+  init_nutrition_shared_schema();
+  import_mongoose21 = __toESM(require_mongoose2(), 1);
+  nutritionProfileSchema = new import_mongoose21.default.Schema({
+    userId: {
+      type: import_mongoose21.default.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      unique: true
+    },
+    dietaryPreference: {
+      type: String,
+      enum: Object.values(DietaryPreference),
+      default: "NonVeg" /* NonVeg */
+    },
+    allergies: { type: [String], default: [] },
+    medicalConditions: { type: [String], default: [] },
+    preferredFoods: { type: [String], default: [] },
+    dislikedFoods: { type: [String], default: [] },
+    goal: {
+      type: String,
+      enum: Object.values(NutritionGoal),
+      required: true
+    },
+    targetCaloriesKcal: { type: Number, default: null },
+    targetMacros: { type: macroTargetSchema, default: () => ({}) },
+    mealsPerDay: { type: Number, default: 3 },
+    waterTargetMl: { type: Number, default: null },
+    notes: { type: String, default: "" },
+    createdByNutritionist: {
+      type: import_mongoose21.default.Schema.Types.ObjectId,
+      ref: "User",
+      required: true
+    }
+  }, { timestamps: true });
+  nutritionProfileSchema.index({ createdByNutritionist: 1 });
+  nutritionProfileSchema.index({ createdByNutritionist: 1, updatedAt: -1 });
+  nutritionProfileSchema.index({ goal: 1 });
+  NutritionProfile = import_mongoose21.default.models.NutritionProfile || import_mongoose21.default.model("NutritionProfile", nutritionProfileSchema);
+  nutrition_profile_model_default = NutritionProfile;
 });
 
 // node_modules/firebase-admin/lib/utils/validator.js
@@ -132795,7 +134311,7 @@ Content-Type: ${partContentType}\r
     static #proxyAgent;
     static #fetch;
     static async#getProxyAgent() {
-      this.#proxyAgent ||= (await Promise.resolve().then(() => __toESM(require_dist4()))).HttpsProxyAgent;
+      this.#proxyAgent ||= (await Promise.resolve().then(() => __toESM(require_dist5()))).HttpsProxyAgent;
       return this.#proxyAgent;
     }
     static async#getFetch() {
@@ -155656,7 +157172,7 @@ var require_user_record = __commonJS((exports2) => {
           multiFactorInfo = new PhoneMultiFactorInfo(response);
         } else if (response.totpInfo !== undefined) {
           multiFactorInfo = new TotpMultiFactorInfo(response);
-        }
+        } else {}
       } catch (e2) {}
       return multiFactorInfo;
     }
@@ -156391,10 +157907,9 @@ var require_auth = __commonJS((exports2) => {
 // node_modules/@firebase/util/dist/postinstall.js
 var require_postinstall = __commonJS((exports2) => {
   Object.defineProperty(exports2, "__esModule", { value: true });
-  var getDefaultsFromPostinstall = () => {
+  exports2.getDefaultsFromPostinstall = () => {
     return;
   };
-  exports2.getDefaultsFromPostinstall = getDefaultsFromPostinstall;
 });
 
 // node_modules/@firebase/util/dist/index.node.cjs.js
@@ -166892,7 +168407,8 @@ FIREBASE: `));
           } else if (pathContains(writePath, treeRoot)) {
             relativePath = newRelativePath(writePath, treeRoot);
             compoundWrite = compoundWriteAddWrite(compoundWrite, newEmptyPath(), write.snap.getChild(relativePath));
-          }
+          } else
+            ;
         } else if (write.children) {
           if (pathContains(treeRoot, writePath)) {
             relativePath = newRelativePath(treeRoot, writePath);
@@ -166908,7 +168424,8 @@ FIREBASE: `));
                 compoundWrite = compoundWriteAddWrite(compoundWrite, newEmptyPath(), deepNode);
               }
             }
-          }
+          } else
+            ;
         } else {
           throw util.assertionError("WriteRecord should have .snap or .children");
         }
@@ -175794,7 +177311,7 @@ Content-Type: ${partContentType}\r
     }
     return opts;
   }, _Gaxios_getProxyAgent = async function _Gaxios_getProxyAgent2() {
-    __classPrivateFieldSet(this, _a3, __classPrivateFieldGet(this, _a3, "f", _Gaxios_proxyAgent) || (await Promise.resolve().then(() => __importStar(require_dist4()))).HttpsProxyAgent, "f", _Gaxios_proxyAgent);
+    __classPrivateFieldSet(this, _a3, __classPrivateFieldGet(this, _a3, "f", _Gaxios_proxyAgent) || (await Promise.resolve().then(() => __importStar(require_dist5()))).HttpsProxyAgent, "f", _Gaxios_proxyAgent);
     return __classPrivateFieldGet(this, _a3, "f", _Gaxios_proxyAgent);
   };
   _Gaxios_proxyAgent = { value: undefined };
@@ -181326,7 +182843,7 @@ Content-Type: ${partContentType}\r
     }
     return opts;
   }, _Gaxios_getProxyAgent = async function _Gaxios_getProxyAgent2() {
-    __classPrivateFieldSet(this, _a3, __classPrivateFieldGet(this, _a3, "f", _Gaxios_proxyAgent) || (await Promise.resolve().then(() => __importStar(require_dist4()))).HttpsProxyAgent, "f", _Gaxios_proxyAgent);
+    __classPrivateFieldSet(this, _a3, __classPrivateFieldGet(this, _a3, "f", _Gaxios_proxyAgent) || (await Promise.resolve().then(() => __importStar(require_dist5()))).HttpsProxyAgent, "f", _Gaxios_proxyAgent);
     return __classPrivateFieldGet(this, _a3, "f", _Gaxios_proxyAgent);
   };
   _Gaxios_proxyAgent = { value: undefined };
@@ -187721,7 +189238,7 @@ var require_lib15 = __commonJS((exports2, module2) => {
 });
 
 // node_modules/@tootallnate/once/dist/index.js
-var require_dist6 = __commonJS((exports2) => {
+var require_dist7 = __commonJS((exports2) => {
   Object.defineProperty(exports2, "__esModule", { value: true });
   function once(emitter, name, { signal } = {}) {
     return new Promise((resolve, reject) => {
@@ -187988,7 +189505,7 @@ var require_agent = __commonJS((exports2) => {
   var tls_1 = __importDefault(require("tls"));
   var url_1 = __importDefault(require("url"));
   var debug_1 = __importDefault(require_src());
-  var once_1 = __importDefault(require_dist6());
+  var once_1 = __importDefault(require_dist7());
   var agent_base_1 = require_src15();
   var debug = (0, debug_1.default)("http-proxy-agent");
   function isHTTPS(protocol) {
@@ -188084,7 +189601,7 @@ var require_agent = __commonJS((exports2) => {
 });
 
 // node_modules/http-proxy-agent/dist/index.js
-var require_dist7 = __commonJS((exports2, module2) => {
+var require_dist8 = __commonJS((exports2, module2) => {
   var __importDefault = exports2 && exports2.__importDefault || function(mod) {
     return mod && mod.__esModule ? mod : { default: mod };
   };
@@ -188513,7 +190030,7 @@ var require_agent2 = __commonJS((exports2) => {
 });
 
 // node_modules/teeny-request/node_modules/https-proxy-agent/dist/index.js
-var require_dist8 = __commonJS((exports2, module2) => {
+var require_dist9 = __commonJS((exports2, module2) => {
   var __importDefault = exports2 && exports2.__importDefault || function(mod) {
     return mod && mod.__esModule ? mod : { default: mod };
   };
@@ -188562,7 +190079,7 @@ var require_agents = __commonJS((exports2) => {
     const manuallyProvidedProxy = !!reqOpts.proxy;
     const shouldUseProxy = manuallyProvidedProxy || shouldUseProxyForURI(uri);
     if (proxy && shouldUseProxy) {
-      const Agent = isHttp ? require_dist7() : require_dist8();
+      const Agent = isHttp ? require_dist8() : require_dist9();
       const proxyOpts = { ...(0, url_1.parse)(proxy), ...poolOptions };
       return new Agent(proxyOpts);
     }
@@ -189034,7 +190551,7 @@ var require_package_json_helper = __commonJS((exports2) => {
 
 // node_modules/@google-cloud/storage/build/cjs/src/util.js
 var require_util8 = __commonJS((exports2) => {
-  var __dirname = "/Users/sammetasagunvarma/YUGAAS/FITFLIX_BACKEND/node_modules/@google-cloud/storage/build/cjs/src";
+  var __dirname = "C:\\Yugaas\\hybrid_human_backend\\node_modules\\@google-cloud\\storage\\build\\cjs\\src";
   var __createBinding = exports2 && exports2.__createBinding || (Object.create ? function(o, m2, k, k2) {
     if (k2 === undefined)
       k2 = k;
@@ -212087,7 +213604,7 @@ Content-Type: ${partContentType}\r
     }
     return opts;
   }, _Gaxios_getProxyAgent = async function _Gaxios_getProxyAgent2() {
-    __classPrivateFieldSet(this, _a3, __classPrivateFieldGet(this, _a3, "f", _Gaxios_proxyAgent) || (await Promise.resolve().then(() => __importStar(require_dist4()))).HttpsProxyAgent, "f", _Gaxios_proxyAgent);
+    __classPrivateFieldSet(this, _a3, __classPrivateFieldGet(this, _a3, "f", _Gaxios_proxyAgent) || (await Promise.resolve().then(() => __importStar(require_dist5()))).HttpsProxyAgent, "f", _Gaxios_proxyAgent);
     return __classPrivateFieldGet(this, _a3, "f", _Gaxios_proxyAgent);
   };
   _Gaxios_proxyAgent = { value: undefined };
@@ -242918,7 +244435,7 @@ var require_src27 = __commonJS((exports2) => {
 
 // node_modules/@grpc/grpc-js/build/src/channelz.js
 var require_channelz = __commonJS((exports2) => {
-  var __dirname = "/Users/sammetasagunvarma/YUGAAS/FITFLIX_BACKEND/node_modules/@grpc/grpc-js/build/src";
+  var __dirname = "C:\\Yugaas\\hybrid_human_backend\\node_modules\\@grpc\\grpc-js\\build\\src";
   Object.defineProperty(exports2, "__esModule", { value: true });
   exports2.registerChannelzSocket = exports2.registerChannelzServer = exports2.registerChannelzSubchannel = exports2.registerChannelzChannel = exports2.ChannelzCallTrackerStub = exports2.ChannelzCallTracker = exports2.ChannelzChildrenTrackerStub = exports2.ChannelzChildrenTracker = exports2.ChannelzTrace = exports2.ChannelzTraceStub = undefined;
   exports2.unregisterChannelzRef = unregisterChannelzRef;
@@ -248333,7 +249850,7 @@ var require_duration2 = __commonJS((exports2) => {
 
 // node_modules/@grpc/grpc-js/build/src/orca.js
 var require_orca = __commonJS((exports2) => {
-  var __dirname = "/Users/sammetasagunvarma/YUGAAS/FITFLIX_BACKEND/node_modules/@grpc/grpc-js/build/src";
+  var __dirname = "C:\\Yugaas\\hybrid_human_backend\\node_modules\\@grpc\\grpc-js\\build\\src";
   Object.defineProperty(exports2, "__esModule", { value: true });
   exports2.OrcaOobMetricsSubchannelWrapper = exports2.GRPC_METRICS_HEADER = exports2.ServerMetricRecorder = exports2.PerRequestMetricRecorder = undefined;
   exports2.createOrcaClient = createOrcaClient;
@@ -253208,7 +254725,7 @@ var require_protosList = __commonJS((exports2, module2) => {
 
 // node_modules/google-gax/build/src/grpc.js
 var require_grpc = __commonJS((exports2) => {
-  var __dirname = "/Users/sammetasagunvarma/YUGAAS/FITFLIX_BACKEND/node_modules/google-gax/build/src";
+  var __dirname = "C:\\Yugaas\\hybrid_human_backend\\node_modules\\google-gax\\build\\src";
   Object.defineProperty(exports2, "__esModule", { value: true });
   exports2.GoogleProtoFilesRoot = exports2.GrpcClient = exports2.ClientStub = undefined;
   var grpcProtoLoader = require_src29();
@@ -263973,7 +265490,7 @@ var require_tracestate_impl = __commonJS((exports2) => {
           const value = listMember.slice(i2 + 1, part.length);
           if ((0, tracestate_validators_1.validateKey)(key) && (0, tracestate_validators_1.validateValue)(value)) {
             agg.set(key, value);
-          }
+          } else {}
         }
         return agg;
       }, new Map);
@@ -326967,7 +328484,7 @@ var require_socket = __commonJS((exports2) => {
         } else {
           this.remoteAddress = req.connection.remoteAddress;
         }
-      }
+      } else {}
       this.pingTimeoutTimer = null;
       this.pingIntervalTimer = null;
       this.setTransport(transport);
@@ -332071,7 +333588,7 @@ var require_binary = __commonJS((exports2) => {
     pack.attachments = buffers.length;
     return { packet: pack, buffers };
   }
-  function _deconstructPacket(data, buffers) {
+  function _deconstructPacket(data, buffers, toJSON) {
     if (!data)
       return data;
     if ((0, is_binary_js_1.isBinary)(data)) {
@@ -332085,6 +333602,9 @@ var require_binary = __commonJS((exports2) => {
       }
       return newData;
     } else if (typeof data === "object" && !(data instanceof Date)) {
+      if (data.toJSON && typeof data.toJSON === "function" && !toJSON) {
+        return _deconstructPacket(data.toJSON(), buffers, true);
+      }
       const newData = {};
       for (const key in data) {
         if (Object.prototype.hasOwnProperty.call(data, key)) {
@@ -332127,13 +333647,16 @@ var require_binary = __commonJS((exports2) => {
 
 // node_modules/socket.io-parser/build/cjs/index.js
 var require_cjs6 = __commonJS((exports2) => {
+  var __importDefault = exports2 && exports2.__importDefault || function(mod) {
+    return mod && mod.__esModule ? mod : { default: mod };
+  };
   Object.defineProperty(exports2, "__esModule", { value: true });
   exports2.Decoder = exports2.Encoder = exports2.PacketType = exports2.protocol = undefined;
   exports2.isPacketValid = isPacketValid;
   var component_emitter_1 = require_cjs5();
   var binary_js_1 = require_binary();
   var is_binary_js_1 = require_is_binary();
-  var debug_1 = require_src();
+  var debug_1 = __importDefault(require_src());
   var debug2 = (0, debug_1.default)("socket.io-parser");
   var RESERVED_EVENTS = [
     "connect",
@@ -332219,9 +333742,6 @@ var require_cjs6 = __commonJS((exports2) => {
         if (isBinaryEvent || packet.type === PacketType.BINARY_ACK) {
           packet.type = isBinaryEvent ? PacketType.EVENT : PacketType.ACK;
           this.reconstructor = new BinaryReconstructor(packet);
-          if (packet.attachments === 0) {
-            super.emitReserved("decoded", packet);
-          }
         } else {
           super.emitReserved("decoded", packet);
         }
@@ -332255,7 +333775,7 @@ var require_cjs6 = __commonJS((exports2) => {
           throw new Error("Illegal attachments");
         }
         const n = Number(buf);
-        if (!isInteger(n) || n < 0) {
+        if (!isInteger(n) || n < 1) {
           throw new Error("Illegal attachments");
         } else if (n > this.opts.maxAttachments) {
           throw new Error("too many attachments");
@@ -334362,7 +335882,7 @@ var require_cluster_adapter = __commonJS((exports2) => {
 });
 
 // node_modules/socket.io-adapter/dist/index.js
-var require_dist9 = __commonJS((exports2) => {
+var require_dist10 = __commonJS((exports2) => {
   Object.defineProperty(exports2, "__esModule", { value: true });
   exports2.MessageType = exports2.ClusterAdapterWithHeartbeat = exports2.ClusterAdapter = exports2.SessionAwareAdapter = exports2.Adapter = undefined;
   var in_memory_adapter_1 = require_in_memory_adapter();
@@ -334392,7 +335912,7 @@ var require_parent_namespace = __commonJS((exports2) => {
   Object.defineProperty(exports2, "__esModule", { value: true });
   exports2.ParentNamespace = undefined;
   var namespace_1 = require_namespace2();
-  var socket_io_adapter_1 = require_dist9();
+  var socket_io_adapter_1 = require_dist10();
   var debug_1 = __importDefault(require_src());
   var debug2 = (0, debug_1.default)("socket.io:parent-namespace");
 
@@ -334458,7 +335978,7 @@ var require_uws = __commonJS((exports2) => {
   exports2.patchAdapter = patchAdapter;
   exports2.restoreAdapter = restoreAdapter;
   exports2.serveFile = serveFile;
-  var socket_io_adapter_1 = require_dist9();
+  var socket_io_adapter_1 = require_dist10();
   var fs_1 = require("fs");
   var debug_1 = __importDefault(require_src());
   var debug2 = (0, debug_1.default)("socket.io:adapter-uws");
@@ -334668,8 +336188,8 @@ var require_package17 = __commonJS((exports2, module2) => {
 });
 
 // node_modules/socket.io/dist/index.js
-var require_dist10 = __commonJS((exports2, module2) => {
-  var __dirname = "/Users/sammetasagunvarma/YUGAAS/FITFLIX_BACKEND/node_modules/socket.io/dist";
+var require_dist11 = __commonJS((exports2, module2) => {
+  var __dirname = "C:\\Yugaas\\hybrid_human_backend\\node_modules\\socket.io\\dist";
   var __createBinding = exports2 && exports2.__createBinding || (Object.create ? function(o, m2, k, k2) {
     if (k2 === undefined)
       k2 = k;
@@ -334721,7 +336241,7 @@ var require_dist10 = __commonJS((exports2, module2) => {
     return namespace_1.Namespace;
   } });
   var parent_namespace_1 = require_parent_namespace();
-  var socket_io_adapter_1 = require_dist9();
+  var socket_io_adapter_1 = require_dist10();
   var parser = __importStar(require_cjs6());
   var debug_1 = __importDefault(require_src());
   var socket_1 = require_socket2();
@@ -480028,7 +481548,7 @@ var require_png_js = __commonJS((exports2, module2) => {
 
 // node_modules/pdfkit/js/pdfkit.js
 var require_pdfkit = __commonJS((exports2, module2) => {
-  var __dirname = "/Users/sammetasagunvarma/YUGAAS/FITFLIX_BACKEND/node_modules/pdfkit/js";
+  var __dirname = "C:\\Yugaas\\hybrid_human_backend\\node_modules\\pdfkit\\js";
   var stream = require("stream");
   var zlib3 = require("zlib");
   var utils2 = require_utils18();
@@ -486346,6 +487866,919 @@ end`);
   module2.exports = PDFDocument;
 });
 
+// src/services/nutrition/nutrition-errors.ts
+var import_mongoose79, NutritionServiceError, toObjectId2 = (value, code, message) => {
+  if (!import_mongoose79.default.Types.ObjectId.isValid(value)) {
+    throw new NutritionServiceError(code, message);
+  }
+  return new import_mongoose79.default.Types.ObjectId(value);
+}, requireIdParam = (value, message) => {
+  if (typeof value !== "string" || !import_mongoose79.default.Types.ObjectId.isValid(value)) {
+    throw new NutritionServiceError("NOT_FOUND", message);
+  }
+  return value;
+}, STATUS_MAP, CODE_MAP, handleNutritionError = (error51, res, next) => {
+  if (error51 instanceof NutritionServiceError) {
+    res.status(STATUS_MAP[error51.code] ?? 400).json({
+      error: error51.message,
+      code: CODE_MAP[error51.code] ?? "BAD_REQUEST"
+    });
+    return;
+  }
+  next(error51);
+}, getValidationDetails2 = (issues) => {
+  const details = {};
+  for (const issue2 of issues) {
+    const field = issue2.path.length > 0 ? issue2.path.map(String).join(".") : "body";
+    if (!details[field]) {
+      details[field] = issue2.message;
+    }
+  }
+  return details;
+}, normalizeToUtcDate2 = (value) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+var init_nutrition_errors = __esm(() => {
+  import_mongoose79 = __toESM(require_mongoose2(), 1);
+  NutritionServiceError = class NutritionServiceError extends Error {
+    code;
+    constructor(code, message) {
+      super(message);
+      this.name = "NutritionServiceError";
+      this.code = code;
+    }
+  };
+  STATUS_MAP = {
+    NOT_FOUND: 404,
+    FORBIDDEN: 403,
+    CONFLICT: 409,
+    VALIDATION: 400,
+    BAD_REQUEST: 400
+  };
+  CODE_MAP = {
+    NOT_FOUND: "NOT_FOUND",
+    FORBIDDEN: "FORBIDDEN",
+    CONFLICT: "CONFLICT",
+    VALIDATION: "VALIDATION_ERROR",
+    BAD_REQUEST: "BAD_REQUEST"
+  };
+});
+
+// src/services/nutrition/nutrition-macro.util.ts
+var getEffectiveMealItems = (meal) => {
+  const options = meal.options ?? [];
+  if (options.length > 0) {
+    const defaultOpt = options.find((o) => o.isDefault) ?? options[0];
+    return defaultOpt?.foods ?? [];
+  }
+  return meal.items ?? [];
+}, getOptionItems = (meal, optionId) => {
+  if (!optionId)
+    return null;
+  const target = optionId.toString();
+  const options = meal.options ?? [];
+  const match = options.find((o) => o._id?.toString?.() === target);
+  return match?.foods ?? null;
+}, round = (value) => Math.round(value * 100) / 100, scaleMacros = (food, quantityG) => {
+  const base = food.basePer > 0 ? food.basePer : 100;
+  const factor = quantityG / base;
+  return {
+    caloriesKcal: round(food.caloriesKcal * factor),
+    proteinG: round(food.proteinG * factor),
+    carbsG: round(food.carbsG * factor),
+    fatG: round(food.fatG * factor),
+    fiberG: food.fiberG === null || food.fiberG === undefined ? null : round(food.fiberG * factor),
+    sugarG: food.sugarG === null || food.sugarG === undefined ? null : round(food.sugarG * factor)
+  };
+}, sumMacros = (items) => {
+  const totals = {
+    caloriesKcal: 0,
+    proteinG: 0,
+    carbsG: 0,
+    fatG: 0,
+    fiberG: 0,
+    sugarG: 0
+  };
+  for (const item of items) {
+    totals.caloriesKcal += item.caloriesKcal;
+    totals.proteinG += item.proteinG;
+    totals.carbsG += item.carbsG;
+    totals.fatG += item.fatG;
+    totals.fiberG += item.fiberG ?? 0;
+    totals.sugarG += item.sugarG ?? 0;
+  }
+  return {
+    caloriesKcal: round(totals.caloriesKcal),
+    proteinG: round(totals.proteinG),
+    carbsG: round(totals.carbsG),
+    fatG: round(totals.fatG),
+    fiberG: round(totals.fiberG),
+    sugarG: round(totals.sugarG)
+  };
+}, resolveQuantityG = (food, input) => {
+  if (input.servingLabel) {
+    const match = food.servings?.find((s3) => s3.label === input.servingLabel);
+    if (!match) {
+      throw new NutritionServiceError("BAD_REQUEST", `Unknown serving "${input.servingLabel}" for this food`);
+    }
+    const count = input.servingCount ?? 1;
+    return round(match.gramsPerUnit * count);
+  }
+  if (input.quantityG !== undefined) {
+    return input.quantityG;
+  }
+  throw new NutritionServiceError("BAD_REQUEST", "Provide quantityG, or both servingLabel and servingCount");
+}, microEntries = (micros) => micros instanceof Map ? Array.from(micros.entries()) : Object.entries(micros ?? {}), scaleMicros = (food, quantityG) => {
+  const base = food.basePer > 0 ? food.basePer : 100;
+  const factor = quantityG / base;
+  const result = {};
+  for (const [key, value] of microEntries(food.micros)) {
+    result[key] = round(value * factor);
+  }
+  return result;
+}, sumMicros = (items) => {
+  const totals = {};
+  for (const item of items) {
+    for (const [key, value] of microEntries(item.micros)) {
+      totals[key] = round((totals[key] ?? 0) + value);
+    }
+  }
+  return totals;
+};
+var init_nutrition_macro_util = __esm(() => {
+  init_nutrition_errors();
+});
+
+// src/services/nutrition/nutrition-dashboard.service.ts
+var exports_nutrition_dashboard_service = {};
+__export(exports_nutrition_dashboard_service, {
+  resolveNutritionTargets: () => resolveNutritionTargets,
+  inferNutritionGoal: () => inferNutritionGoal,
+  getUserNutritionDashboard: () => getUserNutritionDashboard,
+  getDashboardStats: () => getDashboardStats,
+  getDashboardMembers: () => getDashboardMembers
+});
+var import_mongoose80, getDashboardStats = async () => {
+  const [distinctMembers, activePlans] = await Promise.all([
+    nutrition_plan_model_default.distinct("userId"),
+    nutrition_plan_model_default.countDocuments({
+      status: "Active" /* Active */
+    })
+  ]);
+  return {
+    pendingBookings: 0,
+    confirmedBookings: 0,
+    totalMembers: distinctMembers.length,
+    activePlans
+  };
+}, escapeRegex3 = (s3) => s3.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), getDashboardMembers = async (options) => {
+  const { search, status, page, limit } = options;
+  const pipeline4 = [
+    {
+      $lookup: {
+        from: "usernutritionplans",
+        localField: "_id",
+        foreignField: "userId",
+        as: "nutritionPlans"
+      }
+    },
+    {
+      $addFields: {
+        assignedPlans: { $size: "$nutritionPlans" },
+        activePlanCount: {
+          $size: {
+            $filter: {
+              input: "$nutritionPlans",
+              cond: {
+                $eq: ["$$this.status", "Active" /* Active */]
+              }
+            }
+          }
+        },
+        completedPlanCount: {
+          $size: {
+            $filter: {
+              input: "$nutritionPlans",
+              cond: {
+                $eq: ["$$this.status", "Completed" /* Completed */]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      $addFields: {
+        nutritionStatus: {
+          $switch: {
+            branches: [
+              {
+                case: { $gt: ["$activePlanCount", 0] },
+                then: "assigned"
+              },
+              {
+                case: { $gt: ["$completedPlanCount", 0] },
+                then: "completed"
+              }
+            ],
+            default: "pending"
+          }
+        },
+        activeNutritionPlan: {
+          $let: {
+            vars: {
+              active: {
+                $arrayElemAt: [
+                  {
+                    $filter: {
+                      input: "$nutritionPlans",
+                      cond: {
+                        $eq: ["$$this.status", "Active" /* Active */]
+                      }
+                    }
+                  },
+                  0
+                ]
+              }
+            },
+            in: {
+              $cond: [
+                { $ifNull: ["$$active", false] },
+                {
+                  _id: "$$active._id",
+                  name: "$$active.name",
+                  status: "$$active.status",
+                  startDate: "$$active.startDate",
+                  endDate: "$$active.endDate"
+                },
+                null
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      $lookup: {
+        from: "nutritionprofiles",
+        localField: "_id",
+        foreignField: "userId",
+        as: "nutritionProfileDocs"
+      }
+    },
+    {
+      $addFields: {
+        nutritionProfileDoc: {
+          $arrayElemAt: ["$nutritionProfileDocs", 0]
+        }
+      }
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "nutritionProfileDoc.createdByNutritionist",
+        foreignField: "_id",
+        as: "assignedNutritionistDocs"
+      }
+    },
+    {
+      $addFields: {
+        assignedNutritionist: {
+          $let: {
+            vars: {
+              n: { $arrayElemAt: ["$assignedNutritionistDocs", 0] }
+            },
+            in: {
+              $cond: [
+                { $ifNull: ["$$n", false] },
+                {
+                  _id: "$$n._id",
+                  username: "$$n.username",
+                  email: "$$n.email"
+                },
+                null
+              ]
+            }
+          }
+        },
+        nutritionProfile: {
+          $cond: [
+            { $ifNull: ["$nutritionProfileDoc", false] },
+            {
+              _id: "$nutritionProfileDoc._id",
+              goal: "$nutritionProfileDoc.goal",
+              dietaryPreference: "$nutritionProfileDoc.dietaryPreference",
+              allergies: "$nutritionProfileDoc.allergies",
+              targetCaloriesKcal: "$nutritionProfileDoc.targetCaloriesKcal",
+              targetMacros: "$nutritionProfileDoc.targetMacros",
+              assignedNutritionistId: "$nutritionProfileDoc.createdByNutritionist"
+            },
+            null
+          ]
+        }
+      }
+    },
+    {
+      $lookup: {
+        from: "healthmarkers",
+        let: { uid: "$_id" },
+        pipeline: [
+          { $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
+          {
+            $project: {
+              _id: 0,
+              weight: 1,
+              height: 1,
+              bmi: 1,
+              activityLevel: 1
+            }
+          }
+        ],
+        as: "_healthMarkersDocs"
+      }
+    },
+    {
+      $lookup: {
+        from: "healthgoals",
+        let: { uid: "$_id" },
+        pipeline: [
+          { $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
+          { $project: { _id: 0, goals: 1, targetWeight: 1 } }
+        ],
+        as: "_healthGoalsDocs"
+      }
+    },
+    {
+      $lookup: {
+        from: "memberships",
+        localField: "_id",
+        foreignField: "user",
+        pipeline: [
+          { $match: { status: "Active" } },
+          { $sort: { startDate: -1 } },
+          { $limit: 1 },
+          { $project: { _id: 0, startDate: 1 } }
+        ],
+        as: "_membershipDocs"
+      }
+    }
+  ];
+  if (status) {
+    pipeline4.push({ $match: { nutritionStatus: status } });
+  }
+  if (search) {
+    const regex = new RegExp(escapeRegex3(search), "i");
+    pipeline4.push({
+      $match: {
+        $or: [
+          { username: { $regex: regex } },
+          { email: { $regex: regex } },
+          { phone: { $regex: regex } }
+        ]
+      }
+    });
+  }
+  pipeline4.push({
+    $project: {
+      _id: 1,
+      username: 1,
+      name: "$username",
+      email: 1,
+      phone: 1,
+      age: 1,
+      gender: 1,
+      onboardingStatus: {
+        currentStep: "$onboardingStatus.currentStep",
+        completedSteps: { $ifNull: ["$onboardingStatus.completedSteps", []] },
+        isCompleted: {
+          $ifNull: ["$onboardingStatus.onboardingCompleted", false]
+        }
+      },
+      nutritionBookingStatus: 1,
+      nutritionStatus: 1,
+      nutritionProfile: 1,
+      activeNutritionPlan: 1,
+      assignedNutritionist: 1,
+      assignedPlans: 1,
+      createdAt: 1,
+      membershipStartDate: {
+        $arrayElemAt: ["$_membershipDocs.startDate", 0]
+      },
+      onboardingCompletedAt: "$onboardingStatus.completedAt",
+      joinedAt: {
+        $ifNull: [
+          { $arrayElemAt: ["$_membershipDocs.startDate", 0] },
+          { $ifNull: ["$onboardingStatus.completedAt", "$createdAt"] }
+        ]
+      },
+      healthMarkers: {
+        $cond: [
+          { $gt: [{ $size: "$_healthMarkersDocs" }, 0] },
+          {
+            $mergeObjects: [
+              { $arrayElemAt: ["$_healthMarkersDocs", 0] },
+              {
+                targetWeight: {
+                  $ifNull: [
+                    { $arrayElemAt: ["$_healthGoalsDocs.targetWeight", 0] },
+                    null
+                  ]
+                }
+              }
+            ]
+          },
+          {}
+        ]
+      },
+      healthGoals: {
+        $cond: [
+          { $gt: [{ $size: "$_healthGoalsDocs" }, 0] },
+          { $arrayElemAt: ["$_healthGoalsDocs.goals", 0] },
+          { $ifNull: ["$healthGoals", []] }
+        ]
+      }
+    }
+  }, {
+    $facet: {
+      items: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+      totalCount: [{ $count: "count" }]
+    }
+  });
+  const [result] = await User_default.aggregate(pipeline4);
+  const items = result?.items ?? [];
+  const total = result?.totalCount?.[0]?.count ?? 0;
+  return {
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit)
+    }
+  };
+}, GOAL_KEYWORDS, inferNutritionGoal = (rawGoals) => {
+  if (!rawGoals)
+    return "Maintenance" /* Maintenance */;
+  const goalsArr = Array.isArray(rawGoals) ? rawGoals : [rawGoals];
+  const combined = goalsArr.join(" ").toLowerCase().trim();
+  if (!combined)
+    return "Maintenance" /* Maintenance */;
+  const enumValues = Object.values(NutritionGoal);
+  for (const g of goalsArr) {
+    if (enumValues.includes(g.trim())) {
+      return g.trim();
+    }
+  }
+  for (const { keywords, goal } of GOAL_KEYWORDS) {
+    if (keywords.some((kw) => combined.includes(kw))) {
+      return goal;
+    }
+  }
+  return "Custom" /* Custom */;
+}, ACTIVITY_MULTIPLIERS, GOAL_CALORIE_ADJUSTMENTS, GOAL_PROTEIN_MULTIPLIERS, resolveNutritionTargets = (plan, nutritionProfile, healthMarkers, user, goal) => {
+  if (plan?.targetMacros) {
+    const { proteinG, carbsG, fatG } = plan.targetMacros;
+    const targetCalories = plan.targetCaloriesKcal;
+    if (proteinG != null && carbsG != null && fatG != null && targetCalories != null) {
+      const weight2 = healthMarkers?.weight ?? 70;
+      return {
+        calories: targetCalories,
+        protein: proteinG,
+        carbs: carbsG,
+        fat: fatG,
+        water: Math.round(weight2 * 40),
+        source: "plan"
+      };
+    }
+  }
+  if (nutritionProfile) {
+    const { proteinG, carbsG, fatG } = nutritionProfile.targetMacros ?? {};
+    const targetCalories = nutritionProfile.targetCaloriesKcal;
+    if (proteinG != null && carbsG != null && fatG != null && targetCalories != null) {
+      const weight2 = healthMarkers?.weight ?? 70;
+      const waterTarget = nutritionProfile.waterTargetMl ?? Math.round(weight2 * 40);
+      return {
+        calories: targetCalories,
+        protein: proteinG,
+        carbs: carbsG,
+        fat: fatG,
+        water: waterTarget,
+        source: "assessment"
+      };
+    }
+  }
+  const weight = healthMarkers?.weight;
+  const height = healthMarkers?.height;
+  const age = typeof user?.age === "number" && user.age > 0 ? user.age : undefined;
+  const gender = typeof user?.gender === "string" ? user.gender : undefined;
+  if (weight && height && age !== undefined && gender !== undefined) {
+    let bmr;
+    if (gender === "Male") {
+      bmr = 10 * weight + 6.25 * height - 5 * age + 5;
+    } else if (gender === "Female") {
+      bmr = 10 * weight + 6.25 * height - 5 * age - 161;
+    } else {
+      const maleBmr = 10 * weight + 6.25 * height - 5 * age + 5;
+      const femaleBmr = 10 * weight + 6.25 * height - 5 * age - 161;
+      bmr = (maleBmr + femaleBmr) / 2;
+    }
+    const activityMultiplier = ACTIVITY_MULTIPLIERS[healthMarkers?.activityLevel ?? "Moderate"] ?? 1.55;
+    const tdee = Math.round(bmr * activityMultiplier);
+    const calorieAdj = GOAL_CALORIE_ADJUSTMENTS[goal] ?? 0;
+    const targetCalories = Math.max(1200, Math.round(tdee + calorieAdj));
+    const proteinMultiplier = GOAL_PROTEIN_MULTIPLIERS[goal] ?? 1.2;
+    const proteinG = Math.round(weight * proteinMultiplier);
+    const proteinCal = proteinG * 4;
+    const fatCal = Math.round(targetCalories * 0.3);
+    const fatG = Math.round(fatCal / 9);
+    const carbCal = Math.max(0, targetCalories - proteinCal - fatCal);
+    const carbsG = Math.round(carbCal / 4);
+    const waterMl = Math.round(weight * 40);
+    return {
+      calories: targetCalories,
+      protein: proteinG,
+      carbs: carbsG,
+      fat: fatG,
+      water: waterMl,
+      source: "profile"
+    };
+  }
+  if (weight) {
+    const kcalPerKg = goal === "WeightLoss" /* WeightLoss */ ? 26 : goal === "MuscleGain" /* MuscleGain */ ? 36 : 30;
+    const targetCalories = Math.round(weight * kcalPerKg);
+    const proteinMultiplier = GOAL_PROTEIN_MULTIPLIERS[goal] ?? 1.2;
+    const proteinG = Math.round(weight * proteinMultiplier);
+    const fatFactor = 0.9;
+    const fatG = Math.round(weight * fatFactor);
+    const carbCal = Math.max(0, targetCalories - proteinG * 4 - fatG * 9);
+    const carbsG = Math.round(carbCal / 4);
+    const waterMl = Math.round(weight * 40);
+    return {
+      calories: targetCalories,
+      protein: proteinG,
+      carbs: carbsG,
+      fat: fatG,
+      water: waterMl,
+      source: "weight_only"
+    };
+  }
+  const hasAnyData = healthMarkers != null || nutritionProfile != null || plan != null;
+  if (!hasAnyData) {
+    return {
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      water: 0,
+      source: "none"
+    };
+  }
+  return {
+    calories: 2000,
+    protein: 80,
+    carbs: 250,
+    fat: 65,
+    water: 3000,
+    source: "default"
+  };
+}, getMealScheduleTime = (mealType) => {
+  const schedules = {
+    ["EarlyMorning" /* EarlyMorning */]: "06:00",
+    ["Breakfast" /* Breakfast */]: "08:00",
+    ["PreWorkout" /* PreWorkout */]: "11:00",
+    ["Lunch" /* Lunch */]: "13:00",
+    ["DuringWorkout" /* DuringWorkout */]: "16:00",
+    ["PostWorkout" /* PostWorkout */]: "17:00",
+    ["Snack" /* Snack */]: "15:00",
+    ["EveningSnack" /* EveningSnack */]: "18:00",
+    ["Dinner" /* Dinner */]: "20:00",
+    ["Bedtime" /* Bedtime */]: "22:00"
+  };
+  const time3 = schedules[mealType] || "12:00";
+  return { time: time3, scheduledTime: time3 };
+}, determineMealStatus = (logs, scheduledTime, today) => {
+  const now = new Date;
+  if (logs.length === 0) {
+    const [hours = 0, minutes = 0] = scheduledTime.split(":").map(Number);
+    const scheduledDate = new Date(today);
+    scheduledDate.setHours(hours, minutes, 0, 0);
+    if (now > scheduledDate) {
+      return "Skipped" /* Skipped */;
+    }
+    return "Pending" /* Pending */;
+  }
+  const allCompleted = logs.every((log) => log.status === "Logged" /* Logged */);
+  if (allCompleted)
+    return "Logged" /* Logged */;
+  const someCompleted = logs.some((log) => log.status === "Logged" /* Logged */);
+  if (someCompleted)
+    return "Partial" /* Partial */;
+  return "Skipped" /* Skipped */;
+}, buildIntakeEntry = (consumed, target) => {
+  const safeTarget = target > 0 ? target : 1;
+  const percentage = Math.round(consumed / safeTarget * 100);
+  const isOver = consumed > target;
+  return {
+    consumed,
+    target,
+    remaining: isOver ? 0 : Math.round(target - consumed),
+    percentage,
+    ...isOver ? { exceededBy: Math.round(consumed - target) } : {}
+  };
+}, getUserNutritionDashboard = async (userId) => {
+  if (!import_mongoose80.default.Types.ObjectId.isValid(userId)) {
+    throw new Error("Invalid user ID");
+  }
+  const todayStart = new Date;
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date;
+  todayEnd.setHours(24, 0, 0, 0);
+  const [
+    user,
+    healthMarkers,
+    healthGoals,
+    nutritionProfile,
+    activePlan,
+    todayMealLogs,
+    todayHydration
+  ] = await Promise.all([
+    User_default.findById(userId).select("_id username email phone age gender healthGoals onboardingStatus onboarded").lean(),
+    HealthMarkers_default.findOne({ userId }).select("weight height bmi activityLevel allergies medications diseaseHistory sleepHours bodyFatPercentage").lean(),
+    HealthGoals_default.findOne({ userId }).select("goals targetWeight timeline workoutExperience foodPreferences").lean(),
+    nutrition_profile_model_default.findOne({ userId }).select("goal targetCaloriesKcal targetMacros waterTargetMl createdByNutritionist").lean(),
+    nutrition_plan_model_default.findOne({
+      userId,
+      status: "Active" /* Active */
+    }).select("_id name goal status startDate durationDays targetCaloriesKcal targetMacros days nutritionistId").lean(),
+    nutrition_meal_log_model_default.find({
+      userId,
+      logDate: { $gte: todayStart, $lt: todayEnd }
+    }).select("status items totals plannedMealRef dayNumber").lean(),
+    nutrition_hydration_model_default.findOne({
+      userId,
+      logDate: todayStart
+    }).select("totalMl goalMl").lean()
+  ]);
+  const nutritionistBooking = null;
+  if (!user) {
+    throw new Error("User not found");
+  }
+  let resolvedGoal;
+  if (activePlan?.goal && Object.values(NutritionGoal).includes(activePlan.goal)) {
+    resolvedGoal = activePlan.goal;
+  } else if (nutritionProfile?.goal && Object.values(NutritionGoal).includes(nutritionProfile.goal)) {
+    resolvedGoal = nutritionProfile.goal;
+  } else {
+    resolvedGoal = inferNutritionGoal(healthGoals?.goals ?? []);
+  }
+  const targetResult = resolveNutritionTargets(activePlan, nutritionProfile, healthMarkers, user, resolvedGoal);
+  const macroTargets = {
+    calories: targetResult.calories,
+    protein: targetResult.protein,
+    carbs: targetResult.carbs,
+    fat: targetResult.fat,
+    water: targetResult.water
+  };
+  const today = new Date(todayStart);
+  let todayDayNumber = 1;
+  if (activePlan?.startDate) {
+    const planStart = new Date(activePlan.startDate);
+    planStart.setHours(0, 0, 0, 0);
+    const daysDiff = Math.floor((today.getTime() - planStart.getTime()) / (1000 * 60 * 60 * 24));
+    const durationDays = activePlan.durationDays || 7;
+    todayDayNumber = daysDiff % durationDays + 1 || 1;
+  }
+  const todayPlannedDay = activePlan?.days?.find((day) => day.dayNumber === todayDayNumber) ?? activePlan?.days?.[0];
+  const plannedMeals = todayPlannedDay?.meals ?? [];
+  const todayMeals = [];
+  const consumedTotals = {
+    calories: 0,
+    protein: 0,
+    carbs: 0,
+    fat: 0
+  };
+  for (let mealIdx = 0;mealIdx < plannedMeals.length; mealIdx++) {
+    const plannedMeal = plannedMeals[mealIdx];
+    if (!plannedMeal)
+      continue;
+    const { scheduledTime } = getMealScheduleTime(plannedMeal.mealType);
+    const mealLogs = todayMealLogs.filter((log) => log.plannedMealRef?.mealIndex === mealIdx);
+    const mealItems = getEffectiveMealItems(plannedMeal);
+    const mealTotals = sumMacros(mealItems);
+    const logTotals = mealLogs.length > 0 ? (() => {
+      const combined = sumMacros(mealLogs.flatMap((log) => log.items || []));
+      return combined;
+    })() : {
+      caloriesKcal: 0,
+      proteinG: 0,
+      carbsG: 0,
+      fatG: 0
+    };
+    const status = determineMealStatus(mealLogs, scheduledTime, today);
+    const displayTotals = {
+      calories: mealLogs.length > 0 ? logTotals.caloriesKcal : mealTotals.caloriesKcal,
+      protein: mealLogs.length > 0 ? logTotals.proteinG : mealTotals.proteinG,
+      carbs: mealLogs.length > 0 ? logTotals.carbsG : mealTotals.carbsG,
+      fat: mealLogs.length > 0 ? logTotals.fatG : mealTotals.fatG
+    };
+    if (status === "Logged" /* Logged */ || status === "Partial" /* Partial */) {
+      consumedTotals.calories += logTotals.caloriesKcal;
+      consumedTotals.protein += logTotals.proteinG;
+      consumedTotals.carbs += logTotals.carbsG;
+      consumedTotals.fat += logTotals.fatG;
+    }
+    todayMeals.push({
+      mealType: plannedMeal.mealType,
+      scheduledTime,
+      status,
+      foods: mealItems.map((item) => ({
+        name: item.foodName,
+        qty: item.quantityG,
+        calories: item.caloriesKcal,
+        protein: item.proteinG,
+        carbs: item.carbsG,
+        fat: item.fatG
+      })),
+      totals: displayTotals
+    });
+  }
+  const consumedWaterMl = todayHydration?.totalMl ?? 0;
+  const intakeSummary = {
+    calories: buildIntakeEntry(consumedTotals.calories, macroTargets.calories),
+    protein: buildIntakeEntry(consumedTotals.protein, macroTargets.protein),
+    carbs: buildIntakeEntry(consumedTotals.carbs, macroTargets.carbs),
+    fat: buildIntakeEntry(consumedTotals.fat, macroTargets.fat),
+    water: buildIntakeEntry(consumedWaterMl, macroTargets.water)
+  };
+  const skippedMeals = todayMeals.filter((meal) => meal.status === "Skipped" /* Skipped */).map((meal) => ({
+    mealType: meal.mealType,
+    scheduledTime: meal.scheduledTime
+  }));
+  const redistributionSummary = [];
+  for (const skippedMeal of skippedMeals) {
+    const mealIndex = todayMeals.findIndex((m2) => m2.mealType === skippedMeal.mealType);
+    if (mealIndex < 0)
+      continue;
+    const skippedMealData = todayMeals[mealIndex];
+    if (!skippedMealData)
+      continue;
+    const redistributedTo = todayMeals.slice(mealIndex + 1).filter((m2) => m2.status !== "Skipped" /* Skipped */).slice(0, 2).map((m2) => m2.mealType);
+    if (redistributedTo.length > 0) {
+      redistributionSummary.push({
+        skippedMeal: skippedMeal.mealType,
+        redistributedTo,
+        proteinRecovered: Math.round(skippedMealData.totals.protein / redistributedTo.length),
+        caloriesRecovered: Math.round(skippedMealData.totals.calories / redistributedTo.length)
+      });
+    }
+  }
+  const obs = user.onboardingStatus;
+  const onboardingProgress = {
+    currentStep: obs?.currentStep ?? "HEALTH_MARKERS",
+    completedSteps: Array.isArray(obs?.completedSteps) ? obs.completedSteps : [],
+    isCompleted: obs?.onboardingCompleted ?? false,
+    healthMarkersCompleted: obs?.healthMarkersCompleted ?? false,
+    healthGoalsCompleted: obs?.healthGoalsCompleted ?? false,
+    consentCompleted: obs?.consentCompleted ?? false,
+    reportsUploaded: obs?.reportsUploaded ?? false,
+    startedAt: obs?.startedAt,
+    completedAt: obs?.completedAt
+  };
+  const bookingDetails = null;
+  return {
+    user: {
+      _id: user._id.toString(),
+      username: user.username,
+      email: user.email ?? "",
+      phone: user.phone,
+      weight: healthMarkers?.weight,
+      height: healthMarkers?.height,
+      goal: resolvedGoal,
+      activityLevel: healthMarkers?.activityLevel,
+      age: typeof user.age === "number" ? user.age : null,
+      gender: user.gender || undefined,
+      healthGoals: Array.isArray(healthGoals?.goals) && healthGoals.goals.length > 0 ? healthGoals.goals : Array.isArray(user.healthGoals) && user.healthGoals.length > 0 ? user.healthGoals : [],
+      healthMarkers: {
+        weight: healthMarkers?.weight,
+        height: healthMarkers?.height,
+        bmi: healthMarkers?.bmi ?? undefined,
+        gender: healthMarkers ? String(user.gender ?? "") : undefined,
+        activityLevel: healthMarkers?.activityLevel,
+        targetWeight: healthGoals?.targetWeight ?? undefined,
+        allergies: healthMarkers?.allergies,
+        medications: healthMarkers?.medications,
+        diseaseHistory: healthMarkers?.diseaseHistory,
+        sleepHours: healthMarkers?.sleepHours ?? undefined,
+        bodyFatPercentage: healthMarkers?.bodyFatPercentage ?? undefined
+      }
+    },
+    onboardingProgress,
+    bookingDetails,
+    assignedPlan: activePlan ? {
+      _id: activePlan._id.toString(),
+      name: activePlan.name,
+      goal: activePlan.goal,
+      status: activePlan.status,
+      mealsPerDay: plannedMeals.length,
+      durationDays: activePlan.durationDays || 7,
+      startDate: activePlan.startDate ?? undefined,
+      assignedByNutritionist: activePlan.nutritionistId ? activePlan.nutritionistId.toString() : undefined
+    } : undefined,
+    macroTargets,
+    targetSource: targetResult.source,
+    intakeSummary,
+    todayMeals,
+    skippedMeals,
+    redistributionSummary
+  };
+};
+var init_nutrition_dashboard_service = __esm(() => {
+  init_Enums();
+  init_HealthGoals();
+  init_HealthMarkers();
+  init_nutrition_hydration_model();
+  init_nutrition_meal_log_model();
+  init_nutrition_plan_model();
+  init_nutrition_profile_model();
+  init_User();
+  init_nutrition_macro_util();
+  import_mongoose80 = __toESM(require_mongoose2(), 1);
+  GOAL_KEYWORDS = [
+    {
+      keywords: [
+        "weight loss",
+        "fat loss",
+        "lose weight",
+        "lose fat",
+        "cut",
+        "cutting",
+        "slim",
+        "lean",
+        "reduce weight"
+      ],
+      goal: "WeightLoss" /* WeightLoss */
+    },
+    {
+      keywords: [
+        "muscle gain",
+        "build muscle",
+        "muscle building",
+        "bulk",
+        "bulking",
+        "mass",
+        "hypertrophy",
+        "strength",
+        "gain weight"
+      ],
+      goal: "MuscleGain" /* MuscleGain */
+    },
+    {
+      keywords: [
+        "endurance",
+        "stamina",
+        "athletic",
+        "performance",
+        "marathon",
+        "cardio",
+        "running",
+        "cycling"
+      ],
+      goal: "Endurance" /* Endurance */
+    },
+    {
+      keywords: [
+        "maintain",
+        "maintenance",
+        "stay healthy",
+        "healthy lifestyle",
+        "general health"
+      ],
+      goal: "Maintenance" /* Maintenance */
+    }
+  ];
+  ACTIVITY_MULTIPLIERS = {
+    Sedentary: 1.2,
+    Light: 1.375,
+    Moderate: 1.55,
+    Active: 1.725,
+    VeryActive: 1.9
+  };
+  GOAL_CALORIE_ADJUSTMENTS = {
+    ["WeightLoss" /* WeightLoss */]: -500,
+    ["MuscleGain" /* MuscleGain */]: 300,
+    ["Endurance" /* Endurance */]: 200,
+    ["Maintenance" /* Maintenance */]: 0,
+    ["Medical" /* Medical */]: 0,
+    ["Custom" /* Custom */]: 0
+  };
+  GOAL_PROTEIN_MULTIPLIERS = {
+    ["WeightLoss" /* WeightLoss */]: 1.4,
+    ["MuscleGain" /* MuscleGain */]: 2,
+    ["Endurance" /* Endurance */]: 1.6,
+    ["Maintenance" /* Maintenance */]: 1.2,
+    ["Medical" /* Medical */]: 1.2,
+    ["Custom" /* Custom */]: 1.2
+  };
+});
+
 // api/index.ts
 var exports_api = {};
 __export(exports_api, {
@@ -486379,6 +488812,10 @@ var getClientIp = (req) => {
   }
   return req.socket.remoteAddress ?? "unknown";
 };
+var getAuthenticatedUserKey = (req) => {
+  const userId = req.user?.id;
+  return userId ? `u:${userId}` : `ip:${getClientIp(req)}`;
+};
 var cleanupExpiredBuckets = (now, buckets) => {
   if (buckets.size <= MAX_BUCKETS) {
     return;
@@ -486391,10 +488828,11 @@ var cleanupExpiredBuckets = (now, buckets) => {
 };
 var createRateLimiter = (config) => {
   const buckets = new Map;
+  const resolveKey = config.keyResolver ?? getClientIp;
   return (req, res, next) => {
     const now = Date.now();
     cleanupExpiredBuckets(now, buckets);
-    const key = `${config.keyPrefix}:${getClientIp(req)}`;
+    const key = `${config.keyPrefix}:${resolveKey(req)}`;
     const existingBucket = buckets.get(key);
     const bucket = !existingBucket || existingBucket.resetAt <= now ? { count: 0, resetAt: now + config.windowMs } : existingBucket;
     if (bucket.count >= config.max) {
@@ -486415,7 +488853,8 @@ var createRateLimiter = (config) => {
   };
 };
 var AUTH_RATE_LIMIT_WINDOW_MS = parseEnvNumber(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000, 1000);
-var AUTH_RATE_LIMIT_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_MAX, 10, 1);
+var defaultAuthMax = 500;
+var AUTH_RATE_LIMIT_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_MAX, defaultAuthMax, 1);
 var authRateLimit = createRateLimiter({
   windowMs: AUTH_RATE_LIMIT_WINDOW_MS,
   max: AUTH_RATE_LIMIT_MAX,
@@ -486430,29 +488869,24 @@ var apiRateLimit = createRateLimiter({
   keyPrefix: "api",
   message: "Too many requests. Please slow down and try again shortly."
 });
+var WORKOUT_RATE_LIMIT_WINDOW_MS = parseEnvNumber(process.env.WORKOUT_RATE_LIMIT_WINDOW_MS, 60 * 1000, 1000);
+var WORKOUT_RATE_LIMIT_MAX = parseEnvNumber(process.env.WORKOUT_RATE_LIMIT_MAX, 240, 1);
+var workoutRateLimit = createRateLimiter({
+  windowMs: WORKOUT_RATE_LIMIT_WINDOW_MS,
+  max: WORKOUT_RATE_LIMIT_MAX,
+  keyPrefix: "workout",
+  message: "Too many workout requests. Please slow down and try again shortly.",
+  keyResolver: getAuthenticatedUserKey
+});
 
 // src/routes/admin.routes.ts
 var import_express = __toESM(require_express2(), 1);
 
 // src/controllers/admin.controller.ts
-var import_mongoose2 = __toESM(require_mongoose2(), 1);
+var import_mongoose4 = __toESM(require_mongoose2(), 1);
 
 // src/models/Admin.ts
 var import_mongoose = __toESM(require_mongoose2(), 1);
-
-// src/utils/mongoose-serialization.ts
-var applyIdTransform = (schema) => {
-  schema.set("toJSON", {
-    virtuals: true,
-    transform: (_doc, ret) => {
-      delete ret._id;
-      delete ret.__v;
-      return ret;
-    }
-  });
-};
-
-// src/models/Admin.ts
 var adminSchema = new import_mongoose.default.Schema({
   adminName: { type: String, required: true },
   email: { type: String, required: true, unique: true, sparse: true },
@@ -488155,6 +490589,49 @@ var verifyPassword = async (plainPassword, passwordHash) => {
   }
   return compare(plainPassword, passwordHash);
 };
+
+// src/utils/email-uniqueness.ts
+init_User();
+
+// src/models/Trainer.ts
+var import_mongoose3 = __toESM(require_mongoose2(), 1);
+var trainerSchema = new import_mongoose3.default.Schema({
+  trainerName: { type: String, required: true },
+  email: { type: String, required: true, unique: true, sparse: true },
+  phone: { type: String, required: true },
+  passwordHash: { type: String, required: true, select: false },
+  description: { type: String, default: "" },
+  specialities: { type: [String], default: [] },
+  imageUrl: { type: String, default: "" },
+  keySentence: { type: String, default: "" },
+  isActive: { type: Boolean, default: true }
+}, { timestamps: true });
+var Trainer_default = import_mongoose3.default.models.Trainer || import_mongoose3.default.model("Trainer", trainerSchema);
+
+// src/utils/email-uniqueness.ts
+async function isEmailInUseAcrossSystem(email, excludeId) {
+  if (!email || typeof email !== "string" || !email.trim()) {
+    return { exists: false };
+  }
+  const cleanEmail = email.trim().toLowerCase();
+  const emailRegex = new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+  const query = { email: { $regex: emailRegex } };
+  const [u, a, t2] = await Promise.all([
+    User_default.findOne(query).select("_id").lean(),
+    Admin_default.findOne(query).select("_id").lean(),
+    Trainer_default.findOne(query).select("_id").lean()
+  ]);
+  if (u && (!excludeId || u._id.toString() !== excludeId)) {
+    return { exists: true, accountType: "User" };
+  }
+  if (a && (!excludeId || a._id.toString() !== excludeId)) {
+    return { exists: true, accountType: "Admin" };
+  }
+  if (t2 && (!excludeId || t2._id.toString() !== excludeId)) {
+    return { exists: true, accountType: "Trainer" };
+  }
+  return { exists: false };
+}
 
 // node_modules/zod/v4/classic/external.js
 var exports_external = {};
@@ -499620,7 +502097,7 @@ function finalize(ctx, schema) {
     result.$schema = "http://json-schema.org/draft-07/schema#";
   } else if (ctx.target === "draft-04") {
     result.$schema = "http://json-schema.org/draft-04/schema#";
-  } else if (ctx.target === "openapi-3.0") {}
+  } else if (ctx.target === "openapi-3.0") {} else {}
   if (ctx.external?.uri) {
     const id = ctx.external.registry.get(schema)?.id;
     if (!id)
@@ -499864,7 +502341,7 @@ var literalProcessor = (schema, ctx, json, _params) => {
     if (val === undefined) {
       if (ctx.unrepresentable === "throw") {
         throw new Error("Literal `undefined` cannot be represented in JSON Schema");
-      }
+      } else {}
     } else if (typeof val === "bigint") {
       if (ctx.unrepresentable === "throw") {
         throw new Error("BigInt literals cannot be represented in JSON Schema");
@@ -502448,7 +504925,7 @@ var updateAdminBodySchema = createAdminBodySchema.partial().refine((payload) => 
 
 // src/controllers/admin.controller.ts
 var getIdParam = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose2.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose4.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -502465,9 +504942,9 @@ var createAdmin = async (req, res, next) => {
   const { adminName, email: email3, phone, password } = parsedBody.data;
   try {
     const passwordHash = await hashPassword(password);
-    const existingAdmin = await Admin_default.findOne({ email: email3 }).select("_id");
-    if (existingAdmin) {
-      res.status(409).json({ message: "Admin with this email already exists" });
+    const emailCheck = await isEmailInUseAcrossSystem(email3);
+    if (emailCheck.exists) {
+      res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
       return;
     }
     const admin = await Admin_default.create({
@@ -502527,6 +505004,13 @@ var updateAdminById = async (req, res, next) => {
     ...hashedPassword ? { passwordHash: hashedPassword } : {}
   };
   try {
+    if (rest.email) {
+      const emailCheck = await isEmailInUseAcrossSystem(rest.email, id);
+      if (emailCheck.exists) {
+        res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
+        return;
+      }
+    }
     const updatedAdmin = await Admin_default.findByIdAndUpdate(id, updatePayload, {
       returnDocument: "after",
       runValidators: true
@@ -502559,365 +505043,14 @@ var deleteAdminById = async (req, res, next) => {
 };
 
 // src/controllers/delete-account.controller.ts
-var import_mongoose23 = __toESM(require_mongoose2(), 1);
+var import_mongoose24 = __toESM(require_mongoose2(), 1);
 
 // src/models/DeletionRequest.ts
-var import_mongoose3 = __toESM(require_mongoose2(), 1);
-
-// src/models/Enums.ts
-var Gender;
-((Gender2) => {
-  Gender2["Male"] = "Male";
-  Gender2["Female"] = "Female";
-  Gender2["Other"] = "Other";
-})(Gender ||= {});
-var BookingStatus;
-((BookingStatus2) => {
-  BookingStatus2[BookingStatus2["Booked"] = 0] = "Booked";
-  BookingStatus2[BookingStatus2["Confirmed"] = 1] = "Confirmed";
-  BookingStatus2[BookingStatus2["Cancelled"] = 2] = "Cancelled";
-  BookingStatus2[BookingStatus2["Attended"] = 3] = "Attended";
-  BookingStatus2[BookingStatus2["Unattended"] = 4] = "Unattended";
-})(BookingStatus ||= {});
-var MembershipStatus;
-((MembershipStatus2) => {
-  MembershipStatus2["Active"] = "Active";
-  MembershipStatus2["Paused"] = "Paused";
-  MembershipStatus2["Cancelled"] = "Cancelled";
-  MembershipStatus2["Expired"] = "Expired";
-})(MembershipStatus ||= {});
-var TodoStatus;
-((TodoStatus2) => {
-  TodoStatus2[TodoStatus2["Todo"] = 0] = "Todo";
-  TodoStatus2[TodoStatus2["Doing"] = 1] = "Doing";
-  TodoStatus2[TodoStatus2["Done"] = 2] = "Done";
-})(TodoStatus ||= {});
-var LeadStatus;
-((LeadStatus2) => {
-  LeadStatus2["New"] = "New";
-  LeadStatus2["Contacted"] = "Contacted";
-  LeadStatus2["Qualified"] = "Qualified";
-  LeadStatus2["Warm"] = "Warm";
-  LeadStatus2["Hot"] = "Hot";
-  LeadStatus2["Cold"] = "Cold";
-  LeadStatus2["Converted"] = "Converted";
-  LeadStatus2["Lost"] = "Lost";
-})(LeadStatus ||= {});
-var CreditTransactionType;
-((CreditTransactionType2) => {
-  CreditTransactionType2["Consume"] = "Consume";
-  CreditTransactionType2["Refund"] = "Refund";
-  CreditTransactionType2["AdminTopUp"] = "AdminTopUp";
-  CreditTransactionType2["Void"] = "Void";
-})(CreditTransactionType ||= {});
-var CreditTransactionSource;
-((CreditTransactionSource2) => {
-  CreditTransactionSource2["Booking"] = "Booking";
-  CreditTransactionSource2["Appointment"] = "Appointment";
-  CreditTransactionSource2["Admin"] = "Admin";
-})(CreditTransactionSource ||= {});
-var MuscleGroup;
-((MuscleGroup2) => {
-  MuscleGroup2["Chest"] = "Chest";
-  MuscleGroup2["Back"] = "Back";
-  MuscleGroup2["Legs"] = "Legs";
-  MuscleGroup2["Shoulders"] = "Shoulders";
-  MuscleGroup2["Arms"] = "Arms";
-  MuscleGroup2["Core"] = "Core";
-  MuscleGroup2["FullBody"] = "FullBody";
-})(MuscleGroup ||= {});
-var ExerciseDifficulty;
-((ExerciseDifficulty2) => {
-  ExerciseDifficulty2["Beginner"] = "Beginner";
-  ExerciseDifficulty2["Intermediate"] = "Intermediate";
-  ExerciseDifficulty2["Advanced"] = "Advanced";
-})(ExerciseDifficulty ||= {});
-var ExerciseSection;
-((ExerciseSection2) => {
-  ExerciseSection2["Warmup"] = "warmup";
-  ExerciseSection2["Workout"] = "workout";
-  ExerciseSection2["Stretching"] = "stretching";
-})(ExerciseSection ||= {});
-var WorkoutSessionStatus;
-((WorkoutSessionStatus2) => {
-  WorkoutSessionStatus2["Active"] = "Active";
-  WorkoutSessionStatus2["Completed"] = "Completed";
-  WorkoutSessionStatus2["Abandoned"] = "Abandoned";
-})(WorkoutSessionStatus ||= {});
-var OnboardingStep;
-((OnboardingStep2) => {
-  OnboardingStep2["HEALTH_MARKERS"] = "HEALTH_MARKERS";
-  OnboardingStep2["HEALTH_GOALS"] = "HEALTH_GOALS";
-  OnboardingStep2["CONSENT"] = "CONSENT";
-  OnboardingStep2["REPORT_UPLOAD"] = "REPORT_UPLOAD";
-  OnboardingStep2["NUTRITIONIST_BOOKING"] = "NUTRITIONIST_BOOKING";
-  OnboardingStep2["COMPLETED"] = "COMPLETED";
-})(OnboardingStep ||= {});
-var ExpertType;
-((ExpertType2) => {
-  ExpertType2["Nutritionist"] = "nutritionist";
-})(ExpertType ||= {});
-var NotificationChannel;
-((NotificationChannel2) => {
-  NotificationChannel2["InApp"] = "INAPP";
-  NotificationChannel2["Push"] = "PUSH";
-  NotificationChannel2["Socket"] = "SOCKET";
-})(NotificationChannel ||= {});
-var NotificationKind;
-((NotificationKind2) => {
-  NotificationKind2["AppointmentBooked"] = "appointment_booked";
-  NotificationKind2["AppointmentRescheduled"] = "appointment_rescheduled";
-  NotificationKind2["AppointmentCancelled"] = "appointment_cancelled";
-  NotificationKind2["AppointmentReminder"] = "appointment_reminder";
-  NotificationKind2["OnboardingStepUpdated"] = "onboarding_step_updated";
-  NotificationKind2["MembershipExpiryReminder"] = "membership_expiry_reminder";
-  NotificationKind2["CommunityPostLiked"] = "community_post_liked";
-  NotificationKind2["CommunityPostCommented"] = "community_post_commented";
-  NotificationKind2["CommunityCommentReplied"] = "community_comment_replied";
-})(NotificationKind ||= {});
-var ReminderKind;
-((ReminderKind2) => {
-  ReminderKind2["TMinus24H"] = "T_MINUS_24H";
-  ReminderKind2["TMinus1H"] = "T_MINUS_1H";
-  ReminderKind2["TMinus15M"] = "T_MINUS_15M";
-})(ReminderKind ||= {});
-var ReminderStatus;
-((ReminderStatus2) => {
-  ReminderStatus2["Scheduled"] = "SCHEDULED";
-  ReminderStatus2["Fired"] = "FIRED";
-  ReminderStatus2["Cancelled"] = "CANCELLED";
-})(ReminderStatus ||= {});
-var PlanGoal;
-((PlanGoal2) => {
-  PlanGoal2["Strength"] = "Strength";
-  PlanGoal2["Hypertrophy"] = "Hypertrophy";
-  PlanGoal2["Endurance"] = "Endurance";
-  PlanGoal2["WeightLoss"] = "WeightLoss";
-  PlanGoal2["Maintenance"] = "Maintenance";
-  PlanGoal2["Custom"] = "Custom";
-})(PlanGoal ||= {});
-var PlanStatus;
-((PlanStatus2) => {
-  PlanStatus2["Draft"] = "Draft";
-  PlanStatus2["Active"] = "Active";
-  PlanStatus2["Paused"] = "Paused";
-  PlanStatus2["Completed"] = "Completed";
-  PlanStatus2["Archived"] = "Archived";
-})(PlanStatus ||= {});
-var SplitType;
-((SplitType2) => {
-  SplitType2["FullBody"] = "FullBody";
-  SplitType2["UpperLower"] = "UpperLower";
-  SplitType2["PushPull"] = "PushPull";
-  SplitType2["PushPullLegs"] = "PushPullLegs";
-  SplitType2["Custom"] = "Custom";
-})(SplitType ||= {});
-var NutritionGoal;
-((NutritionGoal2) => {
-  NutritionGoal2["WeightLoss"] = "WeightLoss";
-  NutritionGoal2["MuscleGain"] = "MuscleGain";
-  NutritionGoal2["Maintenance"] = "Maintenance";
-  NutritionGoal2["Endurance"] = "Endurance";
-  NutritionGoal2["Medical"] = "Medical";
-  NutritionGoal2["Custom"] = "Custom";
-})(NutritionGoal ||= {});
-var NutritionPlanStatus;
-((NutritionPlanStatus2) => {
-  NutritionPlanStatus2["Draft"] = "Draft";
-  NutritionPlanStatus2["Scheduled"] = "Scheduled";
-  NutritionPlanStatus2["Active"] = "Active";
-  NutritionPlanStatus2["Paused"] = "Paused";
-  NutritionPlanStatus2["Completed"] = "Completed";
-  NutritionPlanStatus2["Archived"] = "Archived";
-})(NutritionPlanStatus ||= {});
-var IngredientUnit;
-((IngredientUnit2) => {
-  IngredientUnit2["Gram"] = "g";
-  IngredientUnit2["Milliliter"] = "ml";
-})(IngredientUnit ||= {});
-var MealType;
-((MealType2) => {
-  MealType2["Breakfast"] = "Breakfast";
-  MealType2["Lunch"] = "Lunch";
-  MealType2["Dinner"] = "Dinner";
-  MealType2["Snack"] = "Snack";
-  MealType2["PreWorkout"] = "PreWorkout";
-  MealType2["PostWorkout"] = "PostWorkout";
-  MealType2["EarlyMorning"] = "EarlyMorning";
-  MealType2["DuringWorkout"] = "DuringWorkout";
-  MealType2["EveningSnack"] = "EveningSnack";
-  MealType2["Bedtime"] = "Bedtime";
-})(MealType ||= {});
-var DietaryPreference;
-((DietaryPreference2) => {
-  DietaryPreference2["Veg"] = "Veg";
-  DietaryPreference2["NonVeg"] = "NonVeg";
-  DietaryPreference2["Vegan"] = "Vegan";
-  DietaryPreference2["Eggetarian"] = "Eggetarian";
-})(DietaryPreference ||= {});
-var NutritionFoodSource;
-((NutritionFoodSource2) => {
-  NutritionFoodSource2["System"] = "System";
-  NutritionFoodSource2["Custom"] = "Custom";
-})(NutritionFoodSource ||= {});
-var MealLogStatus;
-((MealLogStatus2) => {
-  MealLogStatus2["Logged"] = "Logged";
-  MealLogStatus2["Skipped"] = "Skipped";
-  MealLogStatus2["Partial"] = "Partial";
-  MealLogStatus2["Pending"] = "Pending";
-})(MealLogStatus ||= {});
-var MealLogSource;
-((MealLogSource2) => {
-  MealLogSource2["Manual"] = "Manual";
-  MealLogSource2["AI"] = "AI";
-  MealLogSource2["Wearable"] = "Wearable";
-  MealLogSource2["Scan"] = "Scan";
-})(MealLogSource ||= {});
-var ProgressRecordedBy;
-((ProgressRecordedBy2) => {
-  ProgressRecordedBy2["User"] = "User";
-  ProgressRecordedBy2["Nutritionist"] = "Nutritionist";
-})(ProgressRecordedBy ||= {});
-var ConsentType;
-((ConsentType2) => {
-  ConsentType2["WELLNESS_SERVICES"] = "WELLNESS_SERVICES";
-  ConsentType2["GYM_FITNESS"] = "GYM_FITNESS";
-})(ConsentType ||= {});
-var AppointmentMode;
-((AppointmentMode2) => {
-  AppointmentMode2["IN_PERSON"] = "IN_PERSON";
-  AppointmentMode2["ONLINE"] = "ONLINE";
-})(AppointmentMode ||= {});
-var MeetingStatus;
-((MeetingStatus2) => {
-  MeetingStatus2["SCHEDULED"] = "SCHEDULED";
-  MeetingStatus2["IN_PROGRESS"] = "IN_PROGRESS";
-  MeetingStatus2["COMPLETED"] = "COMPLETED";
-})(MeetingStatus ||= {});
-var NutritionistBookingStatus;
-((NutritionistBookingStatus2) => {
-  NutritionistBookingStatus2["PENDING"] = "PENDING";
-  NutritionistBookingStatus2["ACCEPTED"] = "ACCEPTED";
-  NutritionistBookingStatus2["REJECTED"] = "REJECTED";
-  NutritionistBookingStatus2["COMPLETED"] = "COMPLETED";
-  NutritionistBookingStatus2["EXPIRED"] = "EXPIRED";
-  NutritionistBookingStatus2["RESCHEDULE_REQUIRED"] = "RESCHEDULE_REQUIRED";
-})(NutritionistBookingStatus ||= {});
-var InvoicePaymentStatus;
-((InvoicePaymentStatus2) => {
-  InvoicePaymentStatus2["DRAFT"] = "DRAFT";
-  InvoicePaymentStatus2["PENDING"] = "PENDING";
-  InvoicePaymentStatus2["PAID"] = "PAID";
-  InvoicePaymentStatus2["FAILED"] = "FAILED";
-  InvoicePaymentStatus2["CANCELLED"] = "CANCELLED";
-  InvoicePaymentStatus2["REFUNDED"] = "REFUNDED";
-})(InvoicePaymentStatus ||= {});
-var InvoicePaymentMethod;
-((InvoicePaymentMethod2) => {
-  InvoicePaymentMethod2["CASH"] = "CASH";
-  InvoicePaymentMethod2["UPI"] = "UPI";
-  InvoicePaymentMethod2["CARD"] = "CARD";
-  InvoicePaymentMethod2["BANK_TRANSFER"] = "BANK_TRANSFER";
-  InvoicePaymentMethod2["NONE"] = "NONE";
-})(InvoicePaymentMethod ||= {});
-var DeletionRequestStatus;
-((DeletionRequestStatus2) => {
-  DeletionRequestStatus2["Pending"] = "Pending";
-  DeletionRequestStatus2["Processed"] = "Processed";
-  DeletionRequestStatus2["Cancelled"] = "Cancelled";
-})(DeletionRequestStatus ||= {});
-var UserStatus;
-((UserStatus2) => {
-  UserStatus2["Active"] = "active";
-  UserStatus2["Suspended"] = "suspended";
-  UserStatus2["Banned"] = "banned";
-})(UserStatus ||= {});
-var CommunityRole;
-((CommunityRole2) => {
-  CommunityRole2["Outsider"] = "outsider";
-  CommunityRole2["Insider"] = "insider";
-  CommunityRole2["Trainer"] = "trainer";
-  CommunityRole2["Admin"] = "admin";
-})(CommunityRole ||= {});
-var PostVisibility;
-((PostVisibility2) => {
-  PostVisibility2["Public"] = "public";
-  PostVisibility2["MembersOnly"] = "members_only";
-})(PostVisibility ||= {});
-var PostStatus;
-((PostStatus2) => {
-  PostStatus2["Draft"] = "draft";
-  PostStatus2["Scheduled"] = "scheduled";
-  PostStatus2["Published"] = "published";
-  PostStatus2["Archived"] = "archived";
-})(PostStatus ||= {});
-var PostMediaKind;
-((PostMediaKind2) => {
-  PostMediaKind2["Image"] = "image";
-  PostMediaKind2["Video"] = "video";
-  PostMediaKind2["Audio"] = "audio";
-  PostMediaKind2["File"] = "file";
-})(PostMediaKind ||= {});
-var LikeTargetType;
-((LikeTargetType2) => {
-  LikeTargetType2["Post"] = "post";
-  LikeTargetType2["Comment"] = "comment";
-})(LikeTargetType ||= {});
-var ShareChannel;
-((ShareChannel2) => {
-  ShareChannel2["Copy"] = "copy";
-  ShareChannel2["WhatsApp"] = "whatsapp";
-  ShareChannel2["Instagram"] = "instagram";
-  ShareChannel2["Facebook"] = "facebook";
-  ShareChannel2["Twitter"] = "twitter";
-  ShareChannel2["Other"] = "other";
-})(ShareChannel ||= {});
-var ReportTargetType;
-((ReportTargetType2) => {
-  ReportTargetType2["Post"] = "post";
-  ReportTargetType2["Comment"] = "comment";
-  ReportTargetType2["User"] = "user";
-})(ReportTargetType ||= {});
-var ReportStatus;
-((ReportStatus2) => {
-  ReportStatus2["Pending"] = "pending";
-  ReportStatus2["Reviewing"] = "reviewing";
-  ReportStatus2["Resolved"] = "resolved";
-  ReportStatus2["Dismissed"] = "dismissed";
-})(ReportStatus ||= {});
-var ModerationTargetType;
-((ModerationTargetType2) => {
-  ModerationTargetType2["Post"] = "post";
-  ModerationTargetType2["Comment"] = "comment";
-  ModerationTargetType2["User"] = "user";
-})(ModerationTargetType ||= {});
-var ModerationActionType;
-((ModerationActionType2) => {
-  ModerationActionType2["Edit"] = "edit";
-  ModerationActionType2["Delete"] = "delete";
-  ModerationActionType2["Restore"] = "restore";
-  ModerationActionType2["Pin"] = "pin";
-  ModerationActionType2["Unpin"] = "unpin";
-  ModerationActionType2["CreateOfficial"] = "create_official";
-  ModerationActionType2["DeleteComment"] = "delete_comment";
-  ModerationActionType2["Suspend"] = "suspend";
-  ModerationActionType2["Unsuspend"] = "unsuspend";
-  ModerationActionType2["Ban"] = "ban";
-  ModerationActionType2["Unban"] = "unban";
-  ModerationActionType2["RoleAssign"] = "role_assign";
-  ModerationActionType2["RoleRevoke"] = "role_revoke";
-  ModerationActionType2["Warn"] = "warn";
-  ModerationActionType2["ResolveReport"] = "resolve_report";
-  ModerationActionType2["DismissReport"] = "dismiss_report";
-  ModerationActionType2["Hide"] = "hide";
-  ModerationActionType2["Unhide"] = "unhide";
-})(ModerationActionType ||= {});
-
-// src/models/DeletionRequest.ts
-var deletionRequestSchema = new import_mongoose3.default.Schema({
+init_Enums();
+var import_mongoose5 = __toESM(require_mongoose2(), 1);
+var deletionRequestSchema = new import_mongoose5.default.Schema({
   userId: {
-    type: import_mongoose3.default.Schema.Types.ObjectId,
+    type: import_mongoose5.default.Schema.Types.ObjectId,
     ref: "User",
     default: undefined
   },
@@ -502958,72 +505091,14 @@ var deletionRequestSchema = new import_mongoose3.default.Schema({
   }
 }, { timestamps: true });
 applyIdTransform(deletionRequestSchema);
-var DeletionRequest_default = import_mongoose3.default.models.DeletionRequest || import_mongoose3.default.model("DeletionRequest", deletionRequestSchema);
+var DeletionRequest_default = import_mongoose5.default.models.DeletionRequest || import_mongoose5.default.model("DeletionRequest", deletionRequestSchema);
 
-// src/models/User.ts
-var import_mongoose4 = __toESM(require_mongoose2(), 1);
-var userSchema = new import_mongoose4.default.Schema({
-  username: { type: String, required: true },
-  phone: { type: String, required: true },
-  firebaseUid: { type: String, unique: true, sparse: true, default: undefined },
-  phoneVerified: { type: Boolean, default: false },
-  email: { type: String, unique: true, sparse: true, default: undefined },
-  age: { type: Number, required: true, min: 0 },
-  gender: { type: String, enum: Object.values(Gender), required: true },
-  goal: { type: String, default: undefined },
-  healthGoals: { type: [String], default: [] },
-  dateOfBirth: { type: Date, default: undefined },
-  emergencyContact: { type: String, default: undefined },
-  address: { type: String, default: undefined },
-  passwordHash: { type: String, select: false },
-  status: {
-    type: String,
-    enum: Object.values(UserStatus),
-    default: "active" /* Active */
-  },
-  suspendedUntil: { type: Date, default: null },
-  communityRole: {
-    type: String,
-    enum: [...Object.values(CommunityRole), null],
-    default: null
-  },
-  isActive: { type: Boolean, default: true },
-  membershipStatus: { type: String, default: "ACTIVE" },
-  onboarded: { type: Boolean, default: false },
-  fcmTokens: {
-    type: [
-      {
-        token: { type: String, required: true },
-        platform: { type: String, enum: ["ios", "android"], required: true },
-        lastSeenAt: { type: Date, default: Date.now }
-      }
-    ],
-    default: [],
-    select: false
-  },
-  onboardingStatus: {
-    currentStep: {
-      type: String,
-      enum: Object.values(OnboardingStep),
-      default: "HEALTH_MARKERS" /* HEALTH_MARKERS */
-    },
-    completedSteps: [{ type: String, enum: Object.values(OnboardingStep) }],
-    healthMarkersCompleted: { type: Boolean, default: false },
-    healthGoalsCompleted: { type: Boolean, default: false },
-    consentCompleted: { type: Boolean, default: false },
-    reportsUploaded: { type: Boolean, default: false },
-    onboardingCompleted: { type: Boolean, default: false },
-    startedAt: { type: Date, default: undefined },
-    completedAt: { type: Date, default: undefined }
-  }
-}, { timestamps: true });
-userSchema.index({ phone: 1 }, { unique: true, partialFilterExpression: { firebaseUid: { $exists: true } } });
-userSchema.index({ username: 1 });
-applyIdTransform(userSchema);
-var User_default = import_mongoose4.default.models.User || import_mongoose4.default.model("User", userSchema);
+// src/controllers/delete-account.controller.ts
+init_User();
+init_Enums();
 
 // src/utils/deletion-engine.service.ts
-var import_mongoose22 = __toESM(require_mongoose2(), 1);
+var import_mongoose23 = __toESM(require_mongoose2(), 1);
 
 // src/utils/s3.service.ts
 var import_client_s3 = __toESM(require_dist_cjs27(), 1);
@@ -503177,9 +505252,13 @@ var headS3Object = async (key) => {
   }
 };
 
+// src/utils/deletion-engine.service.ts
+init_User();
+
 // src/models/ConsentForm.ts
-var import_mongoose5 = __toESM(require_mongoose2(), 1);
-var consentEntrySchema = new import_mongoose5.default.Schema({
+init_Enums();
+var import_mongoose6 = __toESM(require_mongoose2(), 1);
+var consentEntrySchema = new import_mongoose6.default.Schema({
   type: {
     type: String,
     enum: Object.values(ConsentType),
@@ -503192,9 +505271,9 @@ var consentEntrySchema = new import_mongoose5.default.Schema({
   pdfUrl: { type: String, default: undefined },
   signatureUrl: { type: String, default: undefined }
 }, { _id: false });
-var consentFormSchema = new import_mongoose5.default.Schema({
+var consentFormSchema = new import_mongoose6.default.Schema({
   userId: {
-    type: import_mongoose5.default.Schema.Types.ObjectId,
+    type: import_mongoose6.default.Schema.Types.ObjectId,
     ref: "User",
     required: true,
     unique: true
@@ -503203,17 +505282,17 @@ var consentFormSchema = new import_mongoose5.default.Schema({
   ipAddress: { type: String, default: undefined },
   deviceInfo: { type: String, default: undefined }
 }, { timestamps: true });
-var ConsentForm_default = import_mongoose5.default.models.ConsentForm || import_mongoose5.default.model("ConsentForm", consentFormSchema);
+var ConsentForm_default = import_mongoose6.default.models.ConsentForm || import_mongoose6.default.model("ConsentForm", consentFormSchema);
 
 // src/utils/deletion-engine.service.ts
 init_HealthGoals();
 init_HealthMarkers();
 
 // src/models/BcaMetric.ts
-var import_mongoose8 = __toESM(require_mongoose2(), 1);
-var bcaMetricSchema = new import_mongoose8.default.Schema({
+var import_mongoose9 = __toESM(require_mongoose2(), 1);
+var bcaMetricSchema = new import_mongoose9.default.Schema({
   userId: {
-    type: import_mongoose8.default.Schema.Types.ObjectId,
+    type: import_mongoose9.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -503246,13 +505325,13 @@ var bcaMetricSchema = new import_mongoose8.default.Schema({
   source: { type: String, default: "activex" }
 }, { timestamps: true, collection: "bca_metrics" });
 bcaMetricSchema.index({ userId: 1, recordedAt: -1 }, { unique: true });
-var BcaMetric_default = import_mongoose8.default.models.BcaMetric || import_mongoose8.default.model("BcaMetric", bcaMetricSchema);
+var BcaMetric_default = import_mongoose9.default.models.BcaMetric || import_mongoose9.default.model("BcaMetric", bcaMetricSchema);
 
 // src/models/MedicalReport.ts
-var import_mongoose9 = __toESM(require_mongoose2(), 1);
-var medicalReportSchema = new import_mongoose9.default.Schema({
+var import_mongoose10 = __toESM(require_mongoose2(), 1);
+var medicalReportSchema = new import_mongoose10.default.Schema({
   userId: {
-    type: import_mongoose9.default.Schema.Types.ObjectId,
+    type: import_mongoose10.default.Schema.Types.ObjectId,
     ref: "User",
     required: true,
     index: true
@@ -503265,12 +505344,13 @@ var medicalReportSchema = new import_mongoose9.default.Schema({
   fileSize: { type: Number, default: undefined },
   uploadedAt: { type: Date, default: () => new Date }
 }, { timestamps: true });
-var MedicalReport_default = import_mongoose9.default.models.MedicalReport || import_mongoose9.default.model("MedicalReport", medicalReportSchema);
+var MedicalReport_default = import_mongoose10.default.models.MedicalReport || import_mongoose10.default.model("MedicalReport", medicalReportSchema);
 
 // src/models/Schedule.ts
-var import_mongoose10 = __toESM(require_mongoose2(), 1);
-var scheduleSchema = new import_mongoose10.default.Schema({
-  user: { type: import_mongoose10.default.Schema.Types.ObjectId, ref: "User", required: true },
+init_Enums();
+var import_mongoose11 = __toESM(require_mongoose2(), 1);
+var scheduleSchema = new import_mongoose11.default.Schema({
+  user: { type: import_mongoose11.default.Schema.Types.ObjectId, ref: "User", required: true },
   scheduledDate: { type: Date, required: true },
   status: {
     type: String,
@@ -503279,16 +505359,16 @@ var scheduleSchema = new import_mongoose10.default.Schema({
     required: true
   },
   todos: [
-    { type: import_mongoose10.default.Schema.Types.ObjectId, ref: "Todo", required: true }
+    { type: import_mongoose11.default.Schema.Types.ObjectId, ref: "Todo", required: true }
   ]
 }, { timestamps: true });
-var Schedule_default = import_mongoose10.default.models.Schedule || import_mongoose10.default.model("Schedule", scheduleSchema);
+var Schedule_default = import_mongoose11.default.models.Schedule || import_mongoose11.default.model("Schedule", scheduleSchema);
 
 // src/models/SetLog.ts
-var import_mongoose11 = __toESM(require_mongoose2(), 1);
-var setLogSchema = new import_mongoose11.default.Schema({
+var import_mongoose12 = __toESM(require_mongoose2(), 1);
+var setLogSchema = new import_mongoose12.default.Schema({
   workoutExerciseId: {
-    type: import_mongoose11.default.Schema.Types.ObjectId,
+    type: import_mongoose12.default.Schema.Types.ObjectId,
     ref: "WorkoutExercise",
     required: true
   },
@@ -503298,22 +505378,33 @@ var setLogSchema = new import_mongoose11.default.Schema({
   rpe: { type: Number, min: 1, max: 10, default: null },
   isWarmup: { type: Boolean, default: false },
   completedAt: { type: Date, default: Date.now },
-  notes: { type: String, default: null }
+  notes: { type: String, default: null },
+  loggedBy: {
+    type: import_mongoose12.default.Schema.Types.ObjectId,
+    refPath: "loggedByModel",
+    default: null
+  },
+  loggedByModel: {
+    type: String,
+    enum: ["User", "Trainer", "Admin"],
+    default: "User"
+  }
 }, { timestamps: true });
 setLogSchema.index({ workoutExerciseId: 1, setNumber: 1 });
-var SetLog = import_mongoose11.default.models.SetLog || import_mongoose11.default.model("SetLog", setLogSchema);
+var SetLog = import_mongoose12.default.models.SetLog || import_mongoose12.default.model("SetLog", setLogSchema);
 var SetLog_default = SetLog;
 
 // src/models/WorkoutExercise.ts
-var import_mongoose12 = __toESM(require_mongoose2(), 1);
-var workoutExerciseSchema = new import_mongoose12.default.Schema({
+init_Enums();
+var import_mongoose13 = __toESM(require_mongoose2(), 1);
+var workoutExerciseSchema = new import_mongoose13.default.Schema({
   sessionId: {
-    type: import_mongoose12.default.Schema.Types.ObjectId,
+    type: import_mongoose13.default.Schema.Types.ObjectId,
     ref: "WorkoutSession",
     required: true
   },
   exerciseId: {
-    type: import_mongoose12.default.Schema.Types.ObjectId,
+    type: import_mongoose13.default.Schema.Types.ObjectId,
     ref: "Exercise",
     required: true
   },
@@ -503333,14 +505424,15 @@ var workoutExerciseSchema = new import_mongoose12.default.Schema({
   isCompleted: { type: Boolean, default: false }
 }, { timestamps: true });
 workoutExerciseSchema.index({ sessionId: 1, orderIndex: 1 });
-var WorkoutExercise = import_mongoose12.default.models.WorkoutExercise || import_mongoose12.default.model("WorkoutExercise", workoutExerciseSchema);
+var WorkoutExercise = import_mongoose13.default.models.WorkoutExercise || import_mongoose13.default.model("WorkoutExercise", workoutExerciseSchema);
 var WorkoutExercise_default = WorkoutExercise;
 
 // src/models/WorkoutSession.ts
-var import_mongoose13 = __toESM(require_mongoose2(), 1);
-var workoutSessionSchema = new import_mongoose13.default.Schema({
+init_Enums();
+var import_mongoose14 = __toESM(require_mongoose2(), 1);
+var workoutSessionSchema = new import_mongoose14.default.Schema({
   userId: {
-    type: import_mongoose13.default.Schema.Types.ObjectId,
+    type: import_mongoose14.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -503354,11 +505446,21 @@ var workoutSessionSchema = new import_mongoose13.default.Schema({
   completedAt: { type: Date, default: null },
   notes: { type: String, default: null },
   planId: {
-    type: import_mongoose13.default.Schema.Types.ObjectId,
+    type: import_mongoose14.default.Schema.Types.ObjectId,
     ref: "WorkoutPlan",
     default: null
   },
-  isDeleted: { type: Boolean, default: false, index: true }
+  isDeleted: { type: Boolean, default: false, index: true },
+  lastTouchedBy: {
+    type: import_mongoose14.default.Schema.Types.ObjectId,
+    refPath: "lastTouchedByModel",
+    default: null
+  },
+  lastTouchedByModel: {
+    type: String,
+    enum: ["User", "Trainer", "Admin"],
+    default: "User"
+  }
 }, { timestamps: true });
 workoutSessionSchema.index({ userId: 1, date: -1 });
 workoutSessionSchema.index({ userId: 1, status: 1 });
@@ -503368,17 +505470,17 @@ workoutSessionSchema.index({ userId: 1, date: 1 }, {
   unique: true,
   partialFilterExpression: { status: "Active" /* Active */ }
 });
-var WorkoutSession = import_mongoose13.default.models.WorkoutSession || import_mongoose13.default.model("WorkoutSession", workoutSessionSchema);
+var WorkoutSession = import_mongoose14.default.models.WorkoutSession || import_mongoose14.default.model("WorkoutSession", workoutSessionSchema);
 var WorkoutSession_default = WorkoutSession;
 
 // src/models/WorkoutPlanAssignment.ts
-var import_mongoose14 = __toESM(require_mongoose2(), 1);
-var dayProgressSchema = new import_mongoose14.default.Schema({
+var import_mongoose15 = __toESM(require_mongoose2(), 1);
+var dayProgressSchema = new import_mongoose15.default.Schema({
   dayNumber: { type: Number, required: true },
   scheduledDate: { type: Date, required: true },
   completedAt: { type: Date, default: null },
   sessionId: {
-    type: import_mongoose14.default.Schema.Types.ObjectId,
+    type: import_mongoose15.default.Schema.Types.ObjectId,
     ref: "WorkoutSession",
     default: null
   },
@@ -503388,9 +505490,9 @@ var dayProgressSchema = new import_mongoose14.default.Schema({
     default: "pending"
   }
 }, { _id: false });
-var assignmentExerciseSchema = new import_mongoose14.default.Schema({
+var assignmentExerciseSchema = new import_mongoose15.default.Schema({
   exerciseId: {
-    type: import_mongoose14.default.Schema.Types.ObjectId,
+    type: import_mongoose15.default.Schema.Types.ObjectId,
     ref: "Exercise",
     required: true
   },
@@ -503407,27 +505509,32 @@ var assignmentExerciseSchema = new import_mongoose14.default.Schema({
   durationSeconds: { type: Number, default: null },
   notes: { type: String, default: null }
 }, { _id: false });
-var userDaySchema = new import_mongoose14.default.Schema({
+var userDaySchema = new import_mongoose15.default.Schema({
   dayNumber: { type: Number, required: true },
   name: { type: String, required: true },
   isRestDay: { type: Boolean, default: false },
   exercises: { type: [assignmentExerciseSchema], default: [] }
 }, { _id: false });
-var workoutPlanAssignmentSchema = new import_mongoose14.default.Schema({
+var workoutPlanAssignmentSchema = new import_mongoose15.default.Schema({
   userId: {
-    type: import_mongoose14.default.Schema.Types.ObjectId,
+    type: import_mongoose15.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
   planId: {
-    type: import_mongoose14.default.Schema.Types.ObjectId,
+    type: import_mongoose15.default.Schema.Types.ObjectId,
     ref: "WorkoutPlan",
     required: true
   },
   assignedBy: {
-    type: import_mongoose14.default.Schema.Types.ObjectId,
-    ref: "User",
+    type: import_mongoose15.default.Schema.Types.ObjectId,
+    refPath: "assignedByModel",
     required: true
+  },
+  assignedByModel: {
+    type: String,
+    enum: ["User", "Trainer", "Admin"],
+    default: "User"
   },
   startDate: { type: Date, required: true },
   currentDayIndex: { type: Number, default: 0 },
@@ -503447,104 +505554,22 @@ workoutPlanAssignmentSchema.index({
   userId: 1,
   "dayProgress.scheduledDate": 1
 });
-var WorkoutPlanAssignment = import_mongoose14.default.models.WorkoutPlanAssignment || import_mongoose14.default.model("WorkoutPlanAssignment", workoutPlanAssignmentSchema);
+var WorkoutPlanAssignment = import_mongoose15.default.models.WorkoutPlanAssignment || import_mongoose15.default.model("WorkoutPlanAssignment", workoutPlanAssignmentSchema);
 var WorkoutPlanAssignment_default = WorkoutPlanAssignment;
 
 // src/models/nutrition-adherence.model.ts
-var import_mongoose16 = __toESM(require_mongoose2(), 1);
-
-// src/models/nutrition-shared.schema.ts
-var import_mongoose15 = __toESM(require_mongoose2(), 1);
-var macroTargetSchema = new import_mongoose15.default.Schema({
-  proteinG: { type: Number, default: null },
-  carbsG: { type: Number, default: null },
-  fatG: { type: Number, default: null },
-  fiberG: { type: Number, default: null },
-  sugarG: { type: Number, default: null }
-}, { _id: false });
-var macroTotalsSchema = new import_mongoose15.default.Schema({
-  caloriesKcal: { type: Number, default: 0 },
-  proteinG: { type: Number, default: 0 },
-  carbsG: { type: Number, default: 0 },
-  fatG: { type: Number, default: 0 },
-  fiberG: { type: Number, default: 0 },
-  sugarG: { type: Number, default: 0 }
-}, { _id: false });
-var mealFoodItemSchema = new import_mongoose15.default.Schema({
-  foodId: {
-    type: import_mongoose15.default.Schema.Types.ObjectId,
-    ref: "NutritionFood",
-    required: true
-  },
-  foodName: { type: String, required: true },
-  quantityG: { type: Number, required: true },
-  unit: {
-    type: String,
-    enum: Object.values(IngredientUnit),
-    default: "g" /* Gram */
-  },
-  caloriesKcal: { type: Number, required: true },
-  proteinG: { type: Number, required: true },
-  carbsG: { type: Number, required: true },
-  fatG: { type: Number, required: true },
-  fiberG: { type: Number, default: null },
-  sugarG: { type: Number, default: null },
-  recipeSource: { type: String, default: null }
-}, { _id: false });
-var mealOptionSchema = new import_mongoose15.default.Schema({
-  title: { type: String, required: true },
-  isDefault: { type: Boolean, default: false },
-  foods: { type: [mealFoodItemSchema], default: [] },
-  macros: { type: macroTotalsSchema, default: () => ({}) },
-  reasoning: { type: String, default: "" },
-  cookingDirections: { type: [String], default: [] },
-  prepTimeMinutes: { type: Number, default: null },
-  recipeId: {
-    type: String,
-    default: null
-  },
-  recipeName: { type: String, default: null }
-});
-var lifestyleRecommendationSchema = new import_mongoose15.default.Schema({
-  title: { type: String, required: true },
-  description: { type: String, default: "" },
-  category: { type: String, default: "" }
-}, { _id: false });
-var templateMealSchema = new import_mongoose15.default.Schema({
-  mealType: {
-    type: String,
-    enum: Object.values(MealType),
-    required: true
-  },
-  name: { type: String, required: true },
-  recipeId: {
-    type: import_mongoose15.default.Schema.Types.ObjectId,
-    ref: "Recipe",
-    default: null
-  },
-  timeOfDay: { type: String, default: null },
-  notes: { type: String, default: "" },
-  items: { type: [mealFoodItemSchema], default: [] },
-  options: { type: [mealOptionSchema], default: [] },
-  cookingDirections: { type: [String], default: [] },
-  prepTimeMinutes: { type: Number, default: null }
-}, { _id: false });
-var planDaySchema = new import_mongoose15.default.Schema({
-  dayNumber: { type: Number, required: true },
-  meals: { type: [templateMealSchema], default: [] }
-}, { _id: false });
-
-// src/models/nutrition-adherence.model.ts
-var nutritionAdherenceDailySchema = new import_mongoose16.default.Schema({
+init_nutrition_shared_schema();
+var import_mongoose17 = __toESM(require_mongoose2(), 1);
+var nutritionAdherenceDailySchema = new import_mongoose17.default.Schema({
   userId: {
-    type: import_mongoose16.default.Schema.Types.ObjectId,
+    type: import_mongoose17.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
   planId: {
-    type: import_mongoose16.default.Schema.Types.ObjectId,
+    type: import_mongoose17.default.Schema.Types.ObjectId,
     ref: "UserNutritionPlan",
-    required: true
+    default: null
   },
   date: { type: Date, required: true },
   plannedMeals: { type: Number, default: 0 },
@@ -503564,185 +505589,33 @@ var nutritionAdherenceDailySchema = new import_mongoose16.default.Schema({
 nutritionAdherenceDailySchema.index({ userId: 1, planId: 1, date: 1 }, { unique: true });
 nutritionAdherenceDailySchema.index({ planId: 1, date: 1 });
 nutritionAdherenceDailySchema.index({ userId: 1, date: -1 });
-var NutritionAdherenceDaily = import_mongoose16.default.models.NutritionAdherenceDaily || import_mongoose16.default.model("NutritionAdherenceDaily", nutritionAdherenceDailySchema);
+var NutritionAdherenceDaily = import_mongoose17.default.models.NutritionAdherenceDaily || import_mongoose17.default.model("NutritionAdherenceDaily", nutritionAdherenceDailySchema);
 var nutrition_adherence_model_default = NutritionAdherenceDaily;
 
 // src/utils/deletion-engine.service.ts
 init_nutrition_hydration_model();
-
-// src/models/nutrition-meal-log.model.ts
-var import_mongoose18 = __toESM(require_mongoose2(), 1);
-var loggedItemSchema = new import_mongoose18.default.Schema({
-  foodId: {
-    type: import_mongoose18.default.Schema.Types.ObjectId,
-    ref: "NutritionFood",
-    default: null
-  },
-  foodName: { type: String, required: true },
-  quantityG: { type: Number, required: true },
-  caloriesKcal: { type: Number, required: true },
-  proteinG: { type: Number, required: true },
-  carbsG: { type: Number, required: true },
-  fatG: { type: Number, required: true },
-  fiberG: { type: Number, default: null },
-  sugarG: { type: Number, default: null }
-}, { _id: false });
-var plannedMealRefSchema = new import_mongoose18.default.Schema({
-  dayNumber: { type: Number, required: true },
-  mealIndex: { type: Number, required: true },
-  selectedOptionId: {
-    type: import_mongoose18.default.Schema.Types.ObjectId,
-    default: null
-  },
-  completedOptionId: {
-    type: import_mongoose18.default.Schema.Types.ObjectId,
-    default: null
-  }
-}, { _id: false });
-var nutritionMealLogSchema = new import_mongoose18.default.Schema({
-  userId: {
-    type: import_mongoose18.default.Schema.Types.ObjectId,
-    ref: "User",
-    required: true
-  },
-  planId: {
-    type: import_mongoose18.default.Schema.Types.ObjectId,
-    ref: "UserNutritionPlan",
-    default: null
-  },
-  logDate: { type: Date, required: true },
-  dayNumber: { type: Number, default: null },
-  plannedMealRef: { type: plannedMealRefSchema, default: null },
-  status: {
-    type: String,
-    enum: Object.values(MealLogStatus),
-    default: "Logged" /* Logged */
-  },
-  consumedAt: { type: Date, default: Date.now },
-  items: { type: [loggedItemSchema], default: [] },
-  totals: { type: macroTotalsSchema, default: () => ({}) },
-  photoUrls: { type: [String], default: [] },
-  notes: { type: String, default: "" },
-  source: {
-    type: String,
-    enum: Object.values(MealLogSource),
-    default: "Manual" /* Manual */
-  }
-}, { timestamps: true });
-nutritionMealLogSchema.index({ userId: 1, logDate: -1 });
-nutritionMealLogSchema.index({ planId: 1, logDate: 1 });
-nutritionMealLogSchema.index({ userId: 1, planId: 1, logDate: 1 });
-var NutritionMealLog = import_mongoose18.default.models.NutritionMealLog || import_mongoose18.default.model("NutritionMealLog", nutritionMealLogSchema);
-var nutrition_meal_log_model_default = NutritionMealLog;
-
-// src/models/nutrition-plan.model.ts
-var import_mongoose19 = __toESM(require_mongoose2(), 1);
-var userNutritionPlanSchema = new import_mongoose19.default.Schema({
-  userId: {
-    type: import_mongoose19.default.Schema.Types.ObjectId,
-    ref: "User",
-    required: true
-  },
-  nutritionistId: {
-    type: import_mongoose19.default.Schema.Types.ObjectId,
-    ref: "User",
-    required: true
-  },
-  sourceTemplateId: {
-    type: import_mongoose19.default.Schema.Types.ObjectId,
-    ref: "NutritionTemplate",
-    default: null
-  },
-  name: { type: String, required: true },
-  goal: {
-    type: String,
-    enum: Object.values(NutritionGoal),
-    required: true
-  },
-  status: {
-    type: String,
-    enum: Object.values(NutritionPlanStatus),
-    default: "Active" /* Active */
-  },
-  startDate: { type: Date, required: false },
-  endDate: { type: Date, default: null },
-  targetCaloriesKcal: { type: Number, default: null },
-  targetMacros: { type: macroTargetSchema, default: () => ({}) },
-  durationDays: { type: Number, default: 7 },
-  days: { type: [planDaySchema], default: [] },
-  lifestyleRecommendations: {
-    type: [lifestyleRecommendationSchema],
-    default: []
-  },
-  hasPdf: { type: Boolean, default: false },
-  pdfUrl: { type: String, default: null },
-  pdfGeneratedAt: { type: Date, default: null },
-  pdfStorageKey: { type: String, default: null }
-}, { timestamps: true });
-userNutritionPlanSchema.index({ userId: 1, status: 1 });
-userNutritionPlanSchema.index({ nutritionistId: 1, status: 1 });
-userNutritionPlanSchema.index({ userId: 1, startDate: -1 });
-userNutritionPlanSchema.index({ sourceTemplateId: 1 });
-var UserNutritionPlan = import_mongoose19.default.models.UserNutritionPlan || import_mongoose19.default.model("UserNutritionPlan", userNutritionPlanSchema);
-var nutrition_plan_model_default = UserNutritionPlan;
-
-// src/models/nutrition-profile.model.ts
-var import_mongoose20 = __toESM(require_mongoose2(), 1);
-var nutritionProfileSchema = new import_mongoose20.default.Schema({
-  userId: {
-    type: import_mongoose20.default.Schema.Types.ObjectId,
-    ref: "User",
-    required: true,
-    unique: true
-  },
-  dietaryPreference: {
-    type: String,
-    enum: Object.values(DietaryPreference),
-    default: "NonVeg" /* NonVeg */
-  },
-  allergies: { type: [String], default: [] },
-  medicalConditions: { type: [String], default: [] },
-  preferredFoods: { type: [String], default: [] },
-  dislikedFoods: { type: [String], default: [] },
-  goal: {
-    type: String,
-    enum: Object.values(NutritionGoal),
-    required: true
-  },
-  targetCaloriesKcal: { type: Number, default: null },
-  targetMacros: { type: macroTargetSchema, default: () => ({}) },
-  mealsPerDay: { type: Number, default: 3 },
-  waterTargetMl: { type: Number, default: null },
-  notes: { type: String, default: "" },
-  createdByNutritionist: {
-    type: import_mongoose20.default.Schema.Types.ObjectId,
-    ref: "User",
-    required: true
-  }
-}, { timestamps: true });
-nutritionProfileSchema.index({ createdByNutritionist: 1 });
-nutritionProfileSchema.index({ createdByNutritionist: 1, updatedAt: -1 });
-nutritionProfileSchema.index({ goal: 1 });
-var NutritionProfile = import_mongoose20.default.models.NutritionProfile || import_mongoose20.default.model("NutritionProfile", nutritionProfileSchema);
-var nutrition_profile_model_default = NutritionProfile;
+init_nutrition_meal_log_model();
+init_nutrition_plan_model();
+init_nutrition_profile_model();
 
 // src/models/nutrition-progress.model.ts
-var import_mongoose21 = __toESM(require_mongoose2(), 1);
-var measurementsSchema = new import_mongoose21.default.Schema({
+init_Enums();
+var import_mongoose22 = __toESM(require_mongoose2(), 1);
+var measurementsSchema = new import_mongoose22.default.Schema({
   chestCm: { type: Number, default: null },
   waistCm: { type: Number, default: null },
   hipCm: { type: Number, default: null },
   armCm: { type: Number, default: null },
   thighCm: { type: Number, default: null }
 }, { _id: false });
-var nutritionProgressSchema = new import_mongoose21.default.Schema({
+var nutritionProgressSchema = new import_mongoose22.default.Schema({
   userId: {
-    type: import_mongoose21.default.Schema.Types.ObjectId,
+    type: import_mongoose22.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
   planId: {
-    type: import_mongoose21.default.Schema.Types.ObjectId,
+    type: import_mongoose22.default.Schema.Types.ObjectId,
     ref: "UserNutritionPlan",
     default: null
   },
@@ -503760,12 +505633,12 @@ var nutritionProgressSchema = new import_mongoose21.default.Schema({
 }, { timestamps: true });
 nutritionProgressSchema.index({ userId: 1, recordedAt: -1 });
 nutritionProgressSchema.index({ planId: 1, recordedAt: -1 });
-var NutritionProgress = import_mongoose21.default.models.NutritionProgress || import_mongoose21.default.model("NutritionProgress", nutritionProgressSchema);
+var NutritionProgress = import_mongoose22.default.models.NutritionProgress || import_mongoose22.default.model("NutritionProgress", nutritionProgressSchema);
 var nutrition_progress_model_default = NutritionProgress;
 
 // src/utils/deletion-engine.service.ts
 var deleteAndAnonymizeUserData = async (userId) => {
-  const userObjectId = typeof userId === "string" ? new import_mongoose22.default.Types.ObjectId(userId) : userId;
+  const userObjectId = typeof userId === "string" ? new import_mongoose23.default.Types.ObjectId(userId) : userId;
   console.log(`[DELETION_ENGINE] Starting data deletion and anonymization for user ID: ${userObjectId.toString()}`);
   try {
     const medicalReports = await MedicalReport_default.find({ userId: userObjectId });
@@ -503861,6 +505734,7 @@ var deleteAndAnonymizeUserData = async (userId) => {
 var import_firebase_admin2 = __toESM(require_lib19(), 1);
 
 // src/services/fcm.service.ts
+init_User();
 var import_firebase_admin = __toESM(require_lib19(), 1);
 var initialized = false;
 function getApp() {
@@ -503967,6 +505841,7 @@ async function verifyFirebaseIdToken(idToken) {
 }
 
 // src/validators/delete-account.validator.ts
+init_Enums();
 var createDeletionRequestSchema = zod_default.object({
   firebaseIdToken: zod_default.string().trim().min(1, "Authentication token is required"),
   reason: zod_default.string().trim().max(500, "Reason cannot exceed 500 characters").optional().default(""),
@@ -503997,7 +505872,7 @@ var getValidationDetails = (issues) => {
   return details;
 };
 var getIdParam2 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose23.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose24.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -504919,14 +506794,14 @@ var updateDeletionRequestStatus = async (req, res, next) => {
 };
 
 // src/models/TokenBlacklist.ts
-var import_mongoose24 = __toESM(require_mongoose2(), 1);
-var tokenBlacklistSchema = new import_mongoose24.default.Schema({
+var import_mongoose25 = __toESM(require_mongoose2(), 1);
+var tokenBlacklistSchema = new import_mongoose25.default.Schema({
   token: { type: String, required: true, unique: true, index: true },
   userId: { type: String },
   expiresAt: { type: Date, required: true }
 }, { timestamps: true });
 tokenBlacklistSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-var TokenBlacklist = import_mongoose24.default.model("TokenBlacklist", tokenBlacklistSchema);
+var TokenBlacklist = import_mongoose25.default.model("TokenBlacklist", tokenBlacklistSchema);
 var TokenBlacklist_default = TokenBlacklist;
 
 // src/utils/jwt.ts
@@ -505147,9 +507022,13 @@ var admin_routes_default = adminRouter;
 // src/routes/auth.routes.ts
 var import_express2 = __toESM(require_express2(), 1);
 
+// src/controllers/auth.controller.ts
+init_Enums();
+
 // src/models/Lead.ts
-var import_mongoose25 = __toESM(require_mongoose2(), 1);
-var leadSchema = new import_mongoose25.default.Schema({
+init_Enums();
+var import_mongoose26 = __toESM(require_mongoose2(), 1);
+var leadSchema = new import_mongoose26.default.Schema({
   leadName: { type: String, required: true },
   email: { type: String, default: "" },
   phone: { type: String, default: "" },
@@ -505163,11 +507042,11 @@ var leadSchema = new import_mongoose25.default.Schema({
   interestedIn: { type: String, default: "" },
   notes: { type: String, default: "" },
   tags: { type: [String], default: [] },
-  publicCapture: { type: import_mongoose25.default.Schema.Types.Mixed, default: null },
+  publicCapture: { type: import_mongoose26.default.Schema.Types.Mixed, default: null },
   followUpDate: { type: Date, default: null },
-  owner: { type: import_mongoose25.default.Schema.Types.ObjectId, ref: "Admin" },
+  owner: { type: import_mongoose26.default.Schema.Types.ObjectId, ref: "Admin" },
   convertedUser: {
-    type: import_mongoose25.default.Schema.Types.ObjectId,
+    type: import_mongoose26.default.Schema.Types.ObjectId,
     ref: "User",
     default: null
   }
@@ -505179,24 +507058,13 @@ leadSchema.set("toJSON", {
     return ret;
   }
 });
-var Lead_default = import_mongoose25.default.models.Lead || import_mongoose25.default.model("Lead", leadSchema);
+var Lead_default = import_mongoose26.default.models.Lead || import_mongoose26.default.model("Lead", leadSchema);
 
-// src/models/Trainer.ts
-var import_mongoose26 = __toESM(require_mongoose2(), 1);
-var trainerSchema = new import_mongoose26.default.Schema({
-  trainerName: { type: String, required: true },
-  email: { type: String, required: true, unique: true, sparse: true },
-  phone: { type: String, required: true },
-  passwordHash: { type: String, required: true, select: false },
-  description: { type: String, default: "" },
-  specialities: { type: [String], default: [] },
-  imageUrl: { type: String, default: "" },
-  keySentence: { type: String, default: "" },
-  isActive: { type: Boolean, default: true }
-}, { timestamps: true });
-var Trainer_default = import_mongoose26.default.models.Trainer || import_mongoose26.default.model("Trainer", trainerSchema);
+// src/controllers/auth.controller.ts
+init_User();
 
 // src/validators/auth.validator.ts
+init_Enums();
 var genderValues = Object.values(Gender);
 var legacyNumericGender = {
   "0": "Male" /* Male */,
@@ -505340,9 +507208,9 @@ var signup = async (req, res, next) => {
   const { username, phone, email: email3, age, gender, password } = parsedBody.data;
   try {
     const passwordHash = await hashPassword(password);
-    const existingUser = await User_default.findOne({ email: email3 }).select("_id");
-    if (existingUser) {
-      res.status(409).json({ message: "User with this email already exists" });
+    const emailCheck = await isEmailInUseAcrossSystem(email3);
+    if (emailCheck.exists) {
+      res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
       return;
     }
     const createdUser = await User_default.create({
@@ -505554,6 +507422,8 @@ function parseExpiryMs(value) {
 }
 
 // src/controllers/phone-auth.controller.ts
+init_User();
+init_Enums();
 var defaultOnboardingStatus = () => ({
   currentStep: "HEALTH_MARKERS" /* HEALTH_MARKERS */,
   completedSteps: [],
@@ -505771,6 +507641,7 @@ var import_express3 = __toESM(require_express2(), 1);
 var import_mongoose38 = __toESM(require_mongoose2(), 1);
 
 // src/models/Bookings.ts
+init_Enums();
 var import_mongoose27 = __toESM(require_mongoose2(), 1);
 var bookingSchema = new import_mongoose27.default.Schema({
   bookingDate: { type: Date, required: true },
@@ -505830,6 +507701,9 @@ var bookingSchema = new import_mongoose27.default.Schema({
 bookingSchema.index({ user: 1, sessionId: 1 });
 var Bookings_default = import_mongoose27.default.models.Booking || import_mongoose27.default.model("Booking", bookingSchema);
 
+// src/controllers/booking.controller.ts
+init_Enums();
+
 // src/models/Service.ts
 var import_mongoose28 = __toESM(require_mongoose2(), 1);
 var ServiceType = {
@@ -505881,6 +507755,9 @@ slotSchema.index({ parentTemplate: 1, date: 1, startTime: 1, endTime: 1 }, {
   partialFilterExpression: { parentTemplate: { $exists: true, $ne: null } }
 });
 var Slots_default = import_mongoose29.default.models.Slot || import_mongoose29.default.model("Slot", slotSchema);
+
+// src/services/cancellation-engine.service.ts
+init_Enums();
 
 // src/models/ScheduledSession.ts
 var import_mongoose30 = __toESM(require_mongoose2(), 1);
@@ -506001,6 +507878,7 @@ var ScheduledSession_default = import_mongoose30.default.models.ScheduledSession
 var import_mongoose33 = __toESM(require_mongoose2(), 1);
 
 // src/models/CreditTransaction.ts
+init_Enums();
 var import_mongoose31 = __toESM(require_mongoose2(), 1);
 var creditTransactionSchema = new import_mongoose31.default.Schema({
   user: { type: import_mongoose31.default.Schema.Types.ObjectId, ref: "User", required: true },
@@ -506051,7 +507929,11 @@ creditTransactionSchema.index({ sourceType: 1, sourceId: 1, type: 1 });
 creditTransactionSchema.index({ membership: 1, createdAt: -1 });
 var CreditTransaction_default = import_mongoose31.default.models.CreditTransaction || import_mongoose31.default.model("CreditTransaction", creditTransactionSchema);
 
+// src/utils/credit.service.ts
+init_Enums();
+
 // src/models/Membership.ts
+init_Enums();
 var import_mongoose32 = __toESM(require_mongoose2(), 1);
 var membershipSchema = new import_mongoose32.default.Schema({
   user: { type: import_mongoose32.default.Schema.Types.ObjectId, ref: "User", required: true },
@@ -506704,7 +508586,12 @@ var classSchema = new import_mongoose34.default.Schema({
 });
 var Class_default = import_mongoose34.default.models.Class || import_mongoose34.default.model("Class", classSchema);
 
+// src/services/registration-engine.service.ts
+init_Enums();
+
 // src/services/booking-rules-engine.service.ts
+init_Enums();
+init_User();
 function calculateWindowMs(value, unit) {
   if (unit === "days") {
     return value * 24 * 60 * 60 * 1000;
@@ -507417,6 +509304,7 @@ async function registerGroupClassBooking(params) {
 
 // src/utils/membership.guard.ts
 var import_mongoose37 = __toESM(require_mongoose2(), 1);
+init_Enums();
 async function getActiveMembership(userId) {
   const now = new Date;
   const userQuery = import_mongoose37.default.Types.ObjectId.isValid(userId) ? [{ user: userId }, { user: new import_mongoose37.default.Types.ObjectId(userId) }] : [{ user: userId }];
@@ -507437,6 +509325,7 @@ async function getActiveMembership(userId) {
 }
 
 // src/utils/zego-room.ts
+init_Enums();
 var nonCancelledBookingStatusFilter = {
   $nin: [
     2 /* Cancelled */,
@@ -507506,6 +509395,7 @@ var buildJoinWindow = (start, end, role, leadMinutes) => {
 };
 
 // src/validators/booking.validator.ts
+init_Enums();
 var createBookingBodySchema = zod_default.object({
   bookingDate: zod_default.coerce.date(),
   userId: zod_default.string().min(1).optional(),
@@ -508617,7 +510507,11 @@ var import_express6 = __toESM(require_express2(), 1);
 // src/controllers/community-admin.controller.ts
 var import_mongoose53 = __toESM(require_mongoose2(), 1);
 
+// src/services/community/moderation.service.ts
+init_Enums();
+
 // src/models/Comment.ts
+init_Enums();
 var import_mongoose40 = __toESM(require_mongoose2(), 1);
 var commentSchema = new import_mongoose40.default.Schema({
   postId: {
@@ -508688,6 +510582,7 @@ function applyAppendOnlyGuard(schema, collectionLabel) {
 }
 
 // src/models/ModerationAction.ts
+init_Enums();
 var moderationActionSchema = new import_mongoose41.default.Schema({
   adminId: {
     type: import_mongoose41.default.Schema.Types.ObjectId,
@@ -508719,6 +510614,7 @@ var ModerationAction = import_mongoose41.default.models.ModerationAction || impo
 var ModerationAction_default = ModerationAction;
 
 // src/models/Post.ts
+init_Enums();
 var import_mongoose42 = __toESM(require_mongoose2(), 1);
 var postSchema = new import_mongoose42.default.Schema({
   authorId: {
@@ -508768,6 +510664,7 @@ var Post = import_mongoose42.default.models.Post || import_mongoose42.default.mo
 var Post_default = Post;
 
 // src/models/PostMedia.ts
+init_Enums();
 var import_mongoose43 = __toESM(require_mongoose2(), 1);
 var postMediaSchema = new import_mongoose43.default.Schema({
   postId: {
@@ -508823,6 +510720,7 @@ var PostVersion = import_mongoose44.default.models.PostVersion || import_mongoos
 var PostVersion_default = PostVersion;
 
 // src/models/Report.ts
+init_Enums();
 var import_mongoose45 = __toESM(require_mongoose2(), 1);
 var reportSchema = new import_mongoose45.default.Schema({
   reporterId: {
@@ -508864,6 +510762,9 @@ applyIdTransform(reportSchema);
 var Report = import_mongoose45.default.models.Report || import_mongoose45.default.model("Report", reportSchema);
 var Report_default = Report;
 
+// src/services/community/moderation.service.ts
+init_User();
+
 // src/utils/transaction.ts
 var import_mongoose46 = __toESM(require_mongoose2(), 1);
 async function withOptionalTransaction(fn) {
@@ -508889,6 +510790,10 @@ async function withOptionalTransaction(fn) {
     await session.endSession();
   }
 }
+
+// src/services/community/author.ts
+init_Enums();
+init_User();
 
 // src/services/community/profile.service.ts
 var import_mongoose50 = __toESM(require_mongoose2(), 1);
@@ -508949,6 +510854,10 @@ communityProfileSchema.index({ ownerId: 1 }, { unique: true });
 applyIdTransform(communityProfileSchema);
 var CommunityProfile_default = import_mongoose47.default.models.CommunityProfile || import_mongoose47.default.model("CommunityProfile", communityProfileSchema);
 
+// src/services/community/profile.service.ts
+init_Enums();
+init_User();
+
 // src/services/community/block.service.ts
 var import_mongoose49 = __toESM(require_mongoose2(), 1);
 
@@ -508971,6 +510880,9 @@ blockSchema.index({ blockedId: 1 });
 applyIdTransform(blockSchema);
 var Block = import_mongoose48.default.models.Block || import_mongoose48.default.model("Block", blockSchema);
 var Block_default = Block;
+
+// src/services/community/block.service.ts
+init_User();
 
 // src/services/community/cursor.ts
 function encodeCursor(cursor) {
@@ -509873,8 +511785,13 @@ async function listUsersAdmin(filters) {
 
 // src/services/community/post.service.ts
 var import_mongoose52 = __toESM(require_mongoose2(), 1);
+init_Enums();
+
+// src/services/community/like.service.ts
+init_Enums();
 
 // src/models/Like.ts
+init_Enums();
 var import_mongoose51 = __toESM(require_mongoose2(), 1);
 var likeSchema = new import_mongoose51.default.Schema({
   userId: {
@@ -510796,7 +512713,11 @@ var unbanHandler = userAction(unbanUser);
 var assignRoleHandler = userAction(assignTrainerRole);
 var revokeRoleHandler = userAction(revokeTrainerRole);
 
+// src/controllers/community-metrics.controller.ts
+init_Enums();
+
 // src/models/Share.ts
+init_Enums();
 var import_mongoose54 = __toESM(require_mongoose2(), 1);
 var shareSchema = new import_mongoose54.default.Schema({
   userId: {
@@ -510822,6 +512743,7 @@ var Share = import_mongoose54.default.models.Share || import_mongoose54.default.
 var Share_default = Share;
 
 // src/controllers/community-metrics.controller.ts
+init_User();
 var BAD_RANGE = {
   error: "Invalid range. Allowed: today, 7d, 30d, 90d",
   code: "BAD_REQUEST"
@@ -511087,6 +513009,7 @@ var import_express7 = __toESM(require_express2(), 1);
 
 // src/controllers/community-public.controller.ts
 var import_mongoose55 = __toESM(require_mongoose2(), 1);
+init_Enums();
 var NOT_FOUND2 = { error: "Not found", code: "NOT_FOUND" };
 var membershipPrompt = {
   title: "Unlock the full Fitflix community",
@@ -511314,6 +513237,7 @@ var import_multer2 = __toESM(require_multer(), 1);
 var import_promises7 = require("node:fs/promises");
 var import_node_crypto5 = require("node:crypto");
 var import_mongoose56 = __toESM(require_mongoose2(), 1);
+init_Enums();
 
 // src/services/community/image.service.ts
 var import_node_crypto3 = require("node:crypto");
@@ -582971,6 +584895,7 @@ async function processAndUploadAudio(file2, declaredDurationSeconds) {
 }
 
 // src/services/community/policy.ts
+init_Enums();
 var WRITE_ACTIONS = new Set([
   "post:create",
   "post:edit",
@@ -583045,6 +584970,7 @@ function can(user, action, resource) {
 }
 
 // src/validators/community.validator.ts
+init_Enums();
 var visibilityValues = Object.values(PostVisibility);
 var shareChannelValues = Object.values(ShareChannel);
 var reportTargetValues = Object.values(ReportTargetType);
@@ -583567,6 +585493,7 @@ var uploadFilesHandler = async (req, res, next) => {
 var import_mongoose59 = __toESM(require_mongoose2(), 1);
 
 // src/services/community/comment.service.ts
+init_Enums();
 var import_mongoose57 = __toESM(require_mongoose2(), 1);
 var REPLY_PREVIEW = 3;
 async function getCommentMeta(id) {
@@ -583753,7 +585680,14 @@ async function listComments(postId, viewerId, params) {
   };
 }
 
+// src/services/community/notify.service.ts
+init_Enums();
+
+// src/services/notification.service.ts
+init_Enums();
+
 // src/models/Notification.ts
+init_Enums();
 var import_mongoose58 = __toESM(require_mongoose2(), 1);
 var notificationSchema = new import_mongoose58.default.Schema({
   userId: {
@@ -583782,7 +585716,7 @@ notificationSchema.index({ userId: 1, readAt: 1 });
 var Notification_default = import_mongoose58.default.models.Notification || import_mongoose58.default.model("Notification", notificationSchema);
 
 // node_modules/socket.io/wrapper.mjs
-var import_dist = __toESM(require_dist10(), 1);
+var import_dist = __toESM(require_dist11(), 1);
 
 // src/services/realtime.service.ts
 var io2 = null;
@@ -583954,6 +585888,7 @@ async function notifyCommented(params) {
 }
 
 // src/services/community/report.service.ts
+init_Enums();
 async function createReport(params) {
   const key = {
     reporterId: params.reporterId,
@@ -584413,6 +586348,7 @@ var reportHandler = async (req, res, next) => {
 };
 
 // src/controllers/community-profile.controller.ts
+init_Enums();
 var import_promises8 = require("node:fs/promises");
 var import_mongoose60 = __toESM(require_mongoose2(), 1);
 
@@ -584733,6 +586669,8 @@ var searchPeopleHandler = async (req, res, next) => {
 };
 
 // src/services/community/roleResolver.ts
+init_Enums();
+init_User();
 async function hasActiveMembership(userId) {
   const exists = await Membership_default.exists({
     user: userId,
@@ -584890,6 +586828,7 @@ var import_express9 = __toESM(require_express2(), 1);
 var import_mongoose61 = __toESM(require_mongoose2(), 1);
 
 // src/validators/credit.validator.ts
+init_Enums();
 var topUpCreditsBodySchema = zod_default.object({
   membershipId: zod_default.string().trim().min(1).optional(),
   amount: zod_default.coerce.number().positive(),
@@ -585105,7 +587044,11 @@ var credit_routes_default = creditRouter;
 // src/routes/dashboard.routes.ts
 var import_express10 = __toESM(require_express2(), 1);
 
+// src/controllers/dashboard.controller.ts
+init_Enums();
+
 // src/models/Invoice.ts
+init_Enums();
 var import_mongoose62 = __toESM(require_mongoose2(), 1);
 var invoiceItemSchema = new import_mongoose62.default.Schema({
   name: { type: String, required: true },
@@ -585159,6 +587102,7 @@ applyIdTransform(invoiceSchema);
 var Invoice_default = import_mongoose62.default.models.Invoice || import_mongoose62.default.model("Invoice", invoiceSchema);
 
 // src/controllers/dashboard.controller.ts
+init_User();
 var getDashboardMetrics = async (_req, res, next) => {
   try {
     const thirtyDaysAgo = new Date;
@@ -585327,6 +587271,7 @@ var import_express12 = __toESM(require_express2(), 1);
 var import_mongoose64 = __toESM(require_mongoose2(), 1);
 
 // src/models/Exercise.ts
+init_Enums();
 var import_mongoose63 = __toESM(require_mongoose2(), 1);
 var exerciseSchema = new import_mongoose63.default.Schema({
   name: { type: String, required: true },
@@ -585354,6 +587299,7 @@ var exerciseSchema = new import_mongoose63.default.Schema({
   },
   imageUrl: { type: String, default: null },
   isSystem: { type: Boolean, default: false },
+  isDeleted: { type: Boolean, default: false },
   createdBy: {
     type: import_mongoose63.default.Schema.Types.ObjectId,
     ref: "User",
@@ -585361,6 +587307,7 @@ var exerciseSchema = new import_mongoose63.default.Schema({
   }
 }, { timestamps: true });
 exerciseSchema.index({ muscleGroups: 1 });
+exerciseSchema.index({ isDeleted: 1, name: 1 });
 exerciseSchema.index({ createdBy: 1 });
 exerciseSchema.index({ sectionTypes: 1 });
 exerciseSchema.index({ name: "text" });
@@ -585368,6 +587315,7 @@ var Exercise = import_mongoose63.default.models.Exercise || import_mongoose63.de
 var Exercise_default = Exercise;
 
 // src/validators/exercise.validator.ts
+init_Enums();
 var listExercisesQuerySchema = zod_default.object({
   muscleGroup: zod_default.enum(Object.values(MuscleGroup)).optional(),
   difficulty: zod_default.enum(Object.values(ExerciseDifficulty)).optional(),
@@ -585448,7 +587396,7 @@ var listExercises = async (req, res, next) => {
       page,
       limit
     } = parsed.data;
-    const filter = {};
+    const filter = { isDeleted: { $ne: true } };
     if (typeof isSystem === "boolean") {
       if (isSystem) {
         filter.isSystem = true;
@@ -585503,7 +587451,7 @@ var getExerciseById = async (req, res, next) => {
       return;
     }
     const exercise = await Exercise_default.findById(id);
-    if (!exercise) {
+    if (!exercise || exercise.isDeleted) {
       res.status(404).json({ message: "Exercise not found" });
       return;
     }
@@ -585567,7 +587515,7 @@ var updateExercise = async (req, res, next) => {
       return;
     }
     const exercise = await Exercise_default.findById(id);
-    if (!exercise) {
+    if (!exercise || exercise.isDeleted) {
       res.status(404).json({ message: "Exercise not found" });
       return;
     }
@@ -585600,7 +587548,7 @@ var deleteExercise = async (req, res, next) => {
       return;
     }
     const exercise = await Exercise_default.findById(id);
-    if (!exercise) {
+    if (!exercise || exercise.isDeleted) {
       res.status(404).json({ message: "Exercise not found" });
       return;
     }
@@ -585614,7 +587562,8 @@ var deleteExercise = async (req, res, next) => {
       });
       return;
     }
-    await Exercise_default.findByIdAndDelete(id);
+    exercise.isDeleted = true;
+    await exercise.save();
     res.status(200).json({ message: "Exercise deleted" });
   } catch (error51) {
     next(error51);
@@ -585624,11 +587573,11 @@ var deleteExercise = async (req, res, next) => {
 // src/routes/exercise.routes.ts
 var exerciseRouter = import_express12.Router();
 exerciseRouter.use(authenticateToken);
-exerciseRouter.get("/", authorize(["admin", "user"]), listExercises);
-exerciseRouter.get("/:id", authorize(["admin", "user"]), getExerciseById);
-exerciseRouter.post("/", authorize(["admin", "user"]), createExercise);
-exerciseRouter.put("/:id", authorize(["admin", "user"]), updateExercise);
-exerciseRouter.delete("/:id", authorize(["admin", "user"]), deleteExercise);
+exerciseRouter.get("/", authorize(["admin", "user", "trainer"]), listExercises);
+exerciseRouter.get("/:id", authorize(["admin", "user", "trainer"]), getExerciseById);
+exerciseRouter.post("/", authorize(["admin", "user", "trainer"]), createExercise);
+exerciseRouter.put("/:id", authorize(["admin", "user", "trainer"]), updateExercise);
+exerciseRouter.delete("/:id", authorize(["admin", "user", "trainer"]), deleteExercise);
 var exercise_routes_default = exerciseRouter;
 
 // src/routes/gymVisit.routes.ts
@@ -585677,6 +587626,7 @@ applyIdTransform(gymVisitSchema);
 var GymVisit_default = import_mongoose65.default.models.GymVisit || import_mongoose65.default.model("GymVisit", gymVisitSchema);
 
 // src/controllers/gymVisit.controller.ts
+init_User();
 var DEFAULT_LIMIT = 50;
 var MAX_LIMIT = 500;
 var parseLimit2 = (raw, fallback = DEFAULT_LIMIT) => {
@@ -586042,9 +587992,11 @@ var gymVisit_routes_default = gymVisitRouter;
 var import_express14 = __toESM(require_express2(), 1);
 
 // src/services/reminder.service.ts
+init_Enums();
 var import_mongoose70 = __toESM(require_mongoose2(), 1);
 
 // src/models/ScheduledReminder.ts
+init_Enums();
 var import_mongoose67 = __toESM(require_mongoose2(), 1);
 var scheduledReminderSchema = new import_mongoose67.default.Schema({
   appointmentId: {
@@ -586075,7 +588027,14 @@ scheduledReminderSchema.index({ status: 1, fireAt: 1 });
 scheduledReminderSchema.index({ appointmentId: 1, kind: 1 }, { unique: true });
 var ScheduledReminder_default = import_mongoose67.default.models.ScheduledReminder || import_mongoose67.default.model("ScheduledReminder", scheduledReminderSchema);
 
+// src/services/reminder.service.ts
+init_User();
+
+// src/services/nutritionist-expiry.service.ts
+init_Enums();
+
 // src/models/NutritionistBooking.ts
+init_Enums();
 var import_mongoose68 = __toESM(require_mongoose2(), 1);
 var nutritionistBookingSchema = new import_mongoose68.default.Schema({
   userId: {
@@ -586605,6 +588564,7 @@ async function checkMembershipExpiries() {
 }
 
 // src/services/lead-followup.scheduler.ts
+init_Enums();
 async function processLeadFollowups() {
   const now = new Date;
   const outbox = [];
@@ -586725,9 +588685,11 @@ var internal_routes_default = router2;
 var import_express15 = __toESM(require_express2(), 1);
 
 // src/controllers/invoice.controller.ts
+init_Enums();
 var import_mongoose73 = __toESM(require_mongoose2(), 1);
 
 // src/utils/invoice.service.ts
+init_Enums();
 var import_mongoose72 = __toESM(require_mongoose2(), 1);
 
 // src/models/Counter.ts
@@ -586964,6 +588926,7 @@ var buildInvoicePdf = (invoice) => {
 };
 
 // src/validators/invoice.validator.ts
+init_Enums();
 var paymentStatusValues = Object.values(InvoicePaymentStatus);
 var paymentMethodValues = Object.values(InvoicePaymentMethod);
 var VALID_TRANSITIONS = {
@@ -587204,7 +589167,9 @@ var invoice_routes_default = invoiceRouter;
 var import_express16 = __toESM(require_express2(), 1);
 
 // src/controllers/lead.controller.ts
+init_Enums();
 var import_mongoose74 = __toESM(require_mongoose2(), 1);
+init_User();
 
 // src/utils/health-score.ts
 var assessmentVersions = [
@@ -587309,6 +589274,7 @@ var calculateHealthScore = (version2, answers) => {
 };
 
 // src/validators/lead.validator.ts
+init_Enums();
 var leadStatusValues = Object.values(LeadStatus);
 var genderValues2 = Object.values(Gender).map(String);
 var fitflixGenderOptions = [
@@ -588000,6 +589966,7 @@ var import_express17 = __toESM(require_express2(), 1);
 var import_mongoose75 = __toESM(require_mongoose2(), 1);
 
 // src/validators/membership.validator.ts
+init_Enums();
 var membershipStatusValues = Object.values(MembershipStatus).map(String);
 var createMembershipBodySchema = zod_default.object({
   userId: zod_default.string().trim().optional(),
@@ -588544,126 +590511,16 @@ var notification_routes_default = router4;
 // src/routes/nutrition.routes.ts
 var import_express20 = __toESM(require_express2(), 1);
 
-// src/services/nutrition/nutrition-adherence.service.ts
-var import_mongoose80 = __toESM(require_mongoose2(), 1);
-
-// src/services/nutrition/nutrition-errors.ts
-var import_mongoose79 = __toESM(require_mongoose2(), 1);
-
-class NutritionServiceError extends Error {
-  code;
-  constructor(code, message) {
-    super(message);
-    this.name = "NutritionServiceError";
-    this.code = code;
-  }
-}
-var toObjectId2 = (value, code, message) => {
-  if (!import_mongoose79.default.Types.ObjectId.isValid(value)) {
-    throw new NutritionServiceError(code, message);
-  }
-  return new import_mongoose79.default.Types.ObjectId(value);
-};
-var requireIdParam = (value, message) => {
-  if (typeof value !== "string" || !import_mongoose79.default.Types.ObjectId.isValid(value)) {
-    throw new NutritionServiceError("NOT_FOUND", message);
-  }
-  return value;
-};
-var STATUS_MAP = {
-  NOT_FOUND: 404,
-  FORBIDDEN: 403,
-  CONFLICT: 409,
-  VALIDATION: 400,
-  BAD_REQUEST: 400
-};
-var CODE_MAP = {
-  NOT_FOUND: "NOT_FOUND",
-  FORBIDDEN: "FORBIDDEN",
-  CONFLICT: "CONFLICT",
-  VALIDATION: "VALIDATION_ERROR",
-  BAD_REQUEST: "BAD_REQUEST"
-};
-var handleNutritionError = (error51, res, next) => {
-  if (error51 instanceof NutritionServiceError) {
-    res.status(STATUS_MAP[error51.code] ?? 400).json({
-      error: error51.message,
-      code: CODE_MAP[error51.code] ?? "BAD_REQUEST"
-    });
-    return;
-  }
-  next(error51);
-};
-var getValidationDetails2 = (issues) => {
-  const details = {};
-  for (const issue2 of issues) {
-    const field = issue2.path.length > 0 ? issue2.path.map(String).join(".") : "body";
-    if (!details[field]) {
-      details[field] = issue2.message;
-    }
-  }
-  return details;
-};
-var normalizeToUtcDate2 = (value) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
-
-// src/services/nutrition/nutrition-macro.util.ts
-var getEffectiveMealItems = (meal) => {
-  const options = meal.options ?? [];
-  if (options.length > 0) {
-    const defaultOpt = options.find((o) => o.isDefault) ?? options[0];
-    return defaultOpt?.foods ?? [];
-  }
-  return meal.items ?? [];
-};
-var getOptionItems = (meal, optionId) => {
-  if (!optionId)
-    return null;
-  const target = optionId.toString();
-  const options = meal.options ?? [];
-  const match = options.find((o) => o._id?.toString?.() === target);
-  return match?.foods ?? null;
-};
-var round = (value) => Math.round(value * 100) / 100;
-var scaleMacros = (food, quantityG) => {
-  const base = food.basePer > 0 ? food.basePer : 100;
-  const factor = quantityG / base;
-  return {
-    caloriesKcal: round(food.caloriesKcal * factor),
-    proteinG: round(food.proteinG * factor),
-    carbsG: round(food.carbsG * factor),
-    fatG: round(food.fatG * factor),
-    fiberG: food.fiberG === null || food.fiberG === undefined ? null : round(food.fiberG * factor),
-    sugarG: food.sugarG === null || food.sugarG === undefined ? null : round(food.sugarG * factor)
-  };
-};
-var sumMacros = (items) => {
-  const totals = {
-    caloriesKcal: 0,
-    proteinG: 0,
-    carbsG: 0,
-    fatG: 0,
-    fiberG: 0,
-    sugarG: 0
-  };
-  for (const item of items) {
-    totals.caloriesKcal += item.caloriesKcal;
-    totals.proteinG += item.proteinG;
-    totals.carbsG += item.carbsG;
-    totals.fatG += item.fatG;
-    totals.fiberG += item.fiberG ?? 0;
-    totals.sugarG += item.sugarG ?? 0;
-  }
-  return {
-    caloriesKcal: round(totals.caloriesKcal),
-    proteinG: round(totals.proteinG),
-    carbsG: round(totals.carbsG),
-    fatG: round(totals.fatG),
-    fiberG: round(totals.fiberG),
-    sugarG: round(totals.sugarG)
-  };
-};
+// src/controllers/nutrition-adherence.controller.ts
+init_nutrition_plan_model();
 
 // src/services/nutrition/nutrition-adherence.service.ts
+init_Enums();
+var import_mongoose81 = __toESM(require_mongoose2(), 1);
+init_nutrition_meal_log_model();
+init_nutrition_plan_model();
+init_nutrition_errors();
+init_nutrition_macro_util();
 var MS_PER_DAY = 24 * 60 * 60 * 1000;
 var computeDayNumber = (startDate, durationDays, date5) => {
   if (!startDate)
@@ -588699,21 +590556,67 @@ var getHydrationForDay = async (userId, date5) => {
     return { totalMl: 0, goalMl: 0 };
   }
 };
-var recomputeDay = async (userId, planId, date5) => {
-  const userObjectId = new import_mongoose80.default.Types.ObjectId(userId);
-  const planObjectId = new import_mongoose80.default.Types.ObjectId(planId);
-  const day = normalizeToUtcDate2(date5);
-  const plan = await nutrition_plan_model_default.findById(planObjectId);
-  if (!plan) {
-    throw new NutritionServiceError("NOT_FOUND", "Plan not found");
+var getPlanlessTargets = async (userId) => {
+  try {
+    const [
+      { default: NutritionProfile2 },
+      { default: HealthMarkers },
+      { default: User },
+      { resolveNutritionTargets: resolveNutritionTargets2 }
+    ] = await Promise.all([
+      Promise.resolve().then(() => (init_nutrition_profile_model(), exports_nutrition_profile_model)),
+      Promise.resolve().then(() => (init_HealthMarkers(), exports_HealthMarkers)),
+      Promise.resolve().then(() => (init_User(), exports_User)),
+      Promise.resolve().then(() => (init_nutrition_dashboard_service(), exports_nutrition_dashboard_service))
+    ]);
+    const [nutritionProfile, healthMarkers, user] = await Promise.all([
+      NutritionProfile2.findOne({ userId }),
+      HealthMarkers.findOne({ userId }),
+      User.findById(userId)
+    ]);
+    return resolveNutritionTargets2(null, nutritionProfile, healthMarkers, user, nutritionProfile?.goal ?? "Maintenance" /* Maintenance */);
+  } catch {
+    return {
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      water: 0,
+      source: "none"
+    };
   }
-  const dayNumber = computeDayNumber(plan.startDate, plan.durationDays, day);
-  const planDay = dayNumber === null ? null : plan.days.find((d) => d.dayNumber === dayNumber);
-  const plannedMealsArr = planDay?.meals ?? [];
-  const plannedMeals = plannedMealsArr.length;
-  const plannedItems = plannedMealsArr.flatMap((m2) => getEffectiveMealItems(m2));
-  const plannedMacros = sumMacros(plannedItems);
-  const plannedCaloriesKcal = plannedMacros.caloriesKcal;
+};
+var recomputeDay = async (userId, planId, date5) => {
+  const userObjectId = new import_mongoose81.default.Types.ObjectId(userId);
+  const planObjectId = planId ? new import_mongoose81.default.Types.ObjectId(planId) : null;
+  const day = normalizeToUtcDate2(date5);
+  let plannedMeals = 0;
+  let plannedMacros = sumMacros([]);
+  let plannedCaloriesKcal = 0;
+  if (planObjectId) {
+    const plan = await nutrition_plan_model_default.findById(planObjectId);
+    if (!plan) {
+      throw new NutritionServiceError("NOT_FOUND", "Plan not found");
+    }
+    const dayNumber = computeDayNumber(plan.startDate, plan.durationDays, day);
+    const planDay = dayNumber === null ? null : plan.days.find((d) => d.dayNumber === dayNumber);
+    const plannedMealsArr = planDay?.meals ?? [];
+    plannedMeals = plannedMealsArr.length;
+    const plannedItems = plannedMealsArr.flatMap((m2) => getEffectiveMealItems(m2));
+    plannedMacros = sumMacros(plannedItems);
+    plannedCaloriesKcal = plannedMacros.caloriesKcal;
+  } else {
+    const targets = await getPlanlessTargets(userObjectId);
+    plannedCaloriesKcal = targets.calories;
+    plannedMacros = {
+      caloriesKcal: targets.calories,
+      proteinG: targets.protein,
+      carbsG: targets.carbs,
+      fatG: targets.fat,
+      fiberG: 0,
+      sugarG: 0
+    };
+  }
   const logs = await nutrition_meal_log_model_default.find({
     userId: userObjectId,
     planId: planObjectId,
@@ -588730,7 +590633,7 @@ var recomputeDay = async (userId, planId, date5) => {
     sugarG: l.totals?.sugarG ?? 0
   })));
   const consumedCaloriesKcal = consumedMacros.caloriesKcal;
-  const mealAdherencePct = plannedMeals > 0 ? Math.round(Math.min(1, completedMeals / plannedMeals) * 100) : 0;
+  const mealAdherencePct = planObjectId && plannedMeals > 0 ? Math.round(Math.min(1, completedMeals / plannedMeals) * 100) : 0;
   const calorieAdherencePct = closenessPct(plannedCaloriesKcal, consumedCaloriesKcal);
   const proteinAdherencePct = closenessPct(plannedMacros.proteinG, consumedMacros.proteinG);
   const hydration = await getHydrationForDay(userObjectId, day);
@@ -588754,8 +590657,8 @@ var recomputeDay = async (userId, planId, date5) => {
   }, { upsert: true, returnDocument: "after", runValidators: true });
 };
 var getAdherenceRange = async (userId, planId, from, to2) => nutrition_adherence_model_default.find({
-  userId: new import_mongoose80.default.Types.ObjectId(userId),
-  planId: new import_mongoose80.default.Types.ObjectId(planId),
+  userId: new import_mongoose81.default.Types.ObjectId(userId),
+  planId: planId ? new import_mongoose81.default.Types.ObjectId(planId) : null,
   date: {
     $gte: normalizeToUtcDate2(from),
     $lte: normalizeToUtcDate2(to2)
@@ -588765,7 +590668,7 @@ var getPlanAdherenceSummary = async (planId, from, to2) => {
   const [summary] = await nutrition_adherence_model_default.aggregate([
     {
       $match: {
-        planId: new import_mongoose80.default.Types.ObjectId(planId),
+        planId: new import_mongoose81.default.Types.ObjectId(planId),
         date: {
           $gte: normalizeToUtcDate2(from),
           $lte: normalizeToUtcDate2(to2)
@@ -588823,7 +590726,7 @@ var getWeeklyAdherence = async (userId, planId, from, to2) => {
   return { weeks };
 };
 var rebuildAdherence = async (planId) => {
-  const planObjectId = new import_mongoose80.default.Types.ObjectId(planId);
+  const planObjectId = new import_mongoose81.default.Types.ObjectId(planId);
   const plan = await nutrition_plan_model_default.findById(planObjectId);
   if (!plan) {
     throw new NutritionServiceError("NOT_FOUND", "Plan not found");
@@ -588841,10 +590744,26 @@ var rebuildAdherence = async (planId) => {
   }
   return distinct.length;
 };
+var rebuildUserAdherence = async (userId) => {
+  const userObjectId = new import_mongoose81.default.Types.ObjectId(userId);
+  const distinct = await nutrition_meal_log_model_default.aggregate([
+    { $match: { userId: userObjectId, planId: null } },
+    { $group: { _id: "$logDate" } }
+  ]);
+  for (const entry of distinct) {
+    await recomputeDay(userObjectId, null, entry._id);
+  }
+  return distinct.length;
+};
+
+// src/services/nutrition/nutrition-assignment.service.ts
+init_Enums();
 
 // src/models/nutrition-food.model.ts
-var import_mongoose81 = __toESM(require_mongoose2(), 1);
-var nutritionFoodSchema = new import_mongoose81.default.Schema({
+init_Enums();
+init_nutrition_shared_schema();
+var import_mongoose82 = __toESM(require_mongoose2(), 1);
+var nutritionFoodSchema = new import_mongoose82.default.Schema({
   name: { type: String, required: true },
   brand: { type: String, default: null },
   source: {
@@ -588853,12 +590772,13 @@ var nutritionFoodSchema = new import_mongoose81.default.Schema({
     default: "System" /* System */
   },
   createdBy: {
-    type: import_mongoose81.default.Schema.Types.ObjectId,
+    type: import_mongoose82.default.Schema.Types.ObjectId,
     ref: "User",
     default: null
   },
   basePer: { type: Number, default: 100 },
   servingLabel: { type: String, default: "100 g" },
+  servings: { type: [servingSchema], default: [] },
   caloriesKcal: { type: Number, required: true },
   proteinG: { type: Number, required: true },
   carbsG: { type: Number, required: true },
@@ -588871,7 +590791,10 @@ var nutritionFoodSchema = new import_mongoose81.default.Schema({
   isVeg: { type: Boolean, default: undefined },
   allergens: { type: [String], default: [] },
   mealTypes: { type: [String], default: [] },
-  tags: { type: [String], default: [] }
+  tags: { type: [String], default: [] },
+  externalSource: { type: String, default: null },
+  externalId: { type: String, default: null },
+  imageUrl: { type: String, default: null }
 }, { timestamps: true });
 nutritionFoodSchema.index({ name: "text", brand: "text" });
 nutritionFoodSchema.index({ source: 1, createdBy: 1 });
@@ -588880,16 +590803,23 @@ nutritionFoodSchema.index({ isVeg: 1, isActive: 1 });
 nutritionFoodSchema.index({ allergens: 1 });
 nutritionFoodSchema.index({ mealTypes: 1 });
 nutritionFoodSchema.index({ tags: 1 });
-var NutritionFood = import_mongoose81.default.models.NutritionFood || import_mongoose81.default.model("NutritionFood", nutritionFoodSchema);
+nutritionFoodSchema.index({ externalSource: 1, externalId: 1 }, { unique: true, sparse: true });
+var NutritionFood = import_mongoose82.default.models.NutritionFood || import_mongoose82.default.model("NutritionFood", nutritionFoodSchema);
 var nutrition_food_model_default = NutritionFood;
 
+// src/services/nutrition/nutrition-assignment.service.ts
+init_nutrition_plan_model();
+init_nutrition_profile_model();
+
 // src/models/nutrition-template.model.ts
-var import_mongoose82 = __toESM(require_mongoose2(), 1);
-var nutritionTemplateSchema = new import_mongoose82.default.Schema({
+init_Enums();
+init_nutrition_shared_schema();
+var import_mongoose83 = __toESM(require_mongoose2(), 1);
+var nutritionTemplateSchema = new import_mongoose83.default.Schema({
   name: { type: String, required: true },
   description: { type: String, default: "" },
   createdBy: {
-    type: import_mongoose82.default.Schema.Types.ObjectId,
+    type: import_mongoose83.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -588916,36 +590846,396 @@ var nutritionTemplateSchema = new import_mongoose82.default.Schema({
 nutritionTemplateSchema.index({ createdBy: 1, status: 1 });
 nutritionTemplateSchema.index({ goal: 1, status: 1 });
 nutritionTemplateSchema.index({ tags: 1 });
-var NutritionTemplate = import_mongoose82.default.models.NutritionTemplate || import_mongoose82.default.model("NutritionTemplate", nutritionTemplateSchema);
+var NutritionTemplate = import_mongoose83.default.models.NutritionTemplate || import_mongoose83.default.model("NutritionTemplate", nutritionTemplateSchema);
 var nutrition_template_model_default = NutritionTemplate;
 
+// src/services/nutrition/nutrition-assignment.service.ts
+init_nutrition_errors();
+
 // src/services/nutrition/nutrition-snapshot.util.ts
-var resolveItemsToSnapshots = async (items) => {
-  const objectIds = items.map((item) => toObjectId2(item.foodId, "BAD_REQUEST", `Invalid food ID: ${item.foodId}`));
-  const foods = await nutrition_food_model_default.find({ _id: { $in: objectIds } });
-  const foodMap = new Map(foods.map((f4) => [f4._id.toString(), f4]));
-  return items.map((item) => {
-    const food = foodMap.get(item.foodId);
-    if (!food) {
-      throw new NutritionServiceError("BAD_REQUEST", `Food not found: ${item.foodId}`);
-    }
-    const macros = scaleMacros({
-      basePer: food.basePer,
-      caloriesKcal: food.caloriesKcal,
-      proteinG: food.proteinG,
-      carbsG: food.carbsG,
-      fatG: food.fatG,
-      fiberG: food.fiberG,
-      sugarG: food.sugarG
-    }, item.quantityG);
-    return {
-      foodId: food._id,
-      foodName: food.name,
-      quantityG: item.quantityG,
-      ...macros
-    };
+init_nutrition_errors();
+
+// src/services/nutrition/nutrition-external-food.service.ts
+init_Enums();
+init_nutrition_errors();
+
+// src/services/nutrition/nutrition-food.service.ts
+init_Enums();
+init_nutrition_errors();
+var createFood = async (input, createdBy, source) => {
+  const ownerId = source === "Custom" /* Custom */ ? toObjectId2(createdBy, "BAD_REQUEST", "Invalid creator ID") : null;
+  return nutrition_food_model_default.create({
+    ...input,
+    source,
+    createdBy: ownerId
   });
 };
+var searchFoods = async (options) => {
+  const page = Math.max(1, options.page ?? 1);
+  const limit = Math.min(1000, Math.max(1, options.limit ?? 20));
+  const filter = { isActive: true };
+  if (options.source) {
+    filter.source = Array.isArray(options.source) ? { $in: options.source } : options.source;
+  }
+  if (options.createdBy) {
+    filter.createdBy = toObjectId2(options.createdBy, "BAD_REQUEST", "Invalid creator ID");
+  }
+  if (options.systemAndOwner) {
+    const ownerId = toObjectId2(options.systemAndOwner, "BAD_REQUEST", "Invalid creator ID");
+    filter.$or = [
+      { source: "System" /* System */ },
+      { source: "Custom" /* Custom */, createdBy: ownerId }
+    ];
+  }
+  if (options.query && options.query.trim()) {
+    filter.$text = { $search: options.query.trim() };
+  }
+  const [items, total] = await Promise.all([
+    nutrition_food_model_default.find(filter).sort({ name: 1 }).skip((page - 1) * limit).limit(limit),
+    nutrition_food_model_default.countDocuments(filter)
+  ]);
+  return { items, total, page, limit };
+};
+var loadOwnedFood = async (foodId, actor) => {
+  const id = toObjectId2(foodId, "NOT_FOUND", "Food not found");
+  const food = await nutrition_food_model_default.findById(id);
+  if (!food) {
+    throw new NutritionServiceError("NOT_FOUND", "Food not found");
+  }
+  if (actor.role === "admin") {
+    return food;
+  }
+  const isOwnCustom = food.source === "Custom" /* Custom */ && food.createdBy?.toString() === actor.id;
+  if (!isOwnCustom) {
+    throw new NutritionServiceError("FORBIDDEN", "You can only modify your own custom foods");
+  }
+  return food;
+};
+var updateFood = async (foodId, patch, actor) => {
+  const food = await loadOwnedFood(foodId, actor);
+  food.set(patch);
+  await food.save();
+  return food;
+};
+var deactivateFood = async (foodId, actor) => {
+  const food = await loadOwnedFood(foodId, actor);
+  food.set({ isActive: false });
+  await food.save();
+  return food;
+};
+
+// src/config/nutrition-micros.ts
+var MICRO_KEYS = [
+  "sodiumMg",
+  "potassiumMg",
+  "calciumMg",
+  "ironMg",
+  "vitaminAUg",
+  "vitaminCMg",
+  "cholesterolMg",
+  "saturatedFatG"
+];
+
+// src/config/nutrition-off.ts
+var positiveInt2 = (value, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+};
+var nutritionOffConfig = {
+  baseUrl: process.env.OFF_BASE_URL ?? "https://world.openfoodfacts.org/api/v2",
+  searchBaseUrl: process.env.OFF_SEARCH_BASE_URL ?? "https://world.openfoodfacts.org/cgi/search.pl",
+  userAgent: process.env.OFF_USER_AGENT ?? "Fitflix/1.0 (tech@fitflix.in)",
+  requestTimeoutMs: positiveInt2(process.env.OFF_REQUEST_TIMEOUT_MS, 8000),
+  searchCacheTtlMs: positiveInt2(process.env.OFF_SEARCH_CACHE_TTL_MS, 10 * 60 * 1000),
+  barcodeCacheTtlMs: positiveInt2(process.env.OFF_BARCODE_CACHE_TTL_MS, 24 * 60 * 60 * 1000),
+  defaultSearchPageSize: positiveInt2(process.env.OFF_SEARCH_PAGE_SIZE, 20)
+};
+
+// src/services/nutrition/nutrition-off.adapter.ts
+var MICRO_CONVERSIONS = {
+  sodiumMg: { offKey: "sodium_100g", factor: 1000 },
+  potassiumMg: { offKey: "potassium_100g", factor: 1000 },
+  calciumMg: { offKey: "calcium_100g", factor: 1000 },
+  ironMg: { offKey: "iron_100g", factor: 1000 },
+  vitaminAUg: { offKey: "vitamin-a_100g", factor: 1e6 },
+  vitaminCMg: { offKey: "vitamin-c_100g", factor: 1000 },
+  cholesterolMg: { offKey: "cholesterol_100g", factor: 1000 },
+  saturatedFatG: { offKey: "saturated-fat_100g", factor: 1 }
+};
+var FIELDS = [
+  "code",
+  "product_name",
+  "generic_name",
+  "brands",
+  "nutriments",
+  "serving_quantity",
+  "serving_size",
+  "ingredients_analysis_tags",
+  "allergens_tags",
+  "image_url"
+].join(",");
+
+class TtlCache {
+  store = new Map;
+  get(key) {
+    const entry = this.store.get(key);
+    if (!entry)
+      return;
+    if (entry.expiresAt < Date.now()) {
+      this.store.delete(key);
+      return;
+    }
+    return entry.value;
+  }
+  set(key, value, ttlMs) {
+    this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
+    if (this.store.size > 500) {
+      const now = Date.now();
+      for (const [k, v] of this.store) {
+        if (v.expiresAt < now)
+          this.store.delete(k);
+      }
+    }
+  }
+}
+var searchCache = new TtlCache;
+var barcodeCache = new TtlCache;
+var offFetch = async (url2) => {
+  const controller = new AbortController;
+  const timeout = setTimeout(() => controller.abort(), nutritionOffConfig.requestTimeoutMs);
+  try {
+    const res = await fetch(url2, {
+      headers: { "User-Agent": nutritionOffConfig.userAgent },
+      signal: controller.signal
+    });
+    if (!res.ok)
+      return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+var num = (nutriments, key) => {
+  const v = nutriments?.[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+};
+var round2 = (v) => Math.round(v * 100) / 100;
+var mapOffProduct = (product) => {
+  const code = product.code;
+  if (!code)
+    return null;
+  const n = product.nutriments;
+  const caloriesKcal = num(n, "energy-kcal_100g");
+  const proteinG = num(n, "proteins_100g");
+  const carbsG = num(n, "carbohydrates_100g");
+  const fatG = num(n, "fat_100g");
+  if (caloriesKcal === null || proteinG === null || carbsG === null || fatG === null) {
+    return null;
+  }
+  const name = (product.product_name || product.generic_name || "").trim();
+  if (!name)
+    return null;
+  const analysisTags = product.ingredients_analysis_tags ?? [];
+  let isVeg;
+  if (analysisTags.includes("en:vegetarian"))
+    isVeg = true;
+  else if (analysisTags.includes("en:non-vegetarian"))
+    isVeg = false;
+  const allergens = (product.allergens_tags ?? []).map((t2) => t2.replace(/^en:/, ""));
+  const servings = [];
+  const servingQty = Number(product.serving_quantity);
+  if (Number.isFinite(servingQty) && servingQty > 0) {
+    servings.push({
+      label: product.serving_size?.trim() || `${servingQty} g`,
+      gramsPerUnit: servingQty,
+      isDefault: true
+    });
+  }
+  const micros = {};
+  for (const [key, { offKey, factor }] of Object.entries(MICRO_CONVERSIONS)) {
+    const raw = num(n, offKey);
+    if (raw !== null)
+      micros[key] = round2(raw * factor);
+  }
+  const fiberRaw = num(n, "fiber_100g");
+  const sugarRaw = num(n, "sugars_100g");
+  return {
+    externalSource: "OpenFoodFacts",
+    externalId: code,
+    name,
+    brand: product.brands?.split(",")[0]?.trim() || null,
+    barcode: code,
+    imageUrl: product.image_url || null,
+    caloriesKcal: round2(caloriesKcal),
+    proteinG: round2(proteinG),
+    carbsG: round2(carbsG),
+    fatG: round2(fatG),
+    fiberG: fiberRaw !== null ? round2(fiberRaw) : null,
+    sugarG: sugarRaw !== null ? round2(sugarRaw) : null,
+    isVeg,
+    allergens,
+    servings,
+    micros
+  };
+};
+var searchOff = async (query, page = 1, pageSize = nutritionOffConfig.defaultSearchPageSize) => {
+  const trimmed = query.trim();
+  if (!trimmed)
+    return [];
+  const cacheKey = `${trimmed.toLowerCase()}::${page}::${pageSize}`;
+  const cached3 = searchCache.get(cacheKey);
+  if (cached3)
+    return cached3;
+  const params = new URLSearchParams({
+    search_terms: trimmed,
+    search_simple: "1",
+    action: "process",
+    json: "1",
+    page: String(page),
+    page_size: String(pageSize),
+    fields: FIELDS
+  });
+  const json2 = await offFetch(`${nutritionOffConfig.searchBaseUrl}?${params.toString()}`);
+  if (!json2?.products)
+    return [];
+  const results = json2.products.map(mapOffProduct).filter((dto) => dto !== null);
+  searchCache.set(cacheKey, results, nutritionOffConfig.searchCacheTtlMs);
+  return results;
+};
+var lookupOffBarcode = async (code) => {
+  const trimmed = code.trim();
+  if (!trimmed)
+    return null;
+  const cached3 = barcodeCache.get(trimmed);
+  if (cached3 !== undefined)
+    return cached3;
+  const params = new URLSearchParams({ fields: FIELDS });
+  const json2 = await offFetch(`${nutritionOffConfig.baseUrl}/product/${encodeURIComponent(trimmed)}.json?${params.toString()}`);
+  const dto = json2?.status === 1 && json2.product ? mapOffProduct(json2.product) : null;
+  barcodeCache.set(trimmed, dto, nutritionOffConfig.barcodeCacheTtlMs);
+  return dto;
+};
+
+// src/services/nutrition/nutrition-external-food.service.ts
+var fromLocal = (food) => ({
+  _id: food._id.toString(),
+  externalRef: null,
+  name: food.name,
+  brand: food.brand ?? null,
+  source: food.source,
+  basePer: food.basePer,
+  servingLabel: food.servingLabel,
+  servings: (food.servings ?? []).map((s3) => ({
+    label: s3.label,
+    gramsPerUnit: s3.gramsPerUnit,
+    isDefault: s3.isDefault ?? false
+  })),
+  caloriesKcal: food.caloriesKcal,
+  proteinG: food.proteinG,
+  carbsG: food.carbsG,
+  fatG: food.fatG,
+  fiberG: food.fiberG ?? null,
+  sugarG: food.sugarG ?? null,
+  isVeg: food.isVeg ?? undefined,
+  allergens: food.allergens ?? [],
+  imageUrl: food.imageUrl ?? null,
+  barcode: food.barcode ?? null
+});
+var fromExternalPreview = (dto) => ({
+  _id: null,
+  externalRef: { source: "OpenFoodFacts", id: dto.externalId },
+  name: dto.name,
+  brand: dto.brand,
+  source: "External",
+  basePer: 100,
+  servingLabel: "100 g",
+  servings: dto.servings,
+  caloriesKcal: dto.caloriesKcal,
+  proteinG: dto.proteinG,
+  carbsG: dto.carbsG,
+  fatG: dto.fatG,
+  fiberG: dto.fiberG,
+  sugarG: dto.sugarG,
+  isVeg: dto.isVeg,
+  allergens: dto.allergens,
+  imageUrl: dto.imageUrl,
+  barcode: dto.barcode
+});
+var searchFoodsUnified = async (options) => {
+  const page = Math.max(1, options.page ?? 1);
+  const limit = Math.min(50, Math.max(1, options.limit ?? 20));
+  const [localResult, externalDtos] = await Promise.all([
+    searchFoods({
+      query: options.query,
+      page,
+      limit,
+      ...options.actor.role === "user" ? {
+        source: ["System" /* System */, "External" /* External */]
+      } : { systemAndOwner: options.actor.id }
+    }),
+    searchOff(options.query, page, limit)
+  ]);
+  const localBarcodes = new Set(localResult.items.map((f4) => f4.barcode).filter((b) => !!b));
+  const localViews = localResult.items.map(fromLocal);
+  const externalViews = externalDtos.filter((dto) => !dto.barcode || !localBarcodes.has(dto.barcode)).map(fromExternalPreview);
+  return {
+    items: [...localViews, ...externalViews],
+    page,
+    limit
+  };
+};
+var lookupBarcode = async (code) => {
+  const local = await nutrition_food_model_default.findOne({ barcode: code, isActive: true });
+  if (local)
+    return fromLocal(local);
+  const dto = await lookupOffBarcode(code);
+  return dto ? fromExternalPreview(dto) : null;
+};
+var ensureExternalFoodPersisted = async (ref) => {
+  const existing = await nutrition_food_model_default.findOne({
+    externalSource: ref.source,
+    externalId: ref.id
+  });
+  if (existing)
+    return existing;
+  const dto = await lookupOffBarcode(ref.id);
+  if (!dto) {
+    throw new NutritionServiceError("NOT_FOUND", `External food not found: ${ref.source}/${ref.id}`);
+  }
+  const doc2 = await nutrition_food_model_default.findOneAndUpdate({ externalSource: ref.source, externalId: ref.id }, {
+    $setOnInsert: {
+      name: dto.name,
+      brand: dto.brand,
+      source: "External" /* External */,
+      basePer: 100,
+      servingLabel: "100 g",
+      servings: dto.servings,
+      caloriesKcal: dto.caloriesKcal,
+      proteinG: dto.proteinG,
+      carbsG: dto.carbsG,
+      fatG: dto.fatG,
+      fiberG: dto.fiberG,
+      sugarG: dto.sugarG,
+      micros: dto.micros,
+      barcode: dto.barcode,
+      isActive: true,
+      isVeg: dto.isVeg,
+      allergens: dto.allergens,
+      externalSource: ref.source,
+      externalId: ref.id,
+      imageUrl: dto.imageUrl
+    }
+  }, { upsert: true, new: true, setDefaultsOnInsert: true });
+  if (!doc2) {
+    throw new NutritionServiceError("BAD_REQUEST", "Failed to persist external food");
+  }
+  return doc2;
+};
+
+// src/services/nutrition/nutrition-snapshot.util.ts
+init_nutrition_macro_util();
 var resolveDaysToSnapshots = async (days) => {
   const foodIds = new Set;
   for (const day of days) {
@@ -589008,6 +591298,67 @@ var resolveDaysToSnapshots = async (days) => {
       };
     })
   }));
+};
+var resolveLogItemsToSnapshots = async (items) => {
+  const resolvedFoodIds = await Promise.all(items.map((item) => {
+    if (item.externalRef) {
+      return ensureExternalFoodPersisted(item.externalRef).then((food) => food._id.toString());
+    }
+    return Promise.resolve(item.foodId ?? null);
+  }));
+  const uniqueIds = Array.from(new Set(resolvedFoodIds.filter((id) => id !== null))).map((id) => toObjectId2(id, "BAD_REQUEST", `Invalid food ID: ${id}`));
+  const foods = uniqueIds.length > 0 ? await nutrition_food_model_default.find({ _id: { $in: uniqueIds } }) : [];
+  const foodMap = new Map(foods.map((f4) => [f4._id.toString(), f4]));
+  return items.map((item, index) => {
+    if (item.foodName) {
+      if (item.quantityG === undefined) {
+        throw new NutritionServiceError("BAD_REQUEST", "quantityG is required for free-text items");
+      }
+      return {
+        foodId: null,
+        foodName: item.foodName,
+        quantityG: item.quantityG,
+        caloriesKcal: item.caloriesKcal ?? 0,
+        proteinG: item.proteinG ?? 0,
+        carbsG: item.carbsG ?? 0,
+        fatG: item.fatG ?? 0,
+        fiberG: item.fiberG ?? null,
+        sugarG: item.sugarG ?? null,
+        servingLabel: item.servingLabel ?? null,
+        servingCount: item.servingCount ?? null,
+        micros: {}
+      };
+    }
+    const foodId = resolvedFoodIds[index];
+    const food = foodId ? foodMap.get(foodId) : undefined;
+    if (!food) {
+      throw new NutritionServiceError("BAD_REQUEST", `Food not found: ${item.foodId ?? item.externalRef?.id}`);
+    }
+    const quantityG = resolveQuantityG(food, {
+      servingLabel: item.servingLabel,
+      servingCount: item.servingCount,
+      quantityG: item.quantityG
+    });
+    const macros = scaleMacros({
+      basePer: food.basePer,
+      caloriesKcal: food.caloriesKcal,
+      proteinG: food.proteinG,
+      carbsG: food.carbsG,
+      fatG: food.fatG,
+      fiberG: food.fiberG,
+      sugarG: food.sugarG
+    }, quantityG);
+    const micros = scaleMicros(food, quantityG);
+    return {
+      foodId: food._id,
+      foodName: food.name,
+      quantityG,
+      ...macros,
+      servingLabel: item.servingLabel ?? null,
+      servingCount: item.servingCount ?? null,
+      micros
+    };
+  });
 };
 
 // src/services/nutrition/nutrition-assignment.service.ts
@@ -589209,7 +591560,14 @@ var duplicatePlan = async (planId, actor, opts = {}) => {
   return nutrition_plan_model_default.findById(doc2._id).populate(MEMBER_POPULATE).lean();
 };
 
+// src/controllers/nutrition-adherence.controller.ts
+init_nutrition_errors();
+
+// src/validators/nutrition-meal-log.validator.ts
+init_Enums();
+
 // src/validators/nutrition-shared.validator.ts
+init_Enums();
 var mealTypeValues = Object.values(MealType);
 var goalEnumValues = Object.values(NutritionGoal);
 var goalLookup = new Map(goalEnumValues.map((v) => [v.toLowerCase().replace(/[\s_-]+/g, ""), v]));
@@ -589300,11 +591658,33 @@ var optionalDate = zod_default.preprocess(toDate, zod_default.date().optional())
 // src/validators/nutrition-meal-log.validator.ts
 var statusValues = Object.values(MealLogStatus);
 var sourceValues = Object.values(MealLogSource);
+var mealTypeValues2 = Object.values(MealType);
+var logItemSchema = zod_default.object({
+  foodId: objectIdString.optional(),
+  externalRef: zod_default.object({
+    source: zod_default.literal("OpenFoodFacts"),
+    id: zod_default.string().trim().min(1)
+  }).optional(),
+  foodName: zod_default.string().trim().min(1).optional(),
+  caloriesKcal: zod_default.coerce.number().min(0).max(1e5).optional(),
+  proteinG: zod_default.coerce.number().min(0).max(1e4).optional(),
+  carbsG: zod_default.coerce.number().min(0).max(1e4).optional(),
+  fatG: zod_default.coerce.number().min(0).max(1e4).optional(),
+  fiberG: zod_default.coerce.number().min(0).max(1e4).nullable().optional(),
+  sugarG: zod_default.coerce.number().min(0).max(1e4).nullable().optional(),
+  quantityG: zod_default.coerce.number().positive().max(1e4).optional(),
+  servingLabel: zod_default.string().trim().min(1).optional(),
+  servingCount: zod_default.coerce.number().positive().max(1000).optional(),
+  recipeSource: zod_default.string().trim().optional()
+}).refine((item) => [item.foodId, item.externalRef, item.foodName].filter(Boolean).length === 1, { message: "Provide exactly one of foodId, externalRef, or foodName" }).refine((item) => !item.foodName || item.caloriesKcal !== undefined && item.proteinG !== undefined && item.carbsG !== undefined && item.fatG !== undefined, {
+  message: "foodName items must include caloriesKcal, proteinG, carbsG, and fatG"
+}).refine((item) => item.quantityG !== undefined || item.servingLabel !== undefined && item.servingCount !== undefined, { message: "Provide quantityG, or both servingLabel and servingCount" });
 var logMealBodySchema = zod_default.object({
   planId: objectIdString.nullable().optional(),
   logDate: optionalDate,
   status: zod_default.enum(statusValues).optional(),
   source: zod_default.enum(sourceValues).optional(),
+  mealType: zod_default.enum(mealTypeValues2).optional(),
   plannedMealRef: zod_default.object({
     dayNumber: zod_default.coerce.number().int().min(1).max(366),
     mealIndex: zod_default.coerce.number().int().min(0).max(50),
@@ -589313,7 +591693,7 @@ var logMealBodySchema = zod_default.object({
   }).nullable().optional(),
   notes: zod_default.string().trim().max(1000).optional(),
   photoUrls: zod_default.array(zod_default.string().trim().url()).max(10).optional(),
-  items: zod_default.array(mealItemSchema).min(1, "At least one item is required")
+  items: zod_default.array(logItemSchema).min(1, "At least one item is required")
 });
 var markMealCompletedBodySchema = zod_default.object({
   dayNumber: zod_default.coerce.number().int().min(1).max(366),
@@ -589323,20 +591703,22 @@ var markMealCompletedBodySchema = zod_default.object({
 });
 var updateMealLogBodySchema = zod_default.object({
   status: zod_default.enum(statusValues).optional(),
+  mealType: zod_default.enum(mealTypeValues2).optional(),
   notes: zod_default.string().trim().max(1000).optional(),
   photoUrls: zod_default.array(zod_default.string().trim().url()).max(10).optional(),
-  items: zod_default.array(mealItemSchema).min(1).optional()
+  items: zod_default.array(logItemSchema).min(1).optional()
 });
 var listMealLogsQuerySchema = zod_default.object({
   planId: objectIdString.optional(),
   userId: objectIdString.optional(),
+  scope: zod_default.enum(["diary", "plan", "all"]).optional(),
   from: optionalDate,
   to: optionalDate,
   page: zod_default.coerce.number().int().min(1).optional(),
   limit: zod_default.coerce.number().int().min(1).max(200).optional()
 });
 var adherenceRangeQuerySchema = zod_default.object({
-  planId: objectIdString.optional(),
+  planId: zod_default.union([objectIdString, zod_default.literal("none")]).optional(),
   userId: objectIdString.optional(),
   from: optionalDate,
   to: optionalDate
@@ -589346,7 +591728,10 @@ var planAdherenceQuerySchema = zod_default.object({
   to: requiredDate
 });
 var rebuildAdherenceBodySchema = zod_default.object({
-  planId: objectIdString
+  planId: objectIdString.optional(),
+  userId: objectIdString.optional()
+}).refine((v) => Boolean(v.planId) !== Boolean(v.userId), {
+  message: "Provide exactly one of planId or userId"
 });
 
 // src/controllers/nutrition-adherence.controller.ts
@@ -589368,19 +591753,28 @@ var getMyAdherence = async (req, res, next) => {
   try {
     const isStaff = ["nutritionist", "admin"].includes(requester.role);
     const targetUserId = isStaff && parsed.data.userId ? parsed.data.userId : requester.id;
-    let planId = parsed.data.planId;
-    if (!planId) {
+    let planId;
+    if (parsed.data.planId === "none") {
+      planId = null;
+    } else if (parsed.data.planId) {
+      planId = parsed.data.planId;
+    } else {
       const latestPlan = await nutrition_plan_model_default.findOne({
         userId: targetUserId
       }).sort({ createdAt: -1 });
-      if (!latestPlan) {
-        res.status(200).json({ days: [] });
-        return;
-      }
-      planId = latestPlan._id.toString();
+      planId = latestPlan ? latestPlan._id.toString() : null;
     }
-    await getPlan(planId, requester);
-    const days = await getAdherenceRange(targetUserId, planId, parsed.data.from ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), parsed.data.to ?? new Date);
+    if (planId) {
+      await getPlan(planId, requester);
+    } else if (targetUserId !== requester.id && requester.role !== "admin") {
+      throw new NutritionServiceError("FORBIDDEN", "You do not have access to this user's adherence");
+    }
+    const from = parsed.data.from ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const to2 = parsed.data.to ?? new Date;
+    if (normalizeToUtcDate2(from).getTime() === normalizeToUtcDate2(to2).getTime()) {
+      await recomputeDay(targetUserId, planId, from);
+    }
+    const days = await getAdherenceRange(targetUserId, planId, from, to2);
     res.status(200).json({ days });
   } catch (error51) {
     handleNutritionError(error51, res, next);
@@ -589428,18 +591822,22 @@ var getMyWeeklyAdherence = async (req, res, next) => {
   try {
     const isStaff = ["nutritionist", "admin"].includes(requester.role);
     const targetUserId = isStaff && parsed.data.userId ? parsed.data.userId : requester.id;
-    let planId = parsed.data.planId;
-    if (!planId) {
+    let planId;
+    if (parsed.data.planId === "none") {
+      planId = null;
+    } else if (parsed.data.planId) {
+      planId = parsed.data.planId;
+    } else {
       const latestPlan = await nutrition_plan_model_default.findOne({
         userId: targetUserId
       }).sort({ createdAt: -1 });
-      if (!latestPlan) {
-        res.status(200).json({ adherence: [], weeklyAverage: 0 });
-        return;
-      }
-      planId = latestPlan._id.toString();
+      planId = latestPlan ? latestPlan._id.toString() : null;
     }
-    await getPlan(planId, requester);
+    if (planId) {
+      await getPlan(planId, requester);
+    } else if (targetUserId !== requester.id && requester.role !== "admin") {
+      throw new NutritionServiceError("FORBIDDEN", "You do not have access to this user's adherence");
+    }
     const result = await getWeeklyAdherence(targetUserId, planId, parsed.data.from ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), parsed.data.to ?? new Date);
     res.status(200).json(result);
   } catch (error51) {
@@ -589488,7 +591886,7 @@ var rebuildPlanAdherence = async (req, res, next) => {
     return;
   }
   try {
-    const rebuilt = await rebuildAdherence(parsed.data.planId);
+    const rebuilt = parsed.data.planId ? await rebuildAdherence(parsed.data.planId) : await rebuildUserAdherence(parsed.data.userId);
     res.status(200).json({
       message: "Adherence rebuilt",
       rebuiltDays: rebuilt
@@ -589499,771 +591897,9 @@ var rebuildPlanAdherence = async (req, res, next) => {
 };
 
 // src/controllers/nutrition-dashboard.controller.ts
+init_nutrition_dashboard_service();
+init_nutrition_errors();
 var import_mongoose84 = __toESM(require_mongoose2(), 1);
-
-// src/services/nutrition/nutrition-dashboard.service.ts
-var import_mongoose83 = __toESM(require_mongoose2(), 1);
-init_HealthGoals();
-init_HealthMarkers();
-init_nutrition_hydration_model();
-var getDashboardStats = async () => {
-  const [distinctMembers, activePlans] = await Promise.all([
-    nutrition_plan_model_default.distinct("userId"),
-    nutrition_plan_model_default.countDocuments({
-      status: "Active" /* Active */
-    })
-  ]);
-  return {
-    pendingBookings: 0,
-    confirmedBookings: 0,
-    totalMembers: distinctMembers.length,
-    activePlans
-  };
-};
-var escapeRegex3 = (s3) => s3.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-var getDashboardMembers = async (options) => {
-  const { search, status, page, limit } = options;
-  const pipeline4 = [
-    {
-      $lookup: {
-        from: "usernutritionplans",
-        localField: "_id",
-        foreignField: "userId",
-        as: "nutritionPlans"
-      }
-    },
-    {
-      $addFields: {
-        assignedPlans: { $size: "$nutritionPlans" },
-        activePlanCount: {
-          $size: {
-            $filter: {
-              input: "$nutritionPlans",
-              cond: {
-                $eq: ["$$this.status", "Active" /* Active */]
-              }
-            }
-          }
-        },
-        completedPlanCount: {
-          $size: {
-            $filter: {
-              input: "$nutritionPlans",
-              cond: {
-                $eq: ["$$this.status", "Completed" /* Completed */]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      $addFields: {
-        nutritionStatus: {
-          $switch: {
-            branches: [
-              {
-                case: { $gt: ["$activePlanCount", 0] },
-                then: "assigned"
-              },
-              {
-                case: { $gt: ["$completedPlanCount", 0] },
-                then: "completed"
-              }
-            ],
-            default: "pending"
-          }
-        },
-        activeNutritionPlan: {
-          $let: {
-            vars: {
-              active: {
-                $arrayElemAt: [
-                  {
-                    $filter: {
-                      input: "$nutritionPlans",
-                      cond: {
-                        $eq: ["$$this.status", "Active" /* Active */]
-                      }
-                    }
-                  },
-                  0
-                ]
-              }
-            },
-            in: {
-              $cond: [
-                { $ifNull: ["$$active", false] },
-                {
-                  _id: "$$active._id",
-                  name: "$$active.name",
-                  status: "$$active.status",
-                  startDate: "$$active.startDate",
-                  endDate: "$$active.endDate"
-                },
-                null
-              ]
-            }
-          }
-        }
-      }
-    },
-    {
-      $lookup: {
-        from: "nutritionprofiles",
-        localField: "_id",
-        foreignField: "userId",
-        as: "nutritionProfileDocs"
-      }
-    },
-    {
-      $addFields: {
-        nutritionProfileDoc: {
-          $arrayElemAt: ["$nutritionProfileDocs", 0]
-        }
-      }
-    },
-    {
-      $lookup: {
-        from: "users",
-        localField: "nutritionProfileDoc.createdByNutritionist",
-        foreignField: "_id",
-        as: "assignedNutritionistDocs"
-      }
-    },
-    {
-      $addFields: {
-        assignedNutritionist: {
-          $let: {
-            vars: {
-              n: { $arrayElemAt: ["$assignedNutritionistDocs", 0] }
-            },
-            in: {
-              $cond: [
-                { $ifNull: ["$$n", false] },
-                {
-                  _id: "$$n._id",
-                  username: "$$n.username",
-                  email: "$$n.email"
-                },
-                null
-              ]
-            }
-          }
-        },
-        nutritionProfile: {
-          $cond: [
-            { $ifNull: ["$nutritionProfileDoc", false] },
-            {
-              _id: "$nutritionProfileDoc._id",
-              goal: "$nutritionProfileDoc.goal",
-              dietaryPreference: "$nutritionProfileDoc.dietaryPreference",
-              allergies: "$nutritionProfileDoc.allergies",
-              targetCaloriesKcal: "$nutritionProfileDoc.targetCaloriesKcal",
-              targetMacros: "$nutritionProfileDoc.targetMacros",
-              assignedNutritionistId: "$nutritionProfileDoc.createdByNutritionist"
-            },
-            null
-          ]
-        }
-      }
-    },
-    {
-      $lookup: {
-        from: "healthmarkers",
-        let: { uid: "$_id" },
-        pipeline: [
-          { $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
-          {
-            $project: {
-              _id: 0,
-              weight: 1,
-              height: 1,
-              bmi: 1,
-              activityLevel: 1
-            }
-          }
-        ],
-        as: "_healthMarkersDocs"
-      }
-    },
-    {
-      $lookup: {
-        from: "healthgoals",
-        let: { uid: "$_id" },
-        pipeline: [
-          { $match: { $expr: { $eq: ["$userId", "$$uid"] } } },
-          { $project: { _id: 0, goals: 1, targetWeight: 1 } }
-        ],
-        as: "_healthGoalsDocs"
-      }
-    },
-    {
-      $lookup: {
-        from: "memberships",
-        localField: "_id",
-        foreignField: "user",
-        pipeline: [
-          { $match: { status: "Active" } },
-          { $sort: { startDate: -1 } },
-          { $limit: 1 },
-          { $project: { _id: 0, startDate: 1 } }
-        ],
-        as: "_membershipDocs"
-      }
-    }
-  ];
-  if (status) {
-    pipeline4.push({ $match: { nutritionStatus: status } });
-  }
-  if (search) {
-    const regex = new RegExp(escapeRegex3(search), "i");
-    pipeline4.push({
-      $match: {
-        $or: [
-          { username: { $regex: regex } },
-          { email: { $regex: regex } },
-          { phone: { $regex: regex } }
-        ]
-      }
-    });
-  }
-  pipeline4.push({
-    $project: {
-      _id: 1,
-      username: 1,
-      name: "$username",
-      email: 1,
-      phone: 1,
-      age: 1,
-      gender: 1,
-      onboardingStatus: {
-        currentStep: "$onboardingStatus.currentStep",
-        completedSteps: { $ifNull: ["$onboardingStatus.completedSteps", []] },
-        isCompleted: {
-          $ifNull: ["$onboardingStatus.onboardingCompleted", false]
-        }
-      },
-      nutritionBookingStatus: 1,
-      nutritionStatus: 1,
-      nutritionProfile: 1,
-      activeNutritionPlan: 1,
-      assignedNutritionist: 1,
-      assignedPlans: 1,
-      createdAt: 1,
-      membershipStartDate: {
-        $arrayElemAt: ["$_membershipDocs.startDate", 0]
-      },
-      onboardingCompletedAt: "$onboardingStatus.completedAt",
-      joinedAt: {
-        $ifNull: [
-          { $arrayElemAt: ["$_membershipDocs.startDate", 0] },
-          { $ifNull: ["$onboardingStatus.completedAt", "$createdAt"] }
-        ]
-      },
-      healthMarkers: {
-        $cond: [
-          { $gt: [{ $size: "$_healthMarkersDocs" }, 0] },
-          {
-            $mergeObjects: [
-              { $arrayElemAt: ["$_healthMarkersDocs", 0] },
-              {
-                targetWeight: {
-                  $ifNull: [
-                    { $arrayElemAt: ["$_healthGoalsDocs.targetWeight", 0] },
-                    null
-                  ]
-                }
-              }
-            ]
-          },
-          {}
-        ]
-      },
-      healthGoals: {
-        $cond: [
-          { $gt: [{ $size: "$_healthGoalsDocs" }, 0] },
-          { $arrayElemAt: ["$_healthGoalsDocs.goals", 0] },
-          { $ifNull: ["$healthGoals", []] }
-        ]
-      }
-    }
-  }, {
-    $facet: {
-      items: [{ $skip: (page - 1) * limit }, { $limit: limit }],
-      totalCount: [{ $count: "count" }]
-    }
-  });
-  const [result] = await User_default.aggregate(pipeline4);
-  const items = result?.items ?? [];
-  const total = result?.totalCount?.[0]?.count ?? 0;
-  return {
-    items,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit)
-    }
-  };
-};
-var GOAL_KEYWORDS = [
-  {
-    keywords: [
-      "weight loss",
-      "fat loss",
-      "lose weight",
-      "lose fat",
-      "cut",
-      "cutting",
-      "slim",
-      "lean",
-      "reduce weight"
-    ],
-    goal: "WeightLoss" /* WeightLoss */
-  },
-  {
-    keywords: [
-      "muscle gain",
-      "build muscle",
-      "muscle building",
-      "bulk",
-      "bulking",
-      "mass",
-      "hypertrophy",
-      "strength",
-      "gain weight"
-    ],
-    goal: "MuscleGain" /* MuscleGain */
-  },
-  {
-    keywords: [
-      "endurance",
-      "stamina",
-      "athletic",
-      "performance",
-      "marathon",
-      "cardio",
-      "running",
-      "cycling"
-    ],
-    goal: "Endurance" /* Endurance */
-  },
-  {
-    keywords: [
-      "maintain",
-      "maintenance",
-      "stay healthy",
-      "healthy lifestyle",
-      "general health"
-    ],
-    goal: "Maintenance" /* Maintenance */
-  }
-];
-var inferNutritionGoal = (rawGoals) => {
-  if (!rawGoals)
-    return "Maintenance" /* Maintenance */;
-  const goalsArr = Array.isArray(rawGoals) ? rawGoals : [rawGoals];
-  const combined = goalsArr.join(" ").toLowerCase().trim();
-  if (!combined)
-    return "Maintenance" /* Maintenance */;
-  const enumValues = Object.values(NutritionGoal);
-  for (const g of goalsArr) {
-    if (enumValues.includes(g.trim())) {
-      return g.trim();
-    }
-  }
-  for (const { keywords, goal } of GOAL_KEYWORDS) {
-    if (keywords.some((kw) => combined.includes(kw))) {
-      return goal;
-    }
-  }
-  return "Custom" /* Custom */;
-};
-var ACTIVITY_MULTIPLIERS = {
-  Sedentary: 1.2,
-  Light: 1.375,
-  Moderate: 1.55,
-  Active: 1.725,
-  VeryActive: 1.9
-};
-var GOAL_CALORIE_ADJUSTMENTS = {
-  ["WeightLoss" /* WeightLoss */]: -500,
-  ["MuscleGain" /* MuscleGain */]: 300,
-  ["Endurance" /* Endurance */]: 200,
-  ["Maintenance" /* Maintenance */]: 0,
-  ["Medical" /* Medical */]: 0,
-  ["Custom" /* Custom */]: 0
-};
-var GOAL_PROTEIN_MULTIPLIERS = {
-  ["WeightLoss" /* WeightLoss */]: 1.4,
-  ["MuscleGain" /* MuscleGain */]: 2,
-  ["Endurance" /* Endurance */]: 1.6,
-  ["Maintenance" /* Maintenance */]: 1.2,
-  ["Medical" /* Medical */]: 1.2,
-  ["Custom" /* Custom */]: 1.2
-};
-var resolveNutritionTargets = (plan, nutritionProfile, healthMarkers, user, goal) => {
-  if (plan?.targetMacros) {
-    const { proteinG, carbsG, fatG } = plan.targetMacros;
-    const targetCalories = plan.targetCaloriesKcal;
-    if (proteinG != null && carbsG != null && fatG != null && targetCalories != null) {
-      const weight2 = healthMarkers?.weight ?? 70;
-      return {
-        calories: targetCalories,
-        protein: proteinG,
-        carbs: carbsG,
-        fat: fatG,
-        water: Math.round(weight2 * 40),
-        source: "plan"
-      };
-    }
-  }
-  if (nutritionProfile) {
-    const { proteinG, carbsG, fatG } = nutritionProfile.targetMacros ?? {};
-    const targetCalories = nutritionProfile.targetCaloriesKcal;
-    if (proteinG != null && carbsG != null && fatG != null && targetCalories != null) {
-      const weight2 = healthMarkers?.weight ?? 70;
-      const waterTarget = nutritionProfile.waterTargetMl ?? Math.round(weight2 * 40);
-      return {
-        calories: targetCalories,
-        protein: proteinG,
-        carbs: carbsG,
-        fat: fatG,
-        water: waterTarget,
-        source: "assessment"
-      };
-    }
-  }
-  const weight = healthMarkers?.weight;
-  const height = healthMarkers?.height;
-  const age = typeof user?.age === "number" && user.age > 0 ? user.age : undefined;
-  const gender = typeof user?.gender === "string" ? user.gender : undefined;
-  if (weight && height && age !== undefined && gender !== undefined) {
-    let bmr;
-    if (gender === "Male") {
-      bmr = 10 * weight + 6.25 * height - 5 * age + 5;
-    } else if (gender === "Female") {
-      bmr = 10 * weight + 6.25 * height - 5 * age - 161;
-    } else {
-      const maleBmr = 10 * weight + 6.25 * height - 5 * age + 5;
-      const femaleBmr = 10 * weight + 6.25 * height - 5 * age - 161;
-      bmr = (maleBmr + femaleBmr) / 2;
-    }
-    const activityMultiplier = ACTIVITY_MULTIPLIERS[healthMarkers?.activityLevel ?? "Moderate"] ?? 1.55;
-    const tdee = Math.round(bmr * activityMultiplier);
-    const calorieAdj = GOAL_CALORIE_ADJUSTMENTS[goal] ?? 0;
-    const targetCalories = Math.max(1200, Math.round(tdee + calorieAdj));
-    const proteinMultiplier = GOAL_PROTEIN_MULTIPLIERS[goal] ?? 1.2;
-    const proteinG = Math.round(weight * proteinMultiplier);
-    const proteinCal = proteinG * 4;
-    const fatCal = Math.round(targetCalories * 0.3);
-    const fatG = Math.round(fatCal / 9);
-    const carbCal = Math.max(0, targetCalories - proteinCal - fatCal);
-    const carbsG = Math.round(carbCal / 4);
-    const waterMl = Math.round(weight * 40);
-    return {
-      calories: targetCalories,
-      protein: proteinG,
-      carbs: carbsG,
-      fat: fatG,
-      water: waterMl,
-      source: "profile"
-    };
-  }
-  if (weight) {
-    const kcalPerKg = goal === "WeightLoss" /* WeightLoss */ ? 26 : goal === "MuscleGain" /* MuscleGain */ ? 36 : 30;
-    const targetCalories = Math.round(weight * kcalPerKg);
-    const proteinMultiplier = GOAL_PROTEIN_MULTIPLIERS[goal] ?? 1.2;
-    const proteinG = Math.round(weight * proteinMultiplier);
-    const fatFactor = 0.9;
-    const fatG = Math.round(weight * fatFactor);
-    const carbCal = Math.max(0, targetCalories - proteinG * 4 - fatG * 9);
-    const carbsG = Math.round(carbCal / 4);
-    const waterMl = Math.round(weight * 40);
-    return {
-      calories: targetCalories,
-      protein: proteinG,
-      carbs: carbsG,
-      fat: fatG,
-      water: waterMl,
-      source: "weight_only"
-    };
-  }
-  const hasAnyData = healthMarkers != null || nutritionProfile != null || plan != null;
-  if (!hasAnyData) {
-    return {
-      calories: 0,
-      protein: 0,
-      carbs: 0,
-      fat: 0,
-      water: 0,
-      source: "none"
-    };
-  }
-  return {
-    calories: 2000,
-    protein: 80,
-    carbs: 250,
-    fat: 65,
-    water: 3000,
-    source: "default"
-  };
-};
-var getMealScheduleTime = (mealType) => {
-  const schedules = {
-    ["EarlyMorning" /* EarlyMorning */]: "06:00",
-    ["Breakfast" /* Breakfast */]: "08:00",
-    ["PreWorkout" /* PreWorkout */]: "11:00",
-    ["Lunch" /* Lunch */]: "13:00",
-    ["DuringWorkout" /* DuringWorkout */]: "16:00",
-    ["PostWorkout" /* PostWorkout */]: "17:00",
-    ["Snack" /* Snack */]: "15:00",
-    ["EveningSnack" /* EveningSnack */]: "18:00",
-    ["Dinner" /* Dinner */]: "20:00",
-    ["Bedtime" /* Bedtime */]: "22:00"
-  };
-  const time3 = schedules[mealType] || "12:00";
-  return { time: time3, scheduledTime: time3 };
-};
-var determineMealStatus = (logs, scheduledTime, today) => {
-  const now = new Date;
-  if (logs.length === 0) {
-    const [hours = 0, minutes = 0] = scheduledTime.split(":").map(Number);
-    const scheduledDate = new Date(today);
-    scheduledDate.setHours(hours, minutes, 0, 0);
-    if (now > scheduledDate) {
-      return "Skipped" /* Skipped */;
-    }
-    return "Pending" /* Pending */;
-  }
-  const allCompleted = logs.every((log) => log.status === "Logged" /* Logged */);
-  if (allCompleted)
-    return "Logged" /* Logged */;
-  const someCompleted = logs.some((log) => log.status === "Logged" /* Logged */);
-  if (someCompleted)
-    return "Partial" /* Partial */;
-  return "Skipped" /* Skipped */;
-};
-var buildIntakeEntry = (consumed, target) => {
-  const safeTarget = target > 0 ? target : 1;
-  const percentage = Math.round(consumed / safeTarget * 100);
-  const isOver = consumed > target;
-  return {
-    consumed,
-    target,
-    remaining: isOver ? 0 : Math.round(target - consumed),
-    percentage,
-    ...isOver ? { exceededBy: Math.round(consumed - target) } : {}
-  };
-};
-var getUserNutritionDashboard = async (userId) => {
-  if (!import_mongoose83.default.Types.ObjectId.isValid(userId)) {
-    throw new Error("Invalid user ID");
-  }
-  const todayStart = new Date;
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date;
-  todayEnd.setHours(24, 0, 0, 0);
-  const [
-    user,
-    healthMarkers,
-    healthGoals,
-    nutritionProfile,
-    activePlan,
-    todayMealLogs,
-    todayHydration
-  ] = await Promise.all([
-    User_default.findById(userId).select("_id username email phone age gender healthGoals onboardingStatus onboarded").lean(),
-    HealthMarkers_default.findOne({ userId }).select("weight height bmi activityLevel allergies medications diseaseHistory sleepHours bodyFatPercentage").lean(),
-    HealthGoals_default.findOne({ userId }).select("goals targetWeight timeline workoutExperience foodPreferences").lean(),
-    nutrition_profile_model_default.findOne({ userId }).select("goal targetCaloriesKcal targetMacros waterTargetMl createdByNutritionist").lean(),
-    nutrition_plan_model_default.findOne({
-      userId,
-      status: "Active" /* Active */
-    }).select("_id name goal status startDate durationDays targetCaloriesKcal targetMacros days nutritionistId").lean(),
-    nutrition_meal_log_model_default.find({
-      userId,
-      logDate: { $gte: todayStart, $lt: todayEnd }
-    }).select("status items totals plannedMealRef dayNumber").lean(),
-    nutrition_hydration_model_default.findOne({
-      userId,
-      logDate: todayStart
-    }).select("totalMl goalMl").lean()
-  ]);
-  const nutritionistBooking = null;
-  if (!user) {
-    throw new Error("User not found");
-  }
-  let resolvedGoal;
-  if (activePlan?.goal && Object.values(NutritionGoal).includes(activePlan.goal)) {
-    resolvedGoal = activePlan.goal;
-  } else if (nutritionProfile?.goal && Object.values(NutritionGoal).includes(nutritionProfile.goal)) {
-    resolvedGoal = nutritionProfile.goal;
-  } else {
-    resolvedGoal = inferNutritionGoal(healthGoals?.goals ?? []);
-  }
-  const targetResult = resolveNutritionTargets(activePlan, nutritionProfile, healthMarkers, user, resolvedGoal);
-  const macroTargets = {
-    calories: targetResult.calories,
-    protein: targetResult.protein,
-    carbs: targetResult.carbs,
-    fat: targetResult.fat,
-    water: targetResult.water
-  };
-  const today = new Date(todayStart);
-  let todayDayNumber = 1;
-  if (activePlan?.startDate) {
-    const planStart = new Date(activePlan.startDate);
-    planStart.setHours(0, 0, 0, 0);
-    const daysDiff = Math.floor((today.getTime() - planStart.getTime()) / (1000 * 60 * 60 * 24));
-    const durationDays = activePlan.durationDays || 7;
-    todayDayNumber = daysDiff % durationDays + 1 || 1;
-  }
-  const todayPlannedDay = activePlan?.days?.find((day) => day.dayNumber === todayDayNumber) ?? activePlan?.days?.[0];
-  const plannedMeals = todayPlannedDay?.meals ?? [];
-  const todayMeals = [];
-  const consumedTotals = {
-    calories: 0,
-    protein: 0,
-    carbs: 0,
-    fat: 0
-  };
-  for (let mealIdx = 0;mealIdx < plannedMeals.length; mealIdx++) {
-    const plannedMeal = plannedMeals[mealIdx];
-    if (!plannedMeal)
-      continue;
-    const { scheduledTime } = getMealScheduleTime(plannedMeal.mealType);
-    const mealLogs = todayMealLogs.filter((log) => log.plannedMealRef?.mealIndex === mealIdx);
-    const mealItems = getEffectiveMealItems(plannedMeal);
-    const mealTotals = sumMacros(mealItems);
-    const logTotals = mealLogs.length > 0 ? (() => {
-      const combined = sumMacros(mealLogs.flatMap((log) => log.items || []));
-      return combined;
-    })() : {
-      caloriesKcal: 0,
-      proteinG: 0,
-      carbsG: 0,
-      fatG: 0
-    };
-    const status = determineMealStatus(mealLogs, scheduledTime, today);
-    const displayTotals = {
-      calories: mealLogs.length > 0 ? logTotals.caloriesKcal : mealTotals.caloriesKcal,
-      protein: mealLogs.length > 0 ? logTotals.proteinG : mealTotals.proteinG,
-      carbs: mealLogs.length > 0 ? logTotals.carbsG : mealTotals.carbsG,
-      fat: mealLogs.length > 0 ? logTotals.fatG : mealTotals.fatG
-    };
-    if (status === "Logged" /* Logged */ || status === "Partial" /* Partial */) {
-      consumedTotals.calories += logTotals.caloriesKcal;
-      consumedTotals.protein += logTotals.proteinG;
-      consumedTotals.carbs += logTotals.carbsG;
-      consumedTotals.fat += logTotals.fatG;
-    }
-    todayMeals.push({
-      mealType: plannedMeal.mealType,
-      scheduledTime,
-      status,
-      foods: mealItems.map((item) => ({
-        name: item.foodName,
-        qty: item.quantityG,
-        calories: item.caloriesKcal,
-        protein: item.proteinG,
-        carbs: item.carbsG,
-        fat: item.fatG
-      })),
-      totals: displayTotals
-    });
-  }
-  const consumedWaterMl = todayHydration?.totalMl ?? 0;
-  const intakeSummary = {
-    calories: buildIntakeEntry(consumedTotals.calories, macroTargets.calories),
-    protein: buildIntakeEntry(consumedTotals.protein, macroTargets.protein),
-    carbs: buildIntakeEntry(consumedTotals.carbs, macroTargets.carbs),
-    fat: buildIntakeEntry(consumedTotals.fat, macroTargets.fat),
-    water: buildIntakeEntry(consumedWaterMl, macroTargets.water)
-  };
-  const skippedMeals = todayMeals.filter((meal) => meal.status === "Skipped" /* Skipped */).map((meal) => ({
-    mealType: meal.mealType,
-    scheduledTime: meal.scheduledTime
-  }));
-  const redistributionSummary = [];
-  for (const skippedMeal of skippedMeals) {
-    const mealIndex = todayMeals.findIndex((m2) => m2.mealType === skippedMeal.mealType);
-    if (mealIndex < 0)
-      continue;
-    const skippedMealData = todayMeals[mealIndex];
-    if (!skippedMealData)
-      continue;
-    const redistributedTo = todayMeals.slice(mealIndex + 1).filter((m2) => m2.status !== "Skipped" /* Skipped */).slice(0, 2).map((m2) => m2.mealType);
-    if (redistributedTo.length > 0) {
-      redistributionSummary.push({
-        skippedMeal: skippedMeal.mealType,
-        redistributedTo,
-        proteinRecovered: Math.round(skippedMealData.totals.protein / redistributedTo.length),
-        caloriesRecovered: Math.round(skippedMealData.totals.calories / redistributedTo.length)
-      });
-    }
-  }
-  const obs = user.onboardingStatus;
-  const onboardingProgress = {
-    currentStep: obs?.currentStep ?? "HEALTH_MARKERS",
-    completedSteps: Array.isArray(obs?.completedSteps) ? obs.completedSteps : [],
-    isCompleted: obs?.onboardingCompleted ?? false,
-    healthMarkersCompleted: obs?.healthMarkersCompleted ?? false,
-    healthGoalsCompleted: obs?.healthGoalsCompleted ?? false,
-    consentCompleted: obs?.consentCompleted ?? false,
-    reportsUploaded: obs?.reportsUploaded ?? false,
-    startedAt: obs?.startedAt,
-    completedAt: obs?.completedAt
-  };
-  const bookingDetails = null;
-  return {
-    user: {
-      _id: user._id.toString(),
-      username: user.username,
-      email: user.email ?? "",
-      phone: user.phone,
-      weight: healthMarkers?.weight,
-      height: healthMarkers?.height,
-      goal: resolvedGoal,
-      activityLevel: healthMarkers?.activityLevel,
-      age: typeof user.age === "number" ? user.age : null,
-      gender: user.gender || undefined,
-      healthGoals: Array.isArray(healthGoals?.goals) && healthGoals.goals.length > 0 ? healthGoals.goals : Array.isArray(user.healthGoals) && user.healthGoals.length > 0 ? user.healthGoals : [],
-      healthMarkers: {
-        weight: healthMarkers?.weight,
-        height: healthMarkers?.height,
-        bmi: healthMarkers?.bmi ?? undefined,
-        gender: healthMarkers ? String(user.gender ?? "") : undefined,
-        activityLevel: healthMarkers?.activityLevel,
-        targetWeight: healthGoals?.targetWeight ?? undefined,
-        allergies: healthMarkers?.allergies,
-        medications: healthMarkers?.medications,
-        diseaseHistory: healthMarkers?.diseaseHistory,
-        sleepHours: healthMarkers?.sleepHours ?? undefined,
-        bodyFatPercentage: healthMarkers?.bodyFatPercentage ?? undefined
-      }
-    },
-    onboardingProgress,
-    bookingDetails,
-    assignedPlan: activePlan ? {
-      _id: activePlan._id.toString(),
-      name: activePlan.name,
-      goal: activePlan.goal,
-      status: activePlan.status,
-      mealsPerDay: plannedMeals.length,
-      durationDays: activePlan.durationDays || 7,
-      startDate: activePlan.startDate ?? undefined,
-      assignedByNutritionist: activePlan.nutritionistId ? activePlan.nutritionistId.toString() : undefined
-    } : undefined,
-    macroTargets,
-    targetSource: targetResult.source,
-    intakeSummary,
-    todayMeals,
-    skippedMeals,
-    redistributionSummary
-  };
-};
 
 // src/validators/nutrition-dashboard.validator.ts
 var dashboardMembersQuerySchema = zod_default.object({
@@ -590339,70 +591975,12 @@ var userDashboard = async (req, res, next) => {
   }
 };
 
-// src/services/nutrition/nutrition-food.service.ts
-var createFood = async (input, createdBy, source) => {
-  const ownerId = source === "Custom" /* Custom */ ? toObjectId2(createdBy, "BAD_REQUEST", "Invalid creator ID") : null;
-  return nutrition_food_model_default.create({
-    ...input,
-    source,
-    createdBy: ownerId
-  });
-};
-var searchFoods = async (options) => {
-  const page = Math.max(1, options.page ?? 1);
-  const limit = Math.min(1000, Math.max(1, options.limit ?? 20));
-  const filter = { isActive: true };
-  if (options.source) {
-    filter.source = options.source;
-  }
-  if (options.createdBy) {
-    filter.createdBy = toObjectId2(options.createdBy, "BAD_REQUEST", "Invalid creator ID");
-  }
-  if (options.systemAndOwner) {
-    const ownerId = toObjectId2(options.systemAndOwner, "BAD_REQUEST", "Invalid creator ID");
-    filter.$or = [
-      { source: "System" /* System */ },
-      { source: "Custom" /* Custom */, createdBy: ownerId }
-    ];
-  }
-  if (options.query && options.query.trim()) {
-    filter.$text = { $search: options.query.trim() };
-  }
-  const [items, total] = await Promise.all([
-    nutrition_food_model_default.find(filter).sort({ name: 1 }).skip((page - 1) * limit).limit(limit),
-    nutrition_food_model_default.countDocuments(filter)
-  ]);
-  return { items, total, page, limit };
-};
-var loadOwnedFood = async (foodId, actor) => {
-  const id = toObjectId2(foodId, "NOT_FOUND", "Food not found");
-  const food = await nutrition_food_model_default.findById(id);
-  if (!food) {
-    throw new NutritionServiceError("NOT_FOUND", "Food not found");
-  }
-  if (actor.role === "admin") {
-    return food;
-  }
-  const isOwnCustom = food.source === "Custom" /* Custom */ && food.createdBy?.toString() === actor.id;
-  if (!isOwnCustom) {
-    throw new NutritionServiceError("FORBIDDEN", "You can only modify your own custom foods");
-  }
-  return food;
-};
-var updateFood = async (foodId, patch, actor) => {
-  const food = await loadOwnedFood(foodId, actor);
-  food.set(patch);
-  await food.save();
-  return food;
-};
-var deactivateFood = async (foodId, actor) => {
-  const food = await loadOwnedFood(foodId, actor);
-  food.set({ isActive: false });
-  await food.save();
-  return food;
-};
+// src/controllers/nutrition-food.controller.ts
+init_Enums();
+init_nutrition_errors();
 
 // src/validators/nutrition-food.validator.ts
+init_Enums();
 var sourceValues2 = Object.values(NutritionFoodSource);
 var createFoodBodySchema = zod_default.object({
   name: zod_default.string().trim().min(1, "Food name is required"),
@@ -590415,6 +591993,7 @@ var createFoodBodySchema = zod_default.object({
   fatG: zod_default.coerce.number().min(0).max(1e4),
   fiberG: zod_default.coerce.number().min(0).max(1e4).nullable().optional(),
   sugarG: zod_default.coerce.number().min(0).max(1e4).nullable().optional(),
+  micros: zod_default.record(zod_default.enum(MICRO_KEYS), zod_default.number().min(0)).optional(),
   barcode: optionalNutritionString.nullable(),
   isVeg: zod_default.boolean().optional(),
   allergens: zod_default.array(zod_default.string().trim().min(1)).optional(),
@@ -590427,6 +592006,11 @@ var foodSearchQuerySchema = zod_default.object({
   source: zod_default.enum(sourceValues2).optional(),
   page: zod_default.coerce.number().int().min(1).optional(),
   limit: zod_default.coerce.number().int().min(1).max(1000).optional()
+});
+var unifiedFoodSearchQuerySchema = zod_default.object({
+  query: zod_default.string().trim().min(1, "query is required"),
+  page: zod_default.coerce.number().int().min(1).optional(),
+  limit: zod_default.coerce.number().int().min(1).max(50).optional()
 });
 
 // src/controllers/nutrition-food.controller.ts
@@ -590495,7 +592079,9 @@ var listFoods = async (req, res, next) => {
       query: parsed.data.query,
       page: parsed.data.page,
       limit: parsed.data.limit,
-      ...role === "user" ? { source: "System" /* System */ } : { systemAndOwner: requester.id }
+      ...role === "user" ? {
+        source: ["System" /* System */, "External" /* External */]
+      } : { systemAndOwner: requester.id }
     });
     res.status(200).json(result);
   } catch (error51) {
@@ -590525,6 +592111,55 @@ var patchFood = async (req, res, next) => {
     handleNutritionError(error51, res, next);
   }
 };
+var searchFoodsHandler = async (req, res, next) => {
+  const requester = req.user;
+  if (!requester) {
+    res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return;
+  }
+  const parsed = unifiedFoodSearchQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: getValidationDetails2(parsed.error.issues)
+    });
+    return;
+  }
+  try {
+    const result = await searchFoodsUnified({
+      query: parsed.data.query,
+      page: parsed.data.page,
+      limit: parsed.data.limit,
+      actor: requester
+    });
+    res.status(200).json(result);
+  } catch (error51) {
+    handleNutritionError(error51, res, next);
+  }
+};
+var lookupBarcodeHandler = async (req, res, next) => {
+  const requester = req.user;
+  if (!requester) {
+    res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+    return;
+  }
+  const code = req.params.code;
+  if (typeof code !== "string" || code.trim() === "") {
+    res.status(400).json({ error: "Invalid barcode", code: "BAD_REQUEST" });
+    return;
+  }
+  try {
+    const food = await lookupBarcode(code.trim());
+    if (!food) {
+      res.status(404).json({ error: "Food not found", code: "NOT_FOUND" });
+      return;
+    }
+    res.status(200).json({ food });
+  } catch (error51) {
+    handleNutritionError(error51, res, next);
+  }
+};
 var removeFood = async (req, res, next) => {
   const requester = req.user;
   if (!requester) {
@@ -590540,8 +592175,14 @@ var removeFood = async (req, res, next) => {
   }
 };
 
+// src/controllers/nutrition-hydration.controller.ts
+init_nutrition_errors();
+
 // src/services/nutrition/nutrition-hydration.service.ts
+init_Enums();
 init_nutrition_hydration_model();
+init_nutrition_plan_model();
+init_nutrition_errors();
 var refreshActivePlanRollups = async (userId, date5) => {
   const activePlans = await nutrition_plan_model_default.find({
     userId,
@@ -590699,7 +592340,15 @@ var getMyHydration = async (req, res, next) => {
   }
 };
 
+// src/controllers/nutrition-meal-log.controller.ts
+init_nutrition_errors();
+
 // src/services/nutrition/nutrition-meal-log.service.ts
+init_Enums();
+init_nutrition_meal_log_model();
+init_nutrition_plan_model();
+init_nutrition_errors();
+init_nutrition_macro_util();
 var assertPlanOwnedByUser = async (planId, userId) => {
   const plan = await nutrition_plan_model_default.findById(planId);
   if (!plan) {
@@ -590720,24 +592369,25 @@ var logMeal = async (input, userId) => {
     const plan = await assertPlanOwnedByUser(planObjectId, userId);
     dayNumber = computeDayNumber(plan.startDate, plan.durationDays, logDate);
   }
-  const items = await resolveItemsToSnapshots(input.items);
+  const items = await resolveLogItemsToSnapshots(input.items);
   const totals = sumMacros(items);
+  const microTotals = sumMicros(items);
   const log = await nutrition_meal_log_model_default.create({
     userId: userObjectId,
     planId: planObjectId,
     logDate,
     dayNumber,
+    mealType: input.mealType ?? null,
     plannedMealRef: input.plannedMealRef ?? null,
     status: input.status ?? "Logged" /* Logged */,
     source: input.source ?? "Manual" /* Manual */,
     notes: input.notes ?? "",
     photoUrls: input.photoUrls ?? [],
     items,
-    totals
+    totals,
+    microTotals
   });
-  if (planObjectId) {
-    await recomputeDay(userObjectId, planObjectId, logDate);
-  }
+  await recomputeDay(userObjectId, planObjectId, logDate);
   return log;
 };
 var markMealCompleted = async (planId, dayNumber, mealIndex, userId, date5, completedOptionId) => {
@@ -590783,6 +592433,7 @@ var markMealCompleted = async (planId, dayNumber, mealIndex, userId, date5, comp
     planId: planObjectId,
     logDate,
     dayNumber,
+    mealType: meal.mealType ?? null,
     plannedMealRef,
     status: "Logged" /* Logged */,
     source: "Manual" /* Manual */,
@@ -590808,6 +592459,9 @@ var updateMealLog = async (logId, patch, userId) => {
   if (patch.status !== undefined) {
     log.set({ status: patch.status });
   }
+  if (patch.mealType !== undefined) {
+    log.set({ mealType: patch.mealType });
+  }
   if (patch.notes !== undefined) {
     log.set({ notes: patch.notes });
   }
@@ -590815,22 +592469,18 @@ var updateMealLog = async (logId, patch, userId) => {
     log.set({ photoUrls: patch.photoUrls });
   }
   if (patch.items) {
-    const items = await resolveItemsToSnapshots(patch.items);
-    log.set({ items, totals: sumMacros(items) });
+    const items = await resolveLogItemsToSnapshots(patch.items);
+    log.set({ items, totals: sumMacros(items), microTotals: sumMicros(items) });
   }
   await log.save();
-  if (log.planId) {
-    await recomputeDay(log.userId, log.planId, log.logDate);
-  }
+  await recomputeDay(log.userId, log.planId ?? null, log.logDate);
   return log;
 };
 var deleteMealLog = async (logId, userId) => {
   const log = await loadOwnLog(logId, userId);
   const { planId, userId: ownerId, logDate } = log;
   await log.deleteOne();
-  if (planId) {
-    await recomputeDay(ownerId, planId, logDate);
-  }
+  await recomputeDay(ownerId, planId ?? null, logDate);
 };
 var listLogs = async (userId, filters) => {
   const page = Math.max(1, filters.page ?? 1);
@@ -590840,6 +592490,10 @@ var listLogs = async (userId, filters) => {
   };
   if (filters.planId) {
     filter.planId = toObjectId2(filters.planId, "BAD_REQUEST", "Invalid plan ID");
+  } else if (filters.scope === "diary") {
+    filter.planId = null;
+  } else if (filters.scope === "plan") {
+    filter.planId = { $ne: null };
   }
   if (filters.from || filters.to) {
     const range = {};
@@ -590878,7 +592532,8 @@ var createMealLog = async (req, res, next) => {
     const log = await logMeal({
       ...parsed.data,
       status: parsed.data.status,
-      source: parsed.data.source
+      source: parsed.data.source,
+      mealType: parsed.data.mealType
     }, requester.id);
     res.status(201).json({ message: "Meal logged", mealLog: log });
   } catch (error51) {
@@ -590951,7 +592606,8 @@ var patchMealLog = async (req, res, next) => {
     const logId = requireIdParam(req.params.id, "Meal log not found");
     const log = await updateMealLog(logId, {
       ...parsed.data,
-      status: parsed.data.status
+      status: parsed.data.status,
+      mealType: parsed.data.mealType
     }, requester.id);
     res.status(200).json({ message: "Meal log updated", mealLog: log });
   } catch (error51) {
@@ -590973,7 +592629,16 @@ var removeMealLog = async (req, res, next) => {
   }
 };
 
+// src/controllers/nutrition-plan.controller.ts
+init_nutrition_plan_model();
+init_nutrition_errors();
+
+// src/services/nutrition/nutrition-plan-pdf.service.ts
+init_nutrition_errors();
+
 // src/services/nutrition/nutrition-pdf.seam.ts
+init_nutrition_errors();
+
 class NoopPdfRenderer {
   async renderPlanPdf() {
     throw new NutritionServiceError("BAD_REQUEST", "PDF generation is not yet enabled");
@@ -591023,6 +592688,7 @@ var getPlanPdf = async (planId, actor) => {
 };
 
 // src/validators/nutrition-plan.validator.ts
+init_Enums();
 var statusValues2 = Object.values(NutritionPlanStatus);
 var assignTemplateBodySchema = zod_default.object({
   userId: zod_default.string().trim().regex(/^[0-9a-fA-F]{24}$/, "Must be a valid user ID"),
@@ -591477,7 +593143,12 @@ var copyPlanDayStructure = async (req, res, next) => {
   }
 };
 
+// src/controllers/nutrition-profile.controller.ts
+init_nutrition_errors();
+
 // src/services/nutrition/nutrition-profile.service.ts
+init_nutrition_profile_model();
+init_nutrition_errors();
 var import_mongoose85 = __toESM(require_mongoose2(), 1);
 var prefillFromOnboarding = async (userId) => {
   try {
@@ -591585,6 +593256,7 @@ var deleteProfile = async (userId, actor) => {
 };
 
 // src/validators/nutrition-profile.validator.ts
+init_Enums();
 var goalValues = Object.values(NutritionGoal);
 var dietaryValues = Object.values(DietaryPreference);
 var createProfileBodySchema = zod_default.object({
@@ -591705,7 +593377,13 @@ var deleteProfileHandler = async (req, res, next) => {
   }
 };
 
+// src/controllers/nutrition-progress.controller.ts
+init_Enums();
+init_nutrition_errors();
+
 // src/services/nutrition/nutrition-progress.service.ts
+init_Enums();
+init_nutrition_errors();
 var addProgressEntry = async (input, userId, recordedBy) => {
   const userObjectId = toObjectId2(userId, "BAD_REQUEST", "Invalid user ID");
   return nutrition_progress_model_default.create({
@@ -591884,6 +593562,12 @@ var addPlanProgressEntry = async (req, res, next) => {
   }
 };
 
+// src/controllers/nutrition-recipe.controller.ts
+init_nutrition_errors();
+
+// src/services/nutrition/nutrition-recipe.service.ts
+init_Enums();
+
 // src/models/MealPlanCategory.ts
 var import_mongoose86 = __toESM(require_mongoose2(), 1);
 var mealPlanCategorySchema = new import_mongoose86.default.Schema({
@@ -591905,6 +593589,7 @@ var MealPlanCategory = import_mongoose86.default.models.MealPlanCategory || impo
 var MealPlanCategory_default = MealPlanCategory;
 
 // src/models/Recipe.ts
+init_Enums();
 var import_mongoose87 = __toESM(require_mongoose2(), 1);
 var recipeTotalsSchema = new import_mongoose87.default.Schema({
   caloriesKcal: { type: Number, default: 0 },
@@ -591957,6 +593642,7 @@ var Recipe = import_mongoose87.default.models.Recipe || import_mongoose87.defaul
 var Recipe_default = Recipe;
 
 // src/models/RecipeIngredient.ts
+init_Enums();
 var import_mongoose88 = __toESM(require_mongoose2(), 1);
 var recipeIngredientSchema = new import_mongoose88.default.Schema({
   recipeId: {
@@ -591997,6 +593683,8 @@ var RecipeIngredient = import_mongoose88.default.models.RecipeIngredient || impo
 var RecipeIngredient_default = RecipeIngredient;
 
 // src/services/nutrition/nutrition-recipe.service.ts
+init_nutrition_errors();
+init_nutrition_macro_util();
 var buildMealSnapshotFromRecipe = async (recipeId) => {
   const id = toObjectId2(recipeId, "NOT_FOUND", "Recipe not found");
   const recipe = await Recipe_default.findOne({ _id: id, isActive: true }).lean();
@@ -592148,6 +593836,7 @@ var getRecipeWithIngredients = async (recipeId) => {
 };
 
 // src/validators/nutrition-recipe.validator.ts
+init_Enums();
 var recipeBrowseQuerySchema = exports_external.object({
   isVeg: exports_external.string().optional().transform((v) => v === "true" ? true : v === "false" ? false : undefined),
   page: exports_external.coerce.number().int().min(1).default(1),
@@ -592274,7 +593963,11 @@ var buildTemplateFromRecipeHandler = async (req, res, next) => {
   }
 };
 
+// src/controllers/nutrition-template.controller.ts
+init_nutrition_errors();
+
 // src/services/nutrition/nutrition-template.service.ts
+init_nutrition_errors();
 var createTemplate = async (input, nutritionistId) => {
   const ownerId = toObjectId2(nutritionistId, "BAD_REQUEST", "Invalid nutritionist ID");
   const days = input.days ? await resolveDaysToSnapshots(input.days) : [];
@@ -592334,15 +594027,20 @@ var deleteTemplate = async (templateId, actor) => {
 };
 
 // src/services/nutrition/nutrition-template-recommend.service.ts
+init_Enums();
 var import_mongoose89 = __toESM(require_mongoose2(), 1);
+init_nutrition_profile_model();
+init_nutrition_errors();
 
 // src/services/nutrition/nutrition-filter.service.ts
+init_Enums();
 var LOW_CARB_GOALS = new Set([
   "WeightLoss" /* WeightLoss */,
   "Medical" /* Medical */
 ]);
 
 // src/validators/nutrition-template.validator.ts
+init_Enums();
 var goalValues2 = Object.values(NutritionGoal);
 var statusValues3 = Object.values(NutritionPlanStatus);
 var createTemplateBodySchema = zod_default.object({
@@ -592503,6 +594201,8 @@ nutritionRouter.delete("/profiles/:userId", STAFF, deleteProfileHandler);
 nutritionRouter.post("/admin/foods", ADMIN, createSystemFood);
 nutritionRouter.post("/admin/adherence/rebuild", ADMIN, rebuildPlanAdherence);
 nutritionRouter.get("/foods", authorize(["nutritionist", "admin", "user"]), listFoods);
+nutritionRouter.get("/foods/search", authorize(["nutritionist", "admin", "user"]), searchFoodsHandler);
+nutritionRouter.get("/foods/barcode/:code", authorize(["nutritionist", "admin", "user"]), lookupBarcodeHandler);
 nutritionRouter.post("/foods", STAFF, createCustomFood);
 nutritionRouter.patch("/foods/:id", STAFF, patchFood);
 nutritionRouter.delete("/foods/:id", STAFF, removeFood);
@@ -592557,10 +594257,15 @@ var nutrition_routes_default = nutritionRouter;
 var import_express21 = __toESM(require_express2(), 1);
 
 // src/controllers/nutritionist-booking.controller.ts
+init_Enums();
 var import_mongoose91 = __toESM(require_mongoose2(), 1);
+init_User();
 
 // src/utils/onboarding.service.ts
+init_Enums();
 var import_mongoose90 = __toESM(require_mongoose2(), 1);
+init_User();
+
 class OnboardingServiceError extends Error {
   code;
   constructor(code, message) {
@@ -592714,6 +594419,7 @@ var completeOnboarding = async (userId) => {
 };
 
 // src/validators/nutritionist-booking.validator.ts
+init_Enums();
 var optionalString = exports_external.string().trim().transform((val) => val === "" ? undefined : val).optional();
 var bookNutritionistSchema = exports_external.object({
   slotId: optionalString,
@@ -593199,10 +594905,12 @@ var import_express22 = __toESM(require_express2(), 1);
 // src/controllers/onboarding.controller.ts
 var import_node_fs4 = require("node:fs");
 var import_mongoose92 = __toESM(require_mongoose2(), 1);
+init_Enums();
 init_HealthGoals();
 init_HealthMarkers();
 
 // src/validators/onboarding.validator.ts
+init_Enums();
 init_HealthGoals();
 init_HealthMarkers();
 var positiveNumber = zod_default.preprocess((value) => {
@@ -593680,8 +595388,10 @@ var import_express23 = __toESM(require_express2(), 1);
 
 // src/controllers/schedule.controller.ts
 var import_mongoose93 = __toESM(require_mongoose2(), 1);
+init_User();
 
 // src/validators/schedule.validator.ts
+init_Enums();
 var createScheduleBodySchema = zod_default.object({
   userId: zod_default.string().min(1),
   scheduledDate: zod_default.coerce.date(),
@@ -594623,10 +596333,40 @@ therapyRouter.delete("/:id", authorize(["admin"]), deleteTherapyById);
 var therapy_routes_default = therapyRouter;
 
 // src/routes/trainer.routes.ts
-var import_express27 = __toESM(require_express2(), 1);
+var import_express28 = __toESM(require_express2(), 1);
 
 // src/controllers/trainer.controller.ts
+var import_mongoose98 = __toESM(require_mongoose2(), 1);
+init_User();
+
+// src/services/trainerRoster.service.ts
+init_User();
 var import_mongoose97 = __toESM(require_mongoose2(), 1);
+
+class TrainerRosterError extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "TrainerRosterError";
+    this.code = code;
+  }
+}
+var getRosterUserIds = async (trainerId) => {
+  if (!import_mongoose97.default.Types.ObjectId.isValid(trainerId)) {
+    throw new TrainerRosterError("INVALID_ARGUMENT", "Invalid trainer id");
+  }
+  const members2 = await User_default.find({ assignedTrainer: trainerId }).select("_id").lean();
+  return members2.map((member) => member._id.toString());
+};
+var assertTrainerOwnsMember = async (trainerId, userId) => {
+  if (!import_mongoose97.default.Types.ObjectId.isValid(userId)) {
+    throw new TrainerRosterError("INVALID_ARGUMENT", "Invalid member id");
+  }
+  const member = await User_default.findById(userId).select("assignedTrainer").lean();
+  if (!member || member.assignedTrainer?.toString() !== trainerId) {
+    throw new TrainerRosterError("NOT_YOUR_MEMBER", "This member is not assigned to you");
+  }
+};
 
 // src/validators/trainer.validator.ts
 var createTrainerBodySchema = zod_default.object({
@@ -594646,7 +596386,7 @@ var updateTrainerBodySchema = createTrainerBodySchema.partial().refine((payload)
 
 // src/controllers/trainer.controller.ts
 var getIdParam19 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose97.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose98.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -594671,6 +596411,13 @@ var createTrainer = async (req, res, next) => {
   }
   try {
     const { password, ...rest } = parsedBody.data;
+    if (rest.email) {
+      const emailCheck = await isEmailInUseAcrossSystem(rest.email);
+      if (emailCheck.exists) {
+        res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
+        return;
+      }
+    }
     const passwordHash = await hashPassword(password);
     const trainer = await Trainer_default.create({
       ...rest,
@@ -594752,6 +596499,13 @@ var updateTrainerById = async (req, res, next) => {
     ...hashedPassword ? { passwordHash: hashedPassword } : {}
   };
   try {
+    if (rest.email) {
+      const emailCheck = await isEmailInUseAcrossSystem(rest.email, id);
+      if (emailCheck.exists) {
+        res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
+        return;
+      }
+    }
     const updatedTrainer = await Trainer_default.findByIdAndUpdate(id, updatePayload, {
       returnDocument: "after",
       runValidators: true
@@ -594761,6 +596515,45 @@ var updateTrainerById = async (req, res, next) => {
       return;
     }
     res.status(200).json({ message: "Trainer updated", trainer: updatedTrainer });
+  } catch (error51) {
+    next(error51);
+  }
+};
+var getMyMembers = async (req, res, next) => {
+  const requester = req.user;
+  if (!requester) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+  try {
+    const rosterIds = await getRosterUserIds(requester.id);
+    const members2 = await User_default.find({ _id: { $in: rosterIds } }).select("username phone email age gender onboarded assignedTrainerAt").sort({ username: 1 }).lean();
+    res.status(200).json({ members: members2 });
+  } catch (error51) {
+    next(error51);
+  }
+};
+var getMyMemberById = async (req, res, next) => {
+  const requester = req.user;
+  if (!requester) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+  const userId = getIdParam19(req.params.userId);
+  if (!userId) {
+    res.status(400).json({ message: "Invalid member id" });
+    return;
+  }
+  try {
+    if (requester.role === "trainer") {
+      await assertTrainerOwnsMember(requester.id, userId);
+    }
+    const member = await User_default.findById(userId).select("username phone email age gender onboarded assignedTrainer assignedTrainerAt");
+    if (!member) {
+      res.status(404).json({ message: "Member not found" });
+      return;
+    }
+    res.status(200).json({ member });
   } catch (error51) {
     next(error51);
   }
@@ -594783,25 +596576,1072 @@ var deleteTrainerById = async (req, res, next) => {
   }
 };
 
+// src/middleware/workoutSubject.middleware.ts
+var import_mongoose99 = __toESM(require_mongoose2(), 1);
+var subjectIsSelf = (req, res, next) => {
+  if (!req.user) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+  req.subjectUserId = req.user.id;
+  next();
+};
+var subjectIsMember = async (req, res, next) => {
+  try {
+    const rawUserId = req.params.userId;
+    const userId = Array.isArray(rawUserId) ? rawUserId[0] : rawUserId;
+    if (!userId || !import_mongoose99.default.Types.ObjectId.isValid(userId)) {
+      res.status(400).json({
+        error: "Invalid member ID",
+        code: "VALIDATION_ERROR"
+      });
+      return;
+    }
+    if (req.user.role === "trainer") {
+      await assertTrainerOwnsMember(req.user.id, userId);
+    }
+    req.subjectUserId = userId;
+    next();
+  } catch (error51) {
+    next(error51);
+  }
+};
+
+// src/routes/workout.routes.ts
+var import_express27 = __toESM(require_express2(), 1);
+
+// src/controllers/workout.controller.ts
+init_Enums();
+var import_mongoose100 = __toESM(require_mongoose2(), 1);
+
+// src/utils/actor-model.ts
+var actorModelForRole = (role) => {
+  if (role === "trainer")
+    return "Trainer";
+  if (role === "admin")
+    return "Admin";
+  return "User";
+};
+
+// src/validators/workout.validator.ts
+init_Enums();
+var sectionEnum = zod_default.enum(Object.values(ExerciseSection));
+var exerciseInSessionSchema = zod_default.object({
+  exerciseId: zod_default.string().min(1),
+  targetSets: zod_default.coerce.number().int().min(1).max(50),
+  targetReps: zod_default.coerce.number().int().min(1).max(100),
+  targetWeightKg: zod_default.coerce.number().min(0).max(999.99).optional(),
+  restSeconds: zod_default.coerce.number().int().min(0).max(600).optional().default(60),
+  section: sectionEnum.optional().default("workout"),
+  durationSeconds: zod_default.coerce.number().int().min(1).max(86400).optional(),
+  notes: zod_default.string().max(500).optional()
+});
+var createSessionBodySchema = zod_default.object({
+  date: zod_default.coerce.date().optional(),
+  notes: zod_default.string().max(1000).optional(),
+  exercises: zod_default.array(exerciseInSessionSchema).optional().default([]),
+  planId: zod_default.string().optional().nullable(),
+  planDayNumber: zod_default.coerce.number().int().min(1).optional()
+});
+var updateSessionBodySchema = zod_default.object({
+  status: zod_default.enum(Object.values(WorkoutSessionStatus)).optional(),
+  notes: zod_default.string().max(1000).optional(),
+  startedAt: zod_default.coerce.date().optional()
+}).refine((payload) => Object.keys(payload).length > 0, {
+  message: "At least one field is required"
+});
+var listSessionsQuerySchema = zod_default.object({
+  page: zod_default.coerce.number().int().min(1).default(1),
+  limit: zod_default.coerce.number().int().min(1).max(100).default(20),
+  status: zod_default.enum(Object.values(WorkoutSessionStatus)).optional()
+});
+var addExerciseBodySchema = zod_default.object({
+  exerciseId: zod_default.string().min(1),
+  targetSets: zod_default.coerce.number().int().min(1).max(50),
+  targetReps: zod_default.coerce.number().int().min(1).max(100),
+  targetWeightKg: zod_default.coerce.number().min(0).max(999.99).optional(),
+  restSeconds: zod_default.coerce.number().int().min(0).max(600).optional().default(60),
+  section: sectionEnum.optional().default("workout"),
+  durationSeconds: zod_default.coerce.number().int().min(1).max(86400).optional(),
+  notes: zod_default.string().max(500).optional()
+});
+var updateWorkoutExerciseBodySchema = zod_default.object({
+  targetSets: zod_default.coerce.number().int().min(1).max(50).optional(),
+  targetReps: zod_default.coerce.number().int().min(1).max(100).optional(),
+  targetWeightKg: zod_default.coerce.number().min(0).max(999.99).optional(),
+  restSeconds: zod_default.coerce.number().int().min(0).max(600).optional(),
+  section: sectionEnum.optional(),
+  durationSeconds: zod_default.coerce.number().int().min(0).max(86400).optional(),
+  notes: zod_default.string().max(500).optional(),
+  caloriesBurned: zod_default.coerce.number().int().min(0).max(1e5).optional(),
+  isCompleted: zod_default.coerce.boolean().optional()
+}).refine((payload) => Object.keys(payload).length > 0, {
+  message: "At least one field is required"
+});
+var reorderExercisesBodySchema = zod_default.object({
+  order: zod_default.array(zod_default.string().min(1)).min(1)
+});
+var logSetBodySchema = zod_default.object({
+  actualReps: zod_default.coerce.number().int().min(1).max(999),
+  actualWeightKg: zod_default.coerce.number().min(0).max(999.99),
+  rpe: zod_default.coerce.number().min(1).max(10).optional(),
+  isWarmup: zod_default.coerce.boolean().optional().default(false),
+  notes: zod_default.string().max(500).optional()
+});
+var updateSetBodySchema = zod_default.object({
+  actualReps: zod_default.coerce.number().int().min(1).max(999).optional(),
+  actualWeightKg: zod_default.coerce.number().min(0).max(999.99).optional(),
+  rpe: zod_default.coerce.number().min(1).max(10).optional(),
+  isWarmup: zod_default.coerce.boolean().optional(),
+  notes: zod_default.string().max(500).optional()
+}).refine((payload) => Object.keys(payload).length > 0, {
+  message: "At least one field is required"
+});
+var historyQuerySchema = zod_default.object({
+  from: zod_default.coerce.date().optional(),
+  to: zod_default.coerce.date().optional(),
+  cursor: zod_default.string().optional(),
+  limit: zod_default.coerce.number().int().min(1).max(100).default(30)
+});
+
+// src/controllers/workout.controller.ts
+var getIdParam20 = (idParam) => {
+  if (typeof idParam !== "string" || !import_mongoose100.default.Types.ObjectId.isValid(idParam)) {
+    return null;
+  }
+  return idParam;
+};
+var normalizeToUtcDate3 = (value) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+var touchSession = async (sessionId, actorId, actorRole) => {
+  await WorkoutSession_default.findByIdAndUpdate(sessionId, {
+    lastTouchedBy: new import_mongoose100.default.Types.ObjectId(actorId),
+    lastTouchedByModel: actorModelForRole(actorRole)
+  });
+};
+var buildSessionWithDetails = async (sessionId) => {
+  const session = await WorkoutSession_default.findById(sessionId).lean();
+  if (!session)
+    return null;
+  const workoutExercises = await WorkoutExercise_default.find({
+    sessionId: session._id
+  }).sort({ orderIndex: 1 }).lean();
+  const exerciseIds = workoutExercises.map((we) => we.exerciseId);
+  const exercises = await Exercise_default.find({ _id: { $in: exerciseIds } }).lean();
+  const exerciseMap = new Map(exercises.map((e2) => [e2._id.toString(), e2]));
+  const workoutExerciseIds = workoutExercises.map((we) => we._id);
+  const setLogs = await SetLog_default.find({
+    workoutExerciseId: { $in: workoutExerciseIds }
+  }).sort({ setNumber: 1 }).lean();
+  const setLogsByExercise = new Map;
+  for (const log of setLogs) {
+    const key = log.workoutExerciseId.toString();
+    if (!setLogsByExercise.has(key)) {
+      setLogsByExercise.set(key, []);
+    }
+    setLogsByExercise.get(key).push(log);
+  }
+  const exercisesWithSets = workoutExercises.map((we) => {
+    const exercise = exerciseMap.get(we.exerciseId.toString());
+    return {
+      ...we,
+      exercise: exercise ? {
+        _id: exercise._id.toString(),
+        name: exercise.name,
+        muscleGroup: exercise.muscleGroups?.[0] ?? "FullBody",
+        difficulty: exercise.difficulty,
+        equipment: exercise.equipment,
+        caloriesPerSet: exercise.caloriesPerSet,
+        sectionTypes: exercise.sectionTypes ?? ["workout"]
+      } : null,
+      sets: setLogsByExercise.get(we._id.toString()) || []
+    };
+  });
+  return { ...session, exercises: exercisesWithSets };
+};
+var getActiveSession = async (req, res, next) => {
+  try {
+    const userId = new import_mongoose100.default.Types.ObjectId(req.subjectUserId);
+    const today = normalizeToUtcDate3(new Date);
+    const session = await WorkoutSession_default.findOne({
+      userId,
+      date: today,
+      status: "Active" /* Active */
+    });
+    if (!session) {
+      res.status(200).json({ session: null, elapsedSeconds: 0 });
+      return;
+    }
+    const detailed = await buildSessionWithDetails(session._id);
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - session.startedAt.getTime()) / 1000));
+    res.status(200).json({ session: detailed, elapsedSeconds });
+  } catch (error51) {
+    next(error51);
+  }
+};
+var getTodaySession = async (req, res, next) => {
+  try {
+    const today = normalizeToUtcDate3(new Date);
+    const userId = new import_mongoose100.default.Types.ObjectId(req.subjectUserId);
+    let session = await WorkoutSession_default.findOne({
+      userId,
+      date: today,
+      status: "Active" /* Active */
+    });
+    if (!session) {
+      session = await WorkoutSession_default.create({
+        userId,
+        date: today,
+        status: "Active" /* Active */,
+        startedAt: new Date,
+        lastTouchedBy: new import_mongoose100.default.Types.ObjectId(req.user.id),
+        lastTouchedByModel: actorModelForRole(req.user.role)
+      });
+    }
+    const detailed = await buildSessionWithDetails(session._id);
+    res.status(200).json(detailed);
+  } catch (error51) {
+    next(error51);
+  }
+};
+var listMySessions = async (req, res, next) => {
+  try {
+    const parsed = listSessionsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: parsed.error.issues
+      });
+      return;
+    }
+    const { page, limit, status } = parsed.data;
+    const userId = new import_mongoose100.default.Types.ObjectId(req.subjectUserId);
+    const filter = { userId };
+    if (status)
+      filter.status = status;
+    const [sessions, total] = await Promise.all([
+      WorkoutSession_default.find(filter).sort({ date: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      WorkoutSession_default.countDocuments(filter)
+    ]);
+    res.status(200).json({
+      sessions,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error51) {
+    next(error51);
+  }
+};
+var getSessionById = async (req, res, next) => {
+  try {
+    const id = getIdParam20(req.params.id);
+    if (!id) {
+      res.status(400).json({ message: "Invalid session ID" });
+      return;
+    }
+    const session = await WorkoutSession_default.findById(id);
+    if (!session) {
+      res.status(404).json({ message: "Workout session not found" });
+      return;
+    }
+    if (session.userId.toString() !== req.subjectUserId) {
+      res.status(403).json({ message: "Not authorized" });
+      return;
+    }
+    const detailed = await buildSessionWithDetails(session._id);
+    res.status(200).json(detailed);
+  } catch (error51) {
+    next(error51);
+  }
+};
+var createSession = async (req, res, next) => {
+  try {
+    const parsed = createSessionBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: parsed.error.issues
+      });
+      return;
+    }
+    const userId = new import_mongoose100.default.Types.ObjectId(req.subjectUserId);
+    const actorObjectId = new import_mongoose100.default.Types.ObjectId(req.user.id);
+    const date5 = normalizeToUtcDate3(parsed.data.date || new Date);
+    const existing = await WorkoutSession_default.findOne({
+      userId,
+      date: date5,
+      status: "Active" /* Active */
+    });
+    if (existing) {
+      const exerciseCount = await WorkoutExercise_default.countDocuments({
+        sessionId: existing._id
+      });
+      if (exerciseCount === 0) {
+        existing.startedAt = new Date;
+        await existing.save();
+      }
+      const detailed2 = await buildSessionWithDetails(existing._id);
+      res.status(200).json(detailed2);
+      return;
+    }
+    const session = await WorkoutSession_default.create({
+      userId,
+      date: date5,
+      status: "Active" /* Active */,
+      startedAt: new Date,
+      notes: parsed.data.notes || null,
+      planId: parsed.data.planId ? new import_mongoose100.default.Types.ObjectId(parsed.data.planId) : null,
+      lastTouchedBy: actorObjectId,
+      lastTouchedByModel: actorModelForRole(req.user.role)
+    });
+    let exercisesToAdd = parsed.data.exercises;
+    if (parsed.data.planId) {
+      const plan = await import_mongoose100.default.model("WorkoutPlan").findById(parsed.data.planId);
+      if (!plan) {
+        res.status(404).json({ error: "Plan not found" });
+        return;
+      }
+      const isAssigned = plan.assignedUsers.some((id) => id.toString() === userId.toString());
+      const isCreator = plan.createdBy.toString() === req.user.id;
+      if (!isAssigned && !isCreator) {
+        res.status(403).json({ error: "Not authorized to use this plan" });
+        return;
+      }
+      if (plan.days && plan.days.length > 0) {
+        const requestedDay = parsed.data.planDayNumber;
+        const day = (requestedDay != null ? plan.days.find((d) => d.dayNumber === requestedDay) : undefined) ?? plan.days[0];
+        exercisesToAdd = day.exercises.map((planEx) => ({
+          exerciseId: planEx.exerciseId.toString(),
+          targetSets: planEx.targetSets,
+          targetReps: planEx.targetReps,
+          targetWeightKg: planEx.targetWeightKg,
+          restSeconds: planEx.restSeconds
+        }));
+      }
+    }
+    if (exercisesToAdd.length > 0) {
+      const exerciseIds = exercisesToAdd.map((e2) => e2.exerciseId);
+      const validExercises = await Exercise_default.find({
+        _id: { $in: exerciseIds },
+        $or: [{ isSystem: true }, { createdBy: actorObjectId }]
+      });
+      const validIds = new Set(validExercises.map((e2) => e2._id.toString()));
+      const workoutExercises = exercisesToAdd.filter((e2) => validIds.has(e2.exerciseId)).map((e2, index) => ({
+        sessionId: session._id,
+        exerciseId: new import_mongoose100.default.Types.ObjectId(e2.exerciseId),
+        orderIndex: index,
+        section: e2.section,
+        targetSets: e2.targetSets,
+        targetReps: e2.targetReps,
+        targetWeightKg: e2.targetWeightKg ?? null,
+        restSeconds: e2.restSeconds,
+        durationSeconds: e2.durationSeconds ?? null,
+        notes: e2.notes ?? null
+      }));
+      if (workoutExercises.length > 0) {
+        await WorkoutExercise_default.insertMany(workoutExercises);
+      }
+    }
+    const detailed = await buildSessionWithDetails(session._id);
+    res.status(201).json(detailed);
+  } catch (error51) {
+    next(error51);
+  }
+};
+var updateSession = async (req, res, next) => {
+  try {
+    const id = getIdParam20(req.params.id);
+    if (!id) {
+      res.status(400).json({ message: "Invalid session ID" });
+      return;
+    }
+    const parsed = updateSessionBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: parsed.error.issues
+      });
+      return;
+    }
+    const session = await WorkoutSession_default.findById(id);
+    if (!session) {
+      res.status(404).json({ message: "Workout session not found" });
+      return;
+    }
+    if (session.userId.toString() !== req.subjectUserId) {
+      res.status(403).json({ message: "Not authorized" });
+      return;
+    }
+    if (session.status === "Completed" /* Completed */ && parsed.data.status === "Active" /* Active */) {
+      res.status(409).json({ message: "Cannot reactivate a completed session" });
+      return;
+    }
+    const update = {
+      ...parsed.data,
+      lastTouchedBy: new import_mongoose100.default.Types.ObjectId(req.user.id),
+      lastTouchedByModel: actorModelForRole(req.user.role)
+    };
+    if (parsed.data.status === "Completed" /* Completed */) {
+      update.completedAt = new Date;
+    }
+    const updated = await WorkoutSession_default.findByIdAndUpdate(id, update, {
+      new: true
+    });
+    res.status(200).json(updated);
+  } catch (error51) {
+    next(error51);
+  }
+};
+var deleteSession = async (req, res, next) => {
+  try {
+    const id = getIdParam20(req.params.id);
+    if (!id) {
+      res.status(400).json({ message: "Invalid session ID" });
+      return;
+    }
+    const session = await WorkoutSession_default.findById(id);
+    if (!session) {
+      res.status(404).json({ message: "Workout session not found" });
+      return;
+    }
+    if (session.userId.toString() !== req.subjectUserId) {
+      res.status(403).json({ message: "Not authorized" });
+      return;
+    }
+    if (session.status !== "Active" /* Active */) {
+      res.status(409).json({ message: "Can only delete active sessions" });
+      return;
+    }
+    const workoutExercises = await WorkoutExercise_default.find({
+      sessionId: session._id
+    });
+    const workoutExerciseIds = workoutExercises.map((we) => we._id);
+    const setCount = await SetLog_default.countDocuments({
+      workoutExerciseId: { $in: workoutExerciseIds }
+    });
+    if (setCount > 0) {
+      res.status(409).json({
+        message: "Cannot delete a session with logged sets"
+      });
+      return;
+    }
+    await WorkoutExercise_default.deleteMany({ sessionId: session._id });
+    await WorkoutSession_default.findByIdAndDelete(id);
+    res.status(200).json({ message: "Workout session deleted" });
+  } catch (error51) {
+    next(error51);
+  }
+};
+var addExerciseToSession = async (req, res, next) => {
+  try {
+    const sessionId = getIdParam20(req.params.sessionId);
+    if (!sessionId) {
+      res.status(400).json({ message: "Invalid session ID" });
+      return;
+    }
+    const parsed = addExerciseBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: parsed.error.issues
+      });
+      return;
+    }
+    const session = await WorkoutSession_default.findById(sessionId);
+    if (!session || session.userId.toString() !== req.subjectUserId) {
+      res.status(404).json({ message: "Workout session not found" });
+      return;
+    }
+    if (session.status !== "Active" /* Active */) {
+      res.status(409).json({ message: "Session is not active" });
+      return;
+    }
+    const exerciseId = getIdParam20(parsed.data.exerciseId);
+    if (!exerciseId) {
+      res.status(400).json({ message: "Invalid exercise ID" });
+      return;
+    }
+    let exercise = await Exercise_default.findOne({
+      _id: exerciseId,
+      $or: [
+        { isSystem: true },
+        { createdBy: new import_mongoose100.default.Types.ObjectId(req.user.id) }
+      ]
+    });
+    if (!exercise) {
+      const exerciseObjectId = new import_mongoose100.default.Types.ObjectId(exerciseId);
+      const assignment = await WorkoutPlanAssignment_default.findOne({
+        userId: new import_mongoose100.default.Types.ObjectId(req.subjectUserId),
+        status: "active",
+        isDeleted: { $ne: true },
+        "userDays.exercises.exerciseId": exerciseObjectId
+      }).select("_id");
+      if (assignment) {
+        exercise = await Exercise_default.findOne({
+          _id: exerciseObjectId,
+          isDeleted: { $ne: true }
+        });
+      }
+    }
+    if (!exercise) {
+      res.status(404).json({ message: "Exercise not found" });
+      return;
+    }
+    const maxOrder = await WorkoutExercise_default.findOne({ sessionId: session._id }).sort({ orderIndex: -1 }).select("orderIndex").lean();
+    if (!maxOrder) {
+      session.startedAt = new Date;
+      await session.save();
+    }
+    const workoutExercise = await WorkoutExercise_default.create({
+      sessionId: session._id,
+      exerciseId: exercise._id,
+      orderIndex: maxOrder ? maxOrder.orderIndex + 1 : 0,
+      section: parsed.data.section,
+      targetSets: parsed.data.targetSets,
+      targetReps: parsed.data.targetReps,
+      targetWeightKg: parsed.data.targetWeightKg ?? null,
+      restSeconds: parsed.data.restSeconds,
+      durationSeconds: parsed.data.durationSeconds ?? null,
+      notes: parsed.data.notes ?? null
+    });
+    await touchSession(session._id, req.user.id, req.user.role);
+    res.status(201).json(workoutExercise);
+  } catch (error51) {
+    next(error51);
+  }
+};
+var updateWorkoutExercise = async (req, res, next) => {
+  try {
+    const sessionId = getIdParam20(req.params.sessionId);
+    const id = getIdParam20(req.params.id);
+    if (!sessionId || !id) {
+      res.status(400).json({ message: "Invalid ID" });
+      return;
+    }
+    const parsed = updateWorkoutExerciseBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: parsed.error.issues
+      });
+      return;
+    }
+    const session = await WorkoutSession_default.findById(sessionId);
+    if (!session || session.userId.toString() !== req.subjectUserId) {
+      res.status(404).json({ message: "Workout session not found" });
+      return;
+    }
+    if (parsed.data.isCompleted === true) {
+      const exercises = await WorkoutExercise_default.find({ sessionId: session._id });
+      const completedExercisesCount = exercises.filter((we) => we.isCompleted).length;
+      const exerciseIds = exercises.map((we) => we._id);
+      const totalSetLogsInSession = await SetLog_default.countDocuments({
+        workoutExerciseId: { $in: exerciseIds }
+      });
+      if (totalSetLogsInSession === 0 && completedExercisesCount === 0) {
+        session.startedAt = new Date;
+        await session.save();
+      }
+    }
+    const workoutExercise = await WorkoutExercise_default.findOneAndUpdate({ _id: id, sessionId: session._id }, parsed.data, { new: true });
+    if (!workoutExercise) {
+      res.status(404).json({ message: "Workout exercise not found" });
+      return;
+    }
+    await touchSession(session._id, req.user.id, req.user.role);
+    res.status(200).json(workoutExercise);
+  } catch (error51) {
+    next(error51);
+  }
+};
+var deleteWorkoutExercise = async (req, res, next) => {
+  try {
+    const sessionId = getIdParam20(req.params.sessionId);
+    const id = getIdParam20(req.params.id);
+    if (!sessionId || !id) {
+      res.status(400).json({ message: "Invalid ID" });
+      return;
+    }
+    const session = await WorkoutSession_default.findById(sessionId);
+    if (!session || session.userId.toString() !== req.subjectUserId) {
+      res.status(404).json({ message: "Workout session not found" });
+      return;
+    }
+    const workoutExercise = await WorkoutExercise_default.findOne({
+      _id: id,
+      sessionId: session._id
+    });
+    if (!workoutExercise) {
+      res.status(404).json({ message: "Workout exercise not found" });
+      return;
+    }
+    await SetLog_default.deleteMany({ workoutExerciseId: workoutExercise._id });
+    await WorkoutExercise_default.findByIdAndDelete(id);
+    await touchSession(session._id, req.user.id, req.user.role);
+    res.status(200).json({ message: "Exercise removed from session" });
+  } catch (error51) {
+    next(error51);
+  }
+};
+var reorderExercises = async (req, res, next) => {
+  try {
+    const sessionId = getIdParam20(req.params.sessionId);
+    if (!sessionId) {
+      res.status(400).json({ message: "Invalid session ID" });
+      return;
+    }
+    const parsed = reorderExercisesBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: parsed.error.issues
+      });
+      return;
+    }
+    const session = await WorkoutSession_default.findById(sessionId);
+    if (!session || session.userId.toString() !== req.subjectUserId) {
+      res.status(404).json({ message: "Workout session not found" });
+      return;
+    }
+    const ops = parsed.data.order.map((exerciseId, index) => ({
+      updateOne: {
+        filter: {
+          _id: new import_mongoose100.default.Types.ObjectId(exerciseId),
+          sessionId: session._id
+        },
+        update: { $set: { orderIndex: index } }
+      }
+    }));
+    await WorkoutExercise_default.bulkWrite(ops);
+    const updated = await WorkoutExercise_default.find({ sessionId: session._id }).sort({ orderIndex: 1 }).lean();
+    await touchSession(session._id, req.user.id, req.user.role);
+    res.status(200).json(updated);
+  } catch (error51) {
+    next(error51);
+  }
+};
+var logSet = async (req, res, next) => {
+  try {
+    const sessionId = getIdParam20(req.params.sessionId);
+    const exerciseId = getIdParam20(req.params.exerciseId);
+    if (!sessionId || !exerciseId) {
+      res.status(400).json({ message: "Invalid ID" });
+      return;
+    }
+    const parsed = logSetBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: parsed.error.issues
+      });
+      return;
+    }
+    const session = await WorkoutSession_default.findById(sessionId);
+    if (!session || session.userId.toString() !== req.subjectUserId) {
+      res.status(404).json({ message: "Workout session not found" });
+      return;
+    }
+    if (session.status !== "Active" /* Active */) {
+      res.status(409).json({ message: "Session is not active" });
+      return;
+    }
+    const workoutExercise = await WorkoutExercise_default.findOne({
+      _id: exerciseId,
+      sessionId: session._id
+    });
+    if (!workoutExercise) {
+      res.status(404).json({ message: "Workout exercise not found" });
+      return;
+    }
+    const sessionExercises = await WorkoutExercise_default.find({ sessionId: session._id });
+    const completedExercisesCount = sessionExercises.filter((we) => we.isCompleted).length;
+    const exerciseIds = sessionExercises.map((we) => we._id);
+    const totalSetLogsInSession = await SetLog_default.countDocuments({
+      workoutExerciseId: { $in: exerciseIds }
+    });
+    if (totalSetLogsInSession === 0 && completedExercisesCount === 0) {
+      session.startedAt = new Date;
+      await session.save();
+    }
+    const currentSetCount = await SetLog_default.countDocuments({
+      workoutExerciseId: workoutExercise._id
+    });
+    const setLog = await SetLog_default.create({
+      workoutExerciseId: workoutExercise._id,
+      setNumber: currentSetCount + 1,
+      actualReps: parsed.data.actualReps,
+      actualWeightKg: parsed.data.actualWeightKg,
+      rpe: parsed.data.rpe ?? null,
+      isWarmup: parsed.data.isWarmup,
+      completedAt: new Date,
+      notes: parsed.data.notes ?? null,
+      loggedBy: new import_mongoose100.default.Types.ObjectId(req.user.id),
+      loggedByModel: actorModelForRole(req.user.role)
+    });
+    const nonWarmupCount = await SetLog_default.countDocuments({
+      workoutExerciseId: workoutExercise._id,
+      isWarmup: false
+    });
+    const exerciseCompleted = nonWarmupCount >= workoutExercise.targetSets;
+    const setsRemaining = Math.max(0, workoutExercise.targetSets - nonWarmupCount);
+    if (exerciseCompleted && !workoutExercise.isCompleted) {
+      await WorkoutExercise_default.findByIdAndUpdate(workoutExercise._id, {
+        isCompleted: true
+      });
+    }
+    await touchSession(session._id, req.user.id, req.user.role);
+    res.status(201).json({
+      ...setLog.toObject(),
+      exerciseCompleted,
+      setsRemaining
+    });
+  } catch (error51) {
+    next(error51);
+  }
+};
+var updateSet = async (req, res, next) => {
+  try {
+    const sessionId = getIdParam20(req.params.sessionId);
+    const exerciseId = getIdParam20(req.params.exerciseId);
+    const setId = getIdParam20(req.params.setId);
+    if (!sessionId || !exerciseId || !setId) {
+      res.status(400).json({ message: "Invalid ID" });
+      return;
+    }
+    const parsed = updateSetBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: parsed.error.issues
+      });
+      return;
+    }
+    const session = await WorkoutSession_default.findById(sessionId);
+    if (!session || session.userId.toString() !== req.subjectUserId) {
+      res.status(404).json({ message: "Workout session not found" });
+      return;
+    }
+    const workoutExercise = await WorkoutExercise_default.findOne({
+      _id: exerciseId,
+      sessionId: session._id
+    });
+    if (!workoutExercise) {
+      res.status(404).json({ message: "Workout exercise not found" });
+      return;
+    }
+    const setLog = await SetLog_default.findOneAndUpdate({ _id: setId, workoutExerciseId: workoutExercise._id }, parsed.data, { new: true });
+    if (!setLog) {
+      res.status(404).json({ message: "Set not found" });
+      return;
+    }
+    await touchSession(session._id, req.user.id, req.user.role);
+    res.status(200).json(setLog);
+  } catch (error51) {
+    next(error51);
+  }
+};
+var deleteSet = async (req, res, next) => {
+  try {
+    const sessionId = getIdParam20(req.params.sessionId);
+    const exerciseId = getIdParam20(req.params.exerciseId);
+    const setId = getIdParam20(req.params.setId);
+    if (!sessionId || !exerciseId || !setId) {
+      res.status(400).json({ message: "Invalid ID" });
+      return;
+    }
+    const session = await WorkoutSession_default.findById(sessionId);
+    if (!session || session.userId.toString() !== req.subjectUserId) {
+      res.status(404).json({ message: "Workout session not found" });
+      return;
+    }
+    const workoutExercise = await WorkoutExercise_default.findOne({
+      _id: exerciseId,
+      sessionId: session._id
+    });
+    if (!workoutExercise) {
+      res.status(404).json({ message: "Workout exercise not found" });
+      return;
+    }
+    const setLog = await SetLog_default.findOneAndDelete({
+      _id: setId,
+      workoutExerciseId: workoutExercise._id
+    });
+    if (!setLog) {
+      res.status(404).json({ message: "Set not found" });
+      return;
+    }
+    const remainingSets = await SetLog_default.find({
+      workoutExerciseId: workoutExercise._id
+    }).sort({ setNumber: 1 });
+    const renumberOps = remainingSets.map((s3, index) => ({
+      updateOne: {
+        filter: { _id: s3._id },
+        update: { $set: { setNumber: index + 1 } }
+      }
+    }));
+    if (renumberOps.length > 0) {
+      await SetLog_default.bulkWrite(renumberOps);
+    }
+    const nonWarmupCount = await SetLog_default.countDocuments({
+      workoutExerciseId: workoutExercise._id,
+      isWarmup: false
+    });
+    const isCompleted = nonWarmupCount >= workoutExercise.targetSets;
+    if (workoutExercise.isCompleted !== isCompleted) {
+      await WorkoutExercise_default.findByIdAndUpdate(workoutExercise._id, {
+        isCompleted
+      });
+    }
+    await touchSession(session._id, req.user.id, req.user.role);
+    res.status(200).json({ message: "Set deleted" });
+  } catch (error51) {
+    next(error51);
+  }
+};
+var getMyStats = async (req, res, next) => {
+  try {
+    const userId = new import_mongoose100.default.Types.ObjectId(req.subjectUserId);
+    const now = new Date;
+    const dayOfWeek = now.getUTCDay();
+    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const weekStart = normalizeToUtcDate3(new Date(now.getTime() - mondayOffset * 86400000));
+    const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+    const weeklyWorkouts = await WorkoutSession_default.countDocuments({
+      userId,
+      status: "Completed" /* Completed */,
+      date: { $gte: weekStart, $lt: weekEnd }
+    });
+    const weekSessions = await WorkoutSession_default.find({
+      userId,
+      status: "Completed" /* Completed */,
+      date: { $gte: weekStart, $lt: weekEnd }
+    }).select("_id").lean();
+    const weekSessionIds = weekSessions.map((s3) => s3._id);
+    const weekExercises = await WorkoutExercise_default.find({
+      sessionId: { $in: weekSessionIds }
+    }).lean();
+    const weekExerciseIds = weekExercises.map((we) => we._id);
+    const weekSets = await SetLog_default.find({
+      workoutExerciseId: { $in: weekExerciseIds },
+      isWarmup: false
+    }).lean();
+    const totalSetsThisWeek = weekSets.length;
+    let totalVolumeKg = 0;
+    for (const set2 of weekSets) {
+      totalVolumeKg += set2.actualWeightKg * set2.actualReps;
+    }
+    const exerciseIds = [
+      ...new Set(weekExercises.map((we) => we.exerciseId.toString()))
+    ];
+    const exerciseDocs = await Exercise_default.find({
+      _id: { $in: exerciseIds }
+    }).select("_id caloriesPerSet").lean();
+    const caloriesMap = new Map(exerciseDocs.map((e2) => [e2._id.toString(), e2.caloriesPerSet]));
+    const exerciseIdByWorkoutExercise = new Map(weekExercises.map((we) => [we._id.toString(), we.exerciseId.toString()]));
+    let caloriesBurnedWeek = 0;
+    for (const set2 of weekSets) {
+      const exId = exerciseIdByWorkoutExercise.get(set2.workoutExerciseId.toString());
+      if (exId) {
+        caloriesBurnedWeek += caloriesMap.get(exId) ?? 0;
+      }
+    }
+    let currentStreak = 0;
+    let checkDate = normalizeToUtcDate3(now);
+    while (true) {
+      const hasSession = await WorkoutSession_default.exists({
+        userId,
+        status: "Completed" /* Completed */,
+        date: checkDate
+      });
+      if (!hasSession)
+        break;
+      currentStreak++;
+      checkDate = new Date(checkDate.getTime() - 86400000);
+    }
+    const fourWeeksAgo = new Date(now.getTime() - 28 * 86400000);
+    const completedInFourWeeks = await WorkoutSession_default.countDocuments({
+      userId,
+      status: "Completed" /* Completed */,
+      date: { $gte: normalizeToUtcDate3(fourWeeksAgo) }
+    });
+    const consistencyScore = Math.min(1, completedInFourWeeks / 28);
+    const allCompletedSessions = await WorkoutSession_default.find({
+      userId,
+      status: "Completed" /* Completed */
+    }).select("_id").lean();
+    const allSessionIds = allCompletedSessions.map((s3) => s3._id);
+    const allWorkoutExercises = await WorkoutExercise_default.find({
+      sessionId: { $in: allSessionIds }
+    }).lean();
+    const allWorkoutExerciseIds = allWorkoutExercises.map((we) => we._id);
+    const prPipeline = [
+      {
+        $match: {
+          workoutExerciseId: { $in: allWorkoutExerciseIds },
+          isWarmup: false
+        }
+      },
+      {
+        $lookup: {
+          from: "workoutexercises",
+          localField: "workoutExerciseId",
+          foreignField: "_id",
+          as: "workoutExercise"
+        }
+      },
+      { $unwind: "$workoutExercise" },
+      {
+        $lookup: {
+          from: "exercises",
+          localField: "workoutExercise.exerciseId",
+          foreignField: "_id",
+          as: "exercise"
+        }
+      },
+      { $unwind: "$exercise" },
+      {
+        $group: {
+          _id: "$exercise._id",
+          name: { $first: "$exercise.name" },
+          maxWeightKg: { $max: "$actualWeightKg" },
+          maxReps: { $max: "$actualReps" },
+          achievedAt: { $last: "$completedAt" }
+        }
+      }
+    ];
+    const prResults = await SetLog_default.aggregate(prPipeline);
+    const personalRecords = {};
+    for (const pr of prResults) {
+      const key = pr.name.replace(/\s+/g, "").replace(/^./, (c2) => c2.toLowerCase());
+      personalRecords[key] = {
+        maxWeightKg: pr.maxWeightKg,
+        maxReps: pr.maxReps,
+        achievedAt: pr.achievedAt
+      };
+    }
+    res.status(200).json({
+      weeklyWorkouts,
+      totalSetsThisWeek,
+      caloriesBurnedWeek,
+      consistencyScore: Math.round(consistencyScore * 100) / 100,
+      currentStreak,
+      totalVolumeKg: Math.round(totalVolumeKg * 100) / 100,
+      personalRecords
+    });
+  } catch (error51) {
+    next(error51);
+  }
+};
+var getMyHistory = async (req, res, next) => {
+  try {
+    const parsed = historyQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: parsed.error.issues
+      });
+      return;
+    }
+    const userId = new import_mongoose100.default.Types.ObjectId(req.subjectUserId);
+    const { limit, cursor } = parsed.data;
+    const now = new Date;
+    const from = parsed.data.from || new Date(now.getTime() - 365 * 86400000);
+    const to2 = parsed.data.to || now;
+    const filter = {
+      userId,
+      isDeleted: { $ne: true },
+      date: { $gte: normalizeToUtcDate3(from), $lte: normalizeToUtcDate3(to2) }
+    };
+    if (cursor && import_mongoose100.default.Types.ObjectId.isValid(cursor)) {
+      filter._id = { $lt: new import_mongoose100.default.Types.ObjectId(cursor) };
+    }
+    const sessions = await WorkoutSession_default.find(filter).sort({ date: -1, _id: -1 }).limit(limit + 1).lean();
+    const hasMore = sessions.length > limit;
+    const page = sessions.slice(0, limit);
+    const nextCursor = hasMore && page[page.length - 1] ? page[page.length - 1]._id.toString() : null;
+    const workouts = page.map((session) => {
+      const duration3 = session.completedAt && session.startedAt ? Math.round((new Date(session.completedAt).getTime() - new Date(session.startedAt).getTime()) / 1000) : 0;
+      return {
+        id: session._id,
+        date: session.date,
+        status: session.status,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        notes: session.notes,
+        planId: session.planId,
+        duration: duration3
+      };
+    });
+    res.status(200).json({ workouts, nextCursor });
+  } catch (error51) {
+    next(error51);
+  }
+};
+
+// src/routes/workout.routes.ts
+var buildWorkoutRouter = (roles, subjectResolver) => {
+  const router5 = import_express27.Router({ mergeParams: true });
+  const guard = authorize(roles);
+  router5.use(workoutRateLimit);
+  router5.get("/active", guard, subjectResolver, getActiveSession);
+  router5.get("/today", guard, subjectResolver, getTodaySession);
+  router5.get("/me", guard, subjectResolver, listMySessions);
+  router5.get("/me/stats", guard, subjectResolver, getMyStats);
+  router5.get("/me/history", guard, subjectResolver, getMyHistory);
+  router5.post("/", guard, subjectResolver, createSession);
+  router5.get("/:id", guard, subjectResolver, getSessionById);
+  router5.patch("/:id", guard, subjectResolver, updateSession);
+  router5.delete("/:id", guard, subjectResolver, deleteSession);
+  router5.post("/:sessionId/exercises", guard, subjectResolver, addExerciseToSession);
+  router5.patch("/:sessionId/exercises/reorder", guard, subjectResolver, reorderExercises);
+  router5.patch("/:sessionId/exercises/:id", guard, subjectResolver, updateWorkoutExercise);
+  router5.delete("/:sessionId/exercises/:id", guard, subjectResolver, deleteWorkoutExercise);
+  router5.post("/:sessionId/exercises/:exerciseId/sets", guard, subjectResolver, logSet);
+  router5.patch("/:sessionId/exercises/:exerciseId/sets/:setId", guard, subjectResolver, updateSet);
+  router5.delete("/:sessionId/exercises/:exerciseId/sets/:setId", guard, subjectResolver, deleteSet);
+  return router5;
+};
+var workoutRouter = import_express27.Router();
+workoutRouter.use(authenticateToken);
+workoutRouter.use(buildWorkoutRouter(["user"], subjectIsSelf));
+var workout_routes_default = workoutRouter;
+
 // src/routes/trainer.routes.ts
-var trainerRouter = import_express27.Router();
+var trainerRouter = import_express28.Router();
 trainerRouter.get("/public", getPublicTrainers);
 trainerRouter.get("/public/:id", getPublicTrainerById);
 trainerRouter.use(authenticateToken);
 trainerRouter.post("/", authorize(["admin"]), createTrainer);
 trainerRouter.get("/", authorize(["admin"]), getAllTrainers);
-trainerRouter.get("/:id", authorize(["admin", "trainer"]), getTrainerById);
+trainerRouter.get("/me/members", authorize(["trainer", "admin"]), getMyMembers);
+trainerRouter.get("/me/members/:userId", authorize(["trainer", "admin"]), getMyMemberById);
+trainerRouter.use("/me/members/:userId/workouts", buildWorkoutRouter(["trainer", "admin"], subjectIsMember));
+trainerRouter.get("/:id", authorize(["admin", "trainer", "doctor"]), getTrainerById);
 trainerRouter.patch("/:id", authorize(["admin", "trainer"]), updateTrainerById);
 trainerRouter.delete("/:id", authorize(["admin"]), deleteTrainerById);
 var trainer_routes_default = trainerRouter;
 
 // src/routes/user.routes.ts
-var import_express28 = __toESM(require_express2(), 1);
+var import_express29 = __toESM(require_express2(), 1);
 
 // src/controllers/user.controller.ts
-var import_mongoose98 = __toESM(require_mongoose2(), 1);
+var import_mongoose101 = __toESM(require_mongoose2(), 1);
+init_Enums();
 init_HealthGoals();
 init_HealthMarkers();
+init_User();
 
 // src/utils/activex.service.ts
 var import_dotenv = __toESM(require_main(), 1);
@@ -594861,7 +597701,7 @@ var fetchBcaRecords = async (phone, sinceDate) => {
   }
   return payload.result?.records ?? [];
 };
-var num = (val) => {
+var num2 = (val) => {
   if (val === null || val === undefined)
     return null;
   const n = typeof val === "number" ? val : Number(val);
@@ -594871,7 +597711,7 @@ var mapActiveXRecordToBcaMetric = (record2, userId, receivedAt = new Date) => {
   const r2 = record2;
   const insertion = r2.insertionDate ? new Date(r2.insertionDate) : null;
   const recordedAt = insertion && !Number.isNaN(insertion.getTime()) ? insertion : receivedAt;
-  const age = num(r2.ppAge);
+  const age = num2(r2.ppAge);
   return {
     userId,
     recordedAt,
@@ -594880,31 +597720,32 @@ var mapActiveXRecordToBcaMetric = (record2, userId, receivedAt = new Date) => {
     age: age !== null ? String(age) : null,
     gender: typeof r2.ppSex === "string" ? r2.ppSex : null,
     vitals: {
-      weight_kg: num(r2.ppWeightKg),
-      height_cm: num(r2.ppHeightCm),
-      bmi: num(r2.ppBMI),
-      pulse: num(r2.ppHeartRate),
-      heart_rate: num(r2.ppHeartRate)
+      weight_kg: num2(r2.ppWeightKg),
+      height_cm: num2(r2.ppHeightCm),
+      bmi: num2(r2.ppBMI),
+      pulse: num2(r2.ppHeartRate),
+      heart_rate: num2(r2.ppHeartRate)
     },
     bodyComposition: {
-      body_fat_mass_kg: num(r2.ppBodyfatKg),
-      body_fat_percent: num(r2.ppFat),
-      skeletal_muscle_mass_kg: num(r2.ppBodySkeletalKg),
-      muscle_mass_kg: num(r2.ppMuscleKg),
-      total_body_water_L: num(r2.ppWaterKg),
-      protein_kg: num(r2.ppProteinKg),
-      minerals_kg: num(r2.ppMineralKg),
-      visceral_fat: num(r2.ppVisceralFat),
-      basal_metabolic_rate_cal: num(r2.ppBMR),
-      body_age: num(r2.ppBodyAge)
+      body_fat_mass_kg: num2(r2.ppBodyfatKg),
+      body_fat_percent: num2(r2.ppFat),
+      skeletal_muscle_mass_kg: num2(r2.ppBodySkeletalKg),
+      muscle_mass_kg: num2(r2.ppMuscleKg),
+      total_body_water_L: num2(r2.ppWaterKg),
+      protein_kg: num2(r2.ppProteinKg),
+      minerals_kg: num2(r2.ppMineralKg),
+      visceral_fat: num2(r2.ppVisceralFat),
+      basal_metabolic_rate_cal: num2(r2.ppBMR),
+      body_age: num2(r2.ppBodyAge)
     },
-    idealBodyWeight_kg: num(r2.ppIdealWeightKg),
-    weightToLose_kg: num(r2.ppControlWeightKg),
+    idealBodyWeight_kg: num2(r2.ppIdealWeightKg),
+    weightToLose_kg: num2(r2.ppControlWeightKg),
     source: "activex"
   };
 };
 
 // src/validators/user.validator.ts
+init_Enums();
 var genderValues3 = Object.values(Gender);
 var legacyNumericGender2 = {
   "0": "Male" /* Male */,
@@ -595031,6 +597872,9 @@ var updateMyPasswordBodySchema = zod_default.object({
   message: "New password must be different from current password",
   path: ["newPassword"]
 });
+var assignTrainerBodySchema = zod_default.object({
+  trainerId: zod_default.string().min(1).nullable()
+});
 var listUsersQuerySchema = zod_default.object({
   search: zod_default.string().trim().optional(),
   status: zod_default.enum(["all", "pending", "booked"]).optional().default("all").transform((v) => v === "all" ? undefined : v),
@@ -595065,8 +597909,8 @@ var getValidationDetails4 = (issues) => {
   }
   return details;
 };
-var getIdParam20 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose98.default.Types.ObjectId.isValid(idParam)) {
+var getIdParam21 = (idParam) => {
+  if (typeof idParam !== "string" || !import_mongoose101.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -595097,12 +597941,10 @@ var createUser = async (req, res, next) => {
       return;
     }
     if (sanitizedEmail) {
-      const existingUser = await User_default.findOne({
-        email: sanitizedEmail
-      }).select("_id");
-      if (existingUser) {
+      const emailCheck = await isEmailInUseAcrossSystem(sanitizedEmail);
+      if (emailCheck.exists) {
         res.status(409).json({
-          error: "User with this email already exists",
+          error: `An account with this email already exists as a ${emailCheck.accountType}`,
           code: "CONFLICT"
         });
         return;
@@ -595355,7 +598197,7 @@ var getMyUser = async (req, res, next) => {
   }
 };
 var getUserById = async (req, res, next) => {
-  const id = getIdParam20(req.params.id);
+  const id = getIdParam21(req.params.id);
   if (req.user?.role === "user" && req.user.id !== id) {
     res.status(403).json({
       error: "Forbidden",
@@ -595435,7 +598277,7 @@ var getUserById = async (req, res, next) => {
   }
 };
 var getOnboardingProfile = async (req, res, next) => {
-  const id = getIdParam20(req.params.id);
+  const id = getIdParam21(req.params.id);
   if (req.user?.role === "user" && req.user.id !== id) {
     res.status(403).json({
       error: "Forbidden",
@@ -595501,8 +598343,8 @@ var getOnboardingProfile = async (req, res, next) => {
   }
 };
 var getReportSignedUrl = async (req, res, next) => {
-  const userId = getIdParam20(req.params.id);
-  const reportId = getIdParam20(req.params.reportId);
+  const userId = getIdParam21(req.params.id);
+  const reportId = getIdParam21(req.params.reportId);
   if (!userId || !reportId) {
     res.status(400).json({
       error: "Validation failed",
@@ -595531,7 +598373,7 @@ var getReportSignedUrl = async (req, res, next) => {
   }
 };
 var updateUserById = async (req, res, next) => {
-  const id = getIdParam20(req.params.id);
+  const id = getIdParam21(req.params.id);
   if (!id) {
     res.status(400).json({
       error: "Validation failed",
@@ -595584,13 +598426,10 @@ var updateUserById = async (req, res, next) => {
       }
     }
     if (sanitizedEmail) {
-      const existingUser = await User_default.findOne({
-        email: sanitizedEmail,
-        _id: { $ne: id }
-      }).select("_id");
-      if (existingUser) {
+      const emailCheck = await isEmailInUseAcrossSystem(sanitizedEmail, id);
+      if (emailCheck.exists) {
         res.status(409).json({
-          error: "User with this email already exists",
+          error: `An account with this email already exists as a ${emailCheck.accountType}`,
           code: "CONFLICT"
         });
         return;
@@ -595620,7 +598459,7 @@ var updateUserById = async (req, res, next) => {
   }
 };
 var deleteUserById = async (req, res, next) => {
-  const id = getIdParam20(req.params.id);
+  const id = getIdParam21(req.params.id);
   if (!id) {
     res.status(400).json({
       error: "Validation failed",
@@ -595644,7 +598483,7 @@ var deleteUserById = async (req, res, next) => {
   }
 };
 var onboardUser = async (req, res, next) => {
-  const id = getIdParam20(req.params.id);
+  const id = getIdParam21(req.params.id);
   if (!id) {
     res.status(400).json({
       error: "Validation failed",
@@ -595843,7 +598682,7 @@ var syncMyBcaMetrics = async (req, res, next) => {
       return;
     }
     const records = await fetchBcaRecords(phone);
-    const userObjectId = new import_mongoose98.default.Types.ObjectId(req.user.id);
+    const userObjectId = new import_mongoose101.default.Types.ObjectId(req.user.id);
     const receivedAt = new Date;
     let synced = 0;
     for (const record2 of records) {
@@ -595864,991 +598703,103 @@ var syncMyBcaMetrics = async (req, res, next) => {
     next(error51);
   }
 };
+var updateAssignedTrainer = async (req, res, next) => {
+  const id = getIdParam21(req.params.id);
+  if (!id) {
+    res.status(400).json({
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: { id: "Invalid user id" }
+    });
+    return;
+  }
+  const parsedBody = assignTrainerBodySchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    res.status(400).json({
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: getValidationDetails4(parsedBody.error.issues)
+    });
+    return;
+  }
+  try {
+    const { trainerId } = parsedBody.data;
+    if (trainerId) {
+      if (!import_mongoose101.default.Types.ObjectId.isValid(trainerId)) {
+        res.status(400).json({
+          error: "Validation failed",
+          code: "VALIDATION_ERROR",
+          details: { trainerId: "Invalid trainer id" }
+        });
+        return;
+      }
+      const trainerExists = await Trainer_default.exists({ _id: trainerId });
+      if (!trainerExists) {
+        res.status(404).json({
+          error: "Trainer not found",
+          code: "NOT_FOUND"
+        });
+        return;
+      }
+    }
+    const user = await User_default.findByIdAndUpdate(id, {
+      $set: {
+        assignedTrainer: trainerId ?? null,
+        assignedTrainerAt: trainerId ? new Date : null
+      }
+    }, { new: true }).select("username assignedTrainer assignedTrainerAt");
+    if (!user) {
+      res.status(404).json({ error: "User not found", code: "NOT_FOUND" });
+      return;
+    }
+    res.status(200).json({ message: "Assigned trainer updated", user });
+  } catch (error51) {
+    if (error51 instanceof ActiveXError) {
+      res.status(error51.status).json({
+        error: error51.message,
+        code: error51.code
+      });
+      return;
+    }
+    next(error51);
+  }
+};
 
 // src/routes/user.routes.ts
-var userRouter = import_express28.Router();
+var userRouter = import_express29.Router();
 userRouter.use(authenticateToken);
 userRouter.post("/", authorize(["admin"]), createUser);
-userRouter.get("/", authorize(["admin", "nutritionist"]), getAllUsers);
+userRouter.get("/", authorize(["admin", "doctor", "nutritionist", "trainer"]), getAllUsers);
 userRouter.get("/me", authorize(["user"]), getMyUser);
 userRouter.get("/me/reports", authorize(["user"]), getMyUserReports);
 userRouter.get("/me/medical-reports", authorize(["user"]), getMyMedicalReports);
 userRouter.get("/me/bca-metrics", authorize(["user"]), getMyUserBcaMetrics);
 userRouter.post("/me/bca-metrics/sync", authorize(["user"]), syncMyBcaMetrics);
 userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
-userRouter.get("/:id", authorize(["admin", "nutritionist", "user"]), getUserById);
-userRouter.get("/:id/onboarding-profile", authorize(["admin", "nutritionist", "user"]), getOnboardingProfile);
-userRouter.get("/:id/reports/:reportId/url", authorize(["admin", "nutritionist"]), getReportSignedUrl);
+userRouter.get("/:id", authorize(["admin", "doctor", "nutritionist", "user", "trainer"]), getUserById);
+userRouter.get("/:id/onboarding-profile", authorize(["admin", "doctor", "nutritionist", "user", "trainer"]), getOnboardingProfile);
+userRouter.get("/:id/reports/:reportId/url", authorize(["admin", "doctor", "nutritionist", "trainer"]), getReportSignedUrl);
 userRouter.patch("/:id/onboard", authorize(["admin", "user"]), onboardUser);
+userRouter.patch("/:id/assigned-trainer", authorize(["admin"]), updateAssignedTrainer);
 userRouter.patch("/:id", authorize(["admin", "user"]), updateUserById);
 userRouter.delete("/:id", authorize(["admin"]), deleteUserById);
 var user_routes_default = userRouter;
-
-// src/routes/workout.routes.ts
-var import_express29 = __toESM(require_express2(), 1);
-
-// src/controllers/workout.controller.ts
-var import_mongoose99 = __toESM(require_mongoose2(), 1);
-
-// src/validators/workout.validator.ts
-var sectionEnum = zod_default.enum(Object.values(ExerciseSection));
-var exerciseInSessionSchema = zod_default.object({
-  exerciseId: zod_default.string().min(1),
-  targetSets: zod_default.coerce.number().int().min(1).max(50),
-  targetReps: zod_default.coerce.number().int().min(1).max(100),
-  targetWeightKg: zod_default.coerce.number().min(0).max(999.99).optional(),
-  restSeconds: zod_default.coerce.number().int().min(0).max(600).optional().default(60),
-  section: sectionEnum.optional().default("workout"),
-  durationSeconds: zod_default.coerce.number().int().min(1).max(86400).optional(),
-  notes: zod_default.string().max(500).optional()
-});
-var createSessionBodySchema = zod_default.object({
-  date: zod_default.coerce.date().optional(),
-  notes: zod_default.string().max(1000).optional(),
-  exercises: zod_default.array(exerciseInSessionSchema).optional().default([]),
-  planId: zod_default.string().optional().nullable()
-});
-var updateSessionBodySchema = zod_default.object({
-  status: zod_default.enum(Object.values(WorkoutSessionStatus)).optional(),
-  notes: zod_default.string().max(1000).optional(),
-  startedAt: zod_default.coerce.date().optional()
-}).refine((payload) => Object.keys(payload).length > 0, {
-  message: "At least one field is required"
-});
-var listSessionsQuerySchema = zod_default.object({
-  page: zod_default.coerce.number().int().min(1).default(1),
-  limit: zod_default.coerce.number().int().min(1).max(100).default(20),
-  status: zod_default.enum(Object.values(WorkoutSessionStatus)).optional()
-});
-var addExerciseBodySchema = zod_default.object({
-  exerciseId: zod_default.string().min(1),
-  targetSets: zod_default.coerce.number().int().min(1).max(50),
-  targetReps: zod_default.coerce.number().int().min(1).max(100),
-  targetWeightKg: zod_default.coerce.number().min(0).max(999.99).optional(),
-  restSeconds: zod_default.coerce.number().int().min(0).max(600).optional().default(60),
-  section: sectionEnum.optional().default("workout"),
-  durationSeconds: zod_default.coerce.number().int().min(1).max(86400).optional(),
-  notes: zod_default.string().max(500).optional()
-});
-var updateWorkoutExerciseBodySchema = zod_default.object({
-  targetSets: zod_default.coerce.number().int().min(1).max(50).optional(),
-  targetReps: zod_default.coerce.number().int().min(1).max(100).optional(),
-  targetWeightKg: zod_default.coerce.number().min(0).max(999.99).optional(),
-  restSeconds: zod_default.coerce.number().int().min(0).max(600).optional(),
-  section: sectionEnum.optional(),
-  durationSeconds: zod_default.coerce.number().int().min(0).max(86400).optional(),
-  notes: zod_default.string().max(500).optional(),
-  caloriesBurned: zod_default.coerce.number().int().min(0).max(1e5).optional(),
-  isCompleted: zod_default.coerce.boolean().optional()
-}).refine((payload) => Object.keys(payload).length > 0, {
-  message: "At least one field is required"
-});
-var reorderExercisesBodySchema = zod_default.object({
-  order: zod_default.array(zod_default.string().min(1)).min(1)
-});
-var logSetBodySchema = zod_default.object({
-  actualReps: zod_default.coerce.number().int().min(1).max(999),
-  actualWeightKg: zod_default.coerce.number().min(0).max(999.99),
-  rpe: zod_default.coerce.number().min(1).max(10).optional(),
-  isWarmup: zod_default.coerce.boolean().optional().default(false),
-  notes: zod_default.string().max(500).optional()
-});
-var updateSetBodySchema = zod_default.object({
-  actualReps: zod_default.coerce.number().int().min(1).max(999).optional(),
-  actualWeightKg: zod_default.coerce.number().min(0).max(999.99).optional(),
-  rpe: zod_default.coerce.number().min(1).max(10).optional(),
-  isWarmup: zod_default.coerce.boolean().optional(),
-  notes: zod_default.string().max(500).optional()
-}).refine((payload) => Object.keys(payload).length > 0, {
-  message: "At least one field is required"
-});
-var historyQuerySchema = zod_default.object({
-  from: zod_default.coerce.date().optional(),
-  to: zod_default.coerce.date().optional(),
-  cursor: zod_default.string().optional(),
-  limit: zod_default.coerce.number().int().min(1).max(100).default(30)
-});
-
-// src/controllers/workout.controller.ts
-var getIdParam21 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose99.default.Types.ObjectId.isValid(idParam)) {
-    return null;
-  }
-  return idParam;
-};
-var normalizeToUtcDate3 = (value) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
-var buildSessionWithDetails = async (sessionId) => {
-  const session = await WorkoutSession_default.findById(sessionId).lean();
-  if (!session)
-    return null;
-  const workoutExercises = await WorkoutExercise_default.find({
-    sessionId: session._id
-  }).sort({ orderIndex: 1 }).lean();
-  const exerciseIds = workoutExercises.map((we) => we.exerciseId);
-  const exercises = await Exercise_default.find({ _id: { $in: exerciseIds } }).lean();
-  const exerciseMap = new Map(exercises.map((e2) => [e2._id.toString(), e2]));
-  const workoutExerciseIds = workoutExercises.map((we) => we._id);
-  const setLogs = await SetLog_default.find({
-    workoutExerciseId: { $in: workoutExerciseIds }
-  }).sort({ setNumber: 1 }).lean();
-  const setLogsByExercise = new Map;
-  for (const log of setLogs) {
-    const key = log.workoutExerciseId.toString();
-    if (!setLogsByExercise.has(key)) {
-      setLogsByExercise.set(key, []);
-    }
-    setLogsByExercise.get(key).push(log);
-  }
-  const exercisesWithSets = workoutExercises.map((we) => {
-    const exercise = exerciseMap.get(we.exerciseId.toString());
-    return {
-      ...we,
-      exercise: exercise ? {
-        name: exercise.name,
-        muscleGroups: exercise.muscleGroups,
-        difficulty: exercise.difficulty,
-        equipment: exercise.equipment,
-        caloriesPerSet: exercise.caloriesPerSet,
-        sectionTypes: exercise.sectionTypes ?? ["workout"]
-      } : null,
-      sets: setLogsByExercise.get(we._id.toString()) || []
-    };
-  });
-  return { ...session, exercises: exercisesWithSets };
-};
-var getActiveSession = async (req, res, next) => {
-  try {
-    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
-    const today = normalizeToUtcDate3(new Date);
-    const session = await WorkoutSession_default.findOne({
-      userId,
-      date: today,
-      status: "Active" /* Active */
-    });
-    if (!session) {
-      res.status(200).json({ session: null, elapsedSeconds: 0 });
-      return;
-    }
-    const detailed = await buildSessionWithDetails(session._id);
-    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - session.startedAt.getTime()) / 1000));
-    res.status(200).json({ session: detailed, elapsedSeconds });
-  } catch (error51) {
-    next(error51);
-  }
-};
-var getTodaySession = async (req, res, next) => {
-  try {
-    const today = normalizeToUtcDate3(new Date);
-    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
-    let session = await WorkoutSession_default.findOne({
-      userId,
-      date: today,
-      status: "Active" /* Active */
-    });
-    if (!session) {
-      session = await WorkoutSession_default.create({
-        userId,
-        date: today,
-        status: "Active" /* Active */,
-        startedAt: new Date
-      });
-    }
-    const detailed = await buildSessionWithDetails(session._id);
-    res.status(200).json(detailed);
-  } catch (error51) {
-    next(error51);
-  }
-};
-var listMySessions = async (req, res, next) => {
-  try {
-    const parsed = listSessionsQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Validation failed",
-        code: "VALIDATION_ERROR",
-        details: parsed.error.issues
-      });
-      return;
-    }
-    const { page, limit, status } = parsed.data;
-    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
-    const filter = { userId };
-    if (status)
-      filter.status = status;
-    const [sessions, total] = await Promise.all([
-      WorkoutSession_default.find(filter).sort({ date: -1 }).skip((page - 1) * limit).limit(limit).lean(),
-      WorkoutSession_default.countDocuments(filter)
-    ]);
-    res.status(200).json({
-      sessions,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error51) {
-    next(error51);
-  }
-};
-var getSessionById = async (req, res, next) => {
-  try {
-    const id = getIdParam21(req.params.id);
-    if (!id) {
-      res.status(400).json({ message: "Invalid session ID" });
-      return;
-    }
-    const session = await WorkoutSession_default.findById(id);
-    if (!session) {
-      res.status(404).json({ message: "Workout session not found" });
-      return;
-    }
-    if (session.userId.toString() !== req.user.id) {
-      res.status(403).json({ message: "Not authorized" });
-      return;
-    }
-    const detailed = await buildSessionWithDetails(session._id);
-    res.status(200).json(detailed);
-  } catch (error51) {
-    next(error51);
-  }
-};
-var createSession = async (req, res, next) => {
-  try {
-    const parsed = createSessionBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Validation failed",
-        code: "VALIDATION_ERROR",
-        details: parsed.error.issues
-      });
-      return;
-    }
-    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
-    const date5 = normalizeToUtcDate3(parsed.data.date || new Date);
-    const existing = await WorkoutSession_default.findOne({
-      userId,
-      date: date5,
-      status: "Active" /* Active */
-    });
-    if (existing) {
-      const exerciseCount = await WorkoutExercise_default.countDocuments({
-        sessionId: existing._id
-      });
-      if (exerciseCount === 0) {
-        existing.startedAt = new Date;
-        await existing.save();
-      }
-      const detailed2 = await buildSessionWithDetails(existing._id);
-      res.status(200).json(detailed2);
-      return;
-    }
-    const session = await WorkoutSession_default.create({
-      userId,
-      date: date5,
-      status: "Active" /* Active */,
-      startedAt: new Date,
-      notes: parsed.data.notes || null,
-      planId: parsed.data.planId ? new import_mongoose99.default.Types.ObjectId(parsed.data.planId) : null
-    });
-    let exercisesToAdd = parsed.data.exercises;
-    if (parsed.data.planId) {
-      const plan = await import_mongoose99.default.model("WorkoutPlan").findById(parsed.data.planId);
-      if (!plan) {
-        res.status(404).json({ error: "Plan not found" });
-        return;
-      }
-      const isAssigned = plan.assignedUsers.some((id) => id.toString() === userId.toString());
-      const isCreator = plan.createdBy.toString() === userId.toString();
-      if (!isAssigned && !isCreator) {
-        res.status(403).json({ error: "Not authorized to use this plan" });
-        return;
-      }
-      if (plan.days && plan.days.length > 0) {
-        const firstDay = plan.days[0];
-        exercisesToAdd = firstDay.exercises.map((planEx) => ({
-          exerciseId: planEx.exerciseId.toString(),
-          targetSets: planEx.targetSets,
-          targetReps: planEx.targetReps,
-          targetWeightKg: planEx.targetWeightKg,
-          restSeconds: planEx.restSeconds
-        }));
-      }
-    }
-    if (exercisesToAdd.length > 0) {
-      const exerciseIds = exercisesToAdd.map((e2) => e2.exerciseId);
-      const validExercises = await Exercise_default.find({
-        _id: { $in: exerciseIds },
-        $or: [{ isSystem: true }, { createdBy: userId }]
-      });
-      const validIds = new Set(validExercises.map((e2) => e2._id.toString()));
-      const workoutExercises = exercisesToAdd.filter((e2) => validIds.has(e2.exerciseId)).map((e2, index) => ({
-        sessionId: session._id,
-        exerciseId: new import_mongoose99.default.Types.ObjectId(e2.exerciseId),
-        orderIndex: index,
-        section: e2.section,
-        targetSets: e2.targetSets,
-        targetReps: e2.targetReps,
-        targetWeightKg: e2.targetWeightKg ?? null,
-        restSeconds: e2.restSeconds,
-        durationSeconds: e2.durationSeconds ?? null,
-        notes: e2.notes ?? null
-      }));
-      if (workoutExercises.length > 0) {
-        await WorkoutExercise_default.insertMany(workoutExercises);
-      }
-    }
-    const detailed = await buildSessionWithDetails(session._id);
-    res.status(201).json(detailed);
-  } catch (error51) {
-    next(error51);
-  }
-};
-var updateSession = async (req, res, next) => {
-  try {
-    const id = getIdParam21(req.params.id);
-    if (!id) {
-      res.status(400).json({ message: "Invalid session ID" });
-      return;
-    }
-    const parsed = updateSessionBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Validation failed",
-        code: "VALIDATION_ERROR",
-        details: parsed.error.issues
-      });
-      return;
-    }
-    const session = await WorkoutSession_default.findById(id);
-    if (!session) {
-      res.status(404).json({ message: "Workout session not found" });
-      return;
-    }
-    if (session.userId.toString() !== req.user.id) {
-      res.status(403).json({ message: "Not authorized" });
-      return;
-    }
-    if (session.status === "Completed" /* Completed */ && parsed.data.status === "Active" /* Active */) {
-      res.status(409).json({ message: "Cannot reactivate a completed session" });
-      return;
-    }
-    const update = { ...parsed.data };
-    if (parsed.data.status === "Completed" /* Completed */) {
-      update.completedAt = new Date;
-    }
-    const updated = await WorkoutSession_default.findByIdAndUpdate(id, update, {
-      new: true
-    });
-    res.status(200).json(updated);
-  } catch (error51) {
-    next(error51);
-  }
-};
-var deleteSession = async (req, res, next) => {
-  try {
-    const id = getIdParam21(req.params.id);
-    if (!id) {
-      res.status(400).json({ message: "Invalid session ID" });
-      return;
-    }
-    const session = await WorkoutSession_default.findById(id);
-    if (!session) {
-      res.status(404).json({ message: "Workout session not found" });
-      return;
-    }
-    if (session.userId.toString() !== req.user.id) {
-      res.status(403).json({ message: "Not authorized" });
-      return;
-    }
-    if (session.status !== "Active" /* Active */) {
-      res.status(409).json({ message: "Can only delete active sessions" });
-      return;
-    }
-    const workoutExercises = await WorkoutExercise_default.find({
-      sessionId: session._id
-    });
-    const workoutExerciseIds = workoutExercises.map((we) => we._id);
-    const setCount = await SetLog_default.countDocuments({
-      workoutExerciseId: { $in: workoutExerciseIds }
-    });
-    if (setCount > 0) {
-      res.status(409).json({
-        message: "Cannot delete a session with logged sets"
-      });
-      return;
-    }
-    await WorkoutExercise_default.deleteMany({ sessionId: session._id });
-    await WorkoutSession_default.findByIdAndDelete(id);
-    res.status(200).json({ message: "Workout session deleted" });
-  } catch (error51) {
-    next(error51);
-  }
-};
-var addExerciseToSession = async (req, res, next) => {
-  try {
-    const sessionId = getIdParam21(req.params.sessionId);
-    if (!sessionId) {
-      res.status(400).json({ message: "Invalid session ID" });
-      return;
-    }
-    const parsed = addExerciseBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Validation failed",
-        code: "VALIDATION_ERROR",
-        details: parsed.error.issues
-      });
-      return;
-    }
-    const session = await WorkoutSession_default.findById(sessionId);
-    if (!session || session.userId.toString() !== req.user.id) {
-      res.status(404).json({ message: "Workout session not found" });
-      return;
-    }
-    if (session.status !== "Active" /* Active */) {
-      res.status(409).json({ message: "Session is not active" });
-      return;
-    }
-    const exerciseId = getIdParam21(parsed.data.exerciseId);
-    if (!exerciseId) {
-      res.status(400).json({ message: "Invalid exercise ID" });
-      return;
-    }
-    const exercise = await Exercise_default.findOne({
-      _id: exerciseId,
-      $or: [
-        { isSystem: true },
-        { createdBy: new import_mongoose99.default.Types.ObjectId(req.user.id) }
-      ]
-    });
-    if (!exercise) {
-      res.status(404).json({ message: "Exercise not found" });
-      return;
-    }
-    const maxOrder = await WorkoutExercise_default.findOne({ sessionId: session._id }).sort({ orderIndex: -1 }).select("orderIndex").lean();
-    if (!maxOrder) {
-      session.startedAt = new Date;
-      await session.save();
-    }
-    const workoutExercise = await WorkoutExercise_default.create({
-      sessionId: session._id,
-      exerciseId: exercise._id,
-      orderIndex: maxOrder ? maxOrder.orderIndex + 1 : 0,
-      section: parsed.data.section,
-      targetSets: parsed.data.targetSets,
-      targetReps: parsed.data.targetReps,
-      targetWeightKg: parsed.data.targetWeightKg ?? null,
-      restSeconds: parsed.data.restSeconds,
-      durationSeconds: parsed.data.durationSeconds ?? null,
-      notes: parsed.data.notes ?? null
-    });
-    res.status(201).json(workoutExercise);
-  } catch (error51) {
-    next(error51);
-  }
-};
-var updateWorkoutExercise = async (req, res, next) => {
-  try {
-    const sessionId = getIdParam21(req.params.sessionId);
-    const id = getIdParam21(req.params.id);
-    if (!sessionId || !id) {
-      res.status(400).json({ message: "Invalid ID" });
-      return;
-    }
-    const parsed = updateWorkoutExerciseBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Validation failed",
-        code: "VALIDATION_ERROR",
-        details: parsed.error.issues
-      });
-      return;
-    }
-    const session = await WorkoutSession_default.findById(sessionId);
-    if (!session || session.userId.toString() !== req.user.id) {
-      res.status(404).json({ message: "Workout session not found" });
-      return;
-    }
-    if (parsed.data.isCompleted === true) {
-      const exercises = await WorkoutExercise_default.find({ sessionId: session._id });
-      const completedExercisesCount = exercises.filter((we) => we.isCompleted).length;
-      const exerciseIds = exercises.map((we) => we._id);
-      const totalSetLogsInSession = await SetLog_default.countDocuments({
-        workoutExerciseId: { $in: exerciseIds }
-      });
-      if (totalSetLogsInSession === 0 && completedExercisesCount === 0) {
-        session.startedAt = new Date;
-        await session.save();
-      }
-    }
-    const workoutExercise = await WorkoutExercise_default.findOneAndUpdate({ _id: id, sessionId: session._id }, parsed.data, { new: true });
-    if (!workoutExercise) {
-      res.status(404).json({ message: "Workout exercise not found" });
-      return;
-    }
-    res.status(200).json(workoutExercise);
-  } catch (error51) {
-    next(error51);
-  }
-};
-var deleteWorkoutExercise = async (req, res, next) => {
-  try {
-    const sessionId = getIdParam21(req.params.sessionId);
-    const id = getIdParam21(req.params.id);
-    if (!sessionId || !id) {
-      res.status(400).json({ message: "Invalid ID" });
-      return;
-    }
-    const session = await WorkoutSession_default.findById(sessionId);
-    if (!session || session.userId.toString() !== req.user.id) {
-      res.status(404).json({ message: "Workout session not found" });
-      return;
-    }
-    const workoutExercise = await WorkoutExercise_default.findOne({
-      _id: id,
-      sessionId: session._id
-    });
-    if (!workoutExercise) {
-      res.status(404).json({ message: "Workout exercise not found" });
-      return;
-    }
-    await SetLog_default.deleteMany({ workoutExerciseId: workoutExercise._id });
-    await WorkoutExercise_default.findByIdAndDelete(id);
-    res.status(200).json({ message: "Exercise removed from session" });
-  } catch (error51) {
-    next(error51);
-  }
-};
-var reorderExercises = async (req, res, next) => {
-  try {
-    const sessionId = getIdParam21(req.params.sessionId);
-    if (!sessionId) {
-      res.status(400).json({ message: "Invalid session ID" });
-      return;
-    }
-    const parsed = reorderExercisesBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Validation failed",
-        code: "VALIDATION_ERROR",
-        details: parsed.error.issues
-      });
-      return;
-    }
-    const session = await WorkoutSession_default.findById(sessionId);
-    if (!session || session.userId.toString() !== req.user.id) {
-      res.status(404).json({ message: "Workout session not found" });
-      return;
-    }
-    const ops = parsed.data.order.map((exerciseId, index) => ({
-      updateOne: {
-        filter: {
-          _id: new import_mongoose99.default.Types.ObjectId(exerciseId),
-          sessionId: session._id
-        },
-        update: { $set: { orderIndex: index } }
-      }
-    }));
-    await WorkoutExercise_default.bulkWrite(ops);
-    const updated = await WorkoutExercise_default.find({ sessionId: session._id }).sort({ orderIndex: 1 }).lean();
-    res.status(200).json(updated);
-  } catch (error51) {
-    next(error51);
-  }
-};
-var logSet = async (req, res, next) => {
-  try {
-    const sessionId = getIdParam21(req.params.sessionId);
-    const exerciseId = getIdParam21(req.params.exerciseId);
-    if (!sessionId || !exerciseId) {
-      res.status(400).json({ message: "Invalid ID" });
-      return;
-    }
-    const parsed = logSetBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Validation failed",
-        code: "VALIDATION_ERROR",
-        details: parsed.error.issues
-      });
-      return;
-    }
-    const session = await WorkoutSession_default.findById(sessionId);
-    if (!session || session.userId.toString() !== req.user.id) {
-      res.status(404).json({ message: "Workout session not found" });
-      return;
-    }
-    if (session.status !== "Active" /* Active */) {
-      res.status(409).json({ message: "Session is not active" });
-      return;
-    }
-    const workoutExercise = await WorkoutExercise_default.findOne({
-      _id: exerciseId,
-      sessionId: session._id
-    });
-    if (!workoutExercise) {
-      res.status(404).json({ message: "Workout exercise not found" });
-      return;
-    }
-    const sessionExercises = await WorkoutExercise_default.find({ sessionId: session._id });
-    const completedExercisesCount = sessionExercises.filter((we) => we.isCompleted).length;
-    const exerciseIds = sessionExercises.map((we) => we._id);
-    const totalSetLogsInSession = await SetLog_default.countDocuments({
-      workoutExerciseId: { $in: exerciseIds }
-    });
-    if (totalSetLogsInSession === 0 && completedExercisesCount === 0) {
-      session.startedAt = new Date;
-      await session.save();
-    }
-    const currentSetCount = await SetLog_default.countDocuments({
-      workoutExerciseId: workoutExercise._id
-    });
-    const setLog = await SetLog_default.create({
-      workoutExerciseId: workoutExercise._id,
-      setNumber: currentSetCount + 1,
-      actualReps: parsed.data.actualReps,
-      actualWeightKg: parsed.data.actualWeightKg,
-      rpe: parsed.data.rpe ?? null,
-      isWarmup: parsed.data.isWarmup,
-      completedAt: new Date,
-      notes: parsed.data.notes ?? null
-    });
-    const nonWarmupCount = await SetLog_default.countDocuments({
-      workoutExerciseId: workoutExercise._id,
-      isWarmup: false
-    });
-    const exerciseCompleted = nonWarmupCount >= workoutExercise.targetSets;
-    const setsRemaining = Math.max(0, workoutExercise.targetSets - nonWarmupCount);
-    if (exerciseCompleted && !workoutExercise.isCompleted) {
-      await WorkoutExercise_default.findByIdAndUpdate(workoutExercise._id, {
-        isCompleted: true
-      });
-    }
-    res.status(201).json({
-      ...setLog.toObject(),
-      exerciseCompleted,
-      setsRemaining
-    });
-  } catch (error51) {
-    next(error51);
-  }
-};
-var updateSet = async (req, res, next) => {
-  try {
-    const sessionId = getIdParam21(req.params.sessionId);
-    const exerciseId = getIdParam21(req.params.exerciseId);
-    const setId = getIdParam21(req.params.setId);
-    if (!sessionId || !exerciseId || !setId) {
-      res.status(400).json({ message: "Invalid ID" });
-      return;
-    }
-    const parsed = updateSetBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Validation failed",
-        code: "VALIDATION_ERROR",
-        details: parsed.error.issues
-      });
-      return;
-    }
-    const session = await WorkoutSession_default.findById(sessionId);
-    if (!session || session.userId.toString() !== req.user.id) {
-      res.status(404).json({ message: "Workout session not found" });
-      return;
-    }
-    const workoutExercise = await WorkoutExercise_default.findOne({
-      _id: exerciseId,
-      sessionId: session._id
-    });
-    if (!workoutExercise) {
-      res.status(404).json({ message: "Workout exercise not found" });
-      return;
-    }
-    const setLog = await SetLog_default.findOneAndUpdate({ _id: setId, workoutExerciseId: workoutExercise._id }, parsed.data, { new: true });
-    if (!setLog) {
-      res.status(404).json({ message: "Set not found" });
-      return;
-    }
-    res.status(200).json(setLog);
-  } catch (error51) {
-    next(error51);
-  }
-};
-var deleteSet = async (req, res, next) => {
-  try {
-    const sessionId = getIdParam21(req.params.sessionId);
-    const exerciseId = getIdParam21(req.params.exerciseId);
-    const setId = getIdParam21(req.params.setId);
-    if (!sessionId || !exerciseId || !setId) {
-      res.status(400).json({ message: "Invalid ID" });
-      return;
-    }
-    const session = await WorkoutSession_default.findById(sessionId);
-    if (!session || session.userId.toString() !== req.user.id) {
-      res.status(404).json({ message: "Workout session not found" });
-      return;
-    }
-    const workoutExercise = await WorkoutExercise_default.findOne({
-      _id: exerciseId,
-      sessionId: session._id
-    });
-    if (!workoutExercise) {
-      res.status(404).json({ message: "Workout exercise not found" });
-      return;
-    }
-    const setLog = await SetLog_default.findOneAndDelete({
-      _id: setId,
-      workoutExerciseId: workoutExercise._id
-    });
-    if (!setLog) {
-      res.status(404).json({ message: "Set not found" });
-      return;
-    }
-    const remainingSets = await SetLog_default.find({
-      workoutExerciseId: workoutExercise._id
-    }).sort({ setNumber: 1 });
-    const renumberOps = remainingSets.map((s3, index) => ({
-      updateOne: {
-        filter: { _id: s3._id },
-        update: { $set: { setNumber: index + 1 } }
-      }
-    }));
-    if (renumberOps.length > 0) {
-      await SetLog_default.bulkWrite(renumberOps);
-    }
-    const nonWarmupCount = await SetLog_default.countDocuments({
-      workoutExerciseId: workoutExercise._id,
-      isWarmup: false
-    });
-    const isCompleted = nonWarmupCount >= workoutExercise.targetSets;
-    if (workoutExercise.isCompleted !== isCompleted) {
-      await WorkoutExercise_default.findByIdAndUpdate(workoutExercise._id, {
-        isCompleted
-      });
-    }
-    res.status(200).json({ message: "Set deleted" });
-  } catch (error51) {
-    next(error51);
-  }
-};
-var getMyStats = async (req, res, next) => {
-  try {
-    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
-    const now = new Date;
-    const dayOfWeek = now.getUTCDay();
-    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const weekStart = normalizeToUtcDate3(new Date(now.getTime() - mondayOffset * 86400000));
-    const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
-    const weeklyWorkouts = await WorkoutSession_default.countDocuments({
-      userId,
-      status: "Completed" /* Completed */,
-      date: { $gte: weekStart, $lt: weekEnd }
-    });
-    const weekSessions = await WorkoutSession_default.find({
-      userId,
-      status: "Completed" /* Completed */,
-      date: { $gte: weekStart, $lt: weekEnd }
-    }).select("_id").lean();
-    const weekSessionIds = weekSessions.map((s3) => s3._id);
-    const weekExercises = await WorkoutExercise_default.find({
-      sessionId: { $in: weekSessionIds }
-    }).lean();
-    const weekExerciseIds = weekExercises.map((we) => we._id);
-    const weekSets = await SetLog_default.find({
-      workoutExerciseId: { $in: weekExerciseIds },
-      isWarmup: false
-    }).lean();
-    const totalSetsThisWeek = weekSets.length;
-    let totalVolumeKg = 0;
-    for (const set2 of weekSets) {
-      totalVolumeKg += set2.actualWeightKg * set2.actualReps;
-    }
-    const exerciseIds = [
-      ...new Set(weekExercises.map((we) => we.exerciseId.toString()))
-    ];
-    const exerciseDocs = await Exercise_default.find({
-      _id: { $in: exerciseIds }
-    }).select("_id caloriesPerSet").lean();
-    const caloriesMap = new Map(exerciseDocs.map((e2) => [e2._id.toString(), e2.caloriesPerSet]));
-    const exerciseIdByWorkoutExercise = new Map(weekExercises.map((we) => [we._id.toString(), we.exerciseId.toString()]));
-    let caloriesBurnedWeek = 0;
-    for (const set2 of weekSets) {
-      const exId = exerciseIdByWorkoutExercise.get(set2.workoutExerciseId.toString());
-      if (exId) {
-        caloriesBurnedWeek += caloriesMap.get(exId) ?? 0;
-      }
-    }
-    let currentStreak = 0;
-    let checkDate = normalizeToUtcDate3(now);
-    while (true) {
-      const hasSession = await WorkoutSession_default.exists({
-        userId,
-        status: "Completed" /* Completed */,
-        date: checkDate
-      });
-      if (!hasSession)
-        break;
-      currentStreak++;
-      checkDate = new Date(checkDate.getTime() - 86400000);
-    }
-    const fourWeeksAgo = new Date(now.getTime() - 28 * 86400000);
-    const completedInFourWeeks = await WorkoutSession_default.countDocuments({
-      userId,
-      status: "Completed" /* Completed */,
-      date: { $gte: normalizeToUtcDate3(fourWeeksAgo) }
-    });
-    const consistencyScore = Math.min(1, completedInFourWeeks / 28);
-    const allCompletedSessions = await WorkoutSession_default.find({
-      userId,
-      status: "Completed" /* Completed */
-    }).select("_id").lean();
-    const allSessionIds = allCompletedSessions.map((s3) => s3._id);
-    const allWorkoutExercises = await WorkoutExercise_default.find({
-      sessionId: { $in: allSessionIds }
-    }).lean();
-    const allWorkoutExerciseIds = allWorkoutExercises.map((we) => we._id);
-    const prPipeline = [
-      {
-        $match: {
-          workoutExerciseId: { $in: allWorkoutExerciseIds },
-          isWarmup: false
-        }
-      },
-      {
-        $lookup: {
-          from: "workoutexercises",
-          localField: "workoutExerciseId",
-          foreignField: "_id",
-          as: "workoutExercise"
-        }
-      },
-      { $unwind: "$workoutExercise" },
-      {
-        $lookup: {
-          from: "exercises",
-          localField: "workoutExercise.exerciseId",
-          foreignField: "_id",
-          as: "exercise"
-        }
-      },
-      { $unwind: "$exercise" },
-      {
-        $group: {
-          _id: "$exercise._id",
-          name: { $first: "$exercise.name" },
-          maxWeightKg: { $max: "$actualWeightKg" },
-          maxReps: { $max: "$actualReps" },
-          achievedAt: { $last: "$completedAt" }
-        }
-      }
-    ];
-    const prResults = await SetLog_default.aggregate(prPipeline);
-    const personalRecords = {};
-    for (const pr of prResults) {
-      const key = pr.name.replace(/\s+/g, "").replace(/^./, (c2) => c2.toLowerCase());
-      personalRecords[key] = {
-        maxWeightKg: pr.maxWeightKg,
-        maxReps: pr.maxReps,
-        achievedAt: pr.achievedAt
-      };
-    }
-    res.status(200).json({
-      weeklyWorkouts,
-      totalSetsThisWeek,
-      caloriesBurnedWeek,
-      consistencyScore: Math.round(consistencyScore * 100) / 100,
-      currentStreak,
-      totalVolumeKg: Math.round(totalVolumeKg * 100) / 100,
-      personalRecords
-    });
-  } catch (error51) {
-    next(error51);
-  }
-};
-var getMyHistory = async (req, res, next) => {
-  try {
-    const parsed = historyQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Validation failed",
-        code: "VALIDATION_ERROR",
-        details: parsed.error.issues
-      });
-      return;
-    }
-    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
-    const { limit, cursor } = parsed.data;
-    const now = new Date;
-    const from = parsed.data.from || new Date(now.getTime() - 365 * 86400000);
-    const to2 = parsed.data.to || now;
-    const filter = {
-      userId,
-      isDeleted: { $ne: true },
-      date: { $gte: normalizeToUtcDate3(from), $lte: normalizeToUtcDate3(to2) }
-    };
-    if (cursor && import_mongoose99.default.Types.ObjectId.isValid(cursor)) {
-      filter._id = { $lt: new import_mongoose99.default.Types.ObjectId(cursor) };
-    }
-    const sessions = await WorkoutSession_default.find(filter).sort({ date: -1, _id: -1 }).limit(limit + 1).lean();
-    const hasMore = sessions.length > limit;
-    const page = sessions.slice(0, limit);
-    const nextCursor = hasMore && page[page.length - 1] ? page[page.length - 1]._id.toString() : null;
-    const workouts = page.map((session) => {
-      const duration3 = session.completedAt && session.startedAt ? Math.round((new Date(session.completedAt).getTime() - new Date(session.startedAt).getTime()) / 1000) : 0;
-      return {
-        id: session._id,
-        date: session.date,
-        status: session.status,
-        startedAt: session.startedAt,
-        completedAt: session.completedAt,
-        notes: session.notes,
-        planId: session.planId,
-        duration: duration3
-      };
-    });
-    res.status(200).json({ workouts, nextCursor });
-  } catch (error51) {
-    next(error51);
-  }
-};
-
-// src/routes/workout.routes.ts
-var workoutRouter = import_express29.Router();
-workoutRouter.use(authenticateToken);
-workoutRouter.get("/active", authorize(["user"]), getActiveSession);
-workoutRouter.get("/today", authorize(["user"]), getTodaySession);
-workoutRouter.get("/me", authorize(["user"]), listMySessions);
-workoutRouter.get("/me/stats", authorize(["user"]), getMyStats);
-workoutRouter.get("/me/history", authorize(["user"]), getMyHistory);
-workoutRouter.post("/", authorize(["user"]), createSession);
-workoutRouter.get("/:id", authorize(["user"]), getSessionById);
-workoutRouter.patch("/:id", authorize(["user"]), updateSession);
-workoutRouter.delete("/:id", authorize(["user"]), deleteSession);
-workoutRouter.post("/:sessionId/exercises", authorize(["user"]), addExerciseToSession);
-workoutRouter.patch("/:sessionId/exercises/reorder", authorize(["user"]), reorderExercises);
-workoutRouter.patch("/:sessionId/exercises/:id", authorize(["user"]), updateWorkoutExercise);
-workoutRouter.delete("/:sessionId/exercises/:id", authorize(["user"]), deleteWorkoutExercise);
-workoutRouter.post("/:sessionId/exercises/:exerciseId/sets", authorize(["user"]), logSet);
-workoutRouter.patch("/:sessionId/exercises/:exerciseId/sets/:setId", authorize(["user"]), updateSet);
-workoutRouter.delete("/:sessionId/exercises/:exerciseId/sets/:setId", authorize(["user"]), deleteSet);
-var workout_routes_default = workoutRouter;
 
 // src/routes/workout-plan.routes.ts
 var import_express30 = __toESM(require_express2(), 1);
 
 // src/controllers/workout-assignment.controller.ts
-var import_mongoose102 = __toESM(require_mongoose2(), 1);
+var import_mongoose104 = __toESM(require_mongoose2(), 1);
 
 // src/services/planAssignment.service.ts
-var import_mongoose101 = __toESM(require_mongoose2(), 1);
+var import_mongoose103 = __toESM(require_mongoose2(), 1);
 
 // src/models/WorkoutPlan.ts
-var import_mongoose100 = __toESM(require_mongoose2(), 1);
-var planExerciseSchema = new import_mongoose100.default.Schema({
+init_Enums();
+var import_mongoose102 = __toESM(require_mongoose2(), 1);
+var planExerciseSchema = new import_mongoose102.default.Schema({
   exerciseId: {
-    type: import_mongoose100.default.Schema.Types.ObjectId,
+    type: import_mongoose102.default.Schema.Types.ObjectId,
     ref: "Exercise",
     required: true
   },
@@ -596865,13 +598816,13 @@ var planExerciseSchema = new import_mongoose100.default.Schema({
   durationSeconds: { type: Number, default: null },
   notes: { type: String, default: null }
 }, { _id: false });
-var planDaySchema2 = new import_mongoose100.default.Schema({
+var planDaySchema2 = new import_mongoose102.default.Schema({
   dayNumber: { type: Number, required: true },
   name: { type: String, required: true },
   isRestDay: { type: Boolean, default: false },
   exercises: { type: [planExerciseSchema], default: [] }
 }, { _id: false });
-var workoutPlanSchema = new import_mongoose100.default.Schema({
+var workoutPlanSchema = new import_mongoose102.default.Schema({
   name: { type: String, required: true },
   description: { type: String, default: "" },
   difficulty: {
@@ -596898,13 +598849,18 @@ var workoutPlanSchema = new import_mongoose100.default.Schema({
   isTemplate: { type: Boolean, default: false },
   templateCategory: { type: String, default: null },
   createdBy: {
-    type: import_mongoose100.default.Schema.Types.ObjectId,
-    ref: "User",
+    type: import_mongoose102.default.Schema.Types.ObjectId,
+    refPath: "createdByModel",
     required: true
+  },
+  createdByModel: {
+    type: String,
+    enum: ["User", "Trainer", "Admin"],
+    default: "User"
   },
   assignedUsers: [
     {
-      type: import_mongoose100.default.Schema.Types.ObjectId,
+      type: import_mongoose102.default.Schema.Types.ObjectId,
       ref: "User",
       default: []
     }
@@ -596914,7 +598870,7 @@ var workoutPlanSchema = new import_mongoose100.default.Schema({
 workoutPlanSchema.index({ createdBy: 1 });
 workoutPlanSchema.index({ status: 1 });
 workoutPlanSchema.index({ assignedUsers: 1 });
-var WorkoutPlan = import_mongoose100.default.models.WorkoutPlan || import_mongoose100.default.model("WorkoutPlan", workoutPlanSchema);
+var WorkoutPlan = import_mongoose102.default.models.WorkoutPlan || import_mongoose102.default.model("WorkoutPlan", workoutPlanSchema);
 var WorkoutPlan_default = WorkoutPlan;
 
 // src/utils/workoutProgression.ts
@@ -596978,14 +598934,14 @@ function advancePastMissedDays(assignment) {
 // src/services/planAssignment.service.ts
 var normalizeToUtcDate4 = (value) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
 async function createAssignmentForUser(args) {
-  if (!import_mongoose101.default.Types.ObjectId.isValid(args.planId)) {
+  if (!import_mongoose103.default.Types.ObjectId.isValid(args.planId)) {
     throw new Error("INVALID_PLAN_ID");
   }
-  if (!import_mongoose101.default.Types.ObjectId.isValid(args.userId)) {
+  if (!import_mongoose103.default.Types.ObjectId.isValid(args.userId)) {
     throw new Error("INVALID_USER_ID");
   }
-  const planObjId = new import_mongoose101.default.Types.ObjectId(args.planId);
-  const userObjId = new import_mongoose101.default.Types.ObjectId(args.userId);
+  const planObjId = new import_mongoose103.default.Types.ObjectId(args.planId);
+  const userObjId = new import_mongoose103.default.Types.ObjectId(args.userId);
   const startDate = normalizeToUtcDate4(args.startDate ?? new Date);
   const plan = await WorkoutPlan_default.findById(planObjId).lean();
   if (!plan)
@@ -597027,7 +598983,8 @@ async function createAssignmentForUser(args) {
     existing.currentDayIndex = 0;
     existing.userDays = userDays;
     existing.dayProgress = dayProgress;
-    existing.assignedBy = new import_mongoose101.default.Types.ObjectId(args.assignedBy);
+    existing.assignedBy = new import_mongoose103.default.Types.ObjectId(args.assignedBy);
+    existing.assignedByModel = args.assignedByModel;
     await existing.save();
     return { assignment: existing, created: false };
   }
@@ -597036,6 +598993,7 @@ async function createAssignmentForUser(args) {
     userId: userObjId,
     planId: planObjId,
     assignedBy: args.assignedBy,
+    assignedByModel: args.assignedByModel,
     startDate,
     currentDayIndex: 0,
     status: "active",
@@ -597046,6 +599004,7 @@ async function createAssignmentForUser(args) {
 }
 
 // src/validators/workout-assignment.validator.ts
+init_Enums();
 var sectionEnum2 = zod_default.enum(Object.values(ExerciseSection));
 var assignPlanBodySchema = zod_default.object({
   startDate: zod_default.coerce.date().optional()
@@ -597084,17 +599043,122 @@ var getMyAssignment = async (req, res, next) => {
       res.status(403).json({ error: "Unauthorized" });
       return;
     }
-    const userId = new import_mongoose102.default.Types.ObjectId(requesterId);
+    const userId = new import_mongoose104.default.Types.ObjectId(requesterId);
     const assignment = await WorkoutPlanAssignment_default.findOne({
       userId,
       status: "active",
       isDeleted: { $ne: true }
-    }).select("-userDays.exercises").lean();
+    }).select("-userDays.exercises").populate({
+      path: "assignedBy",
+      select: "name imageUrl specialities keySentence title bio"
+    }).populate({
+      path: "planId",
+      select: "name goal splitType description durationWeeks"
+    }).lean();
     if (!assignment) {
       res.status(404).json({ error: "No active assignment found" });
       return;
     }
     res.json(assignment);
+  } catch (error51) {
+    next(error51);
+  }
+};
+var getUserAssignment = async (req, res, next) => {
+  try {
+    const userIdParam = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+    if (!userIdParam || !import_mongoose104.default.Types.ObjectId.isValid(userIdParam)) {
+      res.status(400).json({ error: "Invalid user ID" });
+      return;
+    }
+    const userId = new import_mongoose104.default.Types.ObjectId(userIdParam);
+    const assignment = await WorkoutPlanAssignment_default.findOne({
+      userId,
+      status: "active",
+      isDeleted: { $ne: true }
+    }).populate({
+      path: "assignedBy",
+      select: "name imageUrl specialities keySentence title bio"
+    }).populate({
+      path: "planId",
+      select: "name goal splitType description durationWeeks"
+    }).lean();
+    if (!assignment) {
+      res.status(404).json({ error: "No active assignment found for user" });
+      return;
+    }
+    const exerciseIds = new Set;
+    for (const day of assignment.userDays) {
+      for (const ex of day.exercises) {
+        if (ex.exerciseId)
+          exerciseIds.add(ex.exerciseId.toString());
+      }
+    }
+    const exerciseDocs = await Exercise_default.find({
+      _id: { $in: Array.from(exerciseIds).map((id) => new import_mongoose104.default.Types.ObjectId(id)) }
+    }).select("_id name muscleGroups difficulty equipment caloriesPerSet").lean();
+    const exMap = new Map(exerciseDocs.map((e2) => [e2._id.toString(), e2]));
+    const userDaysDetailed = assignment.userDays.map((day) => ({
+      ...day,
+      exercises: day.exercises.map((ex) => {
+        const info = exMap.get(ex.exerciseId.toString());
+        return {
+          ...ex,
+          name: info?.name ?? "Deleted exercise",
+          muscleGroup: info?.muscleGroups?.[0] ?? "FullBody",
+          ...info ? {} : { exerciseMissing: true }
+        };
+      })
+    }));
+    res.json({
+      ...assignment,
+      userDays: userDaysDetailed
+    });
+  } catch (error51) {
+    next(error51);
+  }
+};
+var updateUserDayExercises = async (req, res, next) => {
+  try {
+    const userIdParam = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+    const dayNumber = parseInt(String(req.params.dayNumber), 10);
+    if (!userIdParam || !import_mongoose104.default.Types.ObjectId.isValid(userIdParam) || isNaN(dayNumber) || dayNumber < 1) {
+      res.status(400).json({ error: "Invalid parameters" });
+      return;
+    }
+    const parsed = updateAssignmentDayBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation failed",
+        code: "VALIDATION_ERROR",
+        details: parsed.error.issues
+      });
+      return;
+    }
+    const userId = new import_mongoose104.default.Types.ObjectId(userIdParam);
+    const assignment = await WorkoutPlanAssignment_default.findOne({
+      userId,
+      status: "active",
+      isDeleted: { $ne: true }
+    });
+    if (!assignment) {
+      res.status(404).json({ error: "No active assignment found" });
+      return;
+    }
+    const dayIdx = assignment.userDays.findIndex((d) => d.dayNumber === dayNumber);
+    if (dayIdx < 0) {
+      res.status(404).json({ error: "Day not found in assignment" });
+      return;
+    }
+    const userDay = assignment.userDays[dayIdx];
+    if (!userDay) {
+      res.status(404).json({ error: "Day not found in assignment" });
+      return;
+    }
+    userDay.exercises = parsed.data.exercises;
+    assignment.markModified("userDays");
+    await assignment.save();
+    res.json({ message: "Member day exercises updated successfully" });
   } catch (error51) {
     next(error51);
   }
@@ -597115,7 +599179,7 @@ var getAssignmentSchedule = async (req, res, next) => {
       res.status(403).json({ error: "Unauthorized" });
       return;
     }
-    const userId = new import_mongoose102.default.Types.ObjectId(requesterId);
+    const userId = new import_mongoose104.default.Types.ObjectId(requesterId);
     const now = new Date;
     const from = parsed.data.from || new Date(now.getTime() - 30 * 86400000);
     const to2 = parsed.data.to || new Date(now.getTime() + 90 * 86400000);
@@ -597168,7 +599232,7 @@ var getTodayAssignedWorkout = async (req, res, next) => {
       res.status(403).json({ error: "Unauthorized" });
       return;
     }
-    const userId = new import_mongoose102.default.Types.ObjectId(requesterId);
+    const userId = new import_mongoose104.default.Types.ObjectId(requesterId);
     const today = normalizeToUtcDate5(new Date);
     const assignment = await WorkoutPlanAssignment_default.findOne({
       userId,
@@ -597204,7 +599268,7 @@ var getAssignedWorkoutForDay = async (req, res, next) => {
       res.status(403).json({ error: "Unauthorized" });
       return;
     }
-    const userId = new import_mongoose102.default.Types.ObjectId(requesterId);
+    const userId = new import_mongoose104.default.Types.ObjectId(requesterId);
     const assignment = await WorkoutPlanAssignment_default.findOne({
       userId,
       status: "active",
@@ -597222,7 +599286,7 @@ var getAssignedWorkoutForDay = async (req, res, next) => {
 var assignPlan = async (req, res, next) => {
   try {
     const planId = req.params.planId;
-    if (typeof planId !== "string" || !import_mongoose102.default.Types.ObjectId.isValid(planId)) {
+    if (typeof planId !== "string" || !import_mongoose104.default.Types.ObjectId.isValid(planId)) {
       res.status(400).json({ error: "Invalid plan ID" });
       return;
     }
@@ -597240,6 +599304,7 @@ var assignPlan = async (req, res, next) => {
         planId,
         userId: req.user?.id ?? "",
         assignedBy: req.user?.id ?? "",
+        assignedByModel: actorModelForRole(req.user?.role ?? "user"),
         startDate: parsed.data.startDate
       });
       res.status(201).json(assignment);
@@ -597271,7 +599336,7 @@ var completePlanDay = async (req, res, next) => {
       res.status(403).json({ error: "Unauthorized" });
       return;
     }
-    const userId = new import_mongoose102.default.Types.ObjectId(requesterId);
+    const userId = new import_mongoose104.default.Types.ObjectId(requesterId);
     const assignment = await WorkoutPlanAssignment_default.findOne({
       userId,
       status: "active",
@@ -597316,7 +599381,7 @@ var updateMyDayExercises = async (req, res, next) => {
       });
       return;
     }
-    const userId = new import_mongoose102.default.Types.ObjectId(req.user.id);
+    const userId = new import_mongoose104.default.Types.ObjectId(req.user.id);
     const assignment = await WorkoutPlanAssignment_default.findOne({
       userId,
       status: "active",
@@ -597363,7 +599428,7 @@ async function _respondWithDayDetail(res, assignment, dayNumber) {
     return {
       exerciseId: ex.exerciseId,
       name: info?.name ?? "Unknown",
-      muscleGroups: info?.muscleGroups ?? ["FullBody"],
+      muscleGroup: info?.muscleGroups?.[0] ?? "FullBody",
       section: ex.section,
       targetSets: ex.targetSets,
       targetReps: ex.targetReps,
@@ -597387,9 +599452,12 @@ async function _respondWithDayDetail(res, assignment, dayNumber) {
 // src/controllers/workout-plan.controller.ts
 var import_node_fs5 = __toESM(require("node:fs"));
 var import_node_path5 = __toESM(require("node:path"));
-var import_mongoose103 = __toESM(require_mongoose2(), 1);
+var import_mongoose105 = __toESM(require_mongoose2(), 1);
+init_Enums();
+init_User();
 
 // src/validators/workout-plan.validator.ts
+init_Enums();
 var planExerciseSchema2 = zod_default.object({
   exerciseId: zod_default.string().min(1),
   orderIndex: zod_default.coerce.number().int().min(0),
@@ -597474,7 +599542,7 @@ Issues: ${JSON.stringify(issues, null, 2)}
   }
 };
 var getIdParam22 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose103.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose105.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -597491,9 +599559,8 @@ var createPlan2 = async (req, res, next) => {
       });
       return;
     }
-    const authReq = req;
-    const createdBy = authReq.user?.id;
-    if (!createdBy) {
+    const requester = req.user;
+    if (!requester) {
       res.status(403).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
       return;
     }
@@ -597503,7 +599570,8 @@ var createPlan2 = async (req, res, next) => {
       status: parsed.data.status,
       difficulty: parsed.data.difficulty,
       splitType: parsed.data.splitType,
-      createdBy
+      createdBy: requester.id,
+      createdByModel: actorModelForRole(requester.role)
     });
     res.status(201).json(plan);
   } catch (error51) {
@@ -597534,6 +599602,9 @@ var listPlans = async (req, res, next) => {
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       filter.name = { $regex: escaped, $options: "i" };
+    }
+    if (req.user?.role === "trainer") {
+      filter.$or = [{ createdBy: req.user.id }, { isTemplate: true }];
     }
     const [plans, total] = await Promise.all([
       WorkoutPlan_default.find(filter).sort({ updatedAt: -1 }).skip((page - 1) * limit).limit(limit).populate("assignedUsers", "name email").lean(),
@@ -597588,8 +599659,12 @@ var getPlan2 = async (req, res, next) => {
       });
       return;
     }
-    const plan = await WorkoutPlan_default.findById(id).populate("createdBy", "name email").populate("assignedUsers", "name email").populate("days.exercises.exerciseId", "name muscleGroups difficulty equipment caloriesPerSet").lean();
+    const plan = await WorkoutPlan_default.findById(id).populate("createdBy", "name email trainerName imageUrl specialities").populate("assignedUsers", "name email").populate("days.exercises.exerciseId", "name muscleGroups difficulty equipment caloriesPerSet").lean();
     if (!plan) {
+      res.status(404).json({ error: "Plan not found" });
+      return;
+    }
+    if (req.user?.role === "trainer" && !plan.isTemplate && plan.createdBy?._id?.toString() !== req.user.id && plan.createdBy?.toString() !== req.user.id) {
       res.status(404).json({ error: "Plan not found" });
       return;
     }
@@ -597607,14 +599682,14 @@ var getPlan2 = async (req, res, next) => {
               exerciseId: exercise._id.toString(),
               exercise: {
                 name: exercise.name,
-                muscleGroups: exercise.muscleGroups,
+                muscleGroup: exercise.muscleGroups?.[0] ?? "FullBody",
                 difficulty: exercise.difficulty,
                 equipment: exercise.equipment,
                 caloriesPerSet: exercise.caloriesPerSet
               }
             };
           }
-          return ex;
+          return { ...ex, exerciseMissing: true };
         })
       }))
     };
@@ -597646,7 +599721,7 @@ var updatePlan2 = async (req, res, next) => {
     const plan = await WorkoutPlan_default.findByIdAndUpdate(id, parsed.data, {
       new: true,
       runValidators: true
-    }).populate("createdBy", "name email").populate("assignedUsers", "name email").lean();
+    }).populate("createdBy", "name email trainerName imageUrl specialities").populate("assignedUsers", "name email").lean();
     if (!plan) {
       res.status(404).json({ error: "Plan not found" });
       return;
@@ -597750,14 +599825,16 @@ var assignUsers = async (req, res, next) => {
     }
     const startDate = parsed.data.startDate ? new Date(parsed.data.startDate) : new Date;
     const adminId = req.user?.id;
-    if (!adminId) {
+    if (!adminId || !req.user) {
       res.status(403).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
       return;
     }
+    const assignedByModel = actorModelForRole(req.user.role);
     const results = await Promise.allSettled(parsed.data.userIds.map((uid) => createAssignmentForUser({
       planId: id,
       userId: uid,
       assignedBy: adminId,
+      assignedByModel,
       startDate
     })));
     const created = [];
@@ -597802,6 +599879,8 @@ workoutPlanRouter.get("/assignments/mine/today", authorize(["user"]), getTodayAs
 workoutPlanRouter.get("/assignments/mine/days/:dayNumber", authorize(["user"]), getAssignedWorkoutForDay);
 workoutPlanRouter.post("/assignments/mine/complete-day", authorize(["user"]), completePlanDay);
 workoutPlanRouter.patch("/assignments/mine/days/:dayNumber", authorize(["user"]), updateMyDayExercises);
+workoutPlanRouter.get("/assignments/user/:userId", authorize(["admin", "trainer"]), getUserAssignment);
+workoutPlanRouter.patch("/assignments/user/:userId/days/:dayNumber", authorize(["admin", "trainer"]), updateUserDayExercises);
 workoutPlanRouter.get("/", authorize(["admin", "trainer"]), listPlans);
 workoutPlanRouter.post("/", authorize(["admin", "trainer"]), createPlan2);
 workoutPlanRouter.get("/:id", authorize(["admin", "trainer"]), getPlan2);
@@ -597814,6 +599893,9 @@ var workout_plan_routes_default = workoutPlanRouter;
 
 // src/routes/zego.routes.ts
 var import_express31 = __toESM(require_express2(), 1);
+
+// src/controllers/zego.controller.ts
+init_User();
 
 // src/utils/zego.ts
 var import_node_crypto8 = __toESM(require("node:crypto"));
@@ -597904,7 +599986,7 @@ function generateToken04(appId, userId, secret, effectiveTimeInSeconds, payload)
 }
 
 // src/services/session-access.service.ts
-var import_mongoose104 = __toESM(require_mongoose2(), 1);
+var import_mongoose106 = __toESM(require_mongoose2(), 1);
 var MIN_TTL_SECONDS = 60;
 var MAX_TTL_SECONDS = 7200;
 var DENY_STATUS = {
@@ -597938,14 +600020,14 @@ var resolveSessionAccess = async ({
   now = new Date
 }) => {
   const rawUserId = user.id;
-  const userObjId = import_mongoose104.default.Types.ObjectId.isValid(String(rawUserId)) ? new import_mongoose104.default.Types.ObjectId(String(rawUserId)) : null;
-  const sessionObjId = import_mongoose104.default.Types.ObjectId.isValid(sessionId) ? new import_mongoose104.default.Types.ObjectId(sessionId) : null;
+  const userObjId = import_mongoose106.default.Types.ObjectId.isValid(String(rawUserId)) ? new import_mongoose106.default.Types.ObjectId(String(rawUserId)) : null;
+  const sessionObjId = import_mongoose106.default.Types.ObjectId.isValid(sessionId) ? new import_mongoose106.default.Types.ObjectId(sessionId) : null;
   const session = sessionObjId ? await ScheduledSession_default.findById(sessionObjId) : null;
   const klass = session ? await Class_default.findById(session.classId).select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes").lean() : await Class_default.findById(sessionId).select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes").lean();
   if (!session && !klass) {
     const cleanId = sessionId.startsWith("nutri_session_") ? sessionId.replace("nutri_session_", "") : sessionId;
     let nutriBooking = null;
-    if (import_mongoose104.default.Types.ObjectId.isValid(cleanId)) {
+    if (import_mongoose106.default.Types.ObjectId.isValid(cleanId)) {
       nutriBooking = await NutritionistBooking_default.findById(cleanId);
     }
     if (!nutriBooking) {
@@ -598356,8 +600438,8 @@ var zego_routes_default = zegoRouter;
 var import_express32 = __toESM(require_express2(), 1);
 
 // src/models/ConferenceSettings.ts
-var import_mongoose105 = __toESM(require_mongoose2(), 1);
-var conferenceSettingsSchema = new import_mongoose105.default.Schema({
+var import_mongoose107 = __toESM(require_mongoose2(), 1);
+var conferenceSettingsSchema = new import_mongoose107.default.Schema({
   defaultVideoResolution: {
     type: String,
     enum: ["360p", "540p", "720p", "1080p"],
@@ -598389,7 +600471,7 @@ var conferenceSettingsSchema = new import_mongoose105.default.Schema({
     required: true
   }
 }, { timestamps: true });
-var ConferenceSettings_default = import_mongoose105.default.models.ConferenceSettings || import_mongoose105.default.model("ConferenceSettings", conferenceSettingsSchema);
+var ConferenceSettings_default = import_mongoose107.default.models.ConferenceSettings || import_mongoose107.default.model("ConferenceSettings", conferenceSettingsSchema);
 
 // src/controllers/settings.controller.ts
 var updateConferenceSettingsSchema = exports_external.object({
@@ -598454,7 +600536,7 @@ var settings_routes_default = settingsRouter;
 
 // src/utils/api-error.ts
 var import_jsonwebtoken2 = __toESM(require_jsonwebtoken(), 1);
-var import_mongoose106 = __toESM(require_mongoose2(), 1);
+var import_mongoose108 = __toESM(require_mongoose2(), 1);
 var RESPONSE_ERROR_NAME = "ResponseError";
 var isPlainObject2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 var parseBooleanEnv2 = (value) => {
@@ -598654,7 +600736,7 @@ var mapError = (error51, fallbackMessage) => {
       details: details2
     };
   }
-  if (error51 instanceof import_mongoose106.default.Error.ValidationError) {
+  if (error51 instanceof import_mongoose108.default.Error.ValidationError) {
     const details2 = {};
     for (const [key, entry] of Object.entries(error51.errors)) {
       if (details2[key]) {
@@ -598669,7 +600751,7 @@ var mapError = (error51, fallbackMessage) => {
       details: details2
     };
   }
-  if (error51 instanceof import_mongoose106.default.Error.CastError) {
+  if (error51 instanceof import_mongoose108.default.Error.CastError) {
     return {
       status: 400,
       error: "Invalid request parameter",
@@ -598689,6 +600771,16 @@ var mapError = (error51, fallbackMessage) => {
   if (error51 instanceof CreditServiceError) {
     const mapped = mapCreditServiceError2(error51);
     return { status: mapped.status, error: mapped.message };
+  }
+  if (error51 instanceof TrainerRosterError) {
+    if (error51.code === "NOT_YOUR_MEMBER") {
+      return {
+        status: 403,
+        error: error51.message,
+        code: "NOT_YOUR_MEMBER"
+      };
+    }
+    return { status: 400, error: error51.message };
   }
   if (isJwtError(error51)) {
     return { status: 401, error: "Invalid or expired token" };
@@ -598958,18 +601050,18 @@ app.use((error51, _req, res, _next) => {
 var app_default = app;
 
 // src/utils/db.ts
-var import_mongoose107 = __toESM(require_mongoose2(), 1);
+var import_mongoose109 = __toESM(require_mongoose2(), 1);
 var connectionPromise = null;
 async function connectDB() {
   const connectionUrl = process.env.MONGODB_URL;
   if (!connectionUrl) {
     throw new Error("Empty connection string for MongoDB connection");
   }
-  if (import_mongoose107.default.connection.readyState === 1) {
+  if (import_mongoose109.default.connection.readyState === 1) {
     return;
   }
   if (!connectionPromise) {
-    connectionPromise = import_mongoose107.default.connect(connectionUrl, {
+    connectionPromise = import_mongoose109.default.connect(connectionUrl, {
       serverSelectionTimeoutMS: 30000
     });
   }

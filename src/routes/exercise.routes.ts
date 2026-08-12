@@ -13,10 +13,26 @@ const exerciseRouter = Router();
 
 exerciseRouter.use(authenticateToken);
 
-exerciseRouter.get("/", authorize(["admin", "user"]), listExercises);
-exerciseRouter.get("/:id", authorize(["admin", "user"]), getExerciseById);
-exerciseRouter.post("/", authorize(["admin", "user"]), createExercise);
-exerciseRouter.put("/:id", authorize(["admin", "user"]), updateExercise);
-exerciseRouter.delete("/:id", authorize(["admin", "user"]), deleteExercise);
+exerciseRouter.get("/", authorize(["admin", "user", "trainer"]), listExercises);
+exerciseRouter.get(
+	"/:id",
+	authorize(["admin", "user", "trainer"]),
+	getExerciseById,
+);
+exerciseRouter.post(
+	"/",
+	authorize(["admin", "user", "trainer"]),
+	createExercise,
+);
+exerciseRouter.put(
+	"/:id",
+	authorize(["admin", "user", "trainer"]),
+	updateExercise,
+);
+exerciseRouter.delete(
+	"/:id",
+	authorize(["admin", "user", "trainer"]),
+	deleteExercise,
+);
 
 export default exerciseRouter;

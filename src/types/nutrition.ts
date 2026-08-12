@@ -36,6 +36,26 @@ export type MealItemInput = {
 	quantityG: number;
 };
 
+// A meal-log item, as accepted by POST/PATCH /nutrition/my/meal-logs —
+// deliberately looser than MealItemInput (used by template/plan authoring).
+// Exactly one of foodId / externalRef / foodName identifies the food;
+// quantityG is either given directly or derived from a household serving.
+export type LogItemInput = {
+	foodId?: string;
+	externalRef?: { source: "OpenFoodFacts"; id: string };
+	foodName?: string;
+	caloriesKcal?: number;
+	proteinG?: number;
+	carbsG?: number;
+	fatG?: number;
+	fiberG?: number | null;
+	sugarG?: number | null;
+	quantityG?: number;
+	servingLabel?: string;
+	servingCount?: number;
+	recipeSource?: string;
+};
+
 export type MealOptionInput = {
 	title: string;
 	isDefault?: boolean;

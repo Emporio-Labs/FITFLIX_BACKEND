@@ -15,6 +15,7 @@
 		"seed:exercises": "bun run scripts/seed-exercises.ts",
 		"import:meal-plan": "bun run scripts/import-meal-plan.ts",
 		"export:meal-plan": "bun run scripts/export-meal-plan.ts",
+		"seed:servings": "bun run scripts/seed-servings.ts",
 		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
 		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts",
 		"test:feature-009": "bun run tests/feature-009-access-control-rbac.test.ts",
@@ -34,6 +35,7 @@
 		"test:feature-007": "bun run tests/feature-007-publish-unpublish-class.test.ts",
 		"test:class-all": "bun run tests/run-all-tests.ts",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts",
+		"migrate:plan-actor-refs": "bun run scripts/migrate-plan-actor-refs.ts",
 		"test:community": "bun run tests/community/community-foundation.test.ts",
 		"test:community-posts": "COMMUNITY_MAX_IMAGE_BYTES=10485760 bun run tests/community/posts-feed.test.ts",
 		"test:community-engagement": "bun run tests/community/engagement.test.ts",
@@ -67,7 +69,7 @@
 		"googleapis": "^171.4.0",
 		"jimp": "^1.6.1",
 		"jsonwebtoken": "^9.0.2",
-		"mongoose": "^9.3.1",
+		"mongoose": "^9.7.2",
 		"multer": "^2.2.0",
 		"openai": "^6.33.0",
 		"pdf-parse": "^2.4.5",
@@ -80,6 +82,10 @@
 		"form-data": "^2.5.6",
 		"protobufjs": "^7.6.3",
 		"ws": "^8.21.0",
-		"uuid": "^11.1.1"
+		"uuid": "^11.1.1",
+		"socket.io-parser": "^4.2.7",
+		"body-parser": "^2.3.0",
+		"qs": "^6.15.2",
+		"websocket-driver": "^0.7.5"
 	}
 }

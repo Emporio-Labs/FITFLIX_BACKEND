@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Admin from "../models/Admin";
 import { hashPassword } from "../utils/password";
+import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import {
 	createAdminBodySchema,
 	updateAdminBodySchema,
@@ -34,10 +35,9 @@ export const createAdmin: RequestHandler = async (req, res, next) => {
 	try {
 		const passwordHash = await hashPassword(password);
 
-		const existingAdmin = await Admin.findOne({ email }).select("_id");
-
-		if (existingAdmin) {
-			res.status(409).json({ message: "Admin with this email already exists" });
+		const emailCheck = await isEmailInUseAcrossSystem(email);
+		if (emailCheck.exists) {
+			res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
 			return;
 		}
 
@@ -111,6 +111,14 @@ export const updateAdminById: RequestHandler = async (req, res, next) => {
 	};
 
 	try {
+		if (rest.email) {
+			const emailCheck = await isEmailInUseAcrossSystem(rest.email, id);
+			if (emailCheck.exists) {
+				res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
+				return;
+			}
+		}
+
 		const updatedAdmin = await Admin.findByIdAndUpdate(id, updatePayload, {
 			returnDocument: "after",
 			runValidators: true,
