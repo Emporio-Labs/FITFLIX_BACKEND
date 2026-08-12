@@ -3,7 +3,9 @@ import { macroTotalsSchema } from "./nutrition-shared.schema";
 
 // Materialized daily rollup. Recomputed on every meal-log mutation so
 // dashboards read O(days) instead of aggregating raw logs. The unique
-// {userId,planId,date} index makes the upsert idempotent.
+// {userId,planId,date} index makes the upsert idempotent — including for
+// planId:null, which gives exactly one plan-less rollup per user per day
+// (Mongo unique indexes treat null as an ordinary value, not a skip).
 const nutritionAdherenceDailySchema = new mongoose.Schema(
 	{
 		userId: {
@@ -11,10 +13,12 @@ const nutritionAdherenceDailySchema = new mongoose.Schema(
 			ref: "User",
 			required: true,
 		},
+		// Null when this rollup covers free-form diary logging with no
+		// nutritionist-assigned plan.
 		planId: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "UserNutritionPlan",
-			required: true,
+			default: null,
 		},
 		date: { type: Date, required: true },
 		plannedMeals: { type: Number, default: 0 },

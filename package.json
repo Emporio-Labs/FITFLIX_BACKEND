@@ -13,6 +13,7 @@
 		"seed:exercises": "bun run scripts/seed-exercises.ts",
 		"import:meal-plan": "bun run scripts/import-meal-plan.ts",
 		"export:meal-plan": "bun run scripts/export-meal-plan.ts",
+		"seed:servings": "bun run scripts/seed-servings.ts",
 		"test:onboarding-flow": "bun run tests/onboarding/full-onboarding-flow.test.ts",
 		"test:clinical-review": "bun run tests/onboarding/clinical-review-flow.test.ts",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts",

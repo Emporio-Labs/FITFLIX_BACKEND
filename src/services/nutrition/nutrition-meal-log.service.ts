@@ -1,8 +1,12 @@
 import type mongoose from "mongoose";
-import { MealLogSource, MealLogStatus } from "../../models/Enums";
+import {
+	MealLogSource,
+	MealLogStatus,
+	type MealType,
+} from "../../models/Enums";
 import NutritionMealLog from "../../models/nutrition-meal-log.model";
 import UserNutritionPlan from "../../models/nutrition-plan.model";
-import type { MealItemInput } from "../../types/nutrition";
+import type { LogItemInput } from "../../types/nutrition";
 import { computeDayNumber, recomputeDay } from "./nutrition-adherence.service";
 import {
 	NutritionServiceError,
@@ -13,14 +17,16 @@ import {
 	getEffectiveMealItems,
 	getOptionItems,
 	sumMacros,
+	sumMicros,
 } from "./nutrition-macro.util";
-import { resolveItemsToSnapshots } from "./nutrition-snapshot.util";
+import { resolveLogItemsToSnapshots } from "./nutrition-snapshot.util";
 
 export type LogMealInput = {
 	planId?: string | null;
 	logDate?: Date;
 	status?: MealLogStatus;
 	source?: MealLogSource;
+	mealType?: MealType;
 	plannedMealRef?: {
 		dayNumber: number;
 		mealIndex: number;
@@ -29,7 +35,7 @@ export type LogMealInput = {
 	} | null;
 	notes?: string;
 	photoUrls?: string[];
-	items: MealItemInput[];
+	items: LogItemInput[];
 };
 
 const assertPlanOwnedByUser = async (
@@ -62,14 +68,16 @@ export const logMeal = async (input: LogMealInput, userId: string) => {
 		dayNumber = computeDayNumber(plan.startDate, plan.durationDays, logDate);
 	}
 
-	const items = await resolveItemsToSnapshots(input.items);
+	const items = await resolveLogItemsToSnapshots(input.items);
 	const totals = sumMacros(items);
+	const microTotals = sumMicros(items);
 
 	const log = await NutritionMealLog.create({
 		userId: userObjectId,
 		planId: planObjectId,
 		logDate,
 		dayNumber,
+		mealType: input.mealType ?? null,
 		plannedMealRef: input.plannedMealRef ?? null,
 		status: input.status ?? MealLogStatus.Logged,
 		source: input.source ?? MealLogSource.Manual,
@@ -77,11 +85,12 @@ export const logMeal = async (input: LogMealInput, userId: string) => {
 		photoUrls: input.photoUrls ?? [],
 		items,
 		totals,
+		microTotals,
 	});
 
-	if (planObjectId) {
-		await recomputeDay(userObjectId, planObjectId, logDate);
-	}
+	// Unconditional: a plan-less log still needs its daily rollup recomputed
+	// (recomputeDay handles planId=null — see nutrition-adherence.service.ts).
+	await recomputeDay(userObjectId, planObjectId, logDate);
 
 	return log;
 };
@@ -146,6 +155,9 @@ export const markMealCompleted = async (
 			planId: planObjectId,
 			logDate,
 			dayNumber,
+			// Populated from the prescribed meal so a completed plan meal groups
+			// into the diary the same way a free-form log does.
+			mealType: meal.mealType ?? null,
 			plannedMealRef,
 			status: MealLogStatus.Logged,
 			source: MealLogSource.Manual,
@@ -173,9 +185,10 @@ const loadOwnLog = async (logId: string, userId: string) => {
 
 export type UpdateMealLogInput = {
 	status?: MealLogStatus;
+	mealType?: MealType;
 	notes?: string;
 	photoUrls?: string[];
-	items?: MealItemInput[];
+	items?: LogItemInput[];
 };
 
 export const updateMealLog = async (
@@ -188,6 +201,9 @@ export const updateMealLog = async (
 	if (patch.status !== undefined) {
 		log.set({ status: patch.status });
 	}
+	if (patch.mealType !== undefined) {
+		log.set({ mealType: patch.mealType });
+	}
 	if (patch.notes !== undefined) {
 		log.set({ notes: patch.notes });
 	}
@@ -195,15 +211,14 @@ export const updateMealLog = async (
 		log.set({ photoUrls: patch.photoUrls });
 	}
 	if (patch.items) {
-		const items = await resolveItemsToSnapshots(patch.items);
-		log.set({ items, totals: sumMacros(items) });
+		const items = await resolveLogItemsToSnapshots(patch.items);
+		log.set({ items, totals: sumMacros(items), microTotals: sumMicros(items) });
 	}
 
 	await log.save();
 
-	if (log.planId) {
-		await recomputeDay(log.userId, log.planId, log.logDate);
-	}
+	// Unconditional — see logMeal. recomputeDay handles planId=null.
+	await recomputeDay(log.userId, log.planId ?? null, log.logDate);
 
 	return log;
 };
@@ -213,13 +228,13 @@ export const deleteMealLog = async (logId: string, userId: string) => {
 	const { planId, userId: ownerId, logDate } = log;
 	await log.deleteOne();
 
-	if (planId) {
-		await recomputeDay(ownerId, planId, logDate);
-	}
+	// Unconditional — see logMeal. recomputeDay handles planId=null.
+	await recomputeDay(ownerId, planId ?? null, logDate);
 };
 
 export type ListLogsFilters = {
 	planId?: string;
+	scope?: "diary" | "plan" | "all";
 	from?: Date;
 	to?: Date;
 	page?: number;
@@ -240,7 +255,13 @@ export const listLogs = async (userId: string, filters: ListLogsFilters) => {
 			"BAD_REQUEST",
 			"Invalid plan ID",
 		);
+	} else if (filters.scope === "diary") {
+		filter.planId = null;
+	} else if (filters.scope === "plan") {
+		filter.planId = { $ne: null };
 	}
+	// scope "all" or omitted: no additional filter — identical to the
+	// pre-existing unfiltered behavior every current caller relies on.
 
 	if (filters.from || filters.to) {
 		const range: Record<string, Date> = {};

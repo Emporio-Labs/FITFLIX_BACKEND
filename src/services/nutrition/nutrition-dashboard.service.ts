@@ -532,7 +532,7 @@ export type TargetSource =
 	| "default"
 	| "none";
 
-interface MacroTargetResult {
+export interface MacroTargetResult {
 	calories: number;
 	protein: number;
 	carbs: number;
@@ -548,8 +548,11 @@ interface MacroTargetResult {
  * 3. Full Mifflin-St Jeor calculation  (weight + height + age + gender + activity)
  * 4. Weight-only calculation
  * 5. Default fallback  /  "none" when there is truly no data
+ *
+ * Exported so the adherence service can reuse it for plan-less rollups
+ * (recomputeDay with planId=null) instead of a fourth target-resolution path.
  */
-const resolveNutritionTargets = (
+export const resolveNutritionTargets = (
 	plan: any,
 	nutritionProfile: any,
 	healthMarkers: any,

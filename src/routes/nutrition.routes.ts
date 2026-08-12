@@ -15,8 +15,10 @@ import {
 	createCustomFood,
 	createSystemFood,
 	listFoods,
+	lookupBarcodeHandler,
 	patchFood,
 	removeFood,
+	searchFoodsHandler,
 } from "../controllers/nutrition-food.controller";
 import {
 	addHydrationIntake,
@@ -33,6 +35,7 @@ import {
 import {
 	assignTemplate,
 	changePlanStatus,
+	copyPlanDayStructure,
 	createPlan,
 	deletePlanHandler,
 	duplicatePlanHandler,
@@ -43,7 +46,6 @@ import {
 	listManagedPlans,
 	listMyPlans,
 	patchPlan,
-	copyPlanDayStructure,
 } from "../controllers/nutrition-plan.controller";
 import {
 	createProfileHandler,
@@ -102,6 +104,19 @@ nutritionRouter.get(
 	"/foods",
 	authorize(["nutritionist", "admin", "user"]),
 	listFoods,
+);
+// /foods/search and /foods/barcode/:code before /foods/:id-shaped routes —
+// there's no GET /foods/:id today, but keep the file's static-before-param
+// convention intact for whoever adds one later.
+nutritionRouter.get(
+	"/foods/search",
+	authorize(["nutritionist", "admin", "user"]),
+	searchFoodsHandler,
+);
+nutritionRouter.get(
+	"/foods/barcode/:code",
+	authorize(["nutritionist", "admin", "user"]),
+	lookupBarcodeHandler,
 );
 nutritionRouter.post("/foods", STAFF, createCustomFood);
 nutritionRouter.patch("/foods/:id", STAFF, patchFood);
