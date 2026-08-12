@@ -486355,7 +486355,7 @@ module.exports = __toCommonJS(exports_api);
 
 // src/app.ts
 var import_dotenv2 = __toESM(require_main(), 1);
-var import_express32 = __toESM(require_express2(), 1);
+var import_express33 = __toESM(require_express2(), 1);
 
 // src/middleware/rate-limit.middleware.ts
 var MAX_BUCKETS = 5000;
@@ -505008,6 +505008,19 @@ var signAdminToken = (user, config2) => {
   return import_jsonwebtoken.default.sign(payload, config2.secret, buildSignOptions({ ...config2, expiresIn: ADMIN_EXPIRES_IN }));
 };
 var signStepUpToken = (adminId, config2) => import_jsonwebtoken.default.sign({ sub: adminId, scope: "step_up" }, config2.secret, buildSignOptions({ ...config2, expiresIn: STEP_UP_EXPIRES_IN }));
+var QR_EXPIRES_IN = process.env.JWT_QR_EXPIRES_IN?.trim() || "90s";
+var signGymQrToken = (userId, config2) => import_jsonwebtoken.default.sign({ sub: userId, scope: "gym_qr" }, config2.secret, buildSignOptions({ ...config2, expiresIn: QR_EXPIRES_IN }));
+var verifyGymQrToken = (token, config2) => {
+  try {
+    const payload = import_jsonwebtoken.default.verify(token, config2.secret, buildVerifyOptions(config2));
+    if (payload.scope !== "gym_qr" || typeof payload.sub !== "string") {
+      return null;
+    }
+    return payload.sub;
+  } catch {
+    return null;
+  }
+};
 var verifyStepUpToken = (token, adminId, config2) => {
   try {
     const payload = import_jsonwebtoken.default.verify(token, config2.secret, buildVerifyOptions(config2));
@@ -505229,13 +505242,13 @@ var strongPassword = zod_default.string().min(8, "Password must be at least 8 ch
 var signupBodySchema = zod_default.object({
   username: zod_default.string().trim().min(1),
   phone: zod_default.string().trim().min(1),
-  email: zod_default.string().email(),
+  email: zod_default.string().email().toLowerCase(),
   age: signupAgeSchema,
   gender: signupGenderSchema,
   password: strongPassword
 });
 var loginBodySchema = zod_default.object({
-  email: zod_default.string().email(),
+  email: zod_default.string().email().toLowerCase(),
   password: zod_default.string().min(1)
 });
 var refreshTokenBodySchema = zod_default.object({
@@ -505399,13 +505412,15 @@ var login = async (req, res, next) => {
     return;
   }
   try {
-    console.log("[AUTH][LOGIN] Looking up user/admin/doctor/trainer", {
+    console.log("[AUTH][LOGIN] Looking up user/admin/trainer", {
       email: maskEmail(email3)
     });
+    const escapedEmail = email3.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const emailRegex = new RegExp(`^${escapedEmail}$`, "i");
     const [user, admin3, trainer] = await Promise.all([
-      User_default.findOne({ email: email3 }).select("+passwordHash"),
-      Admin_default.findOne({ email: email3 }).select("+passwordHash"),
-      Trainer_default.findOne({ email: email3 }).select("+passwordHash")
+      User_default.findOne({ email: emailRegex }).select("+passwordHash"),
+      Admin_default.findOne({ email: emailRegex }).select("+passwordHash"),
+      Trainer_default.findOne({ email: emailRegex }).select("+passwordHash")
     ]);
     console.log("[AUTH][LOGIN] Model lookups completed", {
       email: maskEmail(email3),
@@ -505753,7 +505768,7 @@ var auth_routes_default = authRouter;
 var import_express3 = __toESM(require_express2(), 1);
 
 // src/controllers/booking.controller.ts
-var import_mongoose37 = __toESM(require_mongoose2(), 1);
+var import_mongoose38 = __toESM(require_mongoose2(), 1);
 
 // src/models/Bookings.ts
 var import_mongoose27 = __toESM(require_mongoose2(), 1);
@@ -507400,6 +507415,27 @@ async function registerGroupClassBooking(params) {
   }
 }
 
+// src/utils/membership.guard.ts
+var import_mongoose37 = __toESM(require_mongoose2(), 1);
+async function getActiveMembership(userId) {
+  const now = new Date;
+  const userQuery = import_mongoose37.default.Types.ObjectId.isValid(userId) ? [{ user: userId }, { user: new import_mongoose37.default.Types.ObjectId(userId) }] : [{ user: userId }];
+  return Membership_default.findOne({
+    $or: userQuery,
+    status: "Active" /* Active */,
+    startDate: { $lte: now },
+    $and: [
+      {
+        $or: [
+          { endDate: null },
+          { endDate: { $exists: false } },
+          { endDate: { $gte: now } }
+        ]
+      }
+    ]
+  }).select("_id planName endDate creditsRemaining").lean();
+}
+
 // src/utils/zego-room.ts
 var nonCancelledBookingStatusFilter = {
   $nin: [
@@ -507494,7 +507530,7 @@ var changeBookingStatusBodySchema = zod_default.object({
 
 // src/controllers/booking.controller.ts
 var getIdParam3 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose37.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose38.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -507620,12 +507656,25 @@ var createBooking = async (req, res, next) => {
     res.status(400).json({ message: "userId is required for admin bookings" });
     return;
   }
-  if (!import_mongoose37.default.Types.ObjectId.isValid(targetUserId) || !import_mongoose37.default.Types.ObjectId.isValid(slotId) || !import_mongoose37.default.Types.ObjectId.isValid(serviceId) || reportId && !import_mongoose37.default.Types.ObjectId.isValid(reportId)) {
+  if (!import_mongoose38.default.Types.ObjectId.isValid(targetUserId) || !import_mongoose38.default.Types.ObjectId.isValid(slotId) || !import_mongoose38.default.Types.ObjectId.isValid(serviceId) || reportId && !import_mongoose38.default.Types.ObjectId.isValid(reportId)) {
     res.status(400).json({ message: "Invalid booking references" });
     return;
   }
   if (bypassCredits && requester.role !== "admin") {
     res.status(403).json({ message: "Only admins can bypass credit consumption" });
+    return;
+  }
+  try {
+    const activeMembership = await getActiveMembership(targetUserId);
+    if (!activeMembership) {
+      res.status(403).json({
+        message: "User does not have an active membership",
+        code: "NO_ACTIVE_MEMBERSHIP"
+      });
+      return;
+    }
+  } catch (membershipErr) {
+    next(membershipErr);
     return;
   }
   let reservedSlotId = null;
@@ -507809,7 +507858,7 @@ var updateBookingById = async (req, res, next) => {
     return;
   }
   const { bookingDate, slotId, serviceId, reportId } = parsedBody.data;
-  if (slotId && !import_mongoose37.default.Types.ObjectId.isValid(slotId) || serviceId && !import_mongoose37.default.Types.ObjectId.isValid(serviceId) || reportId && !import_mongoose37.default.Types.ObjectId.isValid(reportId)) {
+  if (slotId && !import_mongoose38.default.Types.ObjectId.isValid(slotId) || serviceId && !import_mongoose38.default.Types.ObjectId.isValid(serviceId) || reportId && !import_mongoose38.default.Types.ObjectId.isValid(reportId)) {
     res.status(400).json({ message: "Invalid booking references" });
     return;
   }
@@ -507928,7 +507977,7 @@ var deleteBookingById = async (req, res, next) => {
     return;
   }
   try {
-    const session = await import_mongoose37.default.startSession();
+    const session = await import_mongoose38.default.startSession();
     try {
       let response = null;
       await session.withTransaction(async () => {
@@ -508021,7 +508070,7 @@ var changeBookingStatus = async (req, res, next) => {
       return;
     }
     if (isCancelledBookingStatus(parsedBody.data.status)) {
-      const session = await import_mongoose37.default.startSession();
+      const session = await import_mongoose38.default.startSession();
       try {
         let response = null;
         await session.withTransaction(async () => {
@@ -508194,7 +508243,7 @@ var class_routes_default = classRouter;
 var import_express5 = __toESM(require_express2(), 1);
 
 // src/controllers/class-schedule.controller.ts
-var import_mongoose38 = __toESM(require_mongoose2(), 1);
+var import_mongoose39 = __toESM(require_mongoose2(), 1);
 
 // src/validators/class-schedule.validator.ts
 var timeFormatRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -508331,7 +508380,7 @@ var createScheduledSession = async (req, res, next) => {
           return;
         }
       }
-      const sessionId = new import_mongoose38.default.Types.ObjectId;
+      const sessionId = new import_mongoose39.default.Types.ObjectId;
       const sessionDoc = await ScheduledSession_default.create({
         _id: sessionId,
         classId,
@@ -508437,7 +508486,7 @@ var getSchedulesForMembers = async (req, res, next) => {
 };
 var getScheduledSessionByIdForMembers = async (req, res, next) => {
   const id = String(req.params.id);
-  const isValidId = import_mongoose38.default.Types.ObjectId.isValid(id) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const isValidId = import_mongoose39.default.Types.ObjectId.isValid(id) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
   if (!isValidId) {
     res.status(400).json({
       message: "Invalid session id format. Must be a valid ObjectId or UUID."
@@ -508566,23 +508615,23 @@ var class_schedule_routes_default = classScheduleRouter;
 var import_express6 = __toESM(require_express2(), 1);
 
 // src/controllers/community-admin.controller.ts
-var import_mongoose52 = __toESM(require_mongoose2(), 1);
+var import_mongoose53 = __toESM(require_mongoose2(), 1);
 
 // src/models/Comment.ts
-var import_mongoose39 = __toESM(require_mongoose2(), 1);
-var commentSchema = new import_mongoose39.default.Schema({
+var import_mongoose40 = __toESM(require_mongoose2(), 1);
+var commentSchema = new import_mongoose40.default.Schema({
   postId: {
-    type: import_mongoose39.default.Schema.Types.ObjectId,
+    type: import_mongoose40.default.Schema.Types.ObjectId,
     ref: "Post",
     required: true
   },
   parentId: {
-    type: import_mongoose39.default.Schema.Types.ObjectId,
+    type: import_mongoose40.default.Schema.Types.ObjectId,
     ref: "Comment",
     default: null
   },
   authorId: {
-    type: import_mongoose39.default.Schema.Types.ObjectId,
+    type: import_mongoose40.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -508597,11 +508646,11 @@ commentSchema.index({ postId: 1, parentId: 1, createdAt: -1 });
 commentSchema.index({ parentId: 1 });
 commentSchema.index({ authorId: 1 });
 applyIdTransform(commentSchema);
-var Comment = import_mongoose39.default.models.Comment || import_mongoose39.default.model("Comment", commentSchema);
+var Comment = import_mongoose40.default.models.Comment || import_mongoose40.default.model("Comment", commentSchema);
 var Comment_default = Comment;
 
 // src/models/ModerationAction.ts
-var import_mongoose40 = __toESM(require_mongoose2(), 1);
+var import_mongoose41 = __toESM(require_mongoose2(), 1);
 
 // src/utils/mongoose-append-only.ts
 var APPEND_ONLY_ERROR = "APPEND_ONLY_VIOLATION";
@@ -508639,9 +508688,9 @@ function applyAppendOnlyGuard(schema, collectionLabel) {
 }
 
 // src/models/ModerationAction.ts
-var moderationActionSchema = new import_mongoose40.default.Schema({
+var moderationActionSchema = new import_mongoose41.default.Schema({
   adminId: {
-    type: import_mongoose40.default.Schema.Types.ObjectId,
+    type: import_mongoose41.default.Schema.Types.ObjectId,
     ref: "Admin",
     required: true
   },
@@ -508656,24 +508705,24 @@ var moderationActionSchema = new import_mongoose40.default.Schema({
     required: true
   },
   targetId: {
-    type: import_mongoose40.default.Schema.Types.ObjectId,
+    type: import_mongoose41.default.Schema.Types.ObjectId,
     required: true
   },
   reason: { type: String, default: "" },
-  metadata: { type: import_mongoose40.default.Schema.Types.Mixed, default: {} }
+  metadata: { type: import_mongoose41.default.Schema.Types.Mixed, default: {} }
 }, { timestamps: { createdAt: true, updatedAt: false } });
 moderationActionSchema.index({ targetType: 1, targetId: 1, createdAt: -1 });
 moderationActionSchema.index({ adminId: 1, createdAt: -1 });
 applyAppendOnlyGuard(moderationActionSchema, "moderation_actions");
 applyIdTransform(moderationActionSchema);
-var ModerationAction = import_mongoose40.default.models.ModerationAction || import_mongoose40.default.model("ModerationAction", moderationActionSchema);
+var ModerationAction = import_mongoose41.default.models.ModerationAction || import_mongoose41.default.model("ModerationAction", moderationActionSchema);
 var ModerationAction_default = ModerationAction;
 
 // src/models/Post.ts
-var import_mongoose41 = __toESM(require_mongoose2(), 1);
-var postSchema = new import_mongoose41.default.Schema({
+var import_mongoose42 = __toESM(require_mongoose2(), 1);
+var postSchema = new import_mongoose42.default.Schema({
   authorId: {
-    type: import_mongoose41.default.Schema.Types.ObjectId,
+    type: import_mongoose42.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -508699,7 +508748,7 @@ var postSchema = new import_mongoose41.default.Schema({
   pinnedAt: { type: Date, default: null },
   scheduledAt: { type: Date, default: null },
   repostOfId: {
-    type: import_mongoose41.default.Schema.Types.ObjectId,
+    type: import_mongoose42.default.Schema.Types.ObjectId,
     ref: "Post",
     default: null
   },
@@ -508715,14 +508764,14 @@ postSchema.index({ deletedAt: 1 });
 postSchema.index({ authorId: 1, createdAt: -1, _id: -1 });
 postSchema.index({ content: "text" });
 applyIdTransform(postSchema);
-var Post = import_mongoose41.default.models.Post || import_mongoose41.default.model("Post", postSchema);
+var Post = import_mongoose42.default.models.Post || import_mongoose42.default.model("Post", postSchema);
 var Post_default = Post;
 
 // src/models/PostMedia.ts
-var import_mongoose42 = __toESM(require_mongoose2(), 1);
-var postMediaSchema = new import_mongoose42.default.Schema({
+var import_mongoose43 = __toESM(require_mongoose2(), 1);
+var postMediaSchema = new import_mongoose43.default.Schema({
   postId: {
-    type: import_mongoose42.default.Schema.Types.ObjectId,
+    type: import_mongoose43.default.Schema.Types.ObjectId,
     ref: "Post",
     required: true
   },
@@ -508742,19 +508791,19 @@ var postMediaSchema = new import_mongoose42.default.Schema({
 }, { timestamps: true });
 postMediaSchema.index({ postId: 1, position: 1 });
 applyIdTransform(postMediaSchema);
-var PostMedia = import_mongoose42.default.models.PostMedia || import_mongoose42.default.model("PostMedia", postMediaSchema);
+var PostMedia = import_mongoose43.default.models.PostMedia || import_mongoose43.default.model("PostMedia", postMediaSchema);
 var PostMedia_default = PostMedia;
 
 // src/models/PostVersion.ts
-var import_mongoose43 = __toESM(require_mongoose2(), 1);
-var postVersionSchema = new import_mongoose43.default.Schema({
+var import_mongoose44 = __toESM(require_mongoose2(), 1);
+var postVersionSchema = new import_mongoose44.default.Schema({
   postId: {
-    type: import_mongoose43.default.Schema.Types.ObjectId,
+    type: import_mongoose44.default.Schema.Types.ObjectId,
     ref: "Post",
     required: true
   },
   editedBy: {
-    type: import_mongoose43.default.Schema.Types.ObjectId,
+    type: import_mongoose44.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -508763,21 +508812,21 @@ var postVersionSchema = new import_mongoose43.default.Schema({
   contentSnapshot: { type: String, default: "" },
   descriptionSnapshot: { type: String, default: "" },
   mediaSnapshot: {
-    type: [import_mongoose43.default.Schema.Types.Mixed],
+    type: [import_mongoose44.default.Schema.Types.Mixed],
     default: []
   }
 }, { timestamps: { createdAt: true, updatedAt: false } });
 postVersionSchema.index({ postId: 1, editedAt: -1 });
 applyAppendOnlyGuard(postVersionSchema, "post_versions");
 applyIdTransform(postVersionSchema);
-var PostVersion = import_mongoose43.default.models.PostVersion || import_mongoose43.default.model("PostVersion", postVersionSchema);
+var PostVersion = import_mongoose44.default.models.PostVersion || import_mongoose44.default.model("PostVersion", postVersionSchema);
 var PostVersion_default = PostVersion;
 
 // src/models/Report.ts
-var import_mongoose44 = __toESM(require_mongoose2(), 1);
-var reportSchema = new import_mongoose44.default.Schema({
+var import_mongoose45 = __toESM(require_mongoose2(), 1);
+var reportSchema = new import_mongoose45.default.Schema({
   reporterId: {
-    type: import_mongoose44.default.Schema.Types.ObjectId,
+    type: import_mongoose45.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -508787,7 +508836,7 @@ var reportSchema = new import_mongoose44.default.Schema({
     required: true
   },
   targetId: {
-    type: import_mongoose44.default.Schema.Types.ObjectId,
+    type: import_mongoose45.default.Schema.Types.ObjectId,
     required: true
   },
   reason: { type: String, required: true },
@@ -508799,7 +508848,7 @@ var reportSchema = new import_mongoose44.default.Schema({
     required: true
   },
   resolvedBy: {
-    type: import_mongoose44.default.Schema.Types.ObjectId,
+    type: import_mongoose45.default.Schema.Types.ObjectId,
     ref: "Admin",
     default: null
   },
@@ -508812,15 +508861,15 @@ reportSchema.index({ reporterId: 1, targetType: 1, targetId: 1 }, {
   partialFilterExpression: { status: "pending" /* Pending */ }
 });
 applyIdTransform(reportSchema);
-var Report = import_mongoose44.default.models.Report || import_mongoose44.default.model("Report", reportSchema);
+var Report = import_mongoose45.default.models.Report || import_mongoose45.default.model("Report", reportSchema);
 var Report_default = Report;
 
 // src/utils/transaction.ts
-var import_mongoose45 = __toESM(require_mongoose2(), 1);
+var import_mongoose46 = __toESM(require_mongoose2(), 1);
 async function withOptionalTransaction(fn) {
   let session;
   try {
-    session = await import_mongoose45.default.startSession();
+    session = await import_mongoose46.default.startSession();
   } catch {
     return fn(undefined);
   }
@@ -508842,7 +508891,7 @@ async function withOptionalTransaction(fn) {
 }
 
 // src/services/community/profile.service.ts
-var import_mongoose49 = __toESM(require_mongoose2(), 1);
+var import_mongoose50 = __toESM(require_mongoose2(), 1);
 
 // src/config/community.ts
 var positiveInt = (value, fallback) => {
@@ -508882,9 +508931,9 @@ var communityConfig = {
 };
 
 // src/models/CommunityProfile.ts
-var import_mongoose46 = __toESM(require_mongoose2(), 1);
-var communityProfileSchema = new import_mongoose46.default.Schema({
-  ownerId: { type: import_mongoose46.default.Schema.Types.ObjectId, required: true },
+var import_mongoose47 = __toESM(require_mongoose2(), 1);
+var communityProfileSchema = new import_mongoose47.default.Schema({
+  ownerId: { type: import_mongoose47.default.Schema.Types.ObjectId, required: true },
   ownerType: {
     type: String,
     enum: ["user", "trainer", "admin"],
@@ -508898,21 +508947,21 @@ var communityProfileSchema = new import_mongoose46.default.Schema({
 }, { timestamps: true });
 communityProfileSchema.index({ ownerId: 1 }, { unique: true });
 applyIdTransform(communityProfileSchema);
-var CommunityProfile_default = import_mongoose46.default.models.CommunityProfile || import_mongoose46.default.model("CommunityProfile", communityProfileSchema);
+var CommunityProfile_default = import_mongoose47.default.models.CommunityProfile || import_mongoose47.default.model("CommunityProfile", communityProfileSchema);
 
 // src/services/community/block.service.ts
-var import_mongoose48 = __toESM(require_mongoose2(), 1);
+var import_mongoose49 = __toESM(require_mongoose2(), 1);
 
 // src/models/Block.ts
-var import_mongoose47 = __toESM(require_mongoose2(), 1);
-var blockSchema = new import_mongoose47.default.Schema({
+var import_mongoose48 = __toESM(require_mongoose2(), 1);
+var blockSchema = new import_mongoose48.default.Schema({
   blockerId: {
-    type: import_mongoose47.default.Schema.Types.ObjectId,
+    type: import_mongoose48.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
   blockedId: {
-    type: import_mongoose47.default.Schema.Types.ObjectId,
+    type: import_mongoose48.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   }
@@ -508920,7 +508969,7 @@ var blockSchema = new import_mongoose47.default.Schema({
 blockSchema.index({ blockerId: 1, blockedId: 1 }, { unique: true });
 blockSchema.index({ blockedId: 1 });
 applyIdTransform(blockSchema);
-var Block = import_mongoose47.default.models.Block || import_mongoose47.default.model("Block", blockSchema);
+var Block = import_mongoose48.default.models.Block || import_mongoose48.default.model("Block", blockSchema);
 var Block_default = Block;
 
 // src/services/community/cursor.ts
@@ -508956,7 +509005,7 @@ async function getBlockedUserIds(userId) {
   return [...ids];
 }
 async function blockUser(blockerId, blockedId) {
-  if (!import_mongoose48.default.isValidObjectId(blockedId))
+  if (!import_mongoose49.default.isValidObjectId(blockedId))
     return "invalid";
   if (blockerId === blockedId)
     return "self";
@@ -508978,7 +509027,7 @@ async function listBlocks(blockerId, params = {}) {
   const filter = { blockerId };
   if (params.cursor) {
     const at = new Date(params.cursor.createdAt);
-    const id = new import_mongoose48.default.Types.ObjectId(params.cursor.id);
+    const id = new import_mongoose49.default.Types.ObjectId(params.cursor.id);
     filter.$or = [
       { createdAt: { $lt: at } },
       { createdAt: at, _id: { $lt: id } }
@@ -509022,7 +509071,7 @@ async function resolveAvatarUrl(keyOrUrl) {
   return generateSignedUrl(value, 900, "image/jpeg");
 }
 async function identifyOwner(id) {
-  if (!import_mongoose49.default.isValidObjectId(id))
+  if (!import_mongoose50.default.isValidObjectId(id))
     return null;
   const [user, trainer, admin3] = await Promise.all([
     User_default.findById(id).select("username createdAt").lean(),
@@ -509073,7 +509122,7 @@ function monthStamp(date5) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 async function findProfile(ownerId) {
-  if (!import_mongoose49.default.isValidObjectId(ownerId))
+  if (!import_mongoose50.default.isValidObjectId(ownerId))
     return null;
   return CommunityProfile_default.findOne({ ownerId }).lean();
 }
@@ -509156,7 +509205,7 @@ async function discardAvatarObjects(profile) {
   await Promise.all(keys.map((k) => deleteFromS3(k).catch(() => {})));
 }
 async function resolveProfilesForAuthors(ids) {
-  const valid = ids.filter((id) => import_mongoose49.default.isValidObjectId(id));
+  const valid = ids.filter((id) => import_mongoose50.default.isValidObjectId(id));
   if (valid.length === 0)
     return new Map;
   const rows = await CommunityProfile_default.find({ ownerId: { $in: valid } }).select("ownerId displayName avatarThumbKey avatarKey").lean();
@@ -509181,11 +509230,11 @@ async function searchPeople(viewerId, rawQuery, params = {}) {
   const blockedIds = await getBlockedUserIds(viewerId);
   const filter = {
     username: rx,
-    _id: { $nin: blockedIds.map((id) => new import_mongoose49.default.Types.ObjectId(id)) }
+    _id: { $nin: blockedIds.map((id) => new import_mongoose50.default.Types.ObjectId(id)) }
   };
   if (params.cursor) {
     const at = new Date(params.cursor.createdAt);
-    const id = new import_mongoose49.default.Types.ObjectId(params.cursor.id);
+    const id = new import_mongoose50.default.Types.ObjectId(params.cursor.id);
     filter.$or = [
       { createdAt: { $lt: at } },
       { createdAt: at, _id: { $lt: id } }
@@ -509198,7 +509247,7 @@ async function searchPeople(viewerId, rawQuery, params = {}) {
   const trainers = isFirstPage ? await Trainer_default.find({
     trainerName: rx,
     isActive: { $ne: false },
-    _id: { $nin: blockedIds.map((id) => new import_mongoose49.default.Types.ObjectId(id)) }
+    _id: { $nin: blockedIds.map((id) => new import_mongoose50.default.Types.ObjectId(id)) }
   }).limit(communityConfig.profile.searchTrainerLead).select("trainerName description imageUrl").lean() : [];
   const profileMap = await resolveProfilesForAuthors([
     ...rows.map((r2) => String(r2._id)),
@@ -509823,13 +509872,13 @@ async function listUsersAdmin(filters) {
 }
 
 // src/services/community/post.service.ts
-var import_mongoose51 = __toESM(require_mongoose2(), 1);
+var import_mongoose52 = __toESM(require_mongoose2(), 1);
 
 // src/models/Like.ts
-var import_mongoose50 = __toESM(require_mongoose2(), 1);
-var likeSchema = new import_mongoose50.default.Schema({
+var import_mongoose51 = __toESM(require_mongoose2(), 1);
+var likeSchema = new import_mongoose51.default.Schema({
   userId: {
-    type: import_mongoose50.default.Schema.Types.ObjectId,
+    type: import_mongoose51.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -509839,14 +509888,14 @@ var likeSchema = new import_mongoose50.default.Schema({
     required: true
   },
   targetId: {
-    type: import_mongoose50.default.Schema.Types.ObjectId,
+    type: import_mongoose51.default.Schema.Types.ObjectId,
     required: true
   }
 }, { timestamps: true });
 likeSchema.index({ userId: 1, targetType: 1, targetId: 1 }, { unique: true });
 likeSchema.index({ targetType: 1, targetId: 1 });
 applyIdTransform(likeSchema);
-var Like = import_mongoose50.default.models.Like || import_mongoose50.default.model("Like", likeSchema);
+var Like = import_mongoose51.default.models.Like || import_mongoose51.default.model("Like", likeSchema);
 var Like_default = Like;
 
 // src/services/community/like.service.ts
@@ -509939,7 +509988,7 @@ function buildFeedFilter(cursor, blockedIds) {
   filter.pinnedAt = null;
   if (cursor) {
     const at = new Date(cursor.createdAt);
-    const id = new import_mongoose51.default.Types.ObjectId(cursor.id);
+    const id = new import_mongoose52.default.Types.ObjectId(cursor.id);
     filter.$or = [
       { createdAt: { $lt: at } },
       { createdAt: at, _id: { $lt: id } }
@@ -510112,7 +510161,7 @@ async function getPostsByAuthor(authorId, viewerIsMember, params, viewerId) {
   };
   if (params.cursor) {
     const at = new Date(params.cursor.createdAt);
-    const id = new import_mongoose51.default.Types.ObjectId(params.cursor.id);
+    const id = new import_mongoose52.default.Types.ObjectId(params.cursor.id);
     filter.$or = [
       { createdAt: { $lt: at } },
       { createdAt: at, _id: { $lt: id } }
@@ -510421,7 +510470,7 @@ async function validateUploadedVideo(s3Key) {
 }
 
 // src/controllers/community-admin.controller.ts
-var getId = (v) => typeof v === "string" && import_mongoose52.default.Types.ObjectId.isValid(v) ? v : null;
+var getId = (v) => typeof v === "string" && import_mongoose53.default.Types.ObjectId.isValid(v) ? v : null;
 var NOT_FOUND = { error: "Not found", code: "NOT_FOUND" };
 var stepUpHandler = async (req, res, next) => {
   try {
@@ -510748,15 +510797,15 @@ var assignRoleHandler = userAction(assignTrainerRole);
 var revokeRoleHandler = userAction(revokeTrainerRole);
 
 // src/models/Share.ts
-var import_mongoose53 = __toESM(require_mongoose2(), 1);
-var shareSchema = new import_mongoose53.default.Schema({
+var import_mongoose54 = __toESM(require_mongoose2(), 1);
+var shareSchema = new import_mongoose54.default.Schema({
   userId: {
-    type: import_mongoose53.default.Schema.Types.ObjectId,
+    type: import_mongoose54.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
   postId: {
-    type: import_mongoose53.default.Schema.Types.ObjectId,
+    type: import_mongoose54.default.Schema.Types.ObjectId,
     ref: "Post",
     required: true
   },
@@ -510769,7 +510818,7 @@ var shareSchema = new import_mongoose53.default.Schema({
 shareSchema.index({ postId: 1 });
 shareSchema.index({ userId: 1 });
 applyIdTransform(shareSchema);
-var Share = import_mongoose53.default.models.Share || import_mongoose53.default.model("Share", shareSchema);
+var Share = import_mongoose54.default.models.Share || import_mongoose54.default.model("Share", shareSchema);
 var Share_default = Share;
 
 // src/controllers/community-metrics.controller.ts
@@ -511037,7 +511086,7 @@ var community_admin_routes_default = communityAdminRouter;
 var import_express7 = __toESM(require_express2(), 1);
 
 // src/controllers/community-public.controller.ts
-var import_mongoose54 = __toESM(require_mongoose2(), 1);
+var import_mongoose55 = __toESM(require_mongoose2(), 1);
 var NOT_FOUND2 = { error: "Not found", code: "NOT_FOUND" };
 var membershipPrompt = {
   title: "Unlock the full Fitflix community",
@@ -511045,7 +511094,7 @@ var membershipPrompt = {
   cta: "Apply for membership"
 };
 var getIdParam4 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose54.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose55.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -511059,10 +511108,10 @@ var parseLimit = (raw) => {
 };
 var cursorFilter = (raw) => {
   const cursor = typeof raw === "string" ? decodeCursor(raw) : null;
-  if (!cursor || !import_mongoose54.default.Types.ObjectId.isValid(cursor.id))
+  if (!cursor || !import_mongoose55.default.Types.ObjectId.isValid(cursor.id))
     return null;
   const at = new Date(cursor.createdAt);
-  const id = new import_mongoose54.default.Types.ObjectId(cursor.id);
+  const id = new import_mongoose55.default.Types.ObjectId(cursor.id);
   return {
     $or: [{ createdAt: { $lt: at } }, { createdAt: at, _id: { $lt: id } }]
   };
@@ -511264,7 +511313,7 @@ var import_multer2 = __toESM(require_multer(), 1);
 // src/controllers/community.controller.ts
 var import_promises7 = require("node:fs/promises");
 var import_node_crypto5 = require("node:crypto");
-var import_mongoose55 = __toESM(require_mongoose2(), 1);
+var import_mongoose56 = __toESM(require_mongoose2(), 1);
 
 // src/services/community/image.service.ts
 var import_node_crypto3 = require("node:crypto");
@@ -583075,7 +583124,7 @@ var reportBodySchema = zod_default.object({
 var NOT_FOUND3 = { error: "Post not found", code: "NOT_FOUND" };
 var FORBIDDEN = { error: "Forbidden", code: "FORBIDDEN" };
 var getIdParam5 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose55.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose56.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -583322,7 +583371,7 @@ var getFeedHandler = async (req, res, next) => {
     let cursor = null;
     if (parsed.data.cursor) {
       cursor = decodeCursor(parsed.data.cursor);
-      if (!cursor || !import_mongoose55.default.isValidObjectId(cursor.id)) {
+      if (!cursor || !import_mongoose56.default.isValidObjectId(cursor.id)) {
         res.status(400).json({ error: "Invalid cursor", code: "BAD_REQUEST" });
         return;
       }
@@ -583515,10 +583564,10 @@ var uploadFilesHandler = async (req, res, next) => {
 };
 
 // src/controllers/community-engagement.controller.ts
-var import_mongoose58 = __toESM(require_mongoose2(), 1);
+var import_mongoose59 = __toESM(require_mongoose2(), 1);
 
 // src/services/community/comment.service.ts
-var import_mongoose56 = __toESM(require_mongoose2(), 1);
+var import_mongoose57 = __toESM(require_mongoose2(), 1);
 var REPLY_PREVIEW = 3;
 async function getCommentMeta(id) {
   const c2 = await Comment_default.findById(id).select("authorId postId parentId deletedAt").lean();
@@ -583578,7 +583627,7 @@ async function createComment(params) {
   const lean = {
     _id: created._id,
     postId: created.postId,
-    parentId: resolvedParent ? new import_mongoose56.default.Types.ObjectId(resolvedParent) : null,
+    parentId: resolvedParent ? new import_mongoose57.default.Types.ObjectId(resolvedParent) : null,
     authorId: created.authorId,
     authorRole: params.authorRole,
     body: params.body,
@@ -583626,7 +583675,7 @@ async function listReplies(postId, parentId, viewerId, params) {
     filter.authorId = { $nin: blocked };
   if (params.cursor) {
     const at = new Date(params.cursor.createdAt);
-    const id = new import_mongoose56.default.Types.ObjectId(params.cursor.id);
+    const id = new import_mongoose57.default.Types.ObjectId(params.cursor.id);
     filter.$or = [
       { createdAt: { $gt: at } },
       { createdAt: at, _id: { $gt: id } }
@@ -583653,7 +583702,7 @@ async function listComments(postId, viewerId, params) {
     filter.authorId = { $nin: blocked };
   if (params.cursor) {
     const at = new Date(params.cursor.createdAt);
-    const id = new import_mongoose56.default.Types.ObjectId(params.cursor.id);
+    const id = new import_mongoose57.default.Types.ObjectId(params.cursor.id);
     filter.$or = [
       { createdAt: { $lt: at } },
       { createdAt: at, _id: { $lt: id } }
@@ -583705,10 +583754,10 @@ async function listComments(postId, viewerId, params) {
 }
 
 // src/models/Notification.ts
-var import_mongoose57 = __toESM(require_mongoose2(), 1);
-var notificationSchema = new import_mongoose57.default.Schema({
+var import_mongoose58 = __toESM(require_mongoose2(), 1);
+var notificationSchema = new import_mongoose58.default.Schema({
   userId: {
-    type: import_mongoose57.default.Schema.Types.ObjectId,
+    type: import_mongoose58.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -583719,7 +583768,7 @@ var notificationSchema = new import_mongoose57.default.Schema({
   },
   title: { type: String, required: true },
   body: { type: String, required: true },
-  data: { type: import_mongoose57.default.Schema.Types.Mixed, default: undefined },
+  data: { type: import_mongoose58.default.Schema.Types.Mixed, default: undefined },
   channels: {
     type: [String],
     enum: Object.values(NotificationChannel),
@@ -583730,7 +583779,7 @@ var notificationSchema = new import_mongoose57.default.Schema({
 }, { timestamps: true });
 notificationSchema.index({ userId: 1, createdAt: -1 });
 notificationSchema.index({ userId: 1, readAt: 1 });
-var Notification_default = import_mongoose57.default.models.Notification || import_mongoose57.default.model("Notification", notificationSchema);
+var Notification_default = import_mongoose58.default.models.Notification || import_mongoose58.default.model("Notification", notificationSchema);
 
 // node_modules/socket.io/wrapper.mjs
 var import_dist = __toESM(require_dist10(), 1);
@@ -583958,7 +584007,7 @@ async function sharePost(postId, userId, channel) {
 // src/controllers/community-engagement.controller.ts
 var NOT_FOUND4 = { error: "Post not found", code: "NOT_FOUND" };
 var FORBIDDEN2 = { error: "Forbidden", code: "FORBIDDEN" };
-var getIdParam6 = (idParam) => typeof idParam === "string" && import_mongoose58.default.Types.ObjectId.isValid(idParam) ? idParam : null;
+var getIdParam6 = (idParam) => typeof idParam === "string" && import_mongoose59.default.Types.ObjectId.isValid(idParam) ? idParam : null;
 async function requireViewablePost(req, res, postId) {
   const user = req.communityUser;
   if (!user) {
@@ -584173,7 +584222,7 @@ var listCommentsHandler2 = async (req, res, next) => {
     let cursor = null;
     if (parsed.data.cursor) {
       cursor = decodeCursor(parsed.data.cursor);
-      if (!cursor || !import_mongoose58.default.isValidObjectId(cursor.id)) {
+      if (!cursor || !import_mongoose59.default.isValidObjectId(cursor.id)) {
         res.status(400).json({ error: "Invalid cursor", code: "BAD_REQUEST" });
         return;
       }
@@ -584365,7 +584414,7 @@ var reportHandler = async (req, res, next) => {
 
 // src/controllers/community-profile.controller.ts
 var import_promises8 = require("node:fs/promises");
-var import_mongoose59 = __toESM(require_mongoose2(), 1);
+var import_mongoose60 = __toESM(require_mongoose2(), 1);
 
 // src/services/community/avatar.service.ts
 var import_node_crypto6 = require("node:crypto");
@@ -584450,7 +584499,7 @@ var NOT_FOUND5 = { error: "Not found", code: "NOT_FOUND" };
 var FORBIDDEN3 = { error: "Forbidden", code: "FORBIDDEN" };
 var UNAUTHORIZED = { error: "Unauthorized", code: "UNAUTHORIZED" };
 var getIdParam7 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose59.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose60.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -584634,7 +584683,7 @@ var listUserPostsHandler = async (req, res, next) => {
     let cursor = null;
     if (parsed.data.cursor) {
       cursor = decodeCursor(parsed.data.cursor);
-      if (!cursor || !import_mongoose59.default.isValidObjectId(cursor.id)) {
+      if (!cursor || !import_mongoose60.default.isValidObjectId(cursor.id)) {
         res.status(400).json({ error: "Invalid cursor", code: "BAD_REQUEST" });
         return;
       }
@@ -584668,7 +584717,7 @@ var searchPeopleHandler = async (req, res, next) => {
     let cursor = null;
     if (parsed.data.cursor) {
       cursor = decodeCursor(parsed.data.cursor);
-      if (!cursor || !import_mongoose59.default.isValidObjectId(cursor.id)) {
+      if (!cursor || !import_mongoose60.default.isValidObjectId(cursor.id)) {
         res.status(400).json({ error: "Invalid cursor", code: "BAD_REQUEST" });
         return;
       }
@@ -584838,7 +584887,7 @@ var community_routes_default = communityRouter;
 var import_express9 = __toESM(require_express2(), 1);
 
 // src/controllers/credit.controller.ts
-var import_mongoose60 = __toESM(require_mongoose2(), 1);
+var import_mongoose61 = __toESM(require_mongoose2(), 1);
 
 // src/validators/credit.validator.ts
 var topUpCreditsBodySchema = zod_default.object({
@@ -584853,7 +584902,7 @@ var creditHistoryQuerySchema = zod_default.object({
 
 // src/controllers/credit.controller.ts
 var getIdParam8 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose60.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose61.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -585057,27 +585106,27 @@ var credit_routes_default = creditRouter;
 var import_express10 = __toESM(require_express2(), 1);
 
 // src/models/Invoice.ts
-var import_mongoose61 = __toESM(require_mongoose2(), 1);
-var invoiceItemSchema = new import_mongoose61.default.Schema({
+var import_mongoose62 = __toESM(require_mongoose2(), 1);
+var invoiceItemSchema = new import_mongoose62.default.Schema({
   name: { type: String, required: true },
   price: { type: Number, required: true, min: 0 },
   quantity: { type: Number, required: true, min: 1 }
 }, { _id: false });
-var planSnapshotSchema = new import_mongoose61.default.Schema({
+var planSnapshotSchema = new import_mongoose62.default.Schema({
   name: { type: String, required: true },
   durationInDays: { type: Number, required: true, min: 1 },
   price: { type: Number, required: true, min: 0 },
   includedCredits: { type: Number, required: true, min: 0 }
 }, { _id: false });
-var invoiceSchema = new import_mongoose61.default.Schema({
+var invoiceSchema = new import_mongoose62.default.Schema({
   invoiceNumber: { type: String, required: true, unique: true },
   userId: {
-    type: import_mongoose61.default.Schema.Types.ObjectId,
+    type: import_mongoose62.default.Schema.Types.ObjectId,
     ref: "User",
     default: undefined
   },
   leadId: {
-    type: import_mongoose61.default.Schema.Types.ObjectId,
+    type: import_mongoose62.default.Schema.Types.ObjectId,
     ref: "Lead",
     default: undefined
   },
@@ -585100,14 +585149,14 @@ var invoiceSchema = new import_mongoose61.default.Schema({
   },
   issuedAt: { type: Date, default: undefined },
   paidAt: { type: Date, default: undefined },
-  createdBy: { type: import_mongoose61.default.Schema.Types.ObjectId, default: undefined }
+  createdBy: { type: import_mongoose62.default.Schema.Types.ObjectId, default: undefined }
 }, { timestamps: true });
 invoiceSchema.index({ userId: 1 });
 invoiceSchema.index({ leadId: 1 });
 invoiceSchema.index({ paymentStatus: 1 });
 invoiceSchema.index({ createdAt: -1 });
 applyIdTransform(invoiceSchema);
-var Invoice_default = import_mongoose61.default.models.Invoice || import_mongoose61.default.model("Invoice", invoiceSchema);
+var Invoice_default = import_mongoose62.default.models.Invoice || import_mongoose62.default.model("Invoice", invoiceSchema);
 
 // src/controllers/dashboard.controller.ts
 var getDashboardMetrics = async (_req, res, next) => {
@@ -585275,11 +585324,11 @@ var delete_account_routes_default = router;
 var import_express12 = __toESM(require_express2(), 1);
 
 // src/controllers/exercise.controller.ts
-var import_mongoose63 = __toESM(require_mongoose2(), 1);
+var import_mongoose64 = __toESM(require_mongoose2(), 1);
 
 // src/models/Exercise.ts
-var import_mongoose62 = __toESM(require_mongoose2(), 1);
-var exerciseSchema = new import_mongoose62.default.Schema({
+var import_mongoose63 = __toESM(require_mongoose2(), 1);
+var exerciseSchema = new import_mongoose63.default.Schema({
   name: { type: String, required: true },
   muscleGroups: {
     type: [String],
@@ -585306,7 +585355,7 @@ var exerciseSchema = new import_mongoose62.default.Schema({
   imageUrl: { type: String, default: null },
   isSystem: { type: Boolean, default: false },
   createdBy: {
-    type: import_mongoose62.default.Schema.Types.ObjectId,
+    type: import_mongoose63.default.Schema.Types.ObjectId,
     ref: "User",
     default: null
   }
@@ -585315,7 +585364,7 @@ exerciseSchema.index({ muscleGroups: 1 });
 exerciseSchema.index({ createdBy: 1 });
 exerciseSchema.index({ sectionTypes: 1 });
 exerciseSchema.index({ name: "text" });
-var Exercise = import_mongoose62.default.models.Exercise || import_mongoose62.default.model("Exercise", exerciseSchema);
+var Exercise = import_mongoose63.default.models.Exercise || import_mongoose63.default.model("Exercise", exerciseSchema);
 var Exercise_default = Exercise;
 
 // src/validators/exercise.validator.ts
@@ -585366,14 +585415,14 @@ var updateExerciseBodySchema = zod_default.object({
 
 // src/controllers/exercise.controller.ts
 var getIdParam9 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose63.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose64.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
 };
 var listExercises = async (req, res, next) => {
   try {
-    const requester = req.user || { id: new import_mongoose63.default.Types.ObjectId().toHexString() };
+    const requester = req.user || { id: new import_mongoose64.default.Types.ObjectId().toHexString() };
     if (!requester) {
       console.log("[listExercises] 401 Unauthorized");
       res.status(401).json({ message: "Unauthorized" });
@@ -585405,12 +585454,12 @@ var listExercises = async (req, res, next) => {
         filter.isSystem = true;
       } else {
         filter.isSystem = false;
-        filter.createdBy = new import_mongoose63.default.Types.ObjectId(requester.id);
+        filter.createdBy = new import_mongoose64.default.Types.ObjectId(requester.id);
       }
     } else {
       filter.$or = [
         { isSystem: true },
-        { createdBy: new import_mongoose63.default.Types.ObjectId(requester.id) }
+        { createdBy: new import_mongoose64.default.Types.ObjectId(requester.id) }
       ];
     }
     if (muscleGroup)
@@ -585489,7 +585538,7 @@ var createExercise = async (req, res, next) => {
       difficulty: parsed.data.difficulty,
       sectionTypes: parsed.data.sectionTypes,
       isSystem: requester.role === "admin",
-      createdBy: new import_mongoose63.default.Types.ObjectId(requester.id)
+      createdBy: new import_mongoose64.default.Types.ObjectId(requester.id)
     });
     res.status(201).json(exercise);
   } catch (error51) {
@@ -585582,22 +585631,429 @@ exerciseRouter.put("/:id", authorize(["admin", "user"]), updateExercise);
 exerciseRouter.delete("/:id", authorize(["admin", "user"]), deleteExercise);
 var exercise_routes_default = exerciseRouter;
 
-// src/routes/internal.routes.ts
+// src/routes/gymVisit.routes.ts
 var import_express13 = __toESM(require_express2(), 1);
 
+// src/controllers/gymVisit.controller.ts
+var import_mongoose66 = __toESM(require_mongoose2(), 1);
+
+// src/models/GymVisit.ts
+var import_mongoose65 = __toESM(require_mongoose2(), 1);
+var VISIT_TYPES = [
+  "workout",
+  "class",
+  "consultation",
+  "other"
+];
+var gymVisitSchema = new import_mongoose65.default.Schema({
+  userId: {
+    type: import_mongoose65.default.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+    index: true
+  },
+  checkInAt: { type: Date, required: true, default: Date.now, index: true },
+  checkOutAt: { type: Date, default: null },
+  durationMinutes: { type: Number, default: null },
+  visitType: {
+    type: String,
+    enum: VISIT_TYPES,
+    default: "workout",
+    required: true
+  },
+  notes: { type: String, default: null },
+  checkedInByAdminId: {
+    type: import_mongoose65.default.Schema.Types.ObjectId,
+    default: null
+  },
+  checkedOutByAdminId: {
+    type: import_mongoose65.default.Schema.Types.ObjectId,
+    default: null
+  }
+}, { timestamps: true });
+gymVisitSchema.index({ userId: 1, checkInAt: -1 });
+gymVisitSchema.index({ checkOutAt: 1, checkInAt: -1 });
+applyIdTransform(gymVisitSchema);
+var GymVisit_default = import_mongoose65.default.models.GymVisit || import_mongoose65.default.model("GymVisit", gymVisitSchema);
+
+// src/controllers/gymVisit.controller.ts
+var DEFAULT_LIMIT = 50;
+var MAX_LIMIT = 500;
+var parseLimit2 = (raw, fallback = DEFAULT_LIMIT) => {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0)
+    return fallback;
+  return Math.min(Math.floor(n), MAX_LIMIT);
+};
+var parseDate = (raw) => {
+  if (typeof raw !== "string" || !raw)
+    return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+var isValidObjectId = (v) => typeof v === "string" && import_mongoose66.default.Types.ObjectId.isValid(v);
+var serializeVisit = (raw, user) => ({
+  id: String(raw._id ?? raw.id ?? ""),
+  userId: String(raw.userId ?? ""),
+  username: user?.username ?? raw.username ?? null,
+  email: user?.email ?? raw.email ?? null,
+  checkInAt: raw.checkInAt,
+  checkOutAt: raw.checkOutAt ?? null,
+  durationMinutes: raw.durationMinutes ?? null,
+  visitType: raw.visitType,
+  notes: raw.notes ?? null,
+  checkedInByAdminId: raw.checkedInByAdminId ? String(raw.checkedInByAdminId) : null,
+  checkedOutByAdminId: raw.checkedOutByAdminId ? String(raw.checkedOutByAdminId) : null,
+  createdAt: raw.createdAt,
+  updatedAt: raw.updatedAt
+});
+async function performCheckIn(userId, adminId, visitType, notes) {
+  const type = VISIT_TYPES.includes(visitType) ? visitType : "workout";
+  const user = await User_default.findById(userId).select("username email").lean();
+  if (!user) {
+    return { ok: false, status: 404, body: { message: "Member not found" } };
+  }
+  const activeMembership = await getActiveMembership(userId);
+  if (!activeMembership) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        message: "Member does not have an active membership",
+        code: "NO_ACTIVE_MEMBERSHIP"
+      }
+    };
+  }
+  const userObjectId = new import_mongoose66.default.Types.ObjectId(userId);
+  const openVisit = await GymVisit_default.findOne({
+    $or: [{ userId }, { userId: userObjectId }],
+    checkOutAt: null
+  });
+  if (openVisit) {
+    return {
+      ok: false,
+      status: 409,
+      body: { message: "Member is already checked in", code: "ALREADY_CHECKED_IN" }
+    };
+  }
+  const visit2 = await GymVisit_default.create({
+    userId: new import_mongoose66.default.Types.ObjectId(userId),
+    visitType: type,
+    notes: typeof notes === "string" && notes.trim() ? notes.trim() : null,
+    checkedInByAdminId: adminId ? new import_mongoose66.default.Types.ObjectId(adminId) : null
+  });
+  return { ok: true, visit: visit2.toObject(), user };
+}
+var checkInMember = async (req, res, next) => {
+  try {
+    const { userId, visitType, notes } = req.body ?? {};
+    if (!isValidObjectId(userId)) {
+      res.status(400).json({ message: "userId is required" });
+      return;
+    }
+    const result = await performCheckIn(userId, req.user?.id, visitType, notes);
+    if (!result.ok) {
+      res.status(result.status).json(result.body);
+      return;
+    }
+    res.status(201).json({
+      message: "Member checked in",
+      visit: serializeVisit(result.visit, result.user ?? undefined)
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+var issueQrToken = async (req, res, next) => {
+  if (!req.user) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+  try {
+    const activeMembership = await getActiveMembership(req.user.id);
+    if (!activeMembership) {
+      res.status(403).json({
+        message: "Member does not have an active membership",
+        code: "NO_ACTIVE_MEMBERSHIP"
+      });
+      return;
+    }
+    const config2 = getJwtConfig();
+    if (!config2) {
+      res.status(500).json({ message: "Server auth misconfigured" });
+      return;
+    }
+    const token = signGymQrToken(req.user.id, config2);
+    res.status(200).json({ token, expiresIn: 90 });
+  } catch (err) {
+    next(err);
+  }
+};
+var qrCheckIn = async (req, res, next) => {
+  try {
+    const { token } = req.body ?? {};
+    if (typeof token !== "string" || !token) {
+      res.status(400).json({ message: "token is required" });
+      return;
+    }
+    const config2 = getJwtConfig();
+    if (!config2) {
+      res.status(500).json({ message: "Server auth misconfigured" });
+      return;
+    }
+    const userId = verifyGymQrToken(token, config2);
+    if (!userId) {
+      res.status(400).json({
+        message: "Invalid or expired QR code",
+        code: "INVALID_QR"
+      });
+      return;
+    }
+    const result = await performCheckIn(userId, req.user?.id, "workout", null);
+    if (!result.ok) {
+      res.status(result.status).json(result.body);
+      return;
+    }
+    res.status(201).json({
+      message: "Member checked in",
+      visit: serializeVisit(result.visit, result.user ?? undefined)
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+var checkOutVisit = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      res.status(400).json({ message: "Invalid visit id" });
+      return;
+    }
+    const visit2 = await GymVisit_default.findById(id);
+    if (!visit2) {
+      res.status(404).json({ message: "Visit not found" });
+      return;
+    }
+    if (visit2.checkOutAt) {
+      res.status(409).json({ message: "Visit is already checked out" });
+      return;
+    }
+    const now = new Date;
+    visit2.checkOutAt = now;
+    visit2.durationMinutes = Math.max(0, Math.round((now.getTime() - new Date(visit2.checkInAt).getTime()) / 60000));
+    if (req.user?.id) {
+      visit2.checkedOutByAdminId = new import_mongoose66.default.Types.ObjectId(req.user.id);
+    }
+    const { notes } = req.body ?? {};
+    if (typeof notes === "string" && notes.trim()) {
+      visit2.notes = notes.trim();
+    }
+    await visit2.save();
+    res.status(200).json({
+      message: "Member checked out",
+      visit: serializeVisit(visit2.toObject())
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+var listVisits = async (req, res, next) => {
+  try {
+    const { userId, visitType, from, to: to2, status } = req.query;
+    const limit = parseLimit2(req.query.limit);
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const filter = {};
+    if (isValidObjectId(userId)) {
+      filter.userId = new import_mongoose66.default.Types.ObjectId(userId);
+    }
+    if (typeof visitType === "string" && VISIT_TYPES.includes(visitType)) {
+      filter.visitType = visitType;
+    }
+    if (status === "open")
+      filter.checkOutAt = null;
+    if (status === "closed")
+      filter.checkOutAt = { $ne: null };
+    const fromDate = parseDate(from);
+    const toDate = parseDate(to2);
+    if (fromDate || toDate) {
+      filter.checkInAt = {
+        ...fromDate ? { $gte: fromDate } : {},
+        ...toDate ? { $lte: toDate } : {}
+      };
+    }
+    const [items, total] = await Promise.all([
+      GymVisit_default.find(filter).sort({ checkInAt: -1 }).skip(offset).limit(limit).lean(),
+      GymVisit_default.countDocuments(filter)
+    ]);
+    const userIds = Array.from(new Set(items.map((it) => String(it.userId)).filter(isValidObjectId)));
+    const users = userIds.length ? await User_default.find({ _id: { $in: userIds } }).select("username email").lean() : [];
+    const userById = new Map(users.map((u) => [String(u._id), u]));
+    res.status(200).json({
+      items: items.map((it) => serializeVisit(it, userById.get(String(it.userId)))),
+      total,
+      limit,
+      offset
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+var listCurrentlyIn = async (_req, res, next) => {
+  try {
+    const items = await GymVisit_default.find({ checkOutAt: null }).sort({ checkInAt: -1 }).lean();
+    const userIds = Array.from(new Set(items.map((it) => String(it.userId)).filter(isValidObjectId)));
+    const users = userIds.length ? await User_default.find({ _id: { $in: userIds } }).select("username email").lean() : [];
+    const userById = new Map(users.map((u) => [String(u._id), u]));
+    res.status(200).json({
+      items: items.map((it) => serializeVisit(it, userById.get(String(it.userId))))
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+var getVisitAnalytics = async (req, res, next) => {
+  try {
+    const { from, to: to2 } = req.query;
+    const fromDate = parseDate(from) ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const toDate = parseDate(to2) ?? new Date;
+    const match = {
+      checkInAt: { $gte: fromDate, $lte: toDate }
+    };
+    const byDay = await GymVisit_default.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$checkInAt" }
+          },
+          visits: { $sum: 1 },
+          users: { $addToSet: "$userId" },
+          durationSum: {
+            $sum: { $ifNull: ["$durationMinutes", 0] }
+          },
+          durationCount: {
+            $sum: {
+              $cond: [{ $ne: ["$durationMinutes", null] }, 1, 0]
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          date: "$_id",
+          visits: 1,
+          uniqueUsers: { $size: "$users" },
+          avgDurationMinutes: {
+            $cond: [
+              { $gt: ["$durationCount", 0] },
+              { $divide: ["$durationSum", "$durationCount"] },
+              null
+            ]
+          }
+        }
+      },
+      { $sort: { date: 1 } }
+    ]);
+    const totals = byDay.reduce((acc, row) => {
+      acc.totalVisits += row.visits;
+      if (row.avgDurationMinutes != null) {}
+      return acc;
+    }, { totalVisits: 0, totalDuration: 0, totalClosed: 0 });
+    const uniqueUsersAgg = await GymVisit_default.aggregate([
+      { $match: match },
+      { $group: { _id: "$userId" } },
+      { $count: "count" }
+    ]);
+    const uniqueUsers = uniqueUsersAgg[0]?.count ?? 0;
+    const durationAgg = await GymVisit_default.aggregate([
+      { $match: { ...match, durationMinutes: { $ne: null } } },
+      {
+        $group: {
+          _id: null,
+          avg: { $avg: "$durationMinutes" },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    const avgDurationMinutes = durationAgg[0]?.avg ?? null;
+    const closedVisits = durationAgg[0]?.count ?? 0;
+    res.status(200).json({
+      from: fromDate.toISOString(),
+      to: toDate.toISOString(),
+      totalVisits: totals.totalVisits,
+      uniqueUsers,
+      closedVisits,
+      avgDurationMinutes,
+      byDay
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+var getMyVisits = async (req, res, next) => {
+  if (!req.user) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+  try {
+    const limit = parseLimit2(req.query.limit);
+    const items = await GymVisit_default.find({ userId: req.user.id }).sort({ checkInAt: -1 }).limit(limit).lean();
+    res.status(200).json({
+      items: items.map((it) => serializeVisit(it))
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+var deleteVisit = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      res.status(400).json({ message: "Invalid visit id" });
+      return;
+    }
+    const deleted = await GymVisit_default.findByIdAndDelete(id);
+    if (!deleted) {
+      res.status(404).json({ message: "Visit not found" });
+      return;
+    }
+    res.status(200).json({ message: "Visit deleted successfully" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// src/routes/gymVisit.routes.ts
+var gymVisitRouter = import_express13.Router();
+gymVisitRouter.use(authenticateToken);
+gymVisitRouter.get("/me", getMyVisits);
+gymVisitRouter.get("/qr-token", issueQrToken);
+gymVisitRouter.get("/currently-in", authorize(["admin", "frontdesk"]), listCurrentlyIn);
+gymVisitRouter.get("/analytics", authorize(["admin", "frontdesk"]), getVisitAnalytics);
+gymVisitRouter.get("/", authorize(["admin", "frontdesk"]), listVisits);
+gymVisitRouter.post("/check-in", authorize(["admin", "frontdesk"]), checkInMember);
+gymVisitRouter.post("/qr-check-in", authorize(["admin", "frontdesk"]), qrCheckIn);
+gymVisitRouter.patch("/:id/check-out", authorize(["admin", "frontdesk"]), checkOutVisit);
+gymVisitRouter.delete("/:id", authorize(["admin", "frontdesk"]), deleteVisit);
+var gymVisit_routes_default = gymVisitRouter;
+
+// src/routes/internal.routes.ts
+var import_express14 = __toESM(require_express2(), 1);
+
 // src/services/reminder.service.ts
-var import_mongoose67 = __toESM(require_mongoose2(), 1);
+var import_mongoose70 = __toESM(require_mongoose2(), 1);
 
 // src/models/ScheduledReminder.ts
-var import_mongoose64 = __toESM(require_mongoose2(), 1);
-var scheduledReminderSchema = new import_mongoose64.default.Schema({
+var import_mongoose67 = __toESM(require_mongoose2(), 1);
+var scheduledReminderSchema = new import_mongoose67.default.Schema({
   appointmentId: {
-    type: import_mongoose64.default.Schema.Types.ObjectId,
+    type: import_mongoose67.default.Schema.Types.ObjectId,
     ref: "ExpertAppointment",
     required: true
   },
   userId: {
-    type: import_mongoose64.default.Schema.Types.ObjectId,
+    type: import_mongoose67.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -585617,19 +586073,19 @@ var scheduledReminderSchema = new import_mongoose64.default.Schema({
 }, { timestamps: true });
 scheduledReminderSchema.index({ status: 1, fireAt: 1 });
 scheduledReminderSchema.index({ appointmentId: 1, kind: 1 }, { unique: true });
-var ScheduledReminder_default = import_mongoose64.default.models.ScheduledReminder || import_mongoose64.default.model("ScheduledReminder", scheduledReminderSchema);
+var ScheduledReminder_default = import_mongoose67.default.models.ScheduledReminder || import_mongoose67.default.model("ScheduledReminder", scheduledReminderSchema);
 
 // src/models/NutritionistBooking.ts
-var import_mongoose65 = __toESM(require_mongoose2(), 1);
-var nutritionistBookingSchema = new import_mongoose65.default.Schema({
+var import_mongoose68 = __toESM(require_mongoose2(), 1);
+var nutritionistBookingSchema = new import_mongoose68.default.Schema({
   userId: {
-    type: import_mongoose65.default.Schema.Types.ObjectId,
+    type: import_mongoose68.default.Schema.Types.ObjectId,
     ref: "User",
     required: true,
     index: true
   },
   slotId: {
-    type: import_mongoose65.default.Schema.Types.ObjectId,
+    type: import_mongoose68.default.Schema.Types.ObjectId,
     ref: "Slot",
     default: null
   },
@@ -585661,7 +586117,7 @@ var nutritionistBookingSchema = new import_mongoose65.default.Schema({
     default: null
   },
   assignedNutritionistId: {
-    type: import_mongoose65.default.Schema.Types.ObjectId,
+    type: import_mongoose68.default.Schema.Types.ObjectId,
     ref: "User",
     default: null
   },
@@ -585704,7 +586160,7 @@ var nutritionistBookingSchema = new import_mongoose65.default.Schema({
 }, { timestamps: true });
 nutritionistBookingSchema.index({ userId: 1, status: 1 });
 nutritionistBookingSchema.index({ bookingDate: 1, status: 1 });
-var NutritionistBooking_default = import_mongoose65.default.models.NutritionistBooking || import_mongoose65.default.model("NutritionistBooking", nutritionistBookingSchema);
+var NutritionistBooking_default = import_mongoose68.default.models.NutritionistBooking || import_mongoose68.default.model("NutritionistBooking", nutritionistBookingSchema);
 
 // src/services/nutritionist-expiry.service.ts
 async function expireStaleNutritionistBookings(now = new Date) {
@@ -585771,7 +586227,7 @@ async function expireStaleNutritionistBookings(now = new Date) {
 }
 
 // src/services/session-finalize.service.ts
-var import_mongoose66 = __toESM(require_mongoose2(), 1);
+var import_mongoose69 = __toESM(require_mongoose2(), 1);
 
 // src/services/zego-server-api.service.ts
 var import_node_crypto7 = require("node:crypto");
@@ -585870,7 +586326,7 @@ async function finalizeSession(session, opts) {
   if (session.status !== "COMPLETED") {
     session.status = "COMPLETED";
     session.endedAt = opts.endedAt ?? new Date;
-    session.endedBy = opts.endedBy && import_mongoose66.default.Types.ObjectId.isValid(opts.endedBy) ? new import_mongoose66.default.Types.ObjectId(opts.endedBy) : null;
+    session.endedBy = opts.endedBy && import_mongoose69.default.Types.ObjectId.isValid(opts.endedBy) ? new import_mongoose69.default.Types.ObjectId(opts.endedBy) : null;
     await session.save();
   }
   const attendanceResult = await Bookings_default.updateMany({
@@ -586208,7 +586664,7 @@ async function processLeadFollowups() {
 }
 
 // src/routes/internal.routes.ts
-var router2 = import_express13.Router();
+var router2 = import_express14.Router();
 function verifyInternalSecret(req, res) {
   const secret = process.env.REMINDER_TICK_SECRET;
   if (!secret) {
@@ -586266,21 +586722,21 @@ router2.post("/leads/followup", async (req, res) => {
 var internal_routes_default = router2;
 
 // src/routes/invoice.routes.ts
-var import_express14 = __toESM(require_express2(), 1);
+var import_express15 = __toESM(require_express2(), 1);
 
 // src/controllers/invoice.controller.ts
-var import_mongoose70 = __toESM(require_mongoose2(), 1);
+var import_mongoose73 = __toESM(require_mongoose2(), 1);
 
 // src/utils/invoice.service.ts
-var import_mongoose69 = __toESM(require_mongoose2(), 1);
+var import_mongoose72 = __toESM(require_mongoose2(), 1);
 
 // src/models/Counter.ts
-var import_mongoose68 = __toESM(require_mongoose2(), 1);
-var counterSchema = new import_mongoose68.default.Schema({
+var import_mongoose71 = __toESM(require_mongoose2(), 1);
+var counterSchema = new import_mongoose71.default.Schema({
   _id: { type: String, required: true },
   seq: { type: Number, default: 0 }
 });
-var Counter_default = import_mongoose68.default.models.Counter || import_mongoose68.default.model("Counter", counterSchema);
+var Counter_default = import_mongoose71.default.models.Counter || import_mongoose71.default.model("Counter", counterSchema);
 
 // src/utils/invoice-number.ts
 var generateInvoiceNumber = async () => {
@@ -586301,8 +586757,8 @@ var createInvoice = async (data, createdById) => {
   const total = Math.max(0, subtotal + data.tax - data.discount);
   const invoice = await Invoice_default.create({
     invoiceNumber,
-    ...data.userId ? { userId: new import_mongoose69.default.Types.ObjectId(data.userId) } : {},
-    ...data.leadId ? { leadId: new import_mongoose69.default.Types.ObjectId(data.leadId) } : {},
+    ...data.userId ? { userId: new import_mongoose72.default.Types.ObjectId(data.userId) } : {},
+    ...data.leadId ? { leadId: new import_mongoose72.default.Types.ObjectId(data.leadId) } : {},
     items: data.items,
     subtotal,
     tax: data.tax,
@@ -586312,7 +586768,7 @@ var createInvoice = async (data, createdById) => {
     paymentStatus: data.paymentStatus,
     paymentMethod: data.paymentMethod,
     ...data.issuedAt ? { issuedAt: new Date(data.issuedAt) } : {},
-    createdBy: new import_mongoose69.default.Types.ObjectId(createdById)
+    createdBy: new import_mongoose72.default.Types.ObjectId(createdById)
   });
   return invoice;
 };
@@ -586321,8 +586777,8 @@ var listInvoices = async (query) => {
   if (query.paymentStatus) {
     filter.paymentStatus = query.paymentStatus;
   }
-  if (query.userId && import_mongoose69.default.Types.ObjectId.isValid(query.userId)) {
-    filter.userId = new import_mongoose69.default.Types.ObjectId(query.userId);
+  if (query.userId && import_mongoose72.default.Types.ObjectId.isValid(query.userId)) {
+    filter.userId = new import_mongoose72.default.Types.ObjectId(query.userId);
   }
   if (query.from || query.to) {
     const dateFilter = {};
@@ -586357,7 +586813,7 @@ var transitionInvoiceStatus = async (id, newStatus, paymentMethod) => {
     }, { returnDocument: "after", runValidators: true });
     return { invoice };
   }
-  const session = await import_mongoose69.default.startSession();
+  const session = await import_mongoose72.default.startSession();
   try {
     session.startTransaction();
     const now = new Date;
@@ -586562,7 +587018,7 @@ var listInvoicesQuerySchema = zod_default.object({
 
 // src/controllers/invoice.controller.ts
 var getIdParam10 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose70.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose73.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -586582,11 +587038,11 @@ var createInvoiceHandler = async (req, res, next) => {
     });
     return;
   }
-  if (parsed.data.userId && !import_mongoose70.default.Types.ObjectId.isValid(parsed.data.userId)) {
+  if (parsed.data.userId && !import_mongoose73.default.Types.ObjectId.isValid(parsed.data.userId)) {
     res.status(400).json({ error: "Invalid userId", code: "BAD_REQUEST" });
     return;
   }
-  if (parsed.data.leadId && !import_mongoose70.default.Types.ObjectId.isValid(parsed.data.leadId)) {
+  if (parsed.data.leadId && !import_mongoose73.default.Types.ObjectId.isValid(parsed.data.leadId)) {
     res.status(400).json({ error: "Invalid leadId", code: "BAD_REQUEST" });
     return;
   }
@@ -586735,7 +587191,7 @@ var getInvoicePdfHandler = async (req, res, next) => {
 };
 
 // src/routes/invoice.routes.ts
-var invoiceRouter = import_express14.Router();
+var invoiceRouter = import_express15.Router();
 invoiceRouter.use(authenticateToken);
 invoiceRouter.post("/", authorize(["admin", "frontdesk"]), createInvoiceHandler);
 invoiceRouter.get("/", authorize(["admin", "frontdesk"]), listInvoicesHandler);
@@ -586745,10 +587201,10 @@ invoiceRouter.get("/:id/pdf", authorize(["admin", "frontdesk"]), getInvoicePdfHa
 var invoice_routes_default = invoiceRouter;
 
 // src/routes/lead.routes.ts
-var import_express15 = __toESM(require_express2(), 1);
+var import_express16 = __toESM(require_express2(), 1);
 
 // src/controllers/lead.controller.ts
-var import_mongoose71 = __toESM(require_mongoose2(), 1);
+var import_mongoose74 = __toESM(require_mongoose2(), 1);
 
 // src/utils/health-score.ts
 var assessmentVersions = [
@@ -587013,7 +587469,7 @@ var dedupeNonEmptyTags = (tags) => {
 };
 var toTagSlug = (value) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 var getIdParam11 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose71.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose74.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -587033,7 +587489,7 @@ var createLead = async (req, res, next) => {
     res.status(400).json({ message: "Invalid followUpDate" });
     return;
   }
-  if (ownerId && !import_mongoose71.default.Types.ObjectId.isValid(ownerId)) {
+  if (ownerId && !import_mongoose74.default.Types.ObjectId.isValid(ownerId)) {
     res.status(400).json({ message: "Invalid ownerId" });
     return;
   }
@@ -587276,7 +587732,7 @@ var updateLeadById = async (req, res, next) => {
     res.status(400).json({ message: "Invalid followUpDate" });
     return;
   }
-  if (ownerId && !import_mongoose71.default.Types.ObjectId.isValid(ownerId)) {
+  if (ownerId && !import_mongoose74.default.Types.ObjectId.isValid(ownerId)) {
     res.status(400).json({ message: "Invalid ownerId" });
     return;
   }
@@ -587525,7 +587981,7 @@ var verifyLeadCaptcha = async (req, res, next) => {
 };
 
 // src/routes/lead.routes.ts
-var leadRouter = import_express15.Router();
+var leadRouter = import_express16.Router();
 leadRouter.post("/public-capture", publicLeadCaptureRateLimit, verifyLeadCaptcha, createPublicLead);
 leadRouter.use(authenticateToken);
 leadRouter.post("/", authorize(["admin", "frontdesk", "trainer"]), createLead);
@@ -587538,10 +587994,10 @@ leadRouter.post("/:id/convert", authorize(["admin", "frontdesk"]), convertLeadTo
 var lead_routes_default = leadRouter;
 
 // src/routes/membership.routes.ts
-var import_express16 = __toESM(require_express2(), 1);
+var import_express17 = __toESM(require_express2(), 1);
 
 // src/controllers/membership.controller.ts
-var import_mongoose72 = __toESM(require_mongoose2(), 1);
+var import_mongoose75 = __toESM(require_mongoose2(), 1);
 
 // src/validators/membership.validator.ts
 var membershipStatusValues = Object.values(MembershipStatus).map(String);
@@ -587563,7 +588019,7 @@ var updateMembershipBodySchema = createMembershipBodySchema.partial().refine((pa
 
 // src/controllers/membership.controller.ts
 var getIdParam12 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose72.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose75.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -587603,7 +588059,7 @@ var createMembership = async (req, res, next) => {
     res.status(400).json({ message: "userId is required" });
     return;
   }
-  if (!import_mongoose72.default.Types.ObjectId.isValid(userId)) {
+  if (!import_mongoose75.default.Types.ObjectId.isValid(userId)) {
     res.status(400).json({ message: "Invalid userId" });
     return;
   }
@@ -587699,7 +588155,7 @@ var updateMembershipById = async (req, res, next) => {
     return;
   }
   const { userId, startDate, endDate, creditsIncluded, ...rest } = parsedBody.data;
-  if (userId && !import_mongoose72.default.Types.ObjectId.isValid(userId)) {
+  if (userId && !import_mongoose75.default.Types.ObjectId.isValid(userId)) {
     res.status(400).json({ message: "Invalid userId" });
     return;
   }
@@ -587763,7 +588219,7 @@ var deleteMembershipById = async (req, res, next) => {
 };
 
 // src/routes/membership.routes.ts
-var membershipRouter = import_express16.Router();
+var membershipRouter = import_express17.Router();
 membershipRouter.use(authenticateToken);
 membershipRouter.post("/", authorize(["admin"]), createMembership);
 membershipRouter.get("/", authorize(["admin", "frontdesk"]), getAllMemberships);
@@ -587774,14 +588230,14 @@ membershipRouter.delete("/:id", authorize(["admin"]), deleteMembershipById);
 var membership_routes_default = membershipRouter;
 
 // src/routes/membershipPlan.routes.ts
-var import_express17 = __toESM(require_express2(), 1);
+var import_express18 = __toESM(require_express2(), 1);
 
 // src/controllers/membershipPlan.controller.ts
-var import_mongoose74 = __toESM(require_mongoose2(), 1);
+var import_mongoose77 = __toESM(require_mongoose2(), 1);
 
 // src/models/MembershipPlan.ts
-var import_mongoose73 = __toESM(require_mongoose2(), 1);
-var membershipPlanSchema = new import_mongoose73.default.Schema({
+var import_mongoose76 = __toESM(require_mongoose2(), 1);
+var membershipPlanSchema = new import_mongoose76.default.Schema({
   name: { type: String, required: true },
   description: { type: String, default: "" },
   price: { type: Number, required: true, min: 0 },
@@ -587791,10 +588247,10 @@ var membershipPlanSchema = new import_mongoose73.default.Schema({
   active: { type: Boolean, default: true },
   gymId: { type: String, required: false },
   durationMonths: { type: Number, required: true, min: 1, default: 1 },
-  benefits: { type: Map, of: import_mongoose73.default.Schema.Types.Mixed, default: {} }
+  benefits: { type: Map, of: import_mongoose76.default.Schema.Types.Mixed, default: {} }
 }, { timestamps: true });
 membershipPlanSchema.index({ name: 1 });
-var MembershipPlan_default = import_mongoose73.default.models.MembershipPlan || import_mongoose73.default.model("MembershipPlan", membershipPlanSchema);
+var MembershipPlan_default = import_mongoose76.default.models.MembershipPlan || import_mongoose76.default.model("MembershipPlan", membershipPlanSchema);
 
 // src/validators/membershipPlan.validator.ts
 var createMembershipPlanSchema = zod_default.object({
@@ -587815,7 +588271,7 @@ var updateMembershipPlanSchema = createMembershipPlanSchema.partial().refine((p)
 
 // src/controllers/membershipPlan.controller.ts
 var getIdParam13 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose74.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose77.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -587976,7 +588432,7 @@ var deleteMembershipPlanById = async (req, res, next) => {
 };
 
 // src/routes/membershipPlan.routes.ts
-var router3 = import_express17.Router();
+var router3 = import_express18.Router();
 router3.get("/", getAllMembershipPlans);
 router3.use(authenticateToken);
 router3.get("/:id", authorize(["admin", "user", "trainer"]), getMembershipPlanById);
@@ -587986,12 +588442,12 @@ router3.delete("/:id", authorize(["admin"]), deleteMembershipPlanById);
 var membershipPlan_routes_default = router3;
 
 // src/routes/notification.routes.ts
-var import_express18 = __toESM(require_express2(), 1);
+var import_express19 = __toESM(require_express2(), 1);
 
 // src/controllers/notification.controller.ts
-var import_mongoose75 = __toESM(require_mongoose2(), 1);
+var import_mongoose78 = __toESM(require_mongoose2(), 1);
 var getIdParam14 = (v) => {
-  if (typeof v !== "string" || !import_mongoose75.default.Types.ObjectId.isValid(v))
+  if (typeof v !== "string" || !import_mongoose78.default.Types.ObjectId.isValid(v))
     return null;
   return v;
 };
@@ -588077,7 +588533,7 @@ var registerToken = async (req, res, next) => {
 };
 
 // src/routes/notification.routes.ts
-var router4 = import_express18.Router();
+var router4 = import_express19.Router();
 router4.use(authenticateToken);
 router4.get("/", listNotifications);
 router4.patch("/read-all", markAllRead);
@@ -588086,13 +588542,13 @@ router4.post("/fcm-token", registerToken);
 var notification_routes_default = router4;
 
 // src/routes/nutrition.routes.ts
-var import_express19 = __toESM(require_express2(), 1);
+var import_express20 = __toESM(require_express2(), 1);
 
 // src/services/nutrition/nutrition-adherence.service.ts
-var import_mongoose77 = __toESM(require_mongoose2(), 1);
+var import_mongoose80 = __toESM(require_mongoose2(), 1);
 
 // src/services/nutrition/nutrition-errors.ts
-var import_mongoose76 = __toESM(require_mongoose2(), 1);
+var import_mongoose79 = __toESM(require_mongoose2(), 1);
 
 class NutritionServiceError extends Error {
   code;
@@ -588103,13 +588559,13 @@ class NutritionServiceError extends Error {
   }
 }
 var toObjectId2 = (value, code, message) => {
-  if (!import_mongoose76.default.Types.ObjectId.isValid(value)) {
+  if (!import_mongoose79.default.Types.ObjectId.isValid(value)) {
     throw new NutritionServiceError(code, message);
   }
-  return new import_mongoose76.default.Types.ObjectId(value);
+  return new import_mongoose79.default.Types.ObjectId(value);
 };
 var requireIdParam = (value, message) => {
-  if (typeof value !== "string" || !import_mongoose76.default.Types.ObjectId.isValid(value)) {
+  if (typeof value !== "string" || !import_mongoose79.default.Types.ObjectId.isValid(value)) {
     throw new NutritionServiceError("NOT_FOUND", message);
   }
   return value;
@@ -588244,8 +588700,8 @@ var getHydrationForDay = async (userId, date5) => {
   }
 };
 var recomputeDay = async (userId, planId, date5) => {
-  const userObjectId = new import_mongoose77.default.Types.ObjectId(userId);
-  const planObjectId = new import_mongoose77.default.Types.ObjectId(planId);
+  const userObjectId = new import_mongoose80.default.Types.ObjectId(userId);
+  const planObjectId = new import_mongoose80.default.Types.ObjectId(planId);
   const day = normalizeToUtcDate2(date5);
   const plan = await nutrition_plan_model_default.findById(planObjectId);
   if (!plan) {
@@ -588298,8 +588754,8 @@ var recomputeDay = async (userId, planId, date5) => {
   }, { upsert: true, returnDocument: "after", runValidators: true });
 };
 var getAdherenceRange = async (userId, planId, from, to2) => nutrition_adherence_model_default.find({
-  userId: new import_mongoose77.default.Types.ObjectId(userId),
-  planId: new import_mongoose77.default.Types.ObjectId(planId),
+  userId: new import_mongoose80.default.Types.ObjectId(userId),
+  planId: new import_mongoose80.default.Types.ObjectId(planId),
   date: {
     $gte: normalizeToUtcDate2(from),
     $lte: normalizeToUtcDate2(to2)
@@ -588309,7 +588765,7 @@ var getPlanAdherenceSummary = async (planId, from, to2) => {
   const [summary] = await nutrition_adherence_model_default.aggregate([
     {
       $match: {
-        planId: new import_mongoose77.default.Types.ObjectId(planId),
+        planId: new import_mongoose80.default.Types.ObjectId(planId),
         date: {
           $gte: normalizeToUtcDate2(from),
           $lte: normalizeToUtcDate2(to2)
@@ -588367,7 +588823,7 @@ var getWeeklyAdherence = async (userId, planId, from, to2) => {
   return { weeks };
 };
 var rebuildAdherence = async (planId) => {
-  const planObjectId = new import_mongoose77.default.Types.ObjectId(planId);
+  const planObjectId = new import_mongoose80.default.Types.ObjectId(planId);
   const plan = await nutrition_plan_model_default.findById(planObjectId);
   if (!plan) {
     throw new NutritionServiceError("NOT_FOUND", "Plan not found");
@@ -588387,8 +588843,8 @@ var rebuildAdherence = async (planId) => {
 };
 
 // src/models/nutrition-food.model.ts
-var import_mongoose78 = __toESM(require_mongoose2(), 1);
-var nutritionFoodSchema = new import_mongoose78.default.Schema({
+var import_mongoose81 = __toESM(require_mongoose2(), 1);
+var nutritionFoodSchema = new import_mongoose81.default.Schema({
   name: { type: String, required: true },
   brand: { type: String, default: null },
   source: {
@@ -588397,7 +588853,7 @@ var nutritionFoodSchema = new import_mongoose78.default.Schema({
     default: "System" /* System */
   },
   createdBy: {
-    type: import_mongoose78.default.Schema.Types.ObjectId,
+    type: import_mongoose81.default.Schema.Types.ObjectId,
     ref: "User",
     default: null
   },
@@ -588424,16 +588880,16 @@ nutritionFoodSchema.index({ isVeg: 1, isActive: 1 });
 nutritionFoodSchema.index({ allergens: 1 });
 nutritionFoodSchema.index({ mealTypes: 1 });
 nutritionFoodSchema.index({ tags: 1 });
-var NutritionFood = import_mongoose78.default.models.NutritionFood || import_mongoose78.default.model("NutritionFood", nutritionFoodSchema);
+var NutritionFood = import_mongoose81.default.models.NutritionFood || import_mongoose81.default.model("NutritionFood", nutritionFoodSchema);
 var nutrition_food_model_default = NutritionFood;
 
 // src/models/nutrition-template.model.ts
-var import_mongoose79 = __toESM(require_mongoose2(), 1);
-var nutritionTemplateSchema = new import_mongoose79.default.Schema({
+var import_mongoose82 = __toESM(require_mongoose2(), 1);
+var nutritionTemplateSchema = new import_mongoose82.default.Schema({
   name: { type: String, required: true },
   description: { type: String, default: "" },
   createdBy: {
-    type: import_mongoose79.default.Schema.Types.ObjectId,
+    type: import_mongoose82.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
@@ -588460,7 +588916,7 @@ var nutritionTemplateSchema = new import_mongoose79.default.Schema({
 nutritionTemplateSchema.index({ createdBy: 1, status: 1 });
 nutritionTemplateSchema.index({ goal: 1, status: 1 });
 nutritionTemplateSchema.index({ tags: 1 });
-var NutritionTemplate = import_mongoose79.default.models.NutritionTemplate || import_mongoose79.default.model("NutritionTemplate", nutritionTemplateSchema);
+var NutritionTemplate = import_mongoose82.default.models.NutritionTemplate || import_mongoose82.default.model("NutritionTemplate", nutritionTemplateSchema);
 var nutrition_template_model_default = NutritionTemplate;
 
 // src/services/nutrition/nutrition-snapshot.util.ts
@@ -589043,10 +589499,10 @@ var rebuildPlanAdherence = async (req, res, next) => {
 };
 
 // src/controllers/nutrition-dashboard.controller.ts
-var import_mongoose81 = __toESM(require_mongoose2(), 1);
+var import_mongoose84 = __toESM(require_mongoose2(), 1);
 
 // src/services/nutrition/nutrition-dashboard.service.ts
-var import_mongoose80 = __toESM(require_mongoose2(), 1);
+var import_mongoose83 = __toESM(require_mongoose2(), 1);
 init_HealthGoals();
 init_HealthMarkers();
 init_nutrition_hydration_model();
@@ -589602,7 +590058,7 @@ var buildIntakeEntry = (consumed, target) => {
   };
 };
 var getUserNutritionDashboard = async (userId) => {
-  if (!import_mongoose80.default.Types.ObjectId.isValid(userId)) {
+  if (!import_mongoose83.default.Types.ObjectId.isValid(userId)) {
     throw new Error("Invalid user ID");
   }
   const todayStart = new Date;
@@ -589846,7 +590302,7 @@ var members = async (req, res, next) => {
 var userDashboard = async (req, res, next) => {
   const rawUserId = req.params.userId;
   const userId = Array.isArray(rawUserId) ? rawUserId[0] : rawUserId;
-  if (!userId || !import_mongoose81.default.Types.ObjectId.isValid(userId)) {
+  if (!userId || !import_mongoose84.default.Types.ObjectId.isValid(userId)) {
     if (true) {
       console.warn("[userDashboard] invalid userId", {
         raw: rawUserId,
@@ -591022,7 +591478,7 @@ var copyPlanDayStructure = async (req, res, next) => {
 };
 
 // src/services/nutrition/nutrition-profile.service.ts
-var import_mongoose82 = __toESM(require_mongoose2(), 1);
+var import_mongoose85 = __toESM(require_mongoose2(), 1);
 var prefillFromOnboarding = async (userId) => {
   try {
     const [{ default: HealthMarkers }, { default: HealthGoals }] = await Promise.all([
@@ -591030,8 +591486,8 @@ var prefillFromOnboarding = async (userId) => {
       Promise.resolve().then(() => (init_HealthGoals(), exports_HealthGoals))
     ]);
     const [markers, goals] = await Promise.all([
-      HealthMarkers.findOne({ userId: new import_mongoose82.default.Types.ObjectId(userId) }),
-      HealthGoals.findOne({ userId: new import_mongoose82.default.Types.ObjectId(userId) })
+      HealthMarkers.findOne({ userId: new import_mongoose85.default.Types.ObjectId(userId) }),
+      HealthGoals.findOne({ userId: new import_mongoose85.default.Types.ObjectId(userId) })
     ]);
     return {
       allergies: markers?.allergies ?? [],
@@ -591429,8 +591885,8 @@ var addPlanProgressEntry = async (req, res, next) => {
 };
 
 // src/models/MealPlanCategory.ts
-var import_mongoose83 = __toESM(require_mongoose2(), 1);
-var mealPlanCategorySchema = new import_mongoose83.default.Schema({
+var import_mongoose86 = __toESM(require_mongoose2(), 1);
+var mealPlanCategorySchema = new import_mongoose86.default.Schema({
   name: { type: String, required: true },
   slug: { type: String, required: true },
   headerText: { type: String, required: true },
@@ -591445,12 +591901,12 @@ var mealPlanCategorySchema = new import_mongoose83.default.Schema({
 }, { timestamps: true });
 mealPlanCategorySchema.index({ slug: 1 }, { unique: true });
 mealPlanCategorySchema.index({ sortOrder: 1 });
-var MealPlanCategory = import_mongoose83.default.models.MealPlanCategory || import_mongoose83.default.model("MealPlanCategory", mealPlanCategorySchema);
+var MealPlanCategory = import_mongoose86.default.models.MealPlanCategory || import_mongoose86.default.model("MealPlanCategory", mealPlanCategorySchema);
 var MealPlanCategory_default = MealPlanCategory;
 
 // src/models/Recipe.ts
-var import_mongoose84 = __toESM(require_mongoose2(), 1);
-var recipeTotalsSchema = new import_mongoose84.default.Schema({
+var import_mongoose87 = __toESM(require_mongoose2(), 1);
+var recipeTotalsSchema = new import_mongoose87.default.Schema({
   caloriesKcal: { type: Number, default: 0 },
   proteinG: { type: Number, default: 0 },
   carbsG: { type: Number, default: 0 },
@@ -591458,11 +591914,11 @@ var recipeTotalsSchema = new import_mongoose84.default.Schema({
   fiberG: { type: Number, default: null },
   sugarG: { type: Number, default: null }
 }, { _id: false });
-var recipeSchema = new import_mongoose84.default.Schema({
+var recipeSchema = new import_mongoose87.default.Schema({
   name: { type: String, required: true },
   slug: { type: String, required: true },
   categoryId: {
-    type: import_mongoose84.default.Schema.Types.ObjectId,
+    type: import_mongoose87.default.Schema.Types.ObjectId,
     ref: "MealPlanCategory",
     required: true
   },
@@ -591480,7 +591936,7 @@ var recipeSchema = new import_mongoose84.default.Schema({
   },
   importBatchId: { type: String, default: null },
   createdBy: {
-    type: import_mongoose84.default.Schema.Types.ObjectId,
+    type: import_mongoose87.default.Schema.Types.ObjectId,
     ref: "User",
     default: null
   },
@@ -591497,19 +591953,19 @@ recipeSchema.index({ isVeg: 1, isActive: 1 });
 recipeSchema.index({ source: 1 });
 recipeSchema.index({ importBatchId: 1 });
 recipeSchema.index({ name: "text" });
-var Recipe = import_mongoose84.default.models.Recipe || import_mongoose84.default.model("Recipe", recipeSchema);
+var Recipe = import_mongoose87.default.models.Recipe || import_mongoose87.default.model("Recipe", recipeSchema);
 var Recipe_default = Recipe;
 
 // src/models/RecipeIngredient.ts
-var import_mongoose85 = __toESM(require_mongoose2(), 1);
-var recipeIngredientSchema = new import_mongoose85.default.Schema({
+var import_mongoose88 = __toESM(require_mongoose2(), 1);
+var recipeIngredientSchema = new import_mongoose88.default.Schema({
   recipeId: {
-    type: import_mongoose85.default.Schema.Types.ObjectId,
+    type: import_mongoose88.default.Schema.Types.ObjectId,
     ref: "Recipe",
     required: true
   },
   foodId: {
-    type: import_mongoose85.default.Schema.Types.ObjectId,
+    type: import_mongoose88.default.Schema.Types.ObjectId,
     ref: "NutritionFood",
     default: null
   },
@@ -591529,7 +591985,7 @@ var recipeIngredientSchema = new import_mongoose85.default.Schema({
   sugarG: { type: Number, default: null },
   sortOrder: { type: Number, required: true },
   sourceRowId: {
-    type: import_mongoose85.default.Schema.Types.ObjectId,
+    type: import_mongoose88.default.Schema.Types.ObjectId,
     ref: "MealPlanImportRow",
     default: null
   }
@@ -591537,7 +591993,7 @@ var recipeIngredientSchema = new import_mongoose85.default.Schema({
 recipeIngredientSchema.index({ recipeId: 1, sortOrder: 1 }, { unique: true });
 recipeIngredientSchema.index({ foodId: 1 });
 recipeIngredientSchema.index({ recipeId: 1 });
-var RecipeIngredient = import_mongoose85.default.models.RecipeIngredient || import_mongoose85.default.model("RecipeIngredient", recipeIngredientSchema);
+var RecipeIngredient = import_mongoose88.default.models.RecipeIngredient || import_mongoose88.default.model("RecipeIngredient", recipeIngredientSchema);
 var RecipeIngredient_default = RecipeIngredient;
 
 // src/services/nutrition/nutrition-recipe.service.ts
@@ -591878,7 +592334,7 @@ var deleteTemplate = async (templateId, actor) => {
 };
 
 // src/services/nutrition/nutrition-template-recommend.service.ts
-var import_mongoose86 = __toESM(require_mongoose2(), 1);
+var import_mongoose89 = __toESM(require_mongoose2(), 1);
 
 // src/services/nutrition/nutrition-filter.service.ts
 var LOW_CARB_GOALS = new Set([
@@ -592034,7 +592490,7 @@ var deleteNutritionTemplate = async (req, res, next) => {
 };
 
 // src/routes/nutrition.routes.ts
-var nutritionRouter = import_express19.Router();
+var nutritionRouter = import_express20.Router();
 nutritionRouter.use(authenticateToken);
 var STAFF = authorize(["nutritionist", "admin"]);
 var USER = authorize(["user"]);
@@ -592098,13 +592554,13 @@ nutritionRouter.post("/plans/:id/progress", STAFF, addPlanProgressEntry);
 var nutrition_routes_default = nutritionRouter;
 
 // src/routes/nutritionist-booking.routes.ts
-var import_express20 = __toESM(require_express2(), 1);
+var import_express21 = __toESM(require_express2(), 1);
 
 // src/controllers/nutritionist-booking.controller.ts
-var import_mongoose88 = __toESM(require_mongoose2(), 1);
+var import_mongoose91 = __toESM(require_mongoose2(), 1);
 
 // src/utils/onboarding.service.ts
-var import_mongoose87 = __toESM(require_mongoose2(), 1);
+var import_mongoose90 = __toESM(require_mongoose2(), 1);
 class OnboardingServiceError extends Error {
   code;
   constructor(code, message) {
@@ -592136,10 +592592,10 @@ var getNextStep = (currentStep) => {
   return STEP_ORDER[currentIndex + 1] ?? null;
 };
 var toObjectId3 = (value, code, message) => {
-  if (!import_mongoose87.default.Types.ObjectId.isValid(value)) {
+  if (!import_mongoose90.default.Types.ObjectId.isValid(value)) {
     throw new OnboardingServiceError(code, message);
   }
-  return new import_mongoose87.default.Types.ObjectId(value);
+  return new import_mongoose90.default.Types.ObjectId(value);
 };
 var getOnboardingStatus = async (userId) => {
   const userObjectId = toObjectId3(userId, "NOT_FOUND", "Invalid user ID");
@@ -592313,8 +592769,8 @@ var bookNutritionist = async (req, res, next) => {
     let startTime = reqStartTime ?? "10:00";
     let endTime = reqEndTime ?? "10:30";
     let resolvedSlotId = null;
-    if (slotId && import_mongoose88.default.Types.ObjectId.isValid(slotId)) {
-      resolvedSlotId = new import_mongoose88.default.Types.ObjectId(slotId);
+    if (slotId && import_mongoose91.default.Types.ObjectId.isValid(slotId)) {
+      resolvedSlotId = new import_mongoose91.default.Types.ObjectId(slotId);
       const slot = await Slots_default.findById(resolvedSlotId);
       if (slot) {
         if (slot.remainingCapacity <= 0) {
@@ -592334,7 +592790,7 @@ var bookNutritionist = async (req, res, next) => {
     }
     const bookingDate = new Date(date5);
     const booking = new NutritionistBooking_default({
-      userId: new import_mongoose88.default.Types.ObjectId(user.id),
+      userId: new import_mongoose91.default.Types.ObjectId(user.id),
       slotId: resolvedSlotId,
       bookingDate,
       startTime,
@@ -592376,7 +592832,7 @@ var getMemberBooking = async (req, res, next) => {
       return;
     }
     const booking = await NutritionistBooking_default.findOne({
-      userId: new import_mongoose88.default.Types.ObjectId(user.id),
+      userId: new import_mongoose91.default.Types.ObjectId(user.id),
       status: { $ne: "REJECTED" /* REJECTED */ }
     }).sort({ createdAt: -1 }).lean();
     if (!booking) {
@@ -592422,7 +592878,7 @@ var getMyBookings2 = async (req, res, next) => {
       return;
     }
     const bookings = await NutritionistBooking_default.find({
-      userId: new import_mongoose88.default.Types.ObjectId(user.id)
+      userId: new import_mongoose91.default.Types.ObjectId(user.id)
     }).sort({ createdAt: -1 }).lean();
     res.status(200).json({ bookings });
   } catch (error51) {
@@ -592433,7 +592889,7 @@ var acceptBooking = async (req, res, next) => {
   try {
     const idParam = req.params.id;
     const id = typeof idParam === "string" ? idParam : undefined;
-    if (!id || !import_mongoose88.default.Types.ObjectId.isValid(id)) {
+    if (!id || !import_mongoose91.default.Types.ObjectId.isValid(id)) {
       res.status(400).json({ error: "Invalid booking ID", code: "BAD_REQUEST" });
       return;
     }
@@ -592495,8 +592951,8 @@ var acceptBooking = async (req, res, next) => {
     }
     let nutritionistName = assignedNutritionistName ?? null;
     let nutritionistIdObj = null;
-    if (assignedNutritionistId && import_mongoose88.default.Types.ObjectId.isValid(assignedNutritionistId)) {
-      nutritionistIdObj = new import_mongoose88.default.Types.ObjectId(assignedNutritionistId);
+    if (assignedNutritionistId && import_mongoose91.default.Types.ObjectId.isValid(assignedNutritionistId)) {
+      nutritionistIdObj = new import_mongoose91.default.Types.ObjectId(assignedNutritionistId);
       if (!nutritionistName) {
         const nutUser = await User_default.findById(nutritionistIdObj).select("username");
         if (nutUser) {
@@ -592531,7 +592987,7 @@ var rejectBooking = async (req, res, next) => {
   try {
     const idParam = req.params.id;
     const id = typeof idParam === "string" ? idParam : undefined;
-    if (!id || !import_mongoose88.default.Types.ObjectId.isValid(id)) {
+    if (!id || !import_mongoose91.default.Types.ObjectId.isValid(id)) {
       res.status(400).json({ error: "Invalid booking ID", code: "BAD_REQUEST" });
       return;
     }
@@ -592567,7 +593023,7 @@ var completeBooking = async (req, res, next) => {
   try {
     const idParam = req.params.id;
     const id = typeof idParam === "string" ? idParam : undefined;
-    if (!id || !import_mongoose88.default.Types.ObjectId.isValid(id)) {
+    if (!id || !import_mongoose91.default.Types.ObjectId.isValid(id)) {
       res.status(400).json({ error: "Invalid booking ID", code: "BAD_REQUEST" });
       return;
     }
@@ -592612,12 +593068,12 @@ var rescheduleMyBooking = async (req, res, next) => {
       return;
     }
     const { slotId, date: date5 } = parsed.data;
-    if (!import_mongoose88.default.Types.ObjectId.isValid(slotId)) {
+    if (!import_mongoose91.default.Types.ObjectId.isValid(slotId)) {
       res.status(400).json({ error: "Invalid slotId", code: "BAD_REQUEST" });
       return;
     }
     const booking = await NutritionistBooking_default.findOne({
-      userId: new import_mongoose88.default.Types.ObjectId(user.id),
+      userId: new import_mongoose91.default.Types.ObjectId(user.id),
       status: "RESCHEDULE_REQUIRED" /* RESCHEDULE_REQUIRED */
     }).sort({ createdAt: -1 });
     if (!booking) {
@@ -592627,7 +593083,7 @@ var rescheduleMyBooking = async (req, res, next) => {
       });
       return;
     }
-    const newSlotId = new import_mongoose88.default.Types.ObjectId(slotId);
+    const newSlotId = new import_mongoose91.default.Types.ObjectId(slotId);
     const newSlot = await Slots_default.findOneAndUpdate({ _id: newSlotId, remainingCapacity: { $gt: 0 } }, {
       $inc: { remainingCapacity: -1 }
     }, { returnDocument: "after" });
@@ -592689,7 +593145,7 @@ var switchToOnline = async (req, res, next) => {
       return;
     }
     const booking = await NutritionistBooking_default.findOne({
-      userId: new import_mongoose88.default.Types.ObjectId(user.id),
+      userId: new import_mongoose91.default.Types.ObjectId(user.id),
       status: { $ne: "REJECTED" /* REJECTED */ }
     }).sort({ createdAt: -1 });
     if (!booking) {
@@ -592717,7 +593173,7 @@ var switchToOnline = async (req, res, next) => {
 };
 
 // src/routes/nutritionist-booking.routes.ts
-var nutritionistBookingRouter = import_express20.Router();
+var nutritionistBookingRouter = import_express21.Router();
 nutritionistBookingRouter.use(["/onboarding/nutritionist", "/nutritionist", "/admin/nutrition"], authenticateToken);
 nutritionistBookingRouter.post("/onboarding/nutritionist/book", authorize(["user"]), bookNutritionist);
 nutritionistBookingRouter.post("/nutritionist/book", authorize(["user"]), bookNutritionist);
@@ -592738,11 +593194,11 @@ nutritionistBookingRouter.patch("/nutritionist/bookings/:id/complete", authorize
 var nutritionist_booking_routes_default = nutritionistBookingRouter;
 
 // src/routes/onboarding.routes.ts
-var import_express21 = __toESM(require_express2(), 1);
+var import_express22 = __toESM(require_express2(), 1);
 
 // src/controllers/onboarding.controller.ts
 var import_node_fs4 = require("node:fs");
-var import_mongoose89 = __toESM(require_mongoose2(), 1);
+var import_mongoose92 = __toESM(require_mongoose2(), 1);
 init_HealthGoals();
 init_HealthMarkers();
 
@@ -592927,7 +593383,7 @@ var handleServiceError = (error51, res, next) => {
 };
 var getStatusByUserId = async (req, res, next) => {
   const { userId } = req.params;
-  if (typeof userId !== "string" || !import_mongoose89.default.Types.ObjectId.isValid(userId)) {
+  if (typeof userId !== "string" || !import_mongoose92.default.Types.ObjectId.isValid(userId)) {
     res.status(400).json({ error: "Invalid user ID", code: "BAD_REQUEST" });
     return;
   }
@@ -593118,7 +593574,7 @@ var submitReport = async (req, res, _next) => {
         return;
       }
       const ext = req.file.originalname.split(".").pop() ?? "bin";
-      const key = `medical-reports/${requester.id}/${Date.now()}-${new import_mongoose89.default.Types.ObjectId().toString()}.${ext}`;
+      const key = `medical-reports/${requester.id}/${Date.now()}-${new import_mongoose92.default.Types.ObjectId().toString()}.${ext}`;
       const result = await uploadStreamToS3(key, filePath, mimeType, fileSize);
       s3Key = result.s3Key;
       wasUploadedToS3 = true;
@@ -593208,7 +593664,7 @@ var submitComplete = async (req, res, next) => {
 };
 
 // src/routes/onboarding.routes.ts
-var onboardingRouter = import_express21.Router();
+var onboardingRouter = import_express22.Router();
 onboardingRouter.use(authenticateToken);
 onboardingRouter.get("/status", authorize(["user"]), getStatus);
 onboardingRouter.get("/status/:userId", authorize(["admin", "frontdesk"]), getStatusByUserId);
@@ -593220,10 +593676,10 @@ onboardingRouter.post("/complete", authorize(["user"]), submitComplete);
 var onboarding_routes_default = onboardingRouter;
 
 // src/routes/schedule.routes.ts
-var import_express22 = __toESM(require_express2(), 1);
+var import_express23 = __toESM(require_express2(), 1);
 
 // src/controllers/schedule.controller.ts
-var import_mongoose90 = __toESM(require_mongoose2(), 1);
+var import_mongoose93 = __toESM(require_mongoose2(), 1);
 
 // src/validators/schedule.validator.ts
 var createScheduleBodySchema = zod_default.object({
@@ -593249,7 +593705,7 @@ var rescheduleBodySchema = zod_default.object({
 
 // src/controllers/schedule.controller.ts
 var getIdParam15 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose90.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose93.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -593307,11 +593763,11 @@ var createSchedule = async (req, res, next) => {
     });
     return;
   }
-  if (!import_mongoose90.default.Types.ObjectId.isValid(userId)) {
+  if (!import_mongoose93.default.Types.ObjectId.isValid(userId)) {
     res.status(400).json({ message: "Invalid userId" });
     return;
   }
-  if (todoIds && todoIds.length > 0 && !todoIds.every((id) => import_mongoose90.default.Types.ObjectId.isValid(id))) {
+  if (todoIds && todoIds.length > 0 && !todoIds.every((id) => import_mongoose93.default.Types.ObjectId.isValid(id))) {
     res.status(400).json({ message: "Invalid todo IDs" });
     return;
   }
@@ -593393,7 +593849,7 @@ var updateSchedule = async (req, res, next) => {
     return;
   }
   const { scheduledDate, status, todoIds } = parsedBody.data;
-  if (todoIds && todoIds.length > 0 && !todoIds.every((id) => import_mongoose90.default.Types.ObjectId.isValid(id))) {
+  if (todoIds && todoIds.length > 0 && !todoIds.every((id) => import_mongoose93.default.Types.ObjectId.isValid(id))) {
     res.status(400).json({ message: "Invalid todo IDs" });
     return;
   }
@@ -593410,7 +593866,7 @@ var updateSchedule = async (req, res, next) => {
       schedule.status = status;
     }
     if (todoIds !== undefined) {
-      schedule.todos = todoIds.map((todoId) => new import_mongoose90.default.Types.ObjectId(todoId));
+      schedule.todos = todoIds.map((todoId) => new import_mongoose93.default.Types.ObjectId(todoId));
     }
     await schedule.save();
     const updatedSchedule = await Schedule_default.findOne({ user: userId }).populate("user", "username email").populate("todos");
@@ -593501,7 +593957,7 @@ var deleteSchedule = async (req, res, next) => {
 };
 
 // src/routes/schedule.routes.ts
-var scheduleRouter = import_express22.default.Router();
+var scheduleRouter = import_express23.default.Router();
 scheduleRouter.use(authenticateToken);
 scheduleRouter.get("/my-schedule", getMySchedule);
 scheduleRouter.post("/", authorize(["user", "trainer", "admin"]), createSchedule);
@@ -593512,10 +593968,10 @@ scheduleRouter.delete("/:userId", authorize(["admin"]), deleteSchedule);
 var schedule_routes_default = scheduleRouter;
 
 // src/routes/service.routes.ts
-var import_express23 = __toESM(require_express2(), 1);
+var import_express24 = __toESM(require_express2(), 1);
 
 // src/controllers/service.controller.ts
-var import_mongoose91 = __toESM(require_mongoose2(), 1);
+var import_mongoose94 = __toESM(require_mongoose2(), 1);
 
 // src/validators/service.validator.ts
 var createServiceBodySchema = zod_default.object({
@@ -593539,12 +593995,12 @@ var updateServiceBodySchema = zod_default.object({
 
 // src/controllers/service.controller.ts
 var getIdParam16 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose91.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose94.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
 };
-var areValidObjectIds = (ids) => ids.every((id) => import_mongoose91.default.Types.ObjectId.isValid(id));
+var areValidObjectIds = (ids) => ids.every((id) => import_mongoose94.default.Types.ObjectId.isValid(id));
 var createService = async (req, res, next) => {
   const parsedBody = createServiceBodySchema.safeParse(req.body);
   if (!parsedBody.success) {
@@ -593650,7 +594106,7 @@ var deleteServiceById = async (req, res, next) => {
 };
 
 // src/routes/service.routes.ts
-var serviceRouter = import_express23.Router();
+var serviceRouter = import_express24.Router();
 serviceRouter.use(authenticateToken);
 serviceRouter.get("/", authorize(["admin", "trainer", "user"]), getAllServices);
 serviceRouter.get("/:id", authorize(["admin", "trainer", "user"]), getServiceById);
@@ -593660,10 +594116,10 @@ serviceRouter.delete("/:id", authorize(["admin"]), deleteServiceById);
 var service_routes_default = serviceRouter;
 
 // src/routes/slot.routes.ts
-var import_express24 = __toESM(require_express2(), 1);
+var import_express25 = __toESM(require_express2(), 1);
 
 // src/controllers/slot.controller.ts
-var import_mongoose92 = __toESM(require_mongoose2(), 1);
+var import_mongoose95 = __toESM(require_mongoose2(), 1);
 
 // src/validators/slot.validator.ts
 var slotBodySchema = zod_default.object({
@@ -593720,7 +594176,7 @@ var normalizeToUtcDayEnd = (value) => {
   return new Date(start.getTime() + 24 * 60 * 60 * 1000);
 };
 var getIdParam17 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose92.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose95.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -593938,7 +594394,7 @@ var deleteSlotById = async (req, res, next) => {
 };
 
 // src/routes/slot.routes.ts
-var slotRouter = import_express24.Router();
+var slotRouter = import_express25.Router();
 slotRouter.use(authenticateToken);
 slotRouter.get("/", authorize(["admin", "trainer", "user"]), getAllSlots);
 slotRouter.get("/available", authorize(["admin", "trainer", "user"]), getAvailableSlots);
@@ -593949,10 +594405,10 @@ slotRouter.delete("/:id", authorize(["admin"]), deleteSlotById);
 var slot_routes_default = slotRouter;
 
 // src/routes/therapy.routes.ts
-var import_express25 = __toESM(require_express2(), 1);
+var import_express26 = __toESM(require_express2(), 1);
 
 // src/controllers/therapy.controller.ts
-var import_mongoose93 = __toESM(require_mongoose2(), 1);
+var import_mongoose96 = __toESM(require_mongoose2(), 1);
 
 // src/validators/therapy.validator.ts
 var createTherapyBodySchema = zod_default.object({
@@ -593976,12 +594432,12 @@ var updateTherapyBodySchema = zod_default.object({
 
 // src/controllers/therapy.controller.ts
 var getIdParam18 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose93.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose96.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
 };
-var areValidObjectIds2 = (ids) => ids.every((id) => import_mongoose93.default.Types.ObjectId.isValid(id));
+var areValidObjectIds2 = (ids) => ids.every((id) => import_mongoose96.default.Types.ObjectId.isValid(id));
 var toTherapyResponse = (service) => ({
   _id: service._id,
   therapyName: service.serviceName,
@@ -594155,7 +594611,7 @@ var deleteTherapyById = async (req, res, next) => {
 };
 
 // src/routes/therapy.routes.ts
-var therapyRouter = import_express25.Router();
+var therapyRouter = import_express26.Router();
 therapyRouter.get("/public", getPublicTherapies);
 therapyRouter.get("/public/:id", getPublicTherapyById);
 therapyRouter.use(authenticateToken);
@@ -594167,10 +594623,10 @@ therapyRouter.delete("/:id", authorize(["admin"]), deleteTherapyById);
 var therapy_routes_default = therapyRouter;
 
 // src/routes/trainer.routes.ts
-var import_express26 = __toESM(require_express2(), 1);
+var import_express27 = __toESM(require_express2(), 1);
 
 // src/controllers/trainer.controller.ts
-var import_mongoose94 = __toESM(require_mongoose2(), 1);
+var import_mongoose97 = __toESM(require_mongoose2(), 1);
 
 // src/validators/trainer.validator.ts
 var createTrainerBodySchema = zod_default.object({
@@ -594190,7 +594646,7 @@ var updateTrainerBodySchema = createTrainerBodySchema.partial().refine((payload)
 
 // src/controllers/trainer.controller.ts
 var getIdParam19 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose94.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose97.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -594328,7 +594784,7 @@ var deleteTrainerById = async (req, res, next) => {
 };
 
 // src/routes/trainer.routes.ts
-var trainerRouter = import_express26.Router();
+var trainerRouter = import_express27.Router();
 trainerRouter.get("/public", getPublicTrainers);
 trainerRouter.get("/public/:id", getPublicTrainerById);
 trainerRouter.use(authenticateToken);
@@ -594340,10 +594796,10 @@ trainerRouter.delete("/:id", authorize(["admin"]), deleteTrainerById);
 var trainer_routes_default = trainerRouter;
 
 // src/routes/user.routes.ts
-var import_express27 = __toESM(require_express2(), 1);
+var import_express28 = __toESM(require_express2(), 1);
 
 // src/controllers/user.controller.ts
-var import_mongoose95 = __toESM(require_mongoose2(), 1);
+var import_mongoose98 = __toESM(require_mongoose2(), 1);
 init_HealthGoals();
 init_HealthMarkers();
 
@@ -594540,7 +594996,7 @@ var strongPassword2 = zod_default.string().min(8, "Password must be at least 8 c
 var createUserBodySchema = zod_default.object({
   username: requiredString,
   phone: requiredString,
-  email: zod_default.string().email().optional(),
+  email: zod_default.string().email().toLowerCase().optional(),
   age: requiredAgeNumber,
   gender: requiredGenderString,
   password: strongPassword2.optional(),
@@ -594610,7 +595066,7 @@ var getValidationDetails4 = (issues) => {
   return details;
 };
 var getIdParam20 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose95.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose98.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -595387,7 +595843,7 @@ var syncMyBcaMetrics = async (req, res, next) => {
       return;
     }
     const records = await fetchBcaRecords(phone);
-    const userObjectId = new import_mongoose95.default.Types.ObjectId(req.user.id);
+    const userObjectId = new import_mongoose98.default.Types.ObjectId(req.user.id);
     const receivedAt = new Date;
     let synced = 0;
     for (const record2 of records) {
@@ -595410,7 +595866,7 @@ var syncMyBcaMetrics = async (req, res, next) => {
 };
 
 // src/routes/user.routes.ts
-var userRouter = import_express27.Router();
+var userRouter = import_express28.Router();
 userRouter.use(authenticateToken);
 userRouter.post("/", authorize(["admin"]), createUser);
 userRouter.get("/", authorize(["admin", "nutritionist"]), getAllUsers);
@@ -595429,10 +595885,10 @@ userRouter.delete("/:id", authorize(["admin"]), deleteUserById);
 var user_routes_default = userRouter;
 
 // src/routes/workout.routes.ts
-var import_express28 = __toESM(require_express2(), 1);
+var import_express29 = __toESM(require_express2(), 1);
 
 // src/controllers/workout.controller.ts
-var import_mongoose96 = __toESM(require_mongoose2(), 1);
+var import_mongoose99 = __toESM(require_mongoose2(), 1);
 
 // src/validators/workout.validator.ts
 var sectionEnum = zod_default.enum(Object.values(ExerciseSection));
@@ -595515,7 +595971,7 @@ var historyQuerySchema = zod_default.object({
 
 // src/controllers/workout.controller.ts
 var getIdParam21 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose96.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose99.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -595562,7 +596018,7 @@ var buildSessionWithDetails = async (sessionId) => {
 };
 var getActiveSession = async (req, res, next) => {
   try {
-    const userId = new import_mongoose96.default.Types.ObjectId(req.user.id);
+    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
     const today = normalizeToUtcDate3(new Date);
     const session = await WorkoutSession_default.findOne({
       userId,
@@ -595583,7 +596039,7 @@ var getActiveSession = async (req, res, next) => {
 var getTodaySession = async (req, res, next) => {
   try {
     const today = normalizeToUtcDate3(new Date);
-    const userId = new import_mongoose96.default.Types.ObjectId(req.user.id);
+    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
     let session = await WorkoutSession_default.findOne({
       userId,
       date: today,
@@ -595615,7 +596071,7 @@ var listMySessions = async (req, res, next) => {
       return;
     }
     const { page, limit, status } = parsed.data;
-    const userId = new import_mongoose96.default.Types.ObjectId(req.user.id);
+    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
     const filter = { userId };
     if (status)
       filter.status = status;
@@ -595669,7 +596125,7 @@ var createSession = async (req, res, next) => {
       });
       return;
     }
-    const userId = new import_mongoose96.default.Types.ObjectId(req.user.id);
+    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
     const date5 = normalizeToUtcDate3(parsed.data.date || new Date);
     const existing = await WorkoutSession_default.findOne({
       userId,
@@ -595694,11 +596150,11 @@ var createSession = async (req, res, next) => {
       status: "Active" /* Active */,
       startedAt: new Date,
       notes: parsed.data.notes || null,
-      planId: parsed.data.planId ? new import_mongoose96.default.Types.ObjectId(parsed.data.planId) : null
+      planId: parsed.data.planId ? new import_mongoose99.default.Types.ObjectId(parsed.data.planId) : null
     });
     let exercisesToAdd = parsed.data.exercises;
     if (parsed.data.planId) {
-      const plan = await import_mongoose96.default.model("WorkoutPlan").findById(parsed.data.planId);
+      const plan = await import_mongoose99.default.model("WorkoutPlan").findById(parsed.data.planId);
       if (!plan) {
         res.status(404).json({ error: "Plan not found" });
         return;
@@ -595729,7 +596185,7 @@ var createSession = async (req, res, next) => {
       const validIds = new Set(validExercises.map((e2) => e2._id.toString()));
       const workoutExercises = exercisesToAdd.filter((e2) => validIds.has(e2.exerciseId)).map((e2, index) => ({
         sessionId: session._id,
-        exerciseId: new import_mongoose96.default.Types.ObjectId(e2.exerciseId),
+        exerciseId: new import_mongoose99.default.Types.ObjectId(e2.exerciseId),
         orderIndex: index,
         section: e2.section,
         targetSets: e2.targetSets,
@@ -595864,7 +596320,7 @@ var addExerciseToSession = async (req, res, next) => {
       _id: exerciseId,
       $or: [
         { isSystem: true },
-        { createdBy: new import_mongoose96.default.Types.ObjectId(req.user.id) }
+        { createdBy: new import_mongoose99.default.Types.ObjectId(req.user.id) }
       ]
     });
     if (!exercise) {
@@ -595989,7 +596445,7 @@ var reorderExercises = async (req, res, next) => {
     const ops = parsed.data.order.map((exerciseId, index) => ({
       updateOne: {
         filter: {
-          _id: new import_mongoose96.default.Types.ObjectId(exerciseId),
+          _id: new import_mongoose99.default.Types.ObjectId(exerciseId),
           sessionId: session._id
         },
         update: { $set: { orderIndex: index } }
@@ -596179,7 +596635,7 @@ var deleteSet = async (req, res, next) => {
 };
 var getMyStats = async (req, res, next) => {
   try {
-    const userId = new import_mongoose96.default.Types.ObjectId(req.user.id);
+    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
     const now = new Date;
     const dayOfWeek = now.getUTCDay();
     const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
@@ -596322,7 +596778,7 @@ var getMyHistory = async (req, res, next) => {
       });
       return;
     }
-    const userId = new import_mongoose96.default.Types.ObjectId(req.user.id);
+    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
     const { limit, cursor } = parsed.data;
     const now = new Date;
     const from = parsed.data.from || new Date(now.getTime() - 365 * 86400000);
@@ -596332,8 +596788,8 @@ var getMyHistory = async (req, res, next) => {
       isDeleted: { $ne: true },
       date: { $gte: normalizeToUtcDate3(from), $lte: normalizeToUtcDate3(to2) }
     };
-    if (cursor && import_mongoose96.default.Types.ObjectId.isValid(cursor)) {
-      filter._id = { $lt: new import_mongoose96.default.Types.ObjectId(cursor) };
+    if (cursor && import_mongoose99.default.Types.ObjectId.isValid(cursor)) {
+      filter._id = { $lt: new import_mongoose99.default.Types.ObjectId(cursor) };
     }
     const sessions = await WorkoutSession_default.find(filter).sort({ date: -1, _id: -1 }).limit(limit + 1).lean();
     const hasMore = sessions.length > limit;
@@ -596359,7 +596815,7 @@ var getMyHistory = async (req, res, next) => {
 };
 
 // src/routes/workout.routes.ts
-var workoutRouter = import_express28.Router();
+var workoutRouter = import_express29.Router();
 workoutRouter.use(authenticateToken);
 workoutRouter.get("/active", authorize(["user"]), getActiveSession);
 workoutRouter.get("/today", authorize(["user"]), getTodaySession);
@@ -596380,19 +596836,19 @@ workoutRouter.delete("/:sessionId/exercises/:exerciseId/sets/:setId", authorize(
 var workout_routes_default = workoutRouter;
 
 // src/routes/workout-plan.routes.ts
-var import_express29 = __toESM(require_express2(), 1);
+var import_express30 = __toESM(require_express2(), 1);
 
 // src/controllers/workout-assignment.controller.ts
-var import_mongoose99 = __toESM(require_mongoose2(), 1);
+var import_mongoose102 = __toESM(require_mongoose2(), 1);
 
 // src/services/planAssignment.service.ts
-var import_mongoose98 = __toESM(require_mongoose2(), 1);
+var import_mongoose101 = __toESM(require_mongoose2(), 1);
 
 // src/models/WorkoutPlan.ts
-var import_mongoose97 = __toESM(require_mongoose2(), 1);
-var planExerciseSchema = new import_mongoose97.default.Schema({
+var import_mongoose100 = __toESM(require_mongoose2(), 1);
+var planExerciseSchema = new import_mongoose100.default.Schema({
   exerciseId: {
-    type: import_mongoose97.default.Schema.Types.ObjectId,
+    type: import_mongoose100.default.Schema.Types.ObjectId,
     ref: "Exercise",
     required: true
   },
@@ -596409,13 +596865,13 @@ var planExerciseSchema = new import_mongoose97.default.Schema({
   durationSeconds: { type: Number, default: null },
   notes: { type: String, default: null }
 }, { _id: false });
-var planDaySchema2 = new import_mongoose97.default.Schema({
+var planDaySchema2 = new import_mongoose100.default.Schema({
   dayNumber: { type: Number, required: true },
   name: { type: String, required: true },
   isRestDay: { type: Boolean, default: false },
   exercises: { type: [planExerciseSchema], default: [] }
 }, { _id: false });
-var workoutPlanSchema = new import_mongoose97.default.Schema({
+var workoutPlanSchema = new import_mongoose100.default.Schema({
   name: { type: String, required: true },
   description: { type: String, default: "" },
   difficulty: {
@@ -596442,13 +596898,13 @@ var workoutPlanSchema = new import_mongoose97.default.Schema({
   isTemplate: { type: Boolean, default: false },
   templateCategory: { type: String, default: null },
   createdBy: {
-    type: import_mongoose97.default.Schema.Types.ObjectId,
+    type: import_mongoose100.default.Schema.Types.ObjectId,
     ref: "User",
     required: true
   },
   assignedUsers: [
     {
-      type: import_mongoose97.default.Schema.Types.ObjectId,
+      type: import_mongoose100.default.Schema.Types.ObjectId,
       ref: "User",
       default: []
     }
@@ -596458,7 +596914,7 @@ var workoutPlanSchema = new import_mongoose97.default.Schema({
 workoutPlanSchema.index({ createdBy: 1 });
 workoutPlanSchema.index({ status: 1 });
 workoutPlanSchema.index({ assignedUsers: 1 });
-var WorkoutPlan = import_mongoose97.default.models.WorkoutPlan || import_mongoose97.default.model("WorkoutPlan", workoutPlanSchema);
+var WorkoutPlan = import_mongoose100.default.models.WorkoutPlan || import_mongoose100.default.model("WorkoutPlan", workoutPlanSchema);
 var WorkoutPlan_default = WorkoutPlan;
 
 // src/utils/workoutProgression.ts
@@ -596522,14 +596978,14 @@ function advancePastMissedDays(assignment) {
 // src/services/planAssignment.service.ts
 var normalizeToUtcDate4 = (value) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
 async function createAssignmentForUser(args) {
-  if (!import_mongoose98.default.Types.ObjectId.isValid(args.planId)) {
+  if (!import_mongoose101.default.Types.ObjectId.isValid(args.planId)) {
     throw new Error("INVALID_PLAN_ID");
   }
-  if (!import_mongoose98.default.Types.ObjectId.isValid(args.userId)) {
+  if (!import_mongoose101.default.Types.ObjectId.isValid(args.userId)) {
     throw new Error("INVALID_USER_ID");
   }
-  const planObjId = new import_mongoose98.default.Types.ObjectId(args.planId);
-  const userObjId = new import_mongoose98.default.Types.ObjectId(args.userId);
+  const planObjId = new import_mongoose101.default.Types.ObjectId(args.planId);
+  const userObjId = new import_mongoose101.default.Types.ObjectId(args.userId);
   const startDate = normalizeToUtcDate4(args.startDate ?? new Date);
   const plan = await WorkoutPlan_default.findById(planObjId).lean();
   if (!plan)
@@ -596571,7 +597027,7 @@ async function createAssignmentForUser(args) {
     existing.currentDayIndex = 0;
     existing.userDays = userDays;
     existing.dayProgress = dayProgress;
-    existing.assignedBy = new import_mongoose98.default.Types.ObjectId(args.assignedBy);
+    existing.assignedBy = new import_mongoose101.default.Types.ObjectId(args.assignedBy);
     await existing.save();
     return { assignment: existing, created: false };
   }
@@ -596628,7 +597084,7 @@ var getMyAssignment = async (req, res, next) => {
       res.status(403).json({ error: "Unauthorized" });
       return;
     }
-    const userId = new import_mongoose99.default.Types.ObjectId(requesterId);
+    const userId = new import_mongoose102.default.Types.ObjectId(requesterId);
     const assignment = await WorkoutPlanAssignment_default.findOne({
       userId,
       status: "active",
@@ -596659,7 +597115,7 @@ var getAssignmentSchedule = async (req, res, next) => {
       res.status(403).json({ error: "Unauthorized" });
       return;
     }
-    const userId = new import_mongoose99.default.Types.ObjectId(requesterId);
+    const userId = new import_mongoose102.default.Types.ObjectId(requesterId);
     const now = new Date;
     const from = parsed.data.from || new Date(now.getTime() - 30 * 86400000);
     const to2 = parsed.data.to || new Date(now.getTime() + 90 * 86400000);
@@ -596712,7 +597168,7 @@ var getTodayAssignedWorkout = async (req, res, next) => {
       res.status(403).json({ error: "Unauthorized" });
       return;
     }
-    const userId = new import_mongoose99.default.Types.ObjectId(requesterId);
+    const userId = new import_mongoose102.default.Types.ObjectId(requesterId);
     const today = normalizeToUtcDate5(new Date);
     const assignment = await WorkoutPlanAssignment_default.findOne({
       userId,
@@ -596748,7 +597204,7 @@ var getAssignedWorkoutForDay = async (req, res, next) => {
       res.status(403).json({ error: "Unauthorized" });
       return;
     }
-    const userId = new import_mongoose99.default.Types.ObjectId(requesterId);
+    const userId = new import_mongoose102.default.Types.ObjectId(requesterId);
     const assignment = await WorkoutPlanAssignment_default.findOne({
       userId,
       status: "active",
@@ -596766,7 +597222,7 @@ var getAssignedWorkoutForDay = async (req, res, next) => {
 var assignPlan = async (req, res, next) => {
   try {
     const planId = req.params.planId;
-    if (typeof planId !== "string" || !import_mongoose99.default.Types.ObjectId.isValid(planId)) {
+    if (typeof planId !== "string" || !import_mongoose102.default.Types.ObjectId.isValid(planId)) {
       res.status(400).json({ error: "Invalid plan ID" });
       return;
     }
@@ -596815,7 +597271,7 @@ var completePlanDay = async (req, res, next) => {
       res.status(403).json({ error: "Unauthorized" });
       return;
     }
-    const userId = new import_mongoose99.default.Types.ObjectId(requesterId);
+    const userId = new import_mongoose102.default.Types.ObjectId(requesterId);
     const assignment = await WorkoutPlanAssignment_default.findOne({
       userId,
       status: "active",
@@ -596860,7 +597316,7 @@ var updateMyDayExercises = async (req, res, next) => {
       });
       return;
     }
-    const userId = new import_mongoose99.default.Types.ObjectId(req.user.id);
+    const userId = new import_mongoose102.default.Types.ObjectId(req.user.id);
     const assignment = await WorkoutPlanAssignment_default.findOne({
       userId,
       status: "active",
@@ -596931,7 +597387,7 @@ async function _respondWithDayDetail(res, assignment, dayNumber) {
 // src/controllers/workout-plan.controller.ts
 var import_node_fs5 = __toESM(require("node:fs"));
 var import_node_path5 = __toESM(require("node:path"));
-var import_mongoose100 = __toESM(require_mongoose2(), 1);
+var import_mongoose103 = __toESM(require_mongoose2(), 1);
 
 // src/validators/workout-plan.validator.ts
 var planExerciseSchema2 = zod_default.object({
@@ -597018,7 +597474,7 @@ Issues: ${JSON.stringify(issues, null, 2)}
   }
 };
 var getIdParam22 = (idParam) => {
-  if (typeof idParam !== "string" || !import_mongoose100.default.Types.ObjectId.isValid(idParam)) {
+  if (typeof idParam !== "string" || !import_mongoose103.default.Types.ObjectId.isValid(idParam)) {
     return null;
   }
   return idParam;
@@ -597338,7 +597794,7 @@ var assignUsers = async (req, res, next) => {
 };
 
 // src/routes/workout-plan.routes.ts
-var workoutPlanRouter = import_express29.Router();
+var workoutPlanRouter = import_express30.Router();
 workoutPlanRouter.use(authenticateToken);
 workoutPlanRouter.get("/assignments/mine", authorize(["user"]), getMyAssignment);
 workoutPlanRouter.get("/assignments/mine/schedule", authorize(["user"]), getAssignmentSchedule);
@@ -597357,7 +597813,7 @@ workoutPlanRouter.post("/:planId/assign-to-me", authorize(["user", "trainer", "a
 var workout_plan_routes_default = workoutPlanRouter;
 
 // src/routes/zego.routes.ts
-var import_express30 = __toESM(require_express2(), 1);
+var import_express31 = __toESM(require_express2(), 1);
 
 // src/utils/zego.ts
 var import_node_crypto8 = __toESM(require("node:crypto"));
@@ -597448,7 +597904,7 @@ function generateToken04(appId, userId, secret, effectiveTimeInSeconds, payload)
 }
 
 // src/services/session-access.service.ts
-var import_mongoose101 = __toESM(require_mongoose2(), 1);
+var import_mongoose104 = __toESM(require_mongoose2(), 1);
 var MIN_TTL_SECONDS = 60;
 var MAX_TTL_SECONDS = 7200;
 var DENY_STATUS = {
@@ -597482,14 +597938,14 @@ var resolveSessionAccess = async ({
   now = new Date
 }) => {
   const rawUserId = user.id;
-  const userObjId = import_mongoose101.default.Types.ObjectId.isValid(String(rawUserId)) ? new import_mongoose101.default.Types.ObjectId(String(rawUserId)) : null;
-  const sessionObjId = import_mongoose101.default.Types.ObjectId.isValid(sessionId) ? new import_mongoose101.default.Types.ObjectId(sessionId) : null;
+  const userObjId = import_mongoose104.default.Types.ObjectId.isValid(String(rawUserId)) ? new import_mongoose104.default.Types.ObjectId(String(rawUserId)) : null;
+  const sessionObjId = import_mongoose104.default.Types.ObjectId.isValid(sessionId) ? new import_mongoose104.default.Types.ObjectId(sessionId) : null;
   const session = sessionObjId ? await ScheduledSession_default.findById(sessionObjId) : null;
   const klass = session ? await Class_default.findById(session.classId).select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes").lean() : await Class_default.findById(sessionId).select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes").lean();
   if (!session && !klass) {
     const cleanId = sessionId.startsWith("nutri_session_") ? sessionId.replace("nutri_session_", "") : sessionId;
     let nutriBooking = null;
-    if (import_mongoose101.default.Types.ObjectId.isValid(cleanId)) {
+    if (import_mongoose104.default.Types.ObjectId.isValid(cleanId)) {
       nutriBooking = await NutritionistBooking_default.findById(cleanId);
     }
     if (!nutriBooking) {
@@ -597888,7 +598344,7 @@ var reportHostPresence = async (req, res, next) => {
 };
 
 // src/routes/zego.routes.ts
-var zegoRouter = import_express30.Router();
+var zegoRouter = import_express31.Router();
 zegoRouter.use(authenticateToken);
 zegoRouter.post("/sessions/:sessionId/token", generateSessionToken);
 zegoRouter.post("/sessions/:sessionId/end", endLiveSession);
@@ -597897,11 +598353,11 @@ zegoRouter.post("/sessions/:sessionId/host-presence", reportHostPresence);
 var zego_routes_default = zegoRouter;
 
 // src/routes/settings.routes.ts
-var import_express31 = __toESM(require_express2(), 1);
+var import_express32 = __toESM(require_express2(), 1);
 
 // src/models/ConferenceSettings.ts
-var import_mongoose102 = __toESM(require_mongoose2(), 1);
-var conferenceSettingsSchema = new import_mongoose102.default.Schema({
+var import_mongoose105 = __toESM(require_mongoose2(), 1);
+var conferenceSettingsSchema = new import_mongoose105.default.Schema({
   defaultVideoResolution: {
     type: String,
     enum: ["360p", "540p", "720p", "1080p"],
@@ -597933,7 +598389,7 @@ var conferenceSettingsSchema = new import_mongoose102.default.Schema({
     required: true
   }
 }, { timestamps: true });
-var ConferenceSettings_default = import_mongoose102.default.models.ConferenceSettings || import_mongoose102.default.model("ConferenceSettings", conferenceSettingsSchema);
+var ConferenceSettings_default = import_mongoose105.default.models.ConferenceSettings || import_mongoose105.default.model("ConferenceSettings", conferenceSettingsSchema);
 
 // src/controllers/settings.controller.ts
 var updateConferenceSettingsSchema = exports_external.object({
@@ -597990,7 +598446,7 @@ var updateConferenceSettings = async (req, res, next) => {
 };
 
 // src/routes/settings.routes.ts
-var settingsRouter = import_express31.Router();
+var settingsRouter = import_express32.Router();
 settingsRouter.use(authenticateToken);
 settingsRouter.get("/rooms", getConferenceSettings);
 settingsRouter.put("/rooms", updateConferenceSettings);
@@ -597998,7 +598454,7 @@ var settings_routes_default = settingsRouter;
 
 // src/utils/api-error.ts
 var import_jsonwebtoken2 = __toESM(require_jsonwebtoken(), 1);
-var import_mongoose103 = __toESM(require_mongoose2(), 1);
+var import_mongoose106 = __toESM(require_mongoose2(), 1);
 var RESPONSE_ERROR_NAME = "ResponseError";
 var isPlainObject2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 var parseBooleanEnv2 = (value) => {
@@ -598198,7 +598654,7 @@ var mapError = (error51, fallbackMessage) => {
       details: details2
     };
   }
-  if (error51 instanceof import_mongoose103.default.Error.ValidationError) {
+  if (error51 instanceof import_mongoose106.default.Error.ValidationError) {
     const details2 = {};
     for (const [key, entry] of Object.entries(error51.errors)) {
       if (details2[key]) {
@@ -598213,7 +598669,7 @@ var mapError = (error51, fallbackMessage) => {
       details: details2
     };
   }
-  if (error51 instanceof import_mongoose103.default.Error.CastError) {
+  if (error51 instanceof import_mongoose106.default.Error.CastError) {
     return {
       status: 400,
       error: "Invalid request parameter",
@@ -598311,7 +598767,7 @@ var resolveErrorResponse = (error51, options) => {
 
 // src/app.ts
 import_dotenv2.config();
-var app = import_express32.default();
+var app = import_express33.default();
 app.set("trust proxy", true);
 var isProduction = false;
 var isCorsDebugEnabled = process.env.CORS_DEBUG === "true";
@@ -598388,7 +598844,7 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.use(import_express32.default.json({ limit: process.env.JSON_BODY_LIMIT || "25mb" }));
+app.use(import_express33.default.json({ limit: process.env.JSON_BODY_LIMIT || "25mb" }));
 app.use((_req, res, next) => {
   const originalJson = res.json.bind(res);
   res.json = (body) => {
@@ -598441,6 +598897,7 @@ app.use("/api/v1/credits", apiRateLimit, credit_routes_default);
 app.use("/schedules", apiRateLimit, schedule_routes_default);
 app.use("/exercises", apiRateLimit, exercise_routes_default);
 app.use("/leads", apiRateLimit, lead_routes_default);
+app.use("/gym-visits", apiRateLimit, gymVisit_routes_default);
 app.use("/invoices", apiRateLimit, invoice_routes_default);
 app.use("/api/invoices", apiRateLimit, invoice_routes_default);
 app.use("/api/v1", class_schedule_routes_default);
@@ -598501,18 +598958,18 @@ app.use((error51, _req, res, _next) => {
 var app_default = app;
 
 // src/utils/db.ts
-var import_mongoose104 = __toESM(require_mongoose2(), 1);
+var import_mongoose107 = __toESM(require_mongoose2(), 1);
 var connectionPromise = null;
 async function connectDB() {
   const connectionUrl = process.env.MONGODB_URL;
   if (!connectionUrl) {
     throw new Error("Empty connection string for MongoDB connection");
   }
-  if (import_mongoose104.default.connection.readyState === 1) {
+  if (import_mongoose107.default.connection.readyState === 1) {
     return;
   }
   if (!connectionPromise) {
-    connectionPromise = import_mongoose104.default.connect(connectionUrl, {
+    connectionPromise = import_mongoose107.default.connect(connectionUrl, {
       serverSelectionTimeoutMS: 30000
     });
   }

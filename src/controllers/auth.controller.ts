@@ -240,14 +240,17 @@ export const login: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		console.log("[AUTH][LOGIN] Looking up user/admin/doctor/trainer", {
+		console.log("[AUTH][LOGIN] Looking up user/admin/trainer", {
 			email: maskEmail(email),
 		});
 
+		const escapedEmail = email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		const emailRegex = new RegExp(`^${escapedEmail}$`, "i");
+
 		const [user, admin, trainer] = await Promise.all([
-			User.findOne({ email }).select("+passwordHash"),
-			Admin.findOne({ email }).select("+passwordHash"),
-			Trainer.findOne({ email }).select("+passwordHash"),
+			User.findOne({ email: emailRegex }).select("+passwordHash"),
+			Admin.findOne({ email: emailRegex }).select("+passwordHash"),
+			Trainer.findOne({ email: emailRegex }).select("+passwordHash"),
 		]);
 
 		console.log("[AUTH][LOGIN] Model lookups completed", {

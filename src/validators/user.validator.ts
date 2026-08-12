@@ -130,7 +130,7 @@ const strongPassword = z
 export const createUserBodySchema = z.object({
 	username: requiredString,
 	phone: requiredString,
-	email: z.string().email().optional(),
+	email: z.string().email().toLowerCase().optional(),
 	age: requiredAgeNumber,
 	gender: requiredGenderString,
 	password: strongPassword.optional(),

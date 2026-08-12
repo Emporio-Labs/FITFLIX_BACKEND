@@ -57,7 +57,6 @@ async function main() {
 			printUsage();
 			process.exit(1);
 		}
-
 		await connectDB();
 
 		const existingAdmin = await Admin.findOne({

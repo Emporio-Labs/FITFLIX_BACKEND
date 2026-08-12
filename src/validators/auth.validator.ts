@@ -66,14 +66,14 @@ const strongPassword = z
 export const signupBodySchema = z.object({
 	username: z.string().trim().min(1),
 	phone: z.string().trim().min(1),
-	email: z.string().email(),
+	email: z.string().email().toLowerCase(),
 	age: signupAgeSchema,
 	gender: signupGenderSchema,
 	password: strongPassword,
 });
 
 export const loginBodySchema = z.object({
-	email: z.string().email(),
+	email: z.string().email().toLowerCase(),
 	password: z.string().min(1),
 });
 
