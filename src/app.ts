@@ -62,10 +62,13 @@ const hasWildcardOrigin = rawAllowedOrigins.includes("*");
 const allowedOrigins = [
 	"http://localhost:3000",
 	"http://localhost:3001",
+	"http://localhost:5173",
+	"*.vercel.app",
+	"https://*.vercel.app",
 	...rawAllowedOrigins.filter((origin) => origin !== "*"),
 ];
 const allowAnyOrigin =
-	!isProduction && (rawAllowedOrigins.length === 0 || hasWildcardOrigin);
+	hasWildcardOrigin || (!isProduction && rawAllowedOrigins.length === 0);
 
 const isOriginAllowed = (origin: string | undefined): boolean => {
 	if (!origin) {
@@ -77,13 +80,16 @@ const isOriginAllowed = (origin: string | undefined): boolean => {
 	}
 
 	return allowedOrigins.some((pattern) => {
+		if (pattern === "*") {
+			return true;
+		}
 		if (pattern.includes("*")) {
-			// Convert wildcard pattern to a regular expression.
-			// Escape all special regex characters except '*'
-			const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-			const regexStr = `^${escaped.replace(/\*/g, "[^/]*")}$`;
+			const placeholder = "___WILDCARD_PLACEHOLDER___";
+			const withPlaceholder = pattern.replace(/\*/g, placeholder);
+			const escaped = withPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			const regexStr = `^${escaped.replaceAll(placeholder, ".*")}$`;
 			try {
-				const regex = new RegExp(regexStr);
+				const regex = new RegExp(regexStr, "i");
 				return regex.test(origin);
 			} catch (e) {
 				console.error(`[CORS] Invalid wildcard pattern: ${pattern}`, e);
@@ -105,14 +111,9 @@ app.use((req, res, next) => {
 	}
 
 	if (origin && originAllowed) {
-		res.setHeader("Access-Control-Allow-Origin", allowAnyOrigin ? "*" : origin);
-
-		if (!allowAnyOrigin) {
-			res.setHeader("Vary", "Origin");
-			res.setHeader("Access-Control-Allow-Credentials", "true");
-		} else {
-			res.setHeader("Access-Control-Allow-Credentials", "false");
-		}
+		res.setHeader("Access-Control-Allow-Origin", origin);
+		res.setHeader("Vary", "Origin");
+		res.setHeader("Access-Control-Allow-Credentials", "true");
 	}
 
 	res.setHeader(
@@ -150,7 +151,7 @@ app.use((req, res, next) => {
 	}
 
 	if (req.method === "OPTIONS") {
-		if (origin && !isOriginAllowed(origin)) {
+		if (origin && !originAllowed) {
 			res.status(403).json({ message: "CORS origin denied" });
 			return;
 		}
@@ -197,6 +198,23 @@ app.use((req, res, next) => {
 	});
 
 	next();
+});
+
+// Root, health, and favicon endpoints
+app.get("/", (_req, res) => {
+	res.status(200).json({ ok: true, message: "Fitflix API Backend" });
+});
+
+app.get("/health", (_req, res) => {
+	res.status(200).json({ ok: true });
+});
+
+app.get("/favicon.ico", (_req, res) => {
+	res.status(204).end();
+});
+
+app.get("/favicon.png", (_req, res) => {
+	res.status(204).end();
 });
 
 app.use("/auth", authRouter);

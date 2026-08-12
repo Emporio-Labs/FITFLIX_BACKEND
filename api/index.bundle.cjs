@@ -592718,7 +592718,7 @@ var switchToOnline = async (req, res, next) => {
 
 // src/routes/nutritionist-booking.routes.ts
 var nutritionistBookingRouter = import_express20.Router();
-nutritionistBookingRouter.use(authenticateToken);
+nutritionistBookingRouter.use(["/onboarding/nutritionist", "/nutritionist", "/admin/nutrition"], authenticateToken);
 nutritionistBookingRouter.post("/onboarding/nutritionist/book", authorize(["user"]), bookNutritionist);
 nutritionistBookingRouter.post("/nutritionist/book", authorize(["user"]), bookNutritionist);
 nutritionistBookingRouter.get("/nutritionist/my-booking", authorize(["user"]), getMemberBooking);
@@ -598320,9 +598320,12 @@ var hasWildcardOrigin = rawAllowedOrigins.includes("*");
 var allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
+  "http://localhost:5173",
+  "*.vercel.app",
+  "https://*.vercel.app",
   ...rawAllowedOrigins.filter((origin) => origin !== "*")
 ];
-var allowAnyOrigin = !isProduction && (rawAllowedOrigins.length === 0 || hasWildcardOrigin);
+var allowAnyOrigin = hasWildcardOrigin || !isProduction && rawAllowedOrigins.length === 0;
 var isOriginAllowed = (origin) => {
   if (!origin) {
     return false;
@@ -598331,11 +598334,16 @@ var isOriginAllowed = (origin) => {
     return true;
   }
   return allowedOrigins.some((pattern) => {
+    if (pattern === "*") {
+      return true;
+    }
     if (pattern.includes("*")) {
-      const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-      const regexStr = `^${escaped.replace(/\*/g, "[^/]*")}$`;
+      const placeholder = "___WILDCARD_PLACEHOLDER___";
+      const withPlaceholder = pattern.replace(/\*/g, placeholder);
+      const escaped = withPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regexStr = `^${escaped.replaceAll(placeholder, ".*")}$`;
       try {
-        const regex = new RegExp(regexStr);
+        const regex = new RegExp(regexStr, "i");
         return regex.test(origin);
       } catch (e2) {
         console.error(`[CORS] Invalid wildcard pattern: ${pattern}`, e2);
@@ -598352,13 +598360,9 @@ app.use((req, res, next) => {
     console.log(`[CORS] origin=${origin ?? "(none)"} allowed=${originAllowed} allowAny=${allowAnyOrigin} allowList=${allowedOrigins.join(";") || "(empty)"}`);
   }
   if (origin && originAllowed) {
-    res.setHeader("Access-Control-Allow-Origin", allowAnyOrigin ? "*" : origin);
-    if (!allowAnyOrigin) {
-      res.setHeader("Vary", "Origin");
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-    } else {
-      res.setHeader("Access-Control-Allow-Credentials", "false");
-    }
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token, ngrok-skip-browser-warning");
@@ -598375,7 +598379,7 @@ app.use((req, res, next) => {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
   if (req.method === "OPTIONS") {
-    if (origin && !isOriginAllowed(origin)) {
+    if (origin && !originAllowed) {
       res.status(403).json({ message: "CORS origin denied" });
       return;
     }
@@ -598407,6 +598411,18 @@ app.use((req, res, next) => {
     console.log(`[RES] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${durationMs}ms)`);
   });
   next();
+});
+app.get("/", (_req, res) => {
+  res.status(200).json({ ok: true, message: "Fitflix API Backend" });
+});
+app.get("/health", (_req, res) => {
+  res.status(200).json({ ok: true });
+});
+app.get("/favicon.ico", (_req, res) => {
+  res.status(204).end();
+});
+app.get("/favicon.png", (_req, res) => {
+  res.status(204).end();
 });
 app.use("/auth", auth_routes_default);
 app.use("/delete-account", delete_account_routes_default);

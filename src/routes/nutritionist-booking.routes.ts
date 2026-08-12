@@ -15,7 +15,10 @@ import { authorize } from "../middleware/rbac.middleware";
 
 const nutritionistBookingRouter = Router();
 
-nutritionistBookingRouter.use(authenticateToken);
+nutritionistBookingRouter.use(
+	["/onboarding/nutritionist", "/nutritionist", "/admin/nutrition"],
+	authenticateToken,
+);
 
 // Member endpoints
 nutritionistBookingRouter.post(
