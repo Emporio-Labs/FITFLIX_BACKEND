@@ -81,12 +81,16 @@ async function performCheckIn(
 	}
 
 	// Block check-in if the member is already checked in.
-	const openVisit = await GymVisit.findOne({ userId, checkOutAt: null });
+	const userObjectId = new mongoose.Types.ObjectId(userId);
+	const openVisit = await GymVisit.findOne({
+		$or: [{ userId }, { userId: userObjectId }],
+		checkOutAt: null,
+	});
 	if (openVisit) {
 		return {
 			ok: false,
 			status: 409,
-			body: { message: "Member is already checked in" },
+			body: { message: "Member is already checked in", code: "ALREADY_CHECKED_IN" },
 		};
 	}
 
@@ -438,3 +442,25 @@ export const getMyVisits: RequestHandler = async (req, res, next) => {
 		next(err);
 	}
 };
+
+/** Admin deletes a visit record (e.g. duplicate or mistaken check-in). */
+export const deleteVisit: RequestHandler = async (req, res, next) => {
+	try {
+		const { id } = req.params;
+		if (!isValidObjectId(id)) {
+			res.status(400).json({ message: "Invalid visit id" });
+			return;
+		}
+
+		const deleted = await GymVisit.findByIdAndDelete(id);
+		if (!deleted) {
+			res.status(404).json({ message: "Visit not found" });
+			return;
+		}
+
+		res.status(200).json({ message: "Visit deleted successfully" });
+	} catch (err) {
+		next(err);
+	}
+};
+
