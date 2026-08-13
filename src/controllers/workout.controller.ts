@@ -8,6 +8,8 @@ import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import WorkoutSession from "../models/WorkoutSession";
 import type { AppUserRole } from "../types/auth";
 import { actorModelForRole } from "../utils/actor-model";
+import { syncActiveSessionFromAssignment } from "../services/liveSessionSync.service";
+import { completeDayAndShift } from "../utils/workoutProgression";
 import {
 	addExerciseBodySchema,
 	createSessionBodySchema,
@@ -106,6 +108,56 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 
 // ─── Session Handlers ────────────────────────────────────────────────────────
 
+export const startOverseeingSession: RequestHandler = async (req, res, next) => {
+	try {
+		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
+		const today = normalizeToUtcDate(new Date());
+
+		const session = await WorkoutSession.findOne({
+			userId,
+			date: today,
+			status: WorkoutSessionStatus.Active,
+		});
+
+		if (!session) {
+			res.status(200).json({ isOverseen: false });
+			return;
+		}
+
+		session.lastOverseenAt = new Date();
+		await session.save();
+
+		res.status(200).json({ isOverseen: true });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const stopOverseeingSession: RequestHandler = async (req, res, next) => {
+	try {
+		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
+		const today = normalizeToUtcDate(new Date());
+
+		const session = await WorkoutSession.findOne({
+			userId,
+			date: today,
+			status: WorkoutSessionStatus.Active,
+		});
+
+		if (!session) {
+			res.status(200).json({ isOverseen: false });
+			return;
+		}
+
+		session.lastOverseenAt = null;
+		await session.save();
+
+		res.status(200).json({ isOverseen: false });
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const getActiveSession: RequestHandler = async (req, res, next) => {
 	try {
 		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
@@ -118,8 +170,25 @@ export const getActiveSession: RequestHandler = async (req, res, next) => {
 		});
 
 		if (!session) {
-			res.status(200).json({ session: null, elapsedSeconds: 0 });
+			res.status(200).json({ session: null, elapsedSeconds: 0, isOverseen: false });
 			return;
+		}
+
+		// Fast ETag check: return 304 if session updatedAt hasn't changed
+		const etag = `W/"session-${session._id}-${session.updatedAt.getTime()}"`;
+		if (req.headers["if-none-match"] === etag) {
+			res.status(304).end();
+			return;
+		}
+
+		// Auto-seed exercises if session exists but is empty
+		const count = await WorkoutExercise.countDocuments({ sessionId: session._id });
+		if (count === 0) {
+			await syncActiveSessionFromAssignment(
+				userId,
+				req.user?.id,
+				req.user?.role as AppUserRole,
+			);
 		}
 
 		const detailed = await buildSessionWithDetails(session._id);
@@ -128,6 +197,8 @@ export const getActiveSession: RequestHandler = async (req, res, next) => {
 			Math.floor((Date.now() - session.startedAt.getTime()) / 1000),
 		);
 
+		res.setHeader("ETag", etag);
+		res.setHeader("Cache-Control", "no-cache, must-revalidate");
 		res.status(200).json({ session: detailed, elapsedSeconds });
 	} catch (error) {
 		next(error);
@@ -139,21 +210,25 @@ export const getTodaySession: RequestHandler = async (req, res, next) => {
 		const today = normalizeToUtcDate(new Date());
 		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
 
+		// Find active session for today first
 		let session = await WorkoutSession.findOne({
 			userId,
 			date: today,
 			status: WorkoutSessionStatus.Active,
 		});
 
+		// If no active session, find if there is a completed session for today
 		if (!session) {
-			session = await WorkoutSession.create({
+			session = await WorkoutSession.findOne({
 				userId,
 				date: today,
-				status: WorkoutSessionStatus.Active,
-				startedAt: new Date(),
-				lastTouchedBy: new mongoose.Types.ObjectId(req.user!.id),
-				lastTouchedByModel: actorModelForRole(req.user!.role as AppUserRole),
-			});
+				status: WorkoutSessionStatus.Completed,
+			}).sort({ completedAt: -1 });
+		}
+
+		if (!session) {
+			res.status(200).json(null);
+			return;
 		}
 
 		const detailed = await buildSessionWithDetails(session._id);
@@ -259,6 +334,11 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			if (exerciseCount === 0) {
 				existing.startedAt = new Date();
 				await existing.save();
+				await syncActiveSessionFromAssignment(
+					userId,
+					req.user?.id,
+					req.user?.role as AppUserRole,
+				);
 			}
 			const detailed = await buildSessionWithDetails(existing._id);
 			res.status(200).json(detailed);
@@ -344,6 +424,13 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			if (workoutExercises.length > 0) {
 				await WorkoutExercise.insertMany(workoutExercises);
 			}
+		} else {
+			// No explicit exercises or planId passed; auto-seed from today's assigned workout plan if active
+			await syncActiveSessionFromAssignment(
+				userId,
+				req.user?.id,
+				req.user?.role as AppUserRole,
+			);
 		}
 
 		const detailed = await buildSessionWithDetails(session._id);
@@ -399,6 +486,39 @@ export const updateSession: RequestHandler = async (req, res, next) => {
 		};
 		if (parsed.data.status === WorkoutSessionStatus.Completed) {
 			update.completedAt = new Date();
+
+			// Mark the assigned plan day as completed in WorkoutPlanAssignment
+			try {
+				const assignment = await WorkoutPlanAssignment.findOne({
+					userId: session.userId,
+					status: { $in: ["active", "Active"] },
+					isDeleted: { $ne: true },
+				});
+				if (assignment) {
+					const todayDate = normalizeToUtcDate(session.date);
+					const targetEntry =
+						assignment.dayProgress.find(
+							(d) =>
+								d.status === "pending" &&
+								normalizeToUtcDate(d.scheduledDate).getTime() === todayDate.getTime(),
+						) || assignment.dayProgress.find((d) => d.status === "pending");
+
+					if (targetEntry) {
+						completeDayAndShift(
+							assignment,
+							targetEntry.dayNumber,
+							session._id.toString(),
+							new Date(),
+						);
+						await assignment.save();
+					}
+				}
+			} catch (assignmentErr) {
+				console.error(
+					"[updateSession] Error completing plan day in assignment:",
+					assignmentErr,
+				);
+			}
 		}
 
 		const updated = await WorkoutSession.findByIdAndUpdate(id, update, {

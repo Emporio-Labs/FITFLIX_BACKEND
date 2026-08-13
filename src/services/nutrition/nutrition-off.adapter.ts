@@ -63,7 +63,7 @@ type OffProduct = {
 	code?: string;
 	product_name?: string;
 	generic_name?: string;
-	brands?: string;
+	brands?: string | string[];
 	image_url?: string;
 	serving_quantity?: number | string;
 	serving_size?: string;
@@ -76,7 +76,7 @@ type OffProduct = {
 	nutriments?: Record<string, number>;
 };
 
-type OffSearchResponse = { products?: OffProduct[] };
+type OffSearchResponse = { hits?: OffProduct[]; products?: OffProduct[] };
 type OffProductResponse = { status?: number; product?: OffProduct };
 
 // Single-process in-memory TTL cache. OFF rate-limits search to ~10 req/min
@@ -199,11 +199,18 @@ export const mapOffProduct = (product: OffProduct): ExternalFoodDto | null => {
 	const fiberRaw = num(n, "fiber_100g");
 	const sugarRaw = num(n, "sugars_100g");
 
+	let brand: string | null = null;
+	if (typeof product.brands === "string") {
+		brand = product.brands.split(",")[0]?.trim() || null;
+	} else if (Array.isArray(product.brands) && product.brands.length > 0) {
+		brand = String(product.brands[0]).trim() || null;
+	}
+
 	return {
 		externalSource: "OpenFoodFacts",
 		externalId: code,
 		name,
-		brand: product.brands?.split(",")[0]?.trim() || null,
+		brand,
 		barcode: code,
 		imageUrl: product.image_url || null,
 		caloriesKcal: round(caloriesKcal),
@@ -232,10 +239,7 @@ export const searchOff = async (
 	if (cached) return cached;
 
 	const params = new URLSearchParams({
-		search_terms: trimmed,
-		search_simple: "1",
-		action: "process",
-		json: "1",
+		q: trimmed,
 		page: String(page),
 		page_size: String(pageSize),
 		fields: FIELDS,
@@ -244,9 +248,10 @@ export const searchOff = async (
 	const json = (await offFetch(
 		`${nutritionOffConfig.searchBaseUrl}?${params.toString()}`,
 	)) as OffSearchResponse | null;
-	if (!json?.products) return [];
+	const products = json?.hits ?? json?.products ?? [];
+	if (products.length === 0) return [];
 
-	const results = json.products
+	const results = products
 		.map(mapOffProduct)
 		.filter((dto): dto is ExternalFoodDto => dto !== null);
 

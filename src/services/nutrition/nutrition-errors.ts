@@ -64,7 +64,9 @@ export const handleNutritionError = (
 	next: Parameters<RequestHandler>[2],
 ) => {
 	if (error instanceof NutritionServiceError) {
-		res.status(STATUS_MAP[error.code] ?? 400).json({
+		const status = STATUS_MAP[error.code] ?? 400;
+		console.warn(`[NUTRITION_ERROR] code=${error.code} status=${status} message="${error.message}"`);
+		res.status(status).json({
 			error: error.message,
 			code: CODE_MAP[error.code] ?? "BAD_REQUEST",
 		});

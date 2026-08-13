@@ -79,7 +79,19 @@ export const searchFoods = async (options: FoodSearchOptions) => {
 	}
 
 	if (options.query && options.query.trim()) {
-		filter.$text = { $search: options.query.trim() };
+		const q = options.query.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		const searchCondition = [
+			{ name: { $regex: q, $options: "i" } },
+			{ brand: { $regex: q, $options: "i" } },
+		];
+
+		if (filter.$or) {
+			const existingOr = filter.$or;
+			delete filter.$or;
+			filter.$and = [{ $or: existingOr }, { $or: searchCondition }];
+		} else {
+			filter.$or = searchCondition;
+		}
 	}
 
 	const [items, total] = await Promise.all([

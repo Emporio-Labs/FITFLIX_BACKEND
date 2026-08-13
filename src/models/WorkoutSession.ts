@@ -36,6 +36,8 @@ const workoutSessionSchema = new mongoose.Schema(
 			enum: ["User", "Trainer", "Admin"],
 			default: "User",
 		},
+		isOverseen: { type: Boolean, default: false },
+		lastOverseenAt: { type: Date, default: null },
 	},
 	{ timestamps: true },
 );
