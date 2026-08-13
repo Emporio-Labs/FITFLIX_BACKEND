@@ -1,3 +1,4 @@
+import "../src/utils/patch-v8";
 import type { Request, Response } from "express";
 import app from "../src/app";
 import {

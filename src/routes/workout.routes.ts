@@ -13,6 +13,8 @@ import {
 	listMySessions,
 	logSet,
 	reorderExercises,
+	startOverseeingSession,
+	stopOverseeingSession,
 	updateSession,
 	updateSet,
 	updateWorkoutExercise,

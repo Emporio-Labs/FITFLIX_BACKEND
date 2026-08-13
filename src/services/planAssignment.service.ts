@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import WorkoutPlan from "../models/WorkoutPlan";
 import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import { initializeSchedule } from "../utils/workoutProgression";
+import { syncActiveSessionFromAssignment } from "./liveSessionSync.service";
 
 const normalizeToUtcDate = (value: Date): Date =>
 	new Date(
@@ -121,6 +122,12 @@ export async function createAssignmentForUser(
 		dayProgress,
 		userDays,
 	});
+
+	await syncActiveSessionFromAssignment(
+		userObjId,
+		args.assignedBy,
+		args.assignedByModel as any,
+	);
 
 	return { assignment, created: true };
 }

@@ -31,7 +31,7 @@ export const nutritionOffConfig = {
 	 */
 	searchBaseUrl:
 		process.env.OFF_SEARCH_BASE_URL ??
-		"https://world.openfoodfacts.org/cgi/search.pl",
+		"https://search.openfoodfacts.org/search",
 
 	/** Required by OFF's terms — an anonymous/default UA risks being blocked. */
 	userAgent: process.env.OFF_USER_AGENT ?? "Fitflix/1.0 (tech@fitflix.in)",

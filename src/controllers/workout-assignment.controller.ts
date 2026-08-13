@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Exercise from "../models/Exercise";
 import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import { createAssignmentForUser } from "../services/planAssignment.service";
+import { syncActiveSessionFromAssignment } from "../services/liveSessionSync.service";
 import { actorModelForRole } from "../utils/actor-model";
 import {
 	advancePastMissedDays,
@@ -75,11 +76,12 @@ export const getUserAssignment: RequestHandler = async (req, res, next) => {
 		}
 
 		const userId = new mongoose.Types.ObjectId(userIdParam);
-		const assignment = await WorkoutPlanAssignment.findOne({
+		let assignment = await WorkoutPlanAssignment.findOne({
 			userId,
-			status: "active",
+			status: { $in: ["active", "Active"] },
 			isDeleted: { $ne: true },
 		})
+			.sort({ updatedAt: -1 })
 			.populate({
 				path: "assignedBy",
 				select: "name imageUrl specialities keySentence title bio",
@@ -91,7 +93,24 @@ export const getUserAssignment: RequestHandler = async (req, res, next) => {
 			.lean();
 
 		if (!assignment) {
-			res.status(404).json({ error: "No active assignment found for user" });
+			assignment = await WorkoutPlanAssignment.findOne({
+				userId,
+				isDeleted: { $ne: true },
+			})
+				.sort({ updatedAt: -1 })
+				.populate({
+					path: "assignedBy",
+					select: "name imageUrl specialities keySentence title bio",
+				})
+				.populate({
+					path: "planId",
+					select: "name goal splitType description durationWeeks",
+				})
+				.lean();
+		}
+
+		if (!assignment) {
+			res.status(404).json({ error: "No assignment found for user" });
 			return;
 		}
 
@@ -161,21 +180,70 @@ export const updateUserDayExercises: RequestHandler = async (req, res, next) => 
 		}
 
 		const userId = new mongoose.Types.ObjectId(userIdParam);
-		const assignment = await WorkoutPlanAssignment.findOne({
+		let assignment = await WorkoutPlanAssignment.findOne({
 			userId,
-			status: "active",
+			status: { $in: ["active", "Active"] },
 			isDeleted: { $ne: true },
-		});
+		}).sort({ updatedAt: -1 });
 
 		if (!assignment) {
-			res.status(404).json({ error: "No active assignment found" });
+			assignment = await WorkoutPlanAssignment.findOne({
+				userId,
+				isDeleted: { $ne: true },
+			}).sort({ updatedAt: -1 });
+
+			if (assignment) {
+				assignment.status = "active";
+			}
+		}
+
+		if (!assignment) {
+			res.status(404).json({ error: "No assignment found for member" });
 			return;
 		}
 
-		const dayIdx = assignment.userDays.findIndex((d) => d.dayNumber === dayNumber);
+		const cleanExercises = parsed.data.exercises
+			.filter((ex) => mongoose.Types.ObjectId.isValid(ex.exerciseId))
+			.map((ex, idx) => ({
+				exerciseId: new mongoose.Types.ObjectId(ex.exerciseId),
+				orderIndex: ex.orderIndex ?? idx,
+				section: ex.section ?? "workout",
+				targetSets: ex.targetSets ?? 3,
+				targetReps: ex.targetReps ?? 10,
+				targetWeightKg: ex.targetWeightKg ?? 0,
+				restSeconds: ex.restSeconds ?? 60,
+				durationSeconds: ex.durationSeconds ?? null,
+			}));
+
+		let dayIdx = assignment.userDays.findIndex((d) => d.dayNumber === dayNumber);
 		if (dayIdx < 0) {
-			res.status(404).json({ error: "Day not found in assignment" });
-			return;
+			// Append days dynamically up to dayNumber if trainer adds Day 5, Day 6, etc.
+			while (assignment.userDays.length < dayNumber) {
+				const nextNum = assignment.userDays.length + 1;
+				const isTarget = nextNum === dayNumber;
+				assignment.userDays.push({
+					dayNumber: nextNum,
+					name: `Day ${nextNum}`,
+					isRestDay: isTarget ? (parsed.data.isRestDay ?? false) : false,
+					exercises: isTarget ? (cleanExercises as any) : [],
+				});
+
+				const lastProgress = assignment.dayProgress[assignment.dayProgress.length - 1];
+				const baseDate = lastProgress
+					? new Date(lastProgress.scheduledDate)
+					: new Date(assignment.startDate);
+				const nextDate = new Date(baseDate);
+				nextDate.setDate(nextDate.getDate() + 1);
+
+				assignment.dayProgress.push({
+					dayNumber: nextNum,
+					scheduledDate: nextDate,
+					completedAt: null,
+					sessionId: null,
+					status: "pending" as const,
+				});
+			}
+			dayIdx = assignment.userDays.findIndex((d) => d.dayNumber === dayNumber);
 		}
 
 		const userDay = assignment.userDays[dayIdx];
@@ -184,9 +252,22 @@ export const updateUserDayExercises: RequestHandler = async (req, res, next) => 
 			return;
 		}
 
-		userDay.exercises = parsed.data.exercises as any;
+		userDay.isRestDay = parsed.data.isRestDay ?? false;
+		userDay.exercises = cleanExercises as any;
 		assignment.markModified("userDays");
+		assignment.markModified("dayProgress");
 		await assignment.save();
+
+		// Sync active live session if one exists for user today
+		try {
+			await syncActiveSessionFromAssignment(
+				userId,
+				req.user?.id,
+				req.user?.role as any,
+			);
+		} catch (syncError) {
+			console.error("[updateUserDayExercises] Live session sync error:", syncError);
+		}
 
 		res.json({ message: "Member day exercises updated successfully" });
 	} catch (error) {

@@ -28,6 +28,7 @@ export const createMealLog: RequestHandler = async (req, res, next) => {
 
 	const parsed = logMealBodySchema.safeParse(req.body);
 	if (!parsed.success) {
+		console.warn("[MEAL_LOG_VALIDATION_ERROR]", JSON.stringify(parsed.error.issues, null, 2), "body:", JSON.stringify(req.body));
 		res.status(400).json({
 			error: "Validation failed",
 			code: "VALIDATION_ERROR",

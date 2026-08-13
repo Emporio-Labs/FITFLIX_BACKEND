@@ -142,6 +142,20 @@ export const markMealCompleted = async (
 		plannedMealRef.completedOptionId = completedOptionId;
 	}
 
+	const selectedOption = completedOptionId
+		? meal.options?.find(
+				(o) =>
+					o._id?.toString() === completedOptionId ||
+					(o as any).id === completedOptionId,
+			)
+		: meal.options?.find((o) => o.isDefault) ?? meal.options?.[0];
+	const mealTitle =
+		selectedOption?.title ??
+		(meal as any).title ??
+		(meal as any).name ??
+		meal.mealType ??
+		"";
+
 	const log = await NutritionMealLog.findOneAndUpdate(
 		{
 			userId: userObjectId,
@@ -161,6 +175,7 @@ export const markMealCompleted = async (
 			plannedMealRef,
 			status: MealLogStatus.Logged,
 			source: MealLogSource.Manual,
+			notes: mealTitle,
 			items,
 			totals,
 		},
