@@ -170,8 +170,11 @@ export async function evaluateBookingRules(params: {
 	}
 
 	// 3. Dynamic Booking Window Evaluation based on Class Configuration
-	const windowValue = targetClass.bookingWindowValue || 72;
-	const windowUnit = targetClass.bookingWindowUnit || "hours";
+	// `0` is a valid, intentional configuration (booking opens at session start
+	// time) and must not be coerced to the 72h default — only an absent value
+	// (undefined/null) should fall back.
+	const windowValue = targetClass.bookingWindowValue ?? 72;
+	const windowUnit = targetClass.bookingWindowUnit ?? "hours";
 	const windowMs = calculateWindowMs(windowValue, windowUnit);
 
 	// Construct Session Start Time (Timezone-Aware)

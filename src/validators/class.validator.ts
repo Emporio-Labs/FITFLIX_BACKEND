@@ -27,7 +27,7 @@ export const createClassBodySchema = z.object({
 		.number()
 		.int("Credit cost must be an integer")
 		.min(0, "Credit cost must be a non-negative integer (>= 0)"),
-	bookingWindowValue: z.number().int().positive().optional().default(72),
+	bookingWindowValue: z.number().int().nonnegative().optional().default(72),
 	bookingWindowUnit: z.enum(["hours", "days"]).optional().default("hours"),
 	bookingCloseValue: z.preprocess(
 		(val) => (val === "" || val === null || val === undefined ? null : Number(val)),
@@ -75,7 +75,7 @@ export const updateClassBodySchema = z
 			.int("Credit cost must be an integer")
 			.min(0, "Credit cost must be a non-negative integer (>= 0)")
 			.optional(),
-		bookingWindowValue: z.number().int().positive().optional(),
+		bookingWindowValue: z.number().int().nonnegative().optional(),
 		bookingWindowUnit: z.enum(["hours", "days"]).optional(),
 		bookingCloseValue: z.preprocess(
 			(val) => (val === "" || val === null || val === undefined ? null : Number(val)),

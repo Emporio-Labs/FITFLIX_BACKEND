@@ -112,7 +112,7 @@ const classSchema = new mongoose.Schema(
 		bookingWindowValue: {
 			type: Number,
 			default: 72,
-			min: 1,
+			min: 0,
 		},
 		bookingWindowUnit: {
 			type: String,
