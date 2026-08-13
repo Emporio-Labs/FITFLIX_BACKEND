@@ -8,6 +8,7 @@
 		"start": "bun run index.ts",
 		"build": "bun run build:vercel",
 		"build:vercel": "bun build api/index.ts --target=node --format=cjs --outfile=api/index.bundle.cjs && node scripts/postbuild.js",
+		"vercel-build": "bun run build:vercel",
 		"create:admin": "bun run scripts/create-admin.ts",
 		"migrate:credits": "bun run scripts/migrate-credits.ts",
 		"backfill:class-sessions": "bun run scripts/backfill-class-sessions.ts",

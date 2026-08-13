@@ -47,3 +47,6 @@ scratch/inspect-db.ts
 archive_docs/
 
 scratch/test-jwt-and-api.ts
+
+# Generated Vercel bundle — built by `bun run build:vercel`, not tracked.
+api/index.bundle.cjs
