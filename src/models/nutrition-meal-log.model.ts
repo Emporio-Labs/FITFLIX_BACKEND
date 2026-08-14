@@ -90,8 +90,24 @@ const nutritionMealLogSchema = new mongoose.Schema(
 			default: MealLogSource.Manual,
 		},
 	},
-	{ timestamps: true },
+	{ timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } },
 );
+
+nutritionMealLogSchema.virtual("slot").get(function () {
+	return this.mealType;
+});
+
+nutritionMealLogSchema.virtual("consumed").get(function () {
+	return this.status === MealLogStatus.Logged || (this.status as string) === "completed";
+});
+
+nutritionMealLogSchema.virtual("loggedAt").get(function () {
+	return this.consumedAt || (this as any).createdAt;
+});
+
+nutritionMealLogSchema.virtual("date").get(function () {
+	return this.logDate ? this.logDate.toISOString().slice(0, 10) : undefined;
+});
 
 nutritionMealLogSchema.index({ userId: 1, logDate: -1 });
 nutritionMealLogSchema.index({ planId: 1, logDate: 1 });

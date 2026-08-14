@@ -106,6 +106,7 @@ export const listMealLogsQuerySchema = z.object({
 	planId: objectIdString.optional(),
 	userId: objectIdString.optional(),
 	scope: z.enum(["diary", "plan", "all"]).optional(),
+	date: optionalDate,
 	from: optionalDate,
 	to: optionalDate,
 	page: z.coerce.number().int().min(1).optional(),

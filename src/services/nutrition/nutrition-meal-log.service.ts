@@ -250,6 +250,7 @@ export const deleteMealLog = async (logId: string, userId: string) => {
 export type ListLogsFilters = {
 	planId?: string;
 	scope?: "diary" | "plan" | "all";
+	date?: Date;
 	from?: Date;
 	to?: Date;
 	page?: number;
@@ -278,13 +279,20 @@ export const listLogs = async (userId: string, filters: ListLogsFilters) => {
 	// scope "all" or omitted: no additional filter — identical to the
 	// pre-existing unfiltered behavior every current caller relies on.
 
-	if (filters.from || filters.to) {
+	if (filters.from || filters.to || filters.date) {
 		const range: Record<string, Date> = {};
 		if (filters.from) {
 			range.$gte = normalizeToUtcDate(filters.from);
+		} else if (filters.date) {
+			range.$gte = normalizeToUtcDate(filters.date);
 		}
+
 		if (filters.to) {
 			range.$lte = normalizeToUtcDate(filters.to);
+		} else if (filters.date) {
+			const endOfDay = normalizeToUtcDate(filters.date);
+			endOfDay.setUTCHours(23, 59, 59, 999);
+			range.$lte = endOfDay;
 		}
 		filter.logDate = range;
 	}
