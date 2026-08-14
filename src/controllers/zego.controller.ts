@@ -157,7 +157,25 @@ export const generateSessionToken: RequestHandler = async (req, res, next) => {
 		// mid-class never runs its own dispose()-time attendance report, so
 		// stamping this the moment a token is actually handed out means
 		// attendance survives even a crash.
-		if (access.booking && !access.booking.joinedAt) {
+		if (access.role === "member" && !access.booking && access.session) {
+			try {
+				const { default: Booking } = await import("../models/Bookings");
+				access.booking = await Booking.create({
+					user: user.id,
+					sessionId: String(access.session._id),
+					classId: String(access.session.classId),
+					bookingDate: access.session.sessionDate,
+					startTime: access.session.startTime,
+					endTime: access.session.endTime,
+					status: "Attended",
+					joinedAt: new Date(),
+					creditsBypassed: true,
+					creditCostSnapshot: 0,
+				});
+			} catch (err) {
+				console.error("[zego] Failed to auto-create open_to_all booking:", err);
+			}
+		} else if (access.booking && !access.booking.joinedAt) {
 			access.booking.joinedAt = new Date();
 			await access.booking.save();
 		}

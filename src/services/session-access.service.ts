@@ -217,8 +217,9 @@ export const resolveSessionAccess = async ({
 	const isInstructor =
 		!!klass?.instructorUserId &&
 		String(klass.instructorUserId) === String(rawUserId);
-	const isAdmin = normalizeRole(user.role) === "admin";
-	const role: SessionRole = isInstructor || isAdmin ? "host" : "member";
+	const userRoleNorm = normalizeRole(user.role);
+	const isAdminOrFrontdesk = userRoleNorm === "admin" || userRoleNorm === "frontdesk";
+	const role: SessionRole = isInstructor || isAdminOrFrontdesk ? "host" : "member";
 
 	// 3. Session-level lifecycle. Once COMPLETED, it stays over for everyone —
 	// re-opening a finished class is a new session, not a re-join.
