@@ -80,18 +80,31 @@ const isOriginAllowed = (origin: string | undefined): boolean => {
 		return true;
 	}
 
+	if (allowedOrigins.includes(origin)) {
+		return true;
+	}
+
+	try {
+		const parsed = new URL(origin);
+		if (
+			parsed.hostname === "localhost" ||
+			parsed.hostname.endsWith(".vercel.app") ||
+			parsed.hostname.endsWith(".vercel.dev")
+		) {
+			return true;
+		}
+	} catch (_) {
+		// Ignore invalid URL parse errors
+	}
+
 	return allowedOrigins.some((pattern) => {
 		if (pattern === "*") {
 			return true;
 		}
 		if (pattern.includes("*")) {
-			const placeholder = "___WILDCARD_PLACEHOLDER___";
-			const withPlaceholder = pattern.replace(/\*/g, placeholder);
-			const escaped = withPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			const regexStr = `^${escaped.replaceAll(placeholder, ".*")}$`;
 			try {
-				const regex = new RegExp(regexStr, "i");
-				return regex.test(origin);
+				const regexStr = `^${pattern.split("*").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`;
+				return new RegExp(regexStr, "i").test(origin);
 			} catch (e) {
 				console.error(`[CORS] Invalid wildcard pattern: ${pattern}`, e);
 				return false;
