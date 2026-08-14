@@ -377,7 +377,8 @@ export const getTodayAssignedWorkout: RequestHandler = async (
 		}
 
 		const userId = new mongoose.Types.ObjectId(requesterId);
-		const today = normalizeToUtcDate(new Date());
+		const queryDate = req.query.date ? new Date(req.query.date as string) : new Date();
+		const targetDate = normalizeToUtcDate(queryDate);
 
 		const assignment = await WorkoutPlanAssignment.findOne({
 			userId,
@@ -394,12 +395,27 @@ export const getTodayAssignedWorkout: RequestHandler = async (
 		const shifted = advancePastMissedDays(assignment);
 		if (shifted) await assignment.save();
 
-		// Find the day scheduled for today (or first pending day)
-		const todayEntry = assignment.dayProgress.find(
+		// 1. Find entry matching target date that is pending
+		let todayEntry = assignment.dayProgress.find(
 			(d) =>
 				d.status === "pending" &&
-				normalizeToUtcDate(d.scheduledDate).getTime() === today.getTime(),
+				normalizeToUtcDate(d.scheduledDate).getTime() === targetDate.getTime(),
 		);
+
+		// 2. If timezone difference, find pending entry within 1-day boundary
+		if (!todayEntry) {
+			const oneDayMs = 24 * 60 * 60 * 1000;
+			todayEntry = assignment.dayProgress.find(
+				(d) =>
+					d.status === "pending" &&
+					Math.abs(normalizeToUtcDate(d.scheduledDate).getTime() - targetDate.getTime()) <= oneDayMs,
+			);
+		}
+
+		// 3. Fallback to first pending entry
+		if (!todayEntry) {
+			todayEntry = assignment.dayProgress.find((d) => d.status === "pending");
+		}
 
 		if (!todayEntry) {
 			res.status(404).json({ error: "No workout scheduled for today" });

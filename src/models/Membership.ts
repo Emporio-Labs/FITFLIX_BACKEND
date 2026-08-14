@@ -6,8 +6,23 @@ const membershipSchema = new mongoose.Schema(
 	{
 		user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 		planName: { type: String, required: true },
+		category: {
+			type: String,
+			enum: ["PERSONAL_TRAINING", "GENERAL_MEMBERSHIP", "THERAPY_PACK", "CREDIT_PACK"],
+			default: "GENERAL_MEMBERSHIP",
+		},
 		creditsIncluded: { type: Number, required: true, min: 0, default: 0 },
 		creditsRemaining: { type: Number, required: true, min: 0, default: 0 },
+		ptSessionsIncluded: { type: Number, default: 0, min: 0 },
+		ptSessionsRemaining: { type: Number, default: 0, min: 0 },
+		ptSessionsUsed: { type: Number, default: 0, min: 0 },
+		assignedTrainerId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Trainer",
+			default: null,
+		},
+		assignedTrainerName: { type: String, default: "" },
+		allowEarlyRenewal: { type: Boolean, default: true },
 		status: {
 			type: String,
 			enum: Object.values(MembershipStatus),
@@ -15,7 +30,7 @@ const membershipSchema = new mongoose.Schema(
 			required: true,
 		},
 		price: { type: Number, required: true, min: 0 },
-		currency: { type: String, default: "USD" },
+		currency: { type: String, default: "INR" },
 		startDate: { type: Date, required: true },
 		endDate: { type: Date },
 		features: { type: [String], default: [] },

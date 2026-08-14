@@ -382,6 +382,18 @@ export const reportHostPresence: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		if (access.unifiedBooking) {
+			const now = new Date();
+			if (!access.unifiedBooking.hostLiveAt) {
+				access.unifiedBooking.hostLiveAt = now;
+			}
+			access.unifiedBooking.hostLastSeenAt = now;
+			await access.unifiedBooking.save();
+
+			res.status(200).json({ hostLiveAt: access.unifiedBooking.hostLiveAt.toISOString() });
+			return;
+		}
+
 		if (!access.session) {
 			res.status(409).json({ message: "This session has no schedule." });
 			return;
