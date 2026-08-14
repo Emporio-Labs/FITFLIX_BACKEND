@@ -367,6 +367,22 @@ export const getClassById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// Retired/unpublished classes stay visible to admin and trainer (dashboard
+		// still needs to show/edit them) but must 404 for members, same as a
+		// missing class, so a retired class can't be reached via a direct/deep link.
+		const requesterRole = (req.user as any)?.role;
+		if (
+			requesterRole === "user" &&
+			((classDetail as any).status === "INACTIVE" ||
+				(classDetail as any).isPublished === false)
+		) {
+			res.status(404).json({
+				message:
+					"Class not found. If this is a session id, use GET /api/v1/classes/schedule/:id.",
+			});
+			return;
+		}
+
 		res.status(200).json({ class: classDetail });
 	} catch (error) {
 		next(error);

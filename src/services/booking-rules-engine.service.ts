@@ -159,6 +159,17 @@ export async function evaluateBookingRules(params: {
 		return { allowed: false, statusCode: 404, message: "Class not found" };
 	}
 
+	if (
+		(targetClass as any).status === "INACTIVE" ||
+		(targetClass as any).isPublished === false
+	) {
+		return {
+			allowed: false,
+			statusCode: 403,
+			message: "This class is no longer available for booking",
+		};
+	}
+
 	const isOpenToAll = (targetClass as any)?.access === "open_to_all";
 	const membershipStatus = (user as any).membershipStatus;
 	if (!isOpenToAll && (membershipStatus === "EXPIRED" || membershipStatus === "CANCELLED")) {

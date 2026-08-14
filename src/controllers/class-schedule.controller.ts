@@ -275,14 +275,26 @@ export const getSchedulesForMembers: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes")
+			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes status isPublished")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
+		// Retiring a class (softDeleteClassById) sets Class.status = INACTIVE but
+		// deliberately keeps sessions that already have bookings, and those rows stay
+		// SCHEDULED/isPublished — so the session-level filter above is not enough. The
+		// class state, not the session date, is what decides member visibility: a
+		// retired class is hidden whether its session is today or in the future.
+		const activeSessions = sessions.filter(
+			(s: any) =>
+				s.classId &&
+				s.classId.status !== "INACTIVE" &&
+				s.classId.isPublished !== false,
+		);
+
 		res.status(200).json({
 			message: "Active scheduled sessions retrieved successfully",
-			count: sessions.length,
-			sessions: sessions.map((s) => {
+			count: activeSessions.length,
+			sessions: activeSessions.map((s) => {
 				// videoConferenceId must always mirror videoRoomId (never derived
 				// separately) so the Admin host and User App can never resolve
 				// different rooms.
@@ -320,11 +332,23 @@ export const getScheduledSessionByIdForMembers: RequestHandler = async (
 		const session = await ScheduledSession.findById(id)
 			.populate(
 				"classId",
-				"name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes",
+				"name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes status isPublished",
 			)
 			.lean();
 
 		if (!session) {
+			res.status(404).json({ message: "Session not found" });
+			return;
+		}
+
+		const sessionClass = (session as any).classId;
+		if (
+			!sessionClass ||
+			sessionClass.status === "INACTIVE" ||
+			sessionClass.isPublished === false
+		) {
+			// A retired class's direct/deep-link session lookup must look identical
+			// to a missing session, not leak the fact that it was retired.
 			res.status(404).json({ message: "Session not found" });
 			return;
 		}

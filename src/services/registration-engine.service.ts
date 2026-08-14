@@ -39,6 +39,20 @@ export async function registerGroupClassBooking(params: {
 	}
 	if (!session) {
 		const targetClass = await Class.findById(params.classId || params.sessionId);
+		if (
+			targetClass &&
+			((targetClass as any).status === "INACTIVE" ||
+				(targetClass as any).isPublished === false)
+		) {
+			// Bail out before syncSessionsForClass below, which would otherwise
+			// re-materialize sessions for a retired class and re-populate the
+			// member feed we just filtered in getSchedulesForMembers.
+			return {
+				success: false,
+				statusCode: 403,
+				message: "This class is no longer available for booking",
+			};
+		}
 		if (targetClass) {
 			const todayStart = new Date();
 			todayStart.setUTCHours(0, 0, 0, 0);

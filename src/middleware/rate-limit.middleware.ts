@@ -209,3 +209,25 @@ export const workoutRateLimit = createRateLimiter({
 	message: "Too many workout requests. Please slow down and try again shortly.",
 	keyResolver: getAuthenticatedUserKey,
 });
+
+// Room-chat sends during a live session, keyed per user rather than per IP —
+// a busy class shares one gym IP, and one send-happy participant shouldn't
+// throttle everyone else's chat.
+const CHAT_RATE_LIMIT_WINDOW_MS = parseEnvNumber(
+	process.env.CHAT_RATE_LIMIT_WINDOW_MS,
+	60 * 1000, // 1 minute
+	1000,
+);
+const CHAT_RATE_LIMIT_MAX = parseEnvNumber(
+	process.env.CHAT_RATE_LIMIT_MAX,
+	60,
+	1,
+);
+
+export const chatRateLimit = createRateLimiter({
+	windowMs: CHAT_RATE_LIMIT_WINDOW_MS,
+	max: CHAT_RATE_LIMIT_MAX,
+	keyPrefix: "chat",
+	message: "Too many messages. Please slow down and try again shortly.",
+	keyResolver: getAuthenticatedUserKey,
+});

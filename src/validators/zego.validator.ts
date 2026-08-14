@@ -8,3 +8,17 @@ export const videoTokenParamsSchema = z.object({
 });
 
 export type VideoTokenParams = z.infer<typeof videoTokenParamsSchema>;
+
+export const sendRoomMessageBodySchema = z.object({
+	body: z.string().trim().min(1).max(2000),
+	zegoMessageId: z.string().trim().min(1).max(200).optional(),
+	sentAt: z.coerce.date().optional(),
+});
+
+export type SendRoomMessageBody = z.infer<typeof sendRoomMessageBodySchema>;
+
+export const listRoomMessagesQuerySchema = z.object({
+	limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+export type ListRoomMessagesQuery = z.infer<typeof listRoomMessagesQuerySchema>;

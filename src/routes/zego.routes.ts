@@ -2,10 +2,13 @@ import { Router } from "express";
 import {
 	endLiveSession,
 	generateSessionToken,
+	listRoomMessages,
 	recordSessionAttendance,
 	reportHostPresence,
+	sendRoomMessage,
 } from "../controllers/zego.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
+import { chatRateLimit } from "../middleware/rate-limit.middleware";
 
 const zegoRouter = Router();
 
@@ -27,5 +30,15 @@ zegoRouter.post("/sessions/:sessionId/attendance", recordSessionAttendance);
 // Host-only; resolveSessionAccess rejects a non-host caller with 403 before
 // this ever writes anything.
 zegoRouter.post("/sessions/:sessionId/host-presence", reportHostPresence);
+
+// Room-chat persistence. POST is far higher frequency than the routes above
+// (one call per message, not per join), so it gets its own per-user budget
+// rather than sharing the general apiRateLimit.
+zegoRouter.post(
+	"/sessions/:sessionId/messages",
+	chatRateLimit,
+	sendRoomMessage,
+);
+zegoRouter.get("/sessions/:sessionId/messages", listRoomMessages);
 
 export default zegoRouter;

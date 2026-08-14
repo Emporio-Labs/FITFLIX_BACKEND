@@ -341,3 +341,106 @@ export const resolveSessionAccess = async ({
 		hostLiveAt: session?.hostLiveAt ?? null,
 	};
 };
+
+export type RoomMessageAccessResult =
+	| { ok: true; role: SessionRole }
+	| { ok: false; status: number; message: string };
+
+/**
+ * Authorization for *reading* a session's persisted room-chat history —
+ * deliberately time-window-free, unlike resolveSessionAccess above.
+ *
+ * Chat history must stay reachable long after a session's join window (or
+ * even the session itself) has closed — a host reviewing what was said, or
+ * reconnecting right at the boundary, must not be blocked by the same
+ * ENDED/NOT_OPEN_YET gates that protect the live room. What must still hold
+ * is that only an actual participant (the class's host, an admin, or a
+ * member with a non-cancelled booking / an open-to-all class) can read it.
+ */
+export const resolveRoomMessageAccess = async ({
+	sessionId,
+	user,
+}: {
+	sessionId: string;
+	user: AuthenticatedUser;
+}): Promise<RoomMessageAccessResult> => {
+	const rawUserId = user.id;
+	const userObjId = mongoose.Types.ObjectId.isValid(String(rawUserId))
+		? new mongoose.Types.ObjectId(String(rawUserId))
+		: null;
+	const sessionObjId = mongoose.Types.ObjectId.isValid(sessionId)
+		? new mongoose.Types.ObjectId(sessionId)
+		: null;
+
+	const session = sessionObjId
+		? await ScheduledSession.findById(sessionObjId).select("classId").lean()
+		: null;
+
+	const klass = session
+		? await ClassModel.findById(session.classId).select("instructorUserId access").lean()
+		: await ClassModel.findById(sessionId).select("instructorUserId access").lean();
+
+	if (!session && !klass) {
+		const cleanId = sessionId.startsWith("nutri_session_")
+			? sessionId.replace("nutri_session_", "")
+			: sessionId;
+
+		let nutriBooking: any = null;
+		if (mongoose.Types.ObjectId.isValid(cleanId)) {
+			nutriBooking = await NutritionistBooking.findById(cleanId).lean();
+		}
+		if (!nutriBooking) {
+			nutriBooking = await NutritionistBooking.findOne({ zegoRoomId: sessionId }).lean();
+		}
+		if (!nutriBooking) {
+			return { ok: false, status: 404, message: "Session not found." };
+		}
+
+		const userRoleNorm = normalizeRole(user.role);
+		const isHostRole =
+			userRoleNorm === "admin" ||
+			userRoleNorm === "nutritionist" ||
+			userRoleNorm === "frontdesk" ||
+			(nutriBooking.assignedNutritionistId &&
+				String(nutriBooking.assignedNutritionistId) === String(rawUserId));
+		const isMember = String(nutriBooking.userId) === String(rawUserId);
+
+		if (!isHostRole && !isMember) {
+			return { ok: false, status: 403, message: "You do not have access to this session's messages." };
+		}
+		return { ok: true, role: isHostRole ? "host" : "member" };
+	}
+
+	const isInstructor =
+		!!klass?.instructorUserId && String(klass.instructorUserId) === String(rawUserId);
+	const isAdmin = normalizeRole(user.role) === "admin";
+	if (isInstructor || isAdmin) {
+		return { ok: true, role: "host" };
+	}
+
+	const isOpenToAll = (klass as any)?.access === "open_to_all";
+	const booking = await Booking.findOne({
+		$and: [
+			{
+				$or: [
+					{ user: rawUserId },
+					...(userObjId ? [{ user: userObjId }] : []),
+				],
+			},
+			{
+				$or: [
+					{ sessionId },
+					{ classId: sessionId },
+					...(sessionObjId ? [{ _id: sessionObjId }] : []),
+				],
+			},
+		],
+		status: nonCancelledBookingStatusFilter,
+	}).lean();
+
+	if (booking || isOpenToAll) {
+		return { ok: true, role: "member" };
+	}
+
+	return { ok: false, status: 403, message: "You do not have access to this session's messages." };
+};

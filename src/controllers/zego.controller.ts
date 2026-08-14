@@ -1,12 +1,19 @@
 import type { RequestHandler } from "express";
 import User from "../models/User";
+import RoomMessage from "../models/RoomMessage";
 import { generateToken04 } from "../utils/zego";
+import { resolveSessionRoomId } from "../utils/zego-room";
 import {
 	resolveSessionAccess,
+	resolveRoomMessageAccess,
 	type SessionAccessDenied,
 } from "../services/session-access.service";
 import { finalizeSession } from "../services/session-finalize.service";
-import { videoTokenParamsSchema } from "../validators/zego.validator";
+import {
+	videoTokenParamsSchema,
+	sendRoomMessageBodySchema,
+	listRoomMessagesQuerySchema,
+} from "../validators/zego.validator";
 
 /// Login-room + publish-stream, granted to hosts and to every member of a
 /// group video call. A live-stream *member* (audience) gets login only —
@@ -397,6 +404,155 @@ export const reportHostPresence: RequestHandler = async (req, res, next) => {
 		res.status(200).json({ hostLiveAt: access.session.hostLiveAt.toISOString() });
 	} catch (error) {
 		console.error("Zego host-presence error:", error);
+		next(error);
+	}
+};
+
+/**
+ * POST /api/v1/zego/sessions/:sessionId/messages
+ *
+ * Persists one Room-message send. Uses the same live-window gate as token
+ * issuance (resolveSessionAccess) — a message can only be recorded while the
+ * sender could actually be in the room, so this can never outlive the
+ * session's real end time. Sender identity/role are always resolved
+ * server-side from the verified session, never taken from the request body.
+ *
+ * Idempotent on (sessionId, senderUserId, zegoMessageId): a client retry
+ * (e.g. after a flaky response) returns the existing row instead of a 500 or
+ * a duplicate.
+ */
+export const sendRoomMessage: RequestHandler = async (req, res, next) => {
+	try {
+		const parsedParams = videoTokenParamsSchema.safeParse(req.params);
+		if (!parsedParams.success) {
+			res.status(400).json({ message: "Invalid session id", errors: parsedParams.error.issues });
+			return;
+		}
+
+		const parsedBody = sendRoomMessageBodySchema.safeParse(req.body);
+		if (!parsedBody.success) {
+			res.status(400).json({ message: "Invalid message", errors: parsedBody.error.issues });
+			return;
+		}
+
+		const user = req.user;
+		if (!user?.id) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
+		const { sessionId } = parsedParams.data;
+		const { body, zegoMessageId, sentAt } = parsedBody.data;
+
+		const access = await resolveSessionAccess({ sessionId, user });
+		if (!access.ok) {
+			respondDenied(res, access);
+			return;
+		}
+
+		const senderName = await resolveDisplayName(user.id, user.email, "Member");
+		const roomId =
+			access.roomId ??
+			resolveSessionRoomId(access.session) ??
+			sessionId;
+
+		if (zegoMessageId) {
+			const existing = await RoomMessage.findOne({
+				sessionId,
+				senderUserId: user.id,
+				zegoMessageId,
+			});
+			if (existing) {
+				res.status(200).json({ message: "Message already recorded.", roomMessage: existing });
+				return;
+			}
+		}
+
+		const roomMessage = await RoomMessage.create({
+			sessionId,
+			roomId,
+			senderUserId: user.id,
+			senderName,
+			senderRole: access.role,
+			body,
+			zegoMessageId: zegoMessageId ?? null,
+			sentAt: sentAt ?? new Date(),
+		});
+
+		res.status(201).json({ message: "Message recorded.", roomMessage });
+	} catch (error: any) {
+		// A racing duplicate send can lose the findOne-then-create race and hit
+		// the unique index instead — treat that the same as the pre-check hit.
+		if (error?.code === 11000) {
+			try {
+				const parsedParams = videoTokenParamsSchema.safeParse(req.params);
+				const parsedBody = sendRoomMessageBodySchema.safeParse(req.body);
+				if (parsedParams.success && parsedBody.success && req.user?.id && parsedBody.data.zegoMessageId) {
+					const existing = await RoomMessage.findOne({
+						sessionId: parsedParams.data.sessionId,
+						senderUserId: req.user.id,
+						zegoMessageId: parsedBody.data.zegoMessageId,
+					});
+					if (existing) {
+						res.status(200).json({ message: "Message already recorded.", roomMessage: existing });
+						return;
+					}
+				}
+			} catch {
+				// fall through to the generic error handler below
+			}
+		}
+		console.error("Zego send room message error:", error);
+		next(error);
+	}
+};
+
+/**
+ * GET /api/v1/zego/sessions/:sessionId/messages
+ *
+ * Returns persisted chat history for a session, oldest first. Deliberately
+ * uses resolveRoomMessageAccess rather than resolveSessionAccess: history
+ * must stay readable well after the live join window (or the session
+ * itself) has closed — a host rejoining right at the boundary, or reviewing
+ * the conversation afterwards, must not be blocked by the same
+ * ENDED/NOT_OPEN_YET gates that protect the live room itself.
+ */
+export const listRoomMessages: RequestHandler = async (req, res, next) => {
+	try {
+		const parsedParams = videoTokenParamsSchema.safeParse(req.params);
+		if (!parsedParams.success) {
+			res.status(400).json({ message: "Invalid session id", errors: parsedParams.error.issues });
+			return;
+		}
+
+		const parsedQuery = listRoomMessagesQuerySchema.safeParse(req.query);
+		if (!parsedQuery.success) {
+			res.status(400).json({ message: "Invalid query", errors: parsedQuery.error.issues });
+			return;
+		}
+
+		const user = req.user;
+		if (!user?.id) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
+		const { sessionId } = parsedParams.data;
+		const access = await resolveRoomMessageAccess({ sessionId, user });
+		if (!access.ok) {
+			res.status(access.status).json({ message: access.message });
+			return;
+		}
+
+		const limit = parsedQuery.data.limit ?? 200;
+		const messages = await RoomMessage.find({ sessionId })
+			.sort({ sentAt: 1, _id: 1 })
+			.limit(limit)
+			.lean();
+
+		res.status(200).json({ message: "Messages retrieved successfully", count: messages.length, messages });
+	} catch (error) {
+		console.error("Zego list room messages error:", error);
 		next(error);
 	}
 };
