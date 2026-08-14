@@ -422,21 +422,93 @@ export const getVisitAnalytics: RequestHandler = async (req, res, next) => {
 	}
 };
 
-/** Current user's own gym visit history. */
+/** Converts a UTC Date to a YYYY-MM-DD string in IST (UTC+5:30). */
+const toISTDateString = (date: Date): string => {
+	const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+	const local = new Date(date.getTime() + IST_OFFSET_MS);
+	const y = local.getUTCFullYear();
+	const m = String(local.getUTCMonth() + 1).padStart(2, "0");
+	const d = String(local.getUTCDate()).padStart(2, "0");
+	return `${y}-${m}-${d}`;
+};
+
+/** Computes current and longest consecutive-day streaks from a set of unique visit date strings (YYYY-MM-DD, sorted desc). */
+function computeStreaks(sortedDescDays: string[]): {
+	currentStreak: number;
+	longestStreak: number;
+} {
+	if (sortedDescDays.length === 0) return { currentStreak: 0, longestStreak: 0 };
+
+	const todayIST = toISTDateString(new Date());
+	const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+	const yesterdayIST = toISTDateString(yesterdayDate);
+
+	// Build a Set for O(1) lookup
+	const daySet = new Set(sortedDescDays);
+
+	// Current streak: walk back from today (if visited) or yesterday (if not yet visited today but was yesterday)
+	let currentStreak = 0;
+	const startDay = daySet.has(todayIST) ? todayIST : daySet.has(yesterdayIST) ? yesterdayIST : null;
+	if (startDay) {
+		let cursor = new Date(startDay + "T00:00:00Z");
+		while (true) {
+			const key = toISTDateString(cursor);
+			if (!daySet.has(key)) break;
+			currentStreak++;
+			cursor = new Date(cursor.getTime() - 24 * 60 * 60 * 1000);
+		}
+	}
+
+	// Longest streak: walk the sorted array building runs
+	let longestStreak = 0;
+	let run = 1;
+	const asc = [...sortedDescDays].reverse();
+	for (let i = 1; i < asc.length; i++) {
+		const prev = new Date(asc[i - 1] + "T00:00:00Z");
+		const curr = new Date(asc[i] + "T00:00:00Z");
+		const diffDays = Math.round((curr.getTime() - prev.getTime()) / (24 * 60 * 60 * 1000));
+		if (diffDays === 1) {
+			run++;
+		} else {
+			longestStreak = Math.max(longestStreak, run);
+			run = 1;
+		}
+	}
+	longestStreak = Math.max(longestStreak, run);
+
+	return { currentStreak, longestStreak };
+}
+
+/** Current user's own gym visit history + streak stats. */
 export const getMyVisits: RequestHandler = async (req, res, next) => {
 	if (!req.user) {
 		res.status(401).json({ message: "Unauthorized" });
 		return;
 	}
 	try {
-		const limit = parseLimit(req.query.limit);
-		const items = await GymVisit.find({ userId: req.user.id })
+		const limit = parseLimit(req.query.limit, MAX_LIMIT);
+		// Fetch ALL visits (up to MAX_LIMIT) for accurate streak computation;
+		// the client can page via `limit` for display but streak needs the full set.
+		const allItems = await GymVisit.find({ userId: req.user.id })
 			.sort({ checkInAt: -1 })
-			.limit(limit)
+			.limit(MAX_LIMIT)
 			.lean();
 
+		// Unique IST calendar days visited, sorted descending
+		const uniqueDays = Array.from(
+			new Set(allItems.map((it: any) => toISTDateString(new Date(it.checkInAt)))),
+		).sort((a, b) => b.localeCompare(a));
+
+		const { currentStreak, longestStreak } = computeStreaks(uniqueDays);
+
+		// Return only requested page to the client for display
+		const pageItems = allItems.slice(0, limit);
+
 		res.status(200).json({
-			items: items.map((it: any) => serializeVisit(it)),
+			items: pageItems.map((it: any) => serializeVisit(it)),
+			totalVisits: allItems.length,
+			currentStreak,
+			longestStreak,
 		});
 	} catch (err) {
 		next(err);
