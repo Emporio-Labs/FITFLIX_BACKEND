@@ -118,10 +118,12 @@ export const resolveDaysToSnapshots = async (days: DayInput[]) => {
 		meals: day.meals.map((meal) => {
 			const items = (meal.items ?? []).map(snapshotItem);
 
-			const options = (meal.options ?? []).map((opt) => {
+			const options = (meal.options ?? []).map((opt: any) => {
 				const foods = (opt.foods ?? []).map(snapshotItem);
 				return {
-					title: opt.title,
+					title: opt.title ?? opt.recipeName ?? opt.label,
+					recipeId: opt.recipeId ?? null,
+					recipeName: opt.recipeName ?? opt.title ?? null,
 					isDefault: opt.isDefault ?? false,
 					reasoning: opt.reasoning ?? "",
 					foods,
