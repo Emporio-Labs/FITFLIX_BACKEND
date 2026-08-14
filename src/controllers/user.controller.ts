@@ -289,6 +289,7 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					gender: 1,
 					createdAt: 1,
 					updatedAt: 1,
+					onboarded: { $ifNull: ["$onboarded", "$onboardingStatus.onboardingCompleted"] },
 					onboardingStatus: {
 						currentStep: "$onboardingStatus.currentStep",
 						completedSteps: {

@@ -54,11 +54,13 @@ export const mealItemSchema = z.object({
 	recipeSource: z.string().trim().optional(),
 });
 
+const reasoningSchema = z.union([z.string(), z.record(z.unknown())]).optional();
+
 export const mealOptionSchema = z
 	.object({
 		title: z.string().trim().min(1),
 		isDefault: z.boolean().optional(),
-		reasoning: z.string().trim().max(2000).optional(),
+		reasoning: reasoningSchema,
 		foods: z.array(mealItemSchema).default([]),
 		recipeId: z.string().trim().optional(),
 		recipeName: z.string().trim().optional(),
@@ -83,6 +85,7 @@ export const mealSchema = z
 		timeOfDay: optionalNutritionString.nullable(),
 		suggestedTime: optionalNutritionString.nullable(),
 		notes: z.string().trim().max(1000).optional(),
+		reasoning: reasoningSchema,
 		items: z.array(mealItemSchema).default([]),
 		options: z.array(mealOptionSchema).default([]),
 	})
