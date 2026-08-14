@@ -361,7 +361,7 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 
 export const getAllBookings: RequestHandler = async (req, res, next) => {
 	try {
-		const { userId: userIdRaw, status, search } = req.query;
+		const { userId: userIdRaw, status, search, sessionId, classId } = req.query;
 		const filter: Record<string, unknown> = {};
 
 		if (typeof userIdRaw === "string" && userIdRaw.length > 0) {
@@ -371,6 +371,14 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 				return;
 			}
 			filter.user = userId;
+		}
+
+		if (typeof sessionId === "string" && sessionId.length > 0) {
+			filter.sessionId = sessionId;
+		}
+
+		if (typeof classId === "string" && classId.length > 0) {
+			filter.classId = classId;
 		}
 
 		if (typeof status === "string" && status.length > 0 && status.toLowerCase() !== "all") {
