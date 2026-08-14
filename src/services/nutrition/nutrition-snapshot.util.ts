@@ -123,7 +123,11 @@ export const resolveDaysToSnapshots = async (days: DayInput[]) => {
 				return {
 					title: opt.title ?? opt.recipeName ?? opt.label,
 					recipeId: opt.recipeId ?? null,
-					recipeName: opt.recipeName ?? opt.title ?? null,
+					recipeName:
+						opt.recipeName && !/^Option\s+\d+$/i.test(opt.recipeName)
+							? opt.recipeName
+							: (foods.find((f: any) => f.recipeSource)?.recipeSource ??
+								(opt.title && !/^Option\s+\d+$/i.test(opt.title) ? opt.title : null)),
 					isDefault: opt.isDefault ?? false,
 					reasoning: opt.reasoning ?? "",
 					foods,

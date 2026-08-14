@@ -150,16 +150,14 @@ export const markMealCompleted = async (
 			)
 		: meal.options?.find((o) => o.isDefault) ?? meal.options?.[0];
 	const resolvedRecipeName =
-		selectedOption?.recipeName ||
-		items.map((i) => i.foodName).join(", ");
-
-	const mealTitle =
-		selectedOption?.title && !/^Option\s+\d+$/i.test(selectedOption.title)
+		(selectedOption?.recipeName && !/^Option\s+\d+$/i.test(selectedOption.recipeName)
+			? selectedOption.recipeName
+			: items.find((i) => i.recipeSource)?.recipeSource) ||
+		(selectedOption?.title && !/^Option\s+\d+$/i.test(selectedOption.title)
 			? selectedOption.title
-			: resolvedRecipeName ||
-			(meal as any).name ||
-			meal.mealType ||
-			"";
+			: (meal as any).name || meal.mealType || "");
+
+	const mealTitle = resolvedRecipeName;
 
 	const log = await NutritionMealLog.findOneAndUpdate(
 		{
