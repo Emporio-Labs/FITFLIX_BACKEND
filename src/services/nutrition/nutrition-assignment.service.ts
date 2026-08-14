@@ -161,8 +161,14 @@ export const assignTemplateToUser = async (
 
 	const clonedDays = cloneDays(template.days);
 
+	const userObjId = toObjectId(userId, "BAD_REQUEST", "Invalid user ID");
+	await UserNutritionPlan.updateMany(
+		{ userId: userObjId, status: NutritionPlanStatus.Active },
+		{ $set: { status: NutritionPlanStatus.Archived } },
+	);
+
 	const doc = await UserNutritionPlan.create({
-		userId: toObjectId(userId, "BAD_REQUEST", "Invalid user ID"),
+		userId: userObjId,
 		nutritionistId: toObjectId(
 			actor.id,
 			"BAD_REQUEST",
@@ -171,7 +177,7 @@ export const assignTemplateToUser = async (
 		sourceTemplateId: template._id,
 		name: template.name,
 		goal: template.goal,
-		startDate: options.startDate,
+		startDate: options.startDate ?? new Date(),
 		endDate: options.endDate ?? null,
 		targetCaloriesKcal: template.targetCaloriesKcal,
 		targetMacros: template.targetMacros ?? {},
@@ -199,8 +205,14 @@ export const createAdHocPlan = async (
 ) => {
 	const days = input.days ? await resolveDaysToSnapshots(input.days) : [];
 
+	const userObjId = toObjectId(userId, "BAD_REQUEST", "Invalid user ID");
+	await UserNutritionPlan.updateMany(
+		{ userId: userObjId, status: NutritionPlanStatus.Active },
+		{ $set: { status: NutritionPlanStatus.Archived } },
+	);
+
 	const doc = await UserNutritionPlan.create({
-		userId: toObjectId(userId, "BAD_REQUEST", "Invalid user ID"),
+		userId: userObjId,
 		nutritionistId: toObjectId(
 			nutritionistId,
 			"BAD_REQUEST",
@@ -209,7 +221,7 @@ export const createAdHocPlan = async (
 		sourceTemplateId: null,
 		name: input.name,
 		goal: input.goal,
-		startDate: input.startDate,
+		startDate: input.startDate ?? new Date(),
 		endDate: input.endDate ?? null,
 		targetCaloriesKcal: input.targetCaloriesKcal ?? null,
 		targetMacros: input.targetMacros ?? {},
@@ -238,7 +250,7 @@ export const listUserPlans = async (
 		filter.status = filters.status;
 	}
 	return UserNutritionPlan.find(filter)
-		.sort({ startDate: -1 })
+		.sort({ createdAt: -1, startDate: -1 })
 		.populate(MEMBER_POPULATE)
 		.lean();
 };

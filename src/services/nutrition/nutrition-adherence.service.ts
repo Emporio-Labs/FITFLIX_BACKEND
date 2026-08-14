@@ -15,14 +15,15 @@ export const computeDayNumber = (
 	startDate: Date | null | undefined,
 	durationDays: number,
 	date: Date,
-): number | null => {
-	if (!startDate) return null;
-	const start = normalizeToUtcDate(startDate).getTime();
+): number => {
+	const effectiveStart = startDate
+		? normalizeToUtcDate(startDate).getTime()
+		: normalizeToUtcDate(date).getTime();
 	const target = normalizeToUtcDate(date).getTime();
-	if (target < start) {
-		return null;
+	if (target < effectiveStart) {
+		return 1;
 	}
-	const diffDays = Math.floor((target - start) / MS_PER_DAY);
+	const diffDays = Math.floor((target - effectiveStart) / MS_PER_DAY);
 	const cycle = durationDays > 0 ? durationDays : 1;
 	return (diffDays % cycle) + 1;
 };
@@ -127,11 +128,8 @@ export const recomputeDay = async (
 			throw new NutritionServiceError("NOT_FOUND", "Plan not found");
 		}
 
-		const dayNumber = computeDayNumber(plan.startDate, plan.durationDays, day);
-		const planDay =
-			dayNumber === null
-				? null
-				: plan.days.find((d) => d.dayNumber === dayNumber);
+		const dayNumber = computeDayNumber(plan.startDate || (plan as any).createdAt, plan.durationDays, day);
+		const planDay = plan.days.find((d) => d.dayNumber === dayNumber) ?? plan.days[0];
 		const plannedMealsArr = planDay?.meals ?? [];
 
 		plannedMeals = plannedMealsArr.length;
