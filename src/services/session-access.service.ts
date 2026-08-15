@@ -503,17 +503,45 @@ export const resolveRoomMessageAccess = async ({
 		: await ClassModel.findById(sessionId).select("instructorUserId access").lean();
 
 	if (!session && !klass) {
-		const cleanId = sessionId.startsWith("nutri_session_")
-			? sessionId.replace("nutri_session_", "")
-			: sessionId;
+		const cleanId = sessionId.startsWith("session_")
+			? sessionId.replace("session_", "")
+			: sessionId.startsWith("nutri_session_")
+				? sessionId.replace("nutri_session_", "")
+				: sessionId;
 
+		let unifiedBooking: any = null;
 		let nutriBooking: any = null;
+
 		if (mongoose.Types.ObjectId.isValid(cleanId)) {
-			nutriBooking = await NutritionistBooking.findById(cleanId).lean();
+			unifiedBooking = await UnifiedBooking.findById(cleanId).lean();
+			if (!unifiedBooking) {
+				nutriBooking = await NutritionistBooking.findById(cleanId).lean();
+			}
 		}
-		if (!nutriBooking) {
-			nutriBooking = await NutritionistBooking.findOne({ zegoRoomId: sessionId }).lean();
+
+		if (!unifiedBooking && !nutriBooking) {
+			unifiedBooking = await UnifiedBooking.findOne({ zegoRoomId: sessionId }).lean();
+			if (!unifiedBooking) {
+				nutriBooking = await NutritionistBooking.findOne({ zegoRoomId: sessionId }).lean();
+			}
 		}
+
+		if (unifiedBooking) {
+			const userRoleNorm = normalizeRole(user.role);
+			const isHostRole =
+				userRoleNorm === "admin" ||
+				userRoleNorm === "frontdesk" ||
+				userRoleNorm === "staff" ||
+				(unifiedBooking.expertId &&
+					String(unifiedBooking.expertId) === String(rawUserId));
+			const isMember = String(unifiedBooking.userId) === String(rawUserId);
+
+			if (!isHostRole && !isMember) {
+				return { ok: false, status: 403, message: "You do not have access to this session's messages." };
+			}
+			return { ok: true, role: isHostRole ? "host" : "member" };
+		}
+
 		if (!nutriBooking) {
 			return { ok: false, status: 404, message: "Session not found." };
 		}
