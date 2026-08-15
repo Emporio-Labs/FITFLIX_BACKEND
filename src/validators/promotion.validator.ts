@@ -7,6 +7,19 @@ const objectId = z
 	.trim()
 	.refine((v) => mongoose.Types.ObjectId.isValid(v), "Expected an object id");
 
+const UUID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The link targets do not agree on an id type. Class uses a randomUUID string
+ * `_id`; Therapy and MembershipPlan use ObjectIds. Validating per type is what
+ * stops a promotion pointing at an id that cannot exist in its own collection.
+ */
+const targetIdMatchesType = (type: string, targetId: string): boolean =>
+	type === "class"
+		? UUID_RE.test(targetId)
+		: mongoose.Types.ObjectId.isValid(targetId);
+
 /**
  * A link either points at something we own or at a URL — never both, never
  * neither. Mongoose can't express that, so it is enforced here and the model
@@ -15,7 +28,7 @@ const objectId = z
 const linkSchema = z
 	.object({
 		type: z.enum(PROMOTION_LINK_TYPES),
-		targetId: objectId.optional(),
+		targetId: z.string().trim().min(1).optional(),
 		url: z.string().trim().url().optional(),
 	})
 	.superRefine((link, ctx) => {
@@ -42,6 +55,15 @@ const linkSchema = z
 				code: z.ZodIssueCode.custom,
 				path: ["targetId"],
 				message: `targetId is required when link type is "${link.type}"`,
+			});
+		} else if (!targetIdMatchesType(link.type, link.targetId)) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["targetId"],
+				message:
+					link.type === "class"
+						? "A class targetId must be a UUID"
+						: `A ${link.type} targetId must be an object id`,
 			});
 		}
 		if (link.url) {

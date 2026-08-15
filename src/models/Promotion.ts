@@ -26,9 +26,11 @@ export const PROMOTION_MODES = ["online", "offline"] as const;
 const linkSchema = new mongoose.Schema(
 	{
 		type: { type: String, enum: PROMOTION_LINK_TYPES, required: true },
-		// Set for class | therapy | plan. The collection it points into varies
-		// by type, so this stays a bare ObjectId rather than a typed ref.
-		targetId: { type: mongoose.Schema.Types.ObjectId, default: null },
+		// Set for class | therapy | plan. Stored as a string because the target
+		// collections do not agree on an id type: Class uses a randomUUID
+		// string _id, while Therapy and MembershipPlan use ObjectIds. The
+		// validator enforces the right shape per link type.
+		targetId: { type: String, default: null, trim: true },
 		// Set for type: "url" only.
 		url: { type: String, default: null, trim: true },
 	},

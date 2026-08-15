@@ -14,6 +14,7 @@ import {
 	canSeeHiddenPromotions,
 	PROMOTION_SORT,
 } from "../src/utils/promotion-visibility";
+import { createPromotionSchema } from "../src/validators/promotion.validator";
 import { assert } from "./test-helpers";
 
 type SampleDoc = {
@@ -293,6 +294,95 @@ function runUnitTests() {
 		assert(
 			PROMOTION_SORT.activeFrom === -1,
 			"ties break on the most recently started promotion",
+		);
+	}
+
+	console.log("\n10. Link targets — the id types do not agree...");
+	{
+		const base = {
+			title: "Summer strength batch",
+			imageUrl: "https://cdn.fitflix.in/promos/summer.jpg",
+			activeFrom: now.toISOString(),
+			activeTo: new Date(now.getTime() + 30 * day).toISOString(),
+		};
+		const classUuid = "3f8a1c92-5b7e-4c21-9d44-0e6a71b2c8d5";
+		const oid = new mongoose.Types.ObjectId().toString();
+
+		assert(
+			createPromotionSchema.safeParse({
+				...base,
+				link: { type: "class", targetId: classUuid },
+			}).success,
+			"a class link takes a UUID — Class._id is a randomUUID string",
+		);
+		assert(
+			!createPromotionSchema.safeParse({
+				...base,
+				link: { type: "class", targetId: oid },
+			}).success,
+			"a class link rejects an ObjectId, which no Class can ever have",
+		);
+
+		assert(
+			createPromotionSchema.safeParse({
+				...base,
+				link: { type: "therapy", targetId: oid },
+			}).success,
+			"a therapy link takes an ObjectId",
+		);
+		assert(
+			!createPromotionSchema.safeParse({
+				...base,
+				link: { type: "plan", targetId: classUuid },
+			}).success,
+			"a plan link rejects a UUID",
+		);
+
+		assert(
+			createPromotionSchema.safeParse({
+				...base,
+				link: { type: "url", url: "https://fitflix.in/offers/summer" },
+			}).success,
+			"a url link takes a url",
+		);
+		assert(
+			!createPromotionSchema.safeParse({
+				...base,
+				link: { type: "url", url: "https://x.test", targetId: oid },
+			}).success,
+			"a url link carrying a targetId is rejected — it points two ways at once",
+		);
+		assert(
+			!createPromotionSchema.safeParse({
+				...base,
+				link: { type: "class" },
+			}).success,
+			"a class link with no target is rejected",
+		);
+	}
+
+	console.log("\n11. The active window must be ordered...");
+	{
+		const base = {
+			title: "Inverted",
+			imageUrl: "https://cdn.fitflix.in/promos/x.jpg",
+			link: { type: "url" as const, url: "https://fitflix.in" },
+		};
+		assert(
+			!createPromotionSchema.safeParse({
+				...base,
+				activeFrom: new Date(now.getTime() + day).toISOString(),
+				activeTo: now.toISOString(),
+			}).success,
+			"activeTo before activeFrom is rejected",
+		);
+		assert(
+			!createPromotionSchema.safeParse({
+				...base,
+				activeFrom: now.toISOString(),
+				activeTo: now.toISOString(),
+			}).success,
+			"a zero-length window is rejected",
 		);
 	}
 
