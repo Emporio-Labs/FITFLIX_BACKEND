@@ -47,6 +47,8 @@ export enum CreditTransactionSource {
 	Booking = "Booking",
 	Appointment = "Appointment",
 	Admin = "Admin",
+	PersonalTraining = "PersonalTraining",
+	Therapy = "Therapy",
 }
 
 export enum MuscleGroup {
@@ -88,6 +90,46 @@ export enum OnboardingStep {
 
 export enum ExpertType {
 	Nutritionist = "nutritionist",
+	Trainer = "trainer",
+	Doctor = "doctor",
+	SportsScientist = "sports_scientist",
+}
+
+export enum ServiceCategory {
+	EXPERT_SESSION = "EXPERT_SESSION",
+	GROUP_CLASS = "GROUP_CLASS",
+	FACILITY_RESOURCE = "FACILITY_RESOURCE",
+	RETAIL_ORDER = "RETAIL_ORDER",
+}
+
+export enum ServiceSubtype {
+	TRAINER = "TRAINER",
+	NUTRITIONIST = "NUTRITIONIST",
+	DOCTOR = "DOCTOR",
+	SPORTS_SCIENTIST = "SPORTS_SCIENTIST",
+	CLASS = "CLASS",
+	STREAM = "STREAM",
+	CRYO = "CRYO",
+	SAUNA = "SAUNA",
+	ICE_BATH = "ICE_BATH",
+	SOMATICS = "SOMATICS",
+	RETAIL = "RETAIL",
+}
+
+export enum UnifiedBookingStatus {
+	PENDING = "PENDING",
+	CONFIRMED = "CONFIRMED",
+	CANCELLED = "CANCELLED",
+	COMPLETED = "COMPLETED",
+	HOST_NO_SHOW = "HOST_NO_SHOW",
+	EXPIRED = "EXPIRED",
+	RESCHEDULE_REQUIRED = "RESCHEDULE_REQUIRED",
+}
+
+export enum TrainerChangeRequestStatus {
+	PENDING = "PENDING",
+	APPROVED = "APPROVED",
+	REJECTED = "REJECTED",
 }
 
 export enum AppointmentBookingStatus {
@@ -269,6 +311,7 @@ export enum ConsentType {
 
 export enum AppointmentMode {
 	IN_PERSON = "IN_PERSON",
+	OFFLINE = "OFFLINE",
 	ONLINE = "ONLINE",
 }
 
@@ -307,6 +350,9 @@ export enum InvoicePaymentMethod {
 	UPI = "UPI",
 	CARD = "CARD",
 	BANK_TRANSFER = "BANK_TRANSFER",
+	RAZORPAY = "RAZORPAY",
+	POS_CARD = "POS_CARD",
+	ONLINE = "ONLINE",
 	NONE = "NONE",
 }
 

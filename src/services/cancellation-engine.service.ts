@@ -87,7 +87,10 @@ export async function cancelBooking(params: {
 
 	let creditRefunded = 0;
 
-	if (shouldRefundCredits) {
+	const creditCost = typeof booking.creditCostSnapshot === "number" ? booking.creditCostSnapshot : 1;
+	const isFreeOrBypassed = creditCost === 0 || Boolean(booking.creditsBypassed);
+
+	if (shouldRefundCredits && !isFreeOrBypassed) {
 		try {
 			await refundCreditsBySource({
 				userId: booking.user.toString(),
@@ -99,7 +102,7 @@ export async function cancelBooking(params: {
 					? `Admin override refund for cancelled booking ${booking._id.toString()}`
 					: `Early cancellation refund for booking ${booking._id.toString()}`,
 			});
-			creditRefunded = booking.creditCostSnapshot || 1;
+			creditRefunded = creditCost;
 		} catch (error) {
 			console.warn("[CANCELLATION_REFUND_NOTICE]", error);
 		}

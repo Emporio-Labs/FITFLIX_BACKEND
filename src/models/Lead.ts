@@ -20,6 +20,8 @@ const leadSchema = new mongoose.Schema(
 		tags: { type: [String], default: [] },
 		publicCapture: { type: mongoose.Schema.Types.Mixed, default: null },
 		followUpDate: { type: Date, default: null },
+		slaDeadline: { type: Date, default: null },
+		isEscalated: { type: Boolean, default: false },
 		owner: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
 		convertedUser: {
 			type: mongoose.Schema.Types.ObjectId,

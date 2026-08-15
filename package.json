@@ -75,6 +75,7 @@
 		"openai": "^6.33.0",
 		"pdf-parse": "^2.4.5",
 		"pdfkit": "^0.18.0",
+		"razorpay": "^2.9.8",
 		"socket.io": "^4.8.3",
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
 		"zod": "^4.3.6"

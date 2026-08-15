@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import User from "../models/User";
+import UnifiedBooking from "../models/UnifiedBooking";
+import Membership from "../models/Membership";
 
 export type TrainerRosterErrorCode = "INVALID_ARGUMENT" | "NOT_YOUR_MEMBER";
 
@@ -19,11 +21,20 @@ export const getRosterUserIds = async (trainerId: string): Promise<string[]> => 
 		throw new TrainerRosterError("INVALID_ARGUMENT", "Invalid trainer id");
 	}
 
-	const members = await User.find({ assignedTrainer: trainerId })
-		.select("_id")
-		.lean();
+	const trainerObjId = new mongoose.Types.ObjectId(trainerId);
 
-	return members.map((member) => member._id.toString());
+	const [directUsers, bookingUsers, membershipUsers] = await Promise.all([
+		User.find({ assignedTrainer: trainerId }).select("_id").lean(),
+		UnifiedBooking.distinct("userId", { expertId: trainerObjId }),
+		Membership.distinct("userId", { assignedTrainer: trainerObjId }),
+	]);
+
+	const idSet = new Set<string>();
+	for (const u of directUsers) idSet.add(u._id.toString());
+	for (const id of bookingUsers) if (id) idSet.add(id.toString());
+	for (const id of membershipUsers) if (id) idSet.add(id.toString());
+
+	return Array.from(idSet);
 };
 
 /**
@@ -39,8 +50,8 @@ export const assertTrainerOwnsMember = async (
 		throw new TrainerRosterError("INVALID_ARGUMENT", "Invalid member id");
 	}
 
-	const member = await User.findById(userId).select("assignedTrainer").lean();
-	if (!member || member.assignedTrainer?.toString() !== trainerId) {
+	const rosterIds = await getRosterUserIds(trainerId);
+	if (!rosterIds.includes(userId)) {
 		throw new TrainerRosterError(
 			"NOT_YOUR_MEMBER",
 			"This member is not assigned to you",

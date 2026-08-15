@@ -4,9 +4,11 @@ import express from "express";
 import { apiRateLimit } from "./middleware/rate-limit.middleware";
 import adminRouter from "./routes/admin.routes";
 import authRouter from "./routes/auth.routes";
+import billingRouter from "./routes/billing.routes";
 import bookingRouter from "./routes/booking.routes";
 import classRouter from "./routes/class.routes";
 import classScheduleRouter from "./routes/class-schedule.routes";
+import personalTrainingRouter from "./routes/personal-training.routes";
 
 import communityAdminRouter from "./routes/community-admin.routes";
 import communityPublicRouter from "./routes/community-public.routes";
@@ -232,6 +234,7 @@ app.get("/favicon.png", (_req, res) => {
 });
 
 app.use("/auth", authRouter);
+app.use("/api/v1/auth", authRouter);
 app.use("/delete-account", deleteAccountRouter);
 app.use("/admins", adminRouter);
 app.use("/trainers", trainerRouter);
@@ -263,6 +266,10 @@ app.use("/nutrition", nutritionRouter);
 app.use("/dashboard", dashboardRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
+app.use("/api/v1/pt", apiRateLimit, personalTrainingRouter);
+app.use("/pt", apiRateLimit, personalTrainingRouter);
+app.use("/api/v1/billing", apiRateLimit, billingRouter);
+app.use("/billing", apiRateLimit, billingRouter);
 app.use("/notifications", notificationRouter);
 // Admin moderation and the unauthenticated public surface must both be mounted
 // BEFORE the member router — that one authenticates every request, so anything

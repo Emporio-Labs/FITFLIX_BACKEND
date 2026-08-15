@@ -44,7 +44,7 @@ const bookingSchema = new mongoose.Schema(
 		},
 		creditCostSnapshot: {
 			type: Number,
-			min: 1,
+			min: 0,
 			default: 1,
 			required: true,
 		},

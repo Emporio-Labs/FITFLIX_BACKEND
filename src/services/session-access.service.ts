@@ -3,6 +3,7 @@ import Booking from "../models/Bookings";
 import ClassModel from "../models/Class";
 import NutritionistBooking from "../models/NutritionistBooking";
 import ScheduledSession from "../models/ScheduledSession";
+import UnifiedBooking from "../models/UnifiedBooking";
 import { normalizeRole } from "../middleware/rbac.middleware";
 import type { AuthenticatedUser } from "../types/auth";
 import {
@@ -67,6 +68,7 @@ export type SessionAccessGranted = {
 	booking: InstanceType<typeof Booking> | null;
 	session: InstanceType<typeof ScheduledSession> | null;
 	nutritionistBooking?: any;
+	unifiedBooking?: any;
 	hostLiveAt: Date | null;
 	klass: {
 		_id: unknown;
@@ -130,16 +132,128 @@ export const resolveSessionAccess = async ({
 				.lean();
 
 	if (!session && !klass) {
-		const cleanId = sessionId.startsWith("nutri_session_")
-			? sessionId.replace("nutri_session_", "")
-			: sessionId;
+		const cleanId = sessionId.startsWith("session_")
+			? sessionId.replace("session_", "")
+			: sessionId.startsWith("nutri_session_")
+				? sessionId.replace("nutri_session_", "")
+				: sessionId;
 
+		let unifiedBooking: any = null;
 		let nutriBooking: any = null;
+
 		if (mongoose.Types.ObjectId.isValid(cleanId)) {
-			nutriBooking = await NutritionistBooking.findById(cleanId);
+			unifiedBooking = await UnifiedBooking.findById(cleanId);
+			if (!unifiedBooking) {
+				nutriBooking = await NutritionistBooking.findById(cleanId);
+			}
 		}
-		if (!nutriBooking) {
-			nutriBooking = await NutritionistBooking.findOne({ zegoRoomId: sessionId });
+
+		if (!unifiedBooking && !nutriBooking) {
+			unifiedBooking = await UnifiedBooking.findOne({ zegoRoomId: sessionId });
+			if (!unifiedBooking) {
+				nutriBooking = await NutritionistBooking.findOne({ zegoRoomId: sessionId });
+			}
+		}
+
+		if (unifiedBooking) {
+			const userRoleNorm = normalizeRole(user.role);
+			const isHostRole =
+				userRoleNorm === "admin" ||
+				userRoleNorm === "frontdesk" ||
+				userRoleNorm === "staff" ||
+				(unifiedBooking.expertId &&
+					String(unifiedBooking.expertId) === String(rawUserId));
+			const isMember = String(unifiedBooking.userId) === String(rawUserId);
+
+			if (!isHostRole && !isMember) {
+				return deny("NO_BOOKING");
+			}
+
+			const role: SessionRole = isHostRole ? "host" : "member";
+
+			if (
+				unifiedBooking.status === "CANCELLED" ||
+				unifiedBooking.status === "REJECTED" ||
+				unifiedBooking.status === "HOST_NO_SHOW"
+			) {
+				return deny("CANCELLED");
+			}
+			if (unifiedBooking.status === "COMPLETED") {
+				return deny("ENDED");
+			}
+
+			const startsAt = combineSessionDateTime(
+				unifiedBooking.bookingDate,
+				unifiedBooking.startTime,
+			);
+			const endsAt =
+				combineSessionDateTime(
+					unifiedBooking.bookingDate,
+					unifiedBooking.endTime,
+				) || new Date((startsAt?.getTime() ?? Date.now()) + 45 * 60_000);
+
+			if (!startsAt) {
+				return deny("NO_SCHEDULE");
+			}
+
+			// Group Classes & 1:1 PT Session Rule Parity:
+			// Host enters up to 30 mins prior; Member enters 5 mins prior
+			const hostLeadMs = 30 * 60_000;
+			const memberLeadMs = 5 * 60_000;
+			const windowOpensAt = new Date(
+				startsAt.getTime() - (role === "host" ? hostLeadMs : memberLeadMs),
+			);
+			// 30-minute overrun buffer after scheduled end
+			const windowClosesAt = new Date(endsAt.getTime() + 30 * 60_000);
+
+			if (now.getTime() < windowOpensAt.getTime()) {
+				return deny("NOT_OPEN_YET", { startsAt, endsAt });
+			}
+			if (now.getTime() >= windowClosesAt.getTime()) {
+				return deny("ENDED", { startsAt, endsAt });
+			}
+
+			// When Host enters, record hostLiveAt timestamp to unlock the lobby for members
+			if (role === "host" && !unifiedBooking.hostLiveAt) {
+				unifiedBooking.hostLiveAt = new Date();
+				await unifiedBooking.save();
+			}
+
+			// Host Presence Gate: Member waits in lobby until Host has launched the call
+			if (role === "member" && !unifiedBooking.hostLiveAt) {
+				return deny("HOST_NOT_STARTED", { startsAt, endsAt });
+			}
+
+			if (role === "member" && !unifiedBooking.userJoinedAt) {
+				unifiedBooking.userJoinedAt = new Date();
+				await unifiedBooking.save();
+			}
+
+			const roomId =
+				unifiedBooking.zegoRoomId || `session_${unifiedBooking._id.toString()}`;
+			const remainingSeconds = Math.floor(
+				(windowClosesAt.getTime() - now.getTime()) / 1000,
+			);
+			if (remainingSeconds < MIN_TTL_SECONDS) {
+				return deny("ENDED", { startsAt, endsAt });
+			}
+			const ttlSeconds = Math.min(remainingSeconds, MAX_TTL_SECONDS);
+
+			return {
+				ok: true,
+				role,
+				roomId,
+				ttlSeconds,
+				startsAt,
+				endsAt,
+				windowOpensAt,
+				windowClosesAt,
+				booking: null,
+				session: null,
+				unifiedBooking,
+				hostLiveAt: unifiedBooking.hostLiveAt || null,
+				klass: null,
+			};
 		}
 
 		if (!nutriBooking) {
@@ -175,10 +289,17 @@ export const resolveSessionAccess = async ({
 			return deny("NO_SCHEDULE");
 		}
 
-		if (now.getTime() < startsAt.getTime()) {
+		const hostLeadMs = 30 * 60_000;
+		const memberLeadMs = 5 * 60_000;
+		const windowOpensAt = new Date(
+			startsAt.getTime() - (role === "host" ? hostLeadMs : memberLeadMs),
+		);
+		const windowClosesAt = new Date(endsAt.getTime() + 30 * 60_000);
+
+		if (now.getTime() < windowOpensAt.getTime()) {
 			return deny("NOT_OPEN_YET", { startsAt, endsAt });
 		}
-		if (now.getTime() >= endsAt.getTime()) {
+		if (now.getTime() >= windowClosesAt.getTime()) {
 			return deny("ENDED", { startsAt, endsAt });
 		}
 
@@ -189,7 +310,7 @@ export const resolveSessionAccess = async ({
 
 		const roomId = nutriBooking.zegoRoomId || `nutri_session_${nutriBooking._id}`;
 		const remainingSeconds = Math.floor(
-			(endsAt.getTime() - now.getTime()) / 1000,
+			(windowClosesAt.getTime() - now.getTime()) / 1000,
 		);
 		if (remainingSeconds < MIN_TTL_SECONDS) {
 			return deny("ENDED", { startsAt, endsAt });
@@ -203,8 +324,8 @@ export const resolveSessionAccess = async ({
 			ttlSeconds,
 			startsAt,
 			endsAt,
-			windowOpensAt: startsAt,
-			windowClosesAt: endsAt,
+			windowOpensAt,
+			windowClosesAt,
 			booking: null,
 			session: null,
 			nutritionistBooking: nutriBooking,
@@ -217,8 +338,9 @@ export const resolveSessionAccess = async ({
 	const isInstructor =
 		!!klass?.instructorUserId &&
 		String(klass.instructorUserId) === String(rawUserId);
-	const isAdmin = normalizeRole(user.role) === "admin";
-	const role: SessionRole = isInstructor || isAdmin ? "host" : "member";
+	const userRoleNorm = normalizeRole(user.role);
+	const isAdminOrFrontdesk = userRoleNorm === "admin" || userRoleNorm === "frontdesk";
+	const role: SessionRole = isInstructor || isAdminOrFrontdesk ? "host" : "member";
 
 	// 3. Session-level lifecycle. Once COMPLETED, it stays over for everyone —
 	// re-opening a finished class is a new session, not a re-join.

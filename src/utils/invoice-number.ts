@@ -1,13 +1,16 @@
+import type mongoose from "mongoose";
 import Counter from "../models/Counter";
 
-export const generateInvoiceNumber = async (): Promise<string> => {
+export const generateInvoiceNumber = async (
+	session?: mongoose.ClientSession | null,
+): Promise<string> => {
 	const year = new Date().getFullYear();
 	const counterId = `invoice_${year}`;
 
 	const counter = await Counter.findOneAndUpdate(
 		{ _id: counterId },
 		{ $inc: { seq: 1 } },
-		{ upsert: true, returnDocument: "after" },
+		{ upsert: true, returnDocument: "after", ...(session ? { session } : {}) },
 	);
 
 	if (!counter) {
@@ -15,5 +18,5 @@ export const generateInvoiceNumber = async (): Promise<string> => {
 	}
 
 	const seq = String(counter.seq).padStart(4, "0");
-	return `FX-${year}-${seq}`;
+	return `FF-INV-${year}-${seq}`;
 };

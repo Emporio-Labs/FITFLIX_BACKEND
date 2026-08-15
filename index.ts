@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 import app from "./src/app";
 import { initSocketIO } from "./src/services/realtime.service";
 import { startReminderPoller } from "./src/services/reminder.service";
+import { runCallbackEscalationSweep } from "./src/schedulers/callback-escalation.scheduler";
+import { runHostNoShowSweep } from "./src/schedulers/host-noshow.scheduler";
 import connectDB from "./src/utils/db";
 
 // --- Startup environment validation ---
@@ -38,10 +40,12 @@ const start = async () => {
 	const httpServer = createServer(app);
 	initSocketIO(httpServer);
 
-	// Start reminder poller (non-serverless env only; Vercel uses /internal/reminders/tick cron)
+	// Start background pollers & schedulers (non-serverless env only)
 	const isServerless = process.env.VERCEL === "1";
 	if (!isServerless) {
 		startReminderPoller(60_000); // every 60 seconds
+		setInterval(runHostNoShowSweep, 5 * 60_000); // every 5 minutes
+		setInterval(runCallbackEscalationSweep, 2 * 60_000); // every 2 minutes
 	}
 
 	httpServer.listen(port, "0.0.0.0", () => {
