@@ -1,4 +1,8 @@
 import ClassModel from "../models/Class";
+import {
+	evaluateEnrollmentWindow,
+	isBatchClass,
+} from "../utils/class-enrollment";
 import { UserStatus } from "../models/Enums";
 import ScheduledSession from "../models/ScheduledSession";
 import User from "../models/User";
@@ -178,6 +182,23 @@ export async function evaluateBookingRules(params: {
 			statusCode: 403,
 			message: "Active membership tier required for class bookings",
 		};
+	}
+
+	// 3a. A batch is a cohort: it opens and closes once, on absolute dates, so
+	// the per-occurrence offsets below do not apply to it. Only classes
+	// explicitly marked `batch` take this path — everything already in the
+	// database is a drop-in and continues through the offset logic unchanged.
+	if (isBatchClass(targetClass as any)) {
+		const enrollment = evaluateEnrollmentWindow(targetClass as any, now);
+		if (!enrollment.allowed) {
+			return {
+				allowed: false,
+				statusCode: 403,
+				message: enrollment.message,
+				details: { code: enrollment.code, ...enrollment.details },
+			};
+		}
+		return { allowed: true };
 	}
 
 	// 3. Dynamic Booking Window Evaluation based on Class Configuration

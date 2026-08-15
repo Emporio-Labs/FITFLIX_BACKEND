@@ -7,6 +7,8 @@ import Booking from "../models/Bookings";
 import { normalizeDeliveryType } from "../utils/delivery-type";
 import {
 	createClassBodySchema,
+	eventFieldsSchema,
+	pickEventFields,
 	updateClassBodySchema,
 } from "../validators/class.validator";
 
@@ -410,6 +412,29 @@ export const updateClassById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		// The validator only sees the fields that were sent. Flipping a class to
+		// `batch` without resending its dates, or moving one end of a run in
+		// isolation, can still produce an inconsistent document — so the event
+		// rules are re-checked against the merged result.
+		const existing = await Class.findById(id).lean();
+		if (!existing) {
+			res.status(404).json({ message: "Class not found" });
+			return;
+		}
+
+		const mergedEventFields = eventFieldsSchema.safeParse({
+			...pickEventFields(existing),
+			...pickEventFields(parsedBody.data),
+		});
+
+		if (!mergedEventFields.success) {
+			res.status(400).json({
+				message: "Invalid class update payload",
+				errors: mergedEventFields.error.issues,
+			});
+			return;
+		}
+
 		const updatedClass = await Class.findByIdAndUpdate(id, parsedBody.data, {
 			returnDocument: "after",
 			runValidators: true,

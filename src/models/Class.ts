@@ -145,6 +145,46 @@ const classSchema = new mongoose.Schema(
 			type: Boolean,
 			default: true,
 		},
+
+		// ── Events ──
+		// A class is already a recurring template with capacity, credits and a
+		// booking window, so an event is the same entity with a bounded run and
+		// cohort enrolment rather than a model of its own.
+
+		// Also what the class rail and detail cards render. Without it the app
+		// draws a flat colour block with an icon.
+		imageUrl: {
+			type: String,
+			default: "",
+			trim: true,
+		},
+		// drop_in keeps the per-occurrence booking every existing class uses.
+		// batch enrols once across the whole run.
+		format: {
+			type: String,
+			enum: ["drop_in", "batch"],
+			default: "drop_in",
+		},
+		// Bounded run. Batch only — a drop_in class runs until it is retired.
+		startDate: {
+			type: Date,
+			default: null,
+		},
+		endDate: {
+			type: Date,
+			default: null,
+		},
+		// Absolute enrolment window for a batch. Deliberately distinct from
+		// bookingWindowValue/bookingCloseValue, which are offsets relative to
+		// each occurrence's start — a cohort opens and closes once, on a date.
+		enrollmentOpensAt: {
+			type: Date,
+			default: null,
+		},
+		enrollmentClosesAt: {
+			type: Date,
+			default: null,
+		},
 	},
 	{
 		timestamps: true,

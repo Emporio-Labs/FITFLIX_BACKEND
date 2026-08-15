@@ -219,7 +219,7 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes status")
+			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes imageUrl format startDate endDate enrollmentOpensAt enrollmentClosesAt status")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
@@ -275,7 +275,7 @@ export const getSchedulesForMembers: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes status isPublished")
+			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes imageUrl format startDate endDate enrollmentOpensAt enrollmentClosesAt status isPublished")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
@@ -332,7 +332,7 @@ export const getScheduledSessionByIdForMembers: RequestHandler = async (
 		const session = await ScheduledSession.findById(id)
 			.populate(
 				"classId",
-				"name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes status isPublished",
+				"name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes imageUrl format startDate endDate enrollmentOpensAt enrollmentClosesAt status isPublished",
 			)
 			.lean();
 
