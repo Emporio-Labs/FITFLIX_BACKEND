@@ -16,7 +16,15 @@ import Membership from "../models/Membership";
 import Trainer from "../models/Trainer";
 import TrainerChangeRequest from "../models/TrainerChangeRequest";
 import UnifiedBooking from "../models/UnifiedBooking";
+import User from "../models/User";
 import { executeInTransaction } from "../utils/transaction.util";
+import {
+	PT_MEMBERSHIP_CLAUSE,
+	buildActiveMembershipFilterWith,
+	buildActivePtMembershipFilter,
+} from "../utils/membership-status.util";
+import { resolveBookingTimeContext } from "../utils/location.resolver";
+import { hoursUntilZonedDateTime } from "../utils/timezone.util";
 
 export class SlotConflictError extends Error {
 	constructor(message = "The selected time slot is already booked or overlaps with another session.") {
@@ -29,6 +37,13 @@ export class InsufficientQuotaError extends Error {
 	constructor(message = "You have 0 active PT sessions remaining in your current billing cycle.") {
 		super(message);
 		this.name = "InsufficientQuotaError";
+	}
+}
+
+export class TrainerLockedError extends Error {
+	constructor(message = "You are assigned to a specific coach. You can only book sessions with your assigned coach.") {
+		super(message);
+		this.name = "TrainerLockedError";
 	}
 }
 
@@ -58,6 +73,33 @@ export const createPersonalTrainingBooking = async (params: {
 		const trainer = await Trainer.findById(trainerObjId).session(session);
 		if (!trainer || trainer.isActive === false) {
 			throw new Error("Selected trainer is not available or inactive.");
+		}
+
+		// 2. Assigned Trainer Lock Enforcement
+		const activePtMem = await Membership.findOne(
+			buildActivePtMembershipFilter(userObjId, new Date()),
+		).session(session);
+
+		let assignedTrainerId = activePtMem?.assignedTrainerId;
+		let assignedTrainerName = activePtMem?.assignedTrainerName;
+
+		if (!assignedTrainerId) {
+			const userDoc = await User.findById(userObjId)
+				.select("assignedTrainer")
+				.session(session);
+			if (userDoc?.assignedTrainer) {
+				assignedTrainerId = userDoc.assignedTrainer;
+				const tDoc = await Trainer.findById(assignedTrainerId)
+					.select("trainerName")
+					.session(session);
+				assignedTrainerName = tDoc?.trainerName || "";
+			}
+		}
+
+		if (assignedTrainerId && String(assignedTrainerId) !== String(trainerObjId)) {
+			throw new TrainerLockedError(
+				`You are assigned to Coach ${assignedTrainerName || "your assigned trainer"}. You can only book sessions with your assigned trainer. To switch trainers, please submit a trainer change request.`,
+			);
 		}
 
 		// 2. Concurrency check: Range intersection guard for overlapping bookings
@@ -90,19 +132,15 @@ export const createPersonalTrainingBooking = async (params: {
 		if (consumptionModel === "CREDIT_POOL") {
 			const now = new Date();
 			activeMembership = await Membership.findOneAndUpdate(
-				{
-					user: userObjId,
-					status: MembershipStatus.Active,
-					$or: [
-						{ category: "PERSONAL_TRAINING" },
-						{ ptSessionsIncluded: { $gt: 0 } },
+				buildActiveMembershipFilterWith(
+					userObjId,
+					[
+						PT_MEMBERSHIP_CLAUSE,
+						// Atomic guard preventing negative balances.
+						{ ptSessionsRemaining: { $gte: 1 } },
 					],
-					$and: [
-						{ startDate: { $lte: now } },
-						{ $or: [{ endDate: { $gte: now } }, { endDate: null }] },
-					],
-					ptSessionsRemaining: { $gte: 1 }, // Atomic guard preventing negative balances
-				},
+					now,
+				),
 				{
 					$inc: { ptSessionsRemaining: -1, ptSessionsUsed: 1 },
 				},
@@ -111,14 +149,12 @@ export const createPersonalTrainingBooking = async (params: {
 
 			if (!activeMembership) {
 				// Check if membership exists but 0 sessions left
-				const existingMembership = await Membership.findOne({
-					user: userObjId,
-					status: MembershipStatus.Active,
-					$or: [
-						{ category: "PERSONAL_TRAINING" },
-						{ ptSessionsIncluded: { $gt: 0 } },
-					],
-				}).session(session);
+				// Expiry-guarded: without the date bounds an expired PT package
+				// would produce the "you've used all your sessions" message
+				// instead of the correct "no active package" one.
+				const existingMembership = await Membership.findOne(
+					buildActivePtMembershipFilter(userObjId, now),
+				).session(session);
 
 				if (existingMembership) {
 					throw new InsufficientQuotaError(
@@ -222,15 +258,21 @@ export const cancelUnifiedBooking = async (params: {
 			throw new Error(`Booking cannot be cancelled because it is already ${booking.status}`);
 		}
 
-		// Calculate hours until session start
-		const [hours, minutes] = String(booking.startTime).split(":").map(Number);
-		const sessionStartDateTime = new Date(booking.bookingDate);
-		sessionStartDateTime.setHours(hours || 0, minutes || 0, 0, 0);
+		// Hours until session start, resolved in the branch's timezone.
+		// bookingDate is stored at UTC midnight and startTime is a branch-local
+		// wall clock, so combining them with the server's local setHours shifted
+		// the refund window by the server's UTC offset.
+		const { timezone, cancellationWindowHours } =
+			await resolveBookingTimeContext(booking.locationId);
 
-		const msUntilStart = sessionStartDateTime.getTime() - now.getTime();
-		const hoursUntilStart = msUntilStart / (1000 * 60 * 60);
+		const hoursUntilStart = hoursUntilZonedDateTime(
+			booking.bookingDate,
+			String(booking.startTime),
+			timezone,
+			now,
+		);
 
-		const isEarlyCancellation = hoursUntilStart >= 24;
+		const isEarlyCancellation = hoursUntilStart >= cancellationWindowHours;
 		const isAdminOverride = Boolean(params.adminOverride) && isStaffOrAdmin;
 		const shouldRefundCredits = isEarlyCancellation || isAdminOverride;
 
@@ -320,19 +362,43 @@ export const createTrainerChangeRequest = async (params: {
 	const userObjId = new mongoose.Types.ObjectId(params.userId);
 	const reqTrainerObjId = new mongoose.Types.ObjectId(params.requestedTrainerId);
 
-	// Get current active membership trainer
-	const membership = await Membership.findOne({
-		user: userObjId,
-		status: MembershipStatus.Active,
-		$or: [
-			{ category: "PERSONAL_TRAINING" },
-			{ ptSessionsIncluded: { $gt: 0 } },
-		],
+	// Verify requested trainer exists and is active
+	const targetTrainer = await Trainer.findById(reqTrainerObjId);
+	if (!targetTrainer || targetTrainer.isActive === false) {
+		throw new Error("Requested trainer is not available or inactive.");
+	}
+
+	// Get current active membership trainer or user assigned trainer
+	const membership = await Membership.findOne(
+		buildActivePtMembershipFilter(userObjId),
+	);
+	let currentTrainerId = membership?.assignedTrainerId || null;
+	if (!currentTrainerId) {
+		const userDoc = await User.findById(userObjId).select("assignedTrainer");
+		currentTrainerId = userDoc?.assignedTrainer || null;
+	}
+
+	if (currentTrainerId && String(currentTrainerId) === String(reqTrainerObjId)) {
+		throw new Error("You are already assigned to this trainer.");
+	}
+
+	// Check if there is already a PENDING request for this user and update it instead of creating duplicates
+	const existingPending = await TrainerChangeRequest.findOne({
+		userId: userObjId,
+		status: TrainerChangeRequestStatus.PENDING,
 	});
+
+	if (existingPending) {
+		existingPending.currentTrainerId = currentTrainerId;
+		existingPending.requestedTrainerId = reqTrainerObjId;
+		existingPending.reason = params.reason;
+		await existingPending.save();
+		return existingPending;
+	}
 
 	const request = await TrainerChangeRequest.create({
 		userId: userObjId,
-		currentTrainerId: membership?.assignedTrainerId || null,
+		currentTrainerId,
 		requestedTrainerId: reqTrainerObjId,
 		reason: params.reason,
 		status: TrainerChangeRequestStatus.PENDING,
@@ -344,9 +410,13 @@ export const createTrainerChangeRequest = async (params: {
 export const resolveTrainerChangeRequest = async (
 	requestId: string,
 	action: "APPROVE" | "REJECT",
-	adminNotes: string,
-	adminUserId: string,
+	adminNotes?: string,
+	adminUserId?: string,
 ) => {
+	if (!requestId || !mongoose.Types.ObjectId.isValid(requestId)) {
+		throw new Error("Invalid trainer change request ID");
+	}
+
 	const request = await TrainerChangeRequest.findById(requestId);
 	if (!request) {
 		throw new Error("Trainer change request not found");
@@ -359,7 +429,11 @@ export const resolveTrainerChangeRequest = async (
 
 	request.status = newStatus;
 	request.adminNotes = adminNotes || "";
-	request.resolvedBy = new mongoose.Types.ObjectId(adminUserId);
+	if (adminUserId && mongoose.Types.ObjectId.isValid(adminUserId)) {
+		request.resolvedBy = new mongoose.Types.ObjectId(adminUserId);
+	} else {
+		request.resolvedBy = null;
+	}
 	request.resolvedAt = new Date();
 	await request.save();
 
@@ -367,14 +441,7 @@ export const resolveTrainerChangeRequest = async (
 		const newTrainer = await Trainer.findById(request.requestedTrainerId);
 		if (newTrainer) {
 			await Membership.updateMany(
-				{
-					user: request.userId,
-					status: MembershipStatus.Active,
-					$or: [
-						{ category: "PERSONAL_TRAINING" },
-						{ ptSessionsIncluded: { $gt: 0 } },
-					],
-				},
+				buildActivePtMembershipFilter(request.userId),
 				{
 					$set: {
 						assignedTrainerId: newTrainer._id,
@@ -382,6 +449,12 @@ export const resolveTrainerChangeRequest = async (
 					},
 				},
 			);
+			await User.findByIdAndUpdate(request.userId, {
+				$set: {
+					assignedTrainer: newTrainer._id,
+					assignedTrainerAt: new Date(),
+				},
+			});
 		}
 	}
 

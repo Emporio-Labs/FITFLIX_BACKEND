@@ -3,6 +3,11 @@ import mongoose from "mongoose";
 import GymVisit, { VISIT_TYPES, type VisitType } from "../models/GymVisit";
 import User from "../models/User";
 import { getActiveMembership } from "../utils/membership.guard";
+import {
+	LocationError,
+	mapLocationError,
+	resolveLocationId,
+} from "../utils/location.resolver";
 import { getJwtConfig, signGymQrToken, verifyGymQrToken } from "../utils/jwt";
 
 const DEFAULT_LIMIT = 50;
@@ -57,14 +62,52 @@ async function performCheckIn(
 	adminId: string | undefined,
 	visitType: unknown,
 	notes: unknown,
+	requestedLocationId?: string,
 ): Promise<CheckInResult> {
 	const type: VisitType = VISIT_TYPES.includes(visitType as VisitType)
 		? (visitType as VisitType)
 		: "workout";
 
-	const user = await User.findById(userId).select("username email").lean();
+	const user = await User.findById(userId)
+		.select("username email homeLocationId")
+		.lean();
 	if (!user) {
 		return { ok: false, status: 404, body: { message: "Member not found" } };
+	}
+
+	// Which branch this check-in is happening at. With one active location the
+	// resolver supplies it, so the desk sends nothing; with several it must be
+	// explicit rather than guessed.
+	let locationId: mongoose.Types.ObjectId;
+	try {
+		locationId = await resolveLocationId(requestedLocationId);
+	} catch (error) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			return {
+				ok: false,
+				status: mapped.status,
+				body: { message: mapped.message, code: mapped.code },
+			};
+		}
+		throw error;
+	}
+
+	// Access scope. Today a member may enter their home club, and anyone
+	// without a home club set may enter anywhere. When packages carry explicit
+	// single/named-set/all-access scopes, this is the one place that changes.
+	const homeLocationId = (user as { homeLocationId?: mongoose.Types.ObjectId })
+		.homeLocationId;
+	if (homeLocationId && String(homeLocationId) !== String(locationId)) {
+		return {
+			ok: false,
+			status: 403,
+			body: {
+				message:
+					"This membership is not valid at this branch. Upgrade to multi-club access or check in at the member's home club.",
+				code: "LOCATION_NOT_IN_SCOPE",
+			},
+		};
 	}
 
 	// Block check-in if the member has no active, non-expired membership.
@@ -96,6 +139,7 @@ async function performCheckIn(
 
 	const visit = await GymVisit.create({
 		userId: new mongoose.Types.ObjectId(userId),
+		locationId,
 		visitType: type,
 		notes: typeof notes === "string" && notes.trim() ? notes.trim() : null,
 		checkedInByAdminId: adminId ? new mongoose.Types.ObjectId(adminId) : null,
@@ -107,14 +151,20 @@ async function performCheckIn(
 /** Admin marks a member as present (opens a new visit). */
 export const checkInMember: RequestHandler = async (req, res, next) => {
 	try {
-		const { userId, visitType, notes } = req.body ?? {};
+		const { userId, visitType, notes, locationId } = req.body ?? {};
 
 		if (!isValidObjectId(userId)) {
 			res.status(400).json({ message: "userId is required" });
 			return;
 		}
 
-		const result = await performCheckIn(userId, req.user?.id, visitType, notes);
+		const result = await performCheckIn(
+			userId,
+			req.user?.id,
+			visitType,
+			notes,
+			typeof locationId === "string" ? locationId : undefined,
+		);
 		if (!result.ok) {
 			res.status(result.status).json(result.body);
 			return;
@@ -182,7 +232,15 @@ export const qrCheckIn: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const result = await performCheckIn(userId, req.user?.id, "workout", null);
+		const result = await performCheckIn(
+			userId,
+			req.user?.id,
+			"workout",
+			null,
+			typeof req.body?.locationId === "string"
+				? req.body.locationId
+				: undefined,
+		);
 		if (!result.ok) {
 			res.status(result.status).json(result.body);
 			return;
@@ -246,13 +304,18 @@ export const checkOutVisit: RequestHandler = async (req, res, next) => {
 /** Admin — list visits with filters. */
 export const listVisits: RequestHandler = async (req, res, next) => {
 	try {
-		const { userId, visitType, from, to, status } = req.query;
+		const { userId, visitType, from, to, status, locationId } = req.query;
 		const limit = parseLimit(req.query.limit);
 		const offset = Math.max(0, Number(req.query.offset) || 0);
 
 		const filter: Record<string, unknown> = {};
 		if (isValidObjectId(userId)) {
 			filter.userId = new mongoose.Types.ObjectId(userId);
+		}
+		// Branch scoping. Omitted means "all branches", which is what a
+		// multi-club report wants; the admin UI passes the selected branch.
+		if (isValidObjectId(locationId)) {
+			filter.locationId = new mongoose.Types.ObjectId(locationId as string);
 		}
 		if (typeof visitType === "string" && VISIT_TYPES.includes(visitType as VisitType)) {
 			filter.visitType = visitType;
@@ -300,11 +363,17 @@ export const listVisits: RequestHandler = async (req, res, next) => {
 };
 
 /** Members currently inside the gym (open visits), most-recent first. */
-export const listCurrentlyIn: RequestHandler = async (_req, res, next) => {
+export const listCurrentlyIn: RequestHandler = async (req, res, next) => {
 	try {
-		const items = await GymVisit.find({ checkOutAt: null })
-			.sort({ checkInAt: -1 })
-			.lean();
+		const { locationId } = req.query;
+		const filter: Record<string, unknown> = { checkOutAt: null };
+		// "Who is in the building" is inherently a per-branch question once
+		// there is more than one building.
+		if (isValidObjectId(locationId)) {
+			filter.locationId = new mongoose.Types.ObjectId(locationId as string);
+		}
+
+		const items = await GymVisit.find(filter).sort({ checkInAt: -1 }).lean();
 
 		const userIds = Array.from(
 			new Set(items.map((it: any) => String(it.userId)).filter(isValidObjectId)),

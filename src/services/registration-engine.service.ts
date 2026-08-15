@@ -4,7 +4,9 @@ import Class from "../models/Class";
 import { CreditTransactionSource } from "../models/Enums";
 import ScheduledSession from "../models/ScheduledSession";
 import {
-	consumeCreditsAtomic,
+	CreditServiceError,
+	consumeCredits,
+	mapCreditServiceError,
 	refundCreditsBySource,
 } from "../utils/credit.service";
 import { evaluateBookingRules } from "./booking-rules-engine.service";
@@ -164,20 +166,36 @@ export async function registerGroupClassBooking(params: {
 	//    written, so a member with an empty wallet loses only the transient
 	//    seat lock we roll back below — never a partially-written booking.
 	if (creditCost > 0) {
-		const consumeResult = await consumeCreditsAtomic({
-			userId: params.userId,
-			amount: creditCost,
-			reason: `Group class booking ${resolvedClassId}`,
-			referenceId: resolvedSessionId,
-		});
-		if (!consumeResult.success) {
+		// consumeCredits pools across every active package oldest-expiry-first.
+		// The previous consumeCreditsAtomic deducted from a single membership,
+		// so a member holding two packages could be refused for insufficient
+		// credits while having plenty spread across both.
+		try {
+			await consumeCredits({
+				userId: params.userId,
+				amount: creditCost,
+				sourceType: CreditTransactionSource.Booking,
+				sourceId: resolvedSessionId,
+				reason: `Group class booking ${resolvedClassId}`,
+				locationId: session.locationId ? String(session.locationId) : undefined,
+			});
+		} catch (error) {
 			await releaseSeatAtomic(resolvedSessionId);
-			return {
-				success: false,
-				statusCode: 402,
-				message: consumeResult.message ?? "Insufficient credits",
-				reason: consumeResult.code,
-			};
+
+			if (error instanceof CreditServiceError) {
+				const mapped = mapCreditServiceError(error);
+				return {
+					success: false,
+					// 402 for an empty wallet, 404 when there's no membership at
+					// all; anything else is a bad request.
+					statusCode:
+						mapped.status === 402 ? 402 : mapped.status === 404 ? 404 : 400,
+					message: mapped.message,
+					reason: error.code,
+				};
+			}
+
+			throw error;
 		}
 	}
 

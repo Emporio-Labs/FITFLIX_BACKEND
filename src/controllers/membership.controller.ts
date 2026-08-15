@@ -5,6 +5,11 @@ import {
 	createMembershipBodySchema,
 	updateMembershipBodySchema,
 } from "../validators/membership.validator";
+import {
+	MembershipLifecycleError,
+	pauseMembership,
+	resumeMembership,
+} from "../services/membership-lifecycle.service";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -271,6 +276,86 @@ export const deleteMembershipById: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({ message: "Membership deleted" });
 	} catch (error) {
+		next(error);
+	}
+};
+
+// ─── Freeze / resume ─────────────────────────────────────────────────────────
+
+export const pauseMembershipHandler: RequestHandler = async (req, res, next) => {
+	try {
+		const id = getIdParam(req.params.id);
+		if (!id) {
+			res
+				.status(400)
+				.json({ message: "Invalid membership id", code: "INVALID_ARGUMENT" });
+			return;
+		}
+
+		const result = await pauseMembership({
+			membershipId: id,
+			actorId: req.user?.id,
+			actorRole: req.user?.role,
+			reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+		});
+
+		res.status(200).json({
+			message: "Membership frozen. The remaining days will be credited back on resume.",
+			membership: result.membership,
+			daysRemainingInAllowance: result.daysRemainingInAllowance,
+		});
+	} catch (error) {
+		if (error instanceof MembershipLifecycleError) {
+			const status =
+				error.code === "NOT_FOUND"
+					? 404
+					: error.code === "PAUSE_LIMIT_REACHED"
+						? 409
+						: 400;
+			res.status(status).json({ message: error.message, code: error.code });
+			return;
+		}
+		next(error);
+	}
+};
+
+export const resumeMembershipHandler: RequestHandler = async (req, res, next) => {
+	try {
+		const id = getIdParam(req.params.id);
+		if (!id) {
+			res
+				.status(400)
+				.json({ message: "Invalid membership id", code: "INVALID_ARGUMENT" });
+			return;
+		}
+
+		const result = await resumeMembership({
+			membershipId: id,
+			actorId: req.user?.id,
+			actorRole: req.user?.role,
+		});
+
+		// Surface the shortfall explicitly so the desk can explain it rather
+		// than the member discovering a short extension later.
+		const message = result.cappedBy
+			? `Membership resumed. ${result.creditedDays} of ${result.pausedDays} frozen days credited (capped at the ${result.cappedBy}-day allowance).`
+			: `Membership resumed. ${result.creditedDays} frozen days credited back.`;
+
+		res.status(200).json({
+			message,
+			membership: result.membership,
+			pausedDays: result.pausedDays,
+			creditedDays: result.creditedDays,
+			cappedBy: result.cappedBy,
+			previousEndDate: result.previousEndDate,
+			newEndDate: result.newEndDate,
+		});
+	} catch (error) {
+		if (error instanceof MembershipLifecycleError) {
+			const status = error.code === "NOT_FOUND" ? 404 : 400;
+			res.status(status).json({ message: error.message, code: error.code });
+			return;
+		}
 		next(error);
 	}
 };

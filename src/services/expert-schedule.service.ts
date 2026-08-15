@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 import { ExpertType, UnifiedBookingStatus } from "../models/Enums";
 import ExpertSchedule from "../models/ExpertSchedule";
 import UnifiedBooking from "../models/UnifiedBooking";
+import { resolveBookingTimeContext } from "../utils/location.resolver";
+import {
+	formatDateInZone,
+	minutesIntoDayInZone,
+} from "../utils/timezone.util";
 
 export interface AvailableSlotDto {
 	startTime: string; // "07:00"
@@ -77,8 +82,13 @@ const formatMinutesToTime = (minutes: number): string => {
 export const calculateAvailableSlots = async (
 	expertId: string,
 	dateInput: string | Date,
+	// Branch zone governing "what time is it there right now". Resolved from
+	// the sole active location when the caller doesn't pass one.
+	timeZoneInput?: string,
 ): Promise<AvailableSlotDto[]> => {
 	const expertObjId = new mongoose.Types.ObjectId(expertId);
+	const timeZone =
+		timeZoneInput || (await resolveBookingTimeContext(null)).timezone;
 	const rawDateStr =
 		typeof dateInput === "string"
 			? dateInput.slice(0, 10)
@@ -103,8 +113,11 @@ export const calculateAvailableSlots = async (
 		return [];
 	}
 
-	// 2. Check weekly schedule for day of week
-	const dayOfWeek = targetDate.getDay();
+	// 2. Check weekly schedule for day of week.
+	// targetDate is a calendar date pinned to UTC midnight, so its weekday must
+	// be read in UTC. getDay() reads the server's local zone, which lands on the
+	// previous day for any server running behind UTC.
+	const dayOfWeek = targetDate.getUTCDay();
 	const dayConfig = (schedule.weeklySlots || []).find(
 		(s) => s.dayOfWeek === dayOfWeek,
 	);
@@ -138,11 +151,17 @@ export const calculateAvailableSlots = async (
 		endMin: parseTimeToMinutes(b.endTime),
 	}));
 
-	// 4. Generate discrete slot candidates
+	// 4. Generate discrete slot candidates.
+	// Both halves of the "is this slot already past?" test must be read in the
+	// branch's zone. Previously the date came from now.toISOString() (UTC) while
+	// the clock came from now.getHours() (server-local): on an IST server the
+	// UTC date rolls over at 18:30, so from then until midnight `isToday` was
+	// false for the actual current day and past slots were offered as bookable.
 	const now = new Date();
-	const isToday =
-		now.toISOString().slice(0, 10) === targetDate.toISOString().slice(0, 10);
-	const currentMinuteOfDay = now.getHours() * 60 + now.getMinutes();
+	// rawDateStr is already the requested calendar day; compare it against what
+	// day it currently is *at the branch*, not on the server.
+	const isToday = formatDateInZone(now, timeZone) === rawDateStr;
+	const currentMinuteOfDay = minutesIntoDayInZone(now, timeZone);
 
 	const availableSlots: AvailableSlotDto[] = [];
 

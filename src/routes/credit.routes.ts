@@ -6,6 +6,7 @@ import {
 	getMyCreditHistory,
 	getUserCreditBalanceById,
 	getUserCreditHistoryById,
+	grantGraceToUserById,
 	topUpUserCreditsById,
 } from "../controllers/credit.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
@@ -33,6 +34,14 @@ creditRouter.post(
 	"/users/:userId/topup",
 	authorize(["admin"]),
 	topUpUserCreditsById,
+);
+
+// Front desk can issue grace too, but within the caps configured per location.
+// The service enforces those caps by role; the route only gates who may try.
+creditRouter.post(
+	"/users/:userId/grant",
+	authorize(["admin", "frontdesk"]),
+	grantGraceToUserById,
 );
 
 export default creditRouter;

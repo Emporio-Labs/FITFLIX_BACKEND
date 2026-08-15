@@ -101,6 +101,14 @@ const unifiedBookingSchema = new mongoose.Schema(
 			default: AppointmentMode.ONLINE,
 			required: true,
 		},
+		// The branch this session belongs to. Distinct from `location` below,
+		// which is free-text venue copy shown to the member ("Online Video
+		// Room", "FitFlix Sainikpuri"). This one drives scoping and attribution.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 		location: {
 			type: String,
 			default: "Online Video Room",
@@ -188,6 +196,8 @@ unifiedBookingSchema.index(
 );
 
 unifiedBookingSchema.index({ userId: 1, status: 1 });
+// Per-branch schedule views and revenue attribution.
+unifiedBookingSchema.index({ locationId: 1, bookingDate: 1, startTime: 1 });
 unifiedBookingSchema.index({ bookingDate: 1, status: 1 });
 unifiedBookingSchema.index({ serviceCategory: 1, serviceSubtype: 1, status: 1 });
 

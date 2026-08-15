@@ -16,7 +16,26 @@ import Lead from "../models/Lead";
 import Membership from "../models/Membership";
 import MembershipPlan from "../models/MembershipPlan";
 import WebhookEvent from "../models/WebhookEvent";
+import User from "../models/User";
 import { generateInvoiceNumber } from "../utils/invoice-number";
+import { buildActiveMembershipFilterWith } from "../utils/membership-status.util";
+
+/**
+ * A brand-new PT membership should inherit whatever trainer the admin already
+ * assigned via the "Assigned Personal Trainer" screen. Without this, every
+ * purchase or renewal creates a package the member app treats as unassigned,
+ * reopening the full trainer picker instead of locking to their coach.
+ */
+const getInheritedTrainerId = async (
+	userId: mongoose.Types.ObjectId,
+): Promise<mongoose.Types.ObjectId | null> => {
+	const user = await User.findById(userId).select("assignedTrainer");
+	return user?.assignedTrainer ?? null;
+};
+import {
+	computeNewEndDate,
+	computeRenewalEndDate,
+} from "../utils/membership-duration.util";
 import { executeInTransaction } from "../utils/transaction.util";
 
 export const getRazorpayClient = (): Razorpay | null => {
@@ -210,8 +229,7 @@ export const verifyAndProvisionPayment = async (params: {
 
 		// 4. Provision or Extend Membership / PT Quota
 		const now = new Date();
-		const durationDays = plan.durationDays || (plan.durationMonths ? plan.durationMonths * 30 : 30);
-		const endDate = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+		const endDate = computeNewEndDate(plan, now);
 
 		const isPT = plan.category === "PERSONAL_TRAINING" || (plan.ptSessionsIncluded || 0) > 0;
 		const ptQuota = plan.ptSessionsIncluded || 0;
@@ -219,27 +237,38 @@ export const verifyAndProvisionPayment = async (params: {
 		let membership: any;
 
 		if (params.isEarlyRenewal) {
-			// Early top up / renewal: add sessions to active membership
-			membership = await Membership.findOneAndUpdate(
-				{
-					user: userObjId,
-					status: MembershipStatus.Active,
-					category: plan.category || "PERSONAL_TRAINING",
-				},
-				{
-					$inc: {
-						ptSessionsIncluded: ptQuota,
-						ptSessionsRemaining: ptQuota,
+			// Early top up / renewal: add sessions to the active membership and
+			// EXTEND the term from its existing expiry. Setting endDate to
+			// `now + term` here used to destroy any unused days the member had
+			// left — the whole point of renewing early.
+			const existing = await Membership.findOne(
+				buildActiveMembershipFilterWith(userObjId, [
+					{ category: plan.category || "PERSONAL_TRAINING" },
+				]),
+			).session(session);
+
+			if (existing) {
+				membership = await Membership.findOneAndUpdate(
+					{ _id: existing._id },
+					{
+						$inc: {
+							ptSessionsIncluded: ptQuota,
+							ptSessionsRemaining: ptQuota,
+						},
+						$set: {
+							endDate: computeRenewalEndDate(plan, existing.endDate, now),
+						},
 					},
-					$set: {
-						endDate, // extend cycle
-					},
-				},
-				{ new: true, session },
-			);
+					{ new: true, session },
+				);
+			}
 		}
 
 		if (!membership) {
+			const inheritedTrainerId = isPT
+				? await getInheritedTrainerId(userObjId)
+				: null;
+
 			membership = await Membership.create(
 				[
 					{
@@ -257,6 +286,7 @@ export const verifyAndProvisionPayment = async (params: {
 						startDate: now,
 						endDate,
 						features: plan.features || [],
+						assignedTrainerId: inheritedTrainerId,
 					},
 				],
 				{ session },
@@ -306,12 +336,14 @@ export const purchasePlanWithCredits = async (params: {
 
 		const requiredCredits = params.creditsToDeduct || plan.creditsIncluded || (plan.price ? Math.ceil(plan.price / 100) : 10);
 
-		// Find user's active membership with remaining credits
-		const generalMembership = await Membership.findOne({
-			user: userObjId,
-			status: MembershipStatus.Active,
-			creditsRemaining: { $gte: requiredCredits },
-		}).session(session);
+		// Find user's active membership with remaining credits. Expiry-guarded:
+		// a bare `status: Active` check here let an expired wallet fund a new
+		// purchase, because nothing flips status until the expiry job runs.
+		const generalMembership = await Membership.findOne(
+			buildActiveMembershipFilterWith(userObjId, [
+				{ creditsRemaining: { $gte: requiredCredits } },
+			]),
+		).session(session);
 
 		if (!generalMembership) {
 			throw new Error(`Insufficient wallet credits. Required: ${requiredCredits} credits.`);
@@ -329,7 +361,10 @@ export const purchasePlanWithCredits = async (params: {
 		const now = new Date();
 		const isPT = plan.category === "PERSONAL_TRAINING" || (plan.ptSessionsIncluded && plan.ptSessionsIncluded > 0);
 		const ptQuota = plan.ptSessionsIncluded || 14;
-		const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+		// Term comes from the plan. This used to be pinned to the last day of
+		// the current calendar month regardless of what was sold, so a package
+		// bought on the 28th expired in three days.
+		const endDate = computeNewEndDate(plan, now);
 
 		const invoice = await Invoice.create(
 			[
@@ -360,24 +395,33 @@ export const purchasePlanWithCredits = async (params: {
 			{ session },
 		);
 
-		// 3. Provision PT membership
-		let ptMembership = await Membership.findOneAndUpdate(
-			{
-				user: userObjId,
-				status: MembershipStatus.Active,
-				category: "PERSONAL_TRAINING",
-			},
-			{
-				$inc: {
-					ptSessionsIncluded: ptQuota,
-					ptSessionsRemaining: ptQuota,
-				},
-				$set: { endDate },
-			},
-			{ new: true, session },
-		);
+		// 3. Provision PT membership. Extend from the member's existing expiry
+		// rather than overwriting it, so topping up never shortens a term.
+		const existingPt = await Membership.findOne(
+			buildActiveMembershipFilterWith(userObjId, [
+				{ category: "PERSONAL_TRAINING" },
+			]),
+		).session(session);
+
+		let ptMembership = existingPt
+			? await Membership.findOneAndUpdate(
+					{ _id: existingPt._id },
+					{
+						$inc: {
+							ptSessionsIncluded: ptQuota,
+							ptSessionsRemaining: ptQuota,
+						},
+						$set: {
+							endDate: computeRenewalEndDate(plan, existingPt.endDate, now),
+						},
+					},
+					{ new: true, session },
+				)
+			: null;
 
 		if (!ptMembership) {
+			const inheritedTrainerId = await getInheritedTrainerId(userObjId);
+
 			const created = await Membership.create(
 				[
 					{
@@ -395,6 +439,7 @@ export const purchasePlanWithCredits = async (params: {
 						startDate: now,
 						endDate,
 						features: plan.features || [],
+						assignedTrainerId: inheritedTrainerId,
 					},
 				],
 				{ session },

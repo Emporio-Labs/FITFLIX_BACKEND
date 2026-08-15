@@ -10,15 +10,18 @@ import {
 	UnifiedBookingStatus,
 } from "../models/Enums";
 import Membership from "../models/Membership";
+import { buildActivePtMembershipFilter } from "../utils/membership-status.util";
 import Trainer from "../models/Trainer";
 import TrainerChangeRequest from "../models/TrainerChangeRequest";
 import UnifiedBooking from "../models/UnifiedBooking";
+import User from "../models/User";
 import {
 	calculateAvailableSlots,
 	getOrCreateExpertSchedule,
 	updateExpertSchedule,
 } from "../services/expert-schedule.service";
 import {
+	TrainerLockedError,
 	cancelUnifiedBooking,
 	completeUnifiedBooking,
 	createPersonalTrainingBooking,
@@ -123,18 +126,9 @@ export const getMyPtPackage: RequestHandler = async (req, res, next) => {
 		}
 
 		const now = new Date();
-		const membership = await Membership.findOne({
-			user: new mongoose.Types.ObjectId(user.id),
-			status: MembershipStatus.Active,
-			$or: [
-				{ category: "PERSONAL_TRAINING" },
-				{ ptSessionsIncluded: { $gt: 0 } },
-			],
-			$and: [
-				{ startDate: { $lte: now } },
-				{ $or: [{ endDate: { $gte: now } }, { endDate: null }] },
-			],
-		}).populate("assignedTrainerId", "trainerName imageUrl specialities keySentence");
+		const membership = await Membership.findOne(
+			buildActivePtMembershipFilter(user.id, now),
+		).populate("assignedTrainerId", "trainerName imageUrl specialities keySentence");
 
 		if (!membership) {
 			res.status(200).json({
@@ -144,7 +138,31 @@ export const getMyPtPackage: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const assignedTrainer = membership.assignedTrainerId as any;
+		let assignedTrainer = membership.assignedTrainerId as any;
+
+		// Fallback check on User.assignedTrainer if membership assignedTrainerId was empty
+		if (!assignedTrainer) {
+			const userDoc = await User.findById(user.id).populate(
+				"assignedTrainer",
+				"trainerName imageUrl specialities keySentence",
+			);
+			if (userDoc?.assignedTrainer) {
+				assignedTrainer = userDoc.assignedTrainer as any;
+				// Sync back onto membership
+				await Membership.findByIdAndUpdate(membership._id, {
+					$set: {
+						assignedTrainerId: assignedTrainer._id,
+						assignedTrainerName: assignedTrainer.trainerName || "",
+					},
+				});
+			}
+		}
+
+		// Check for any active pending trainer change request
+		const pendingChange = await TrainerChangeRequest.findOne({
+			userId: new mongoose.Types.ObjectId(user.id),
+			status: TrainerChangeRequestStatus.PENDING,
+		}).populate("requestedTrainerId", "trainerName imageUrl specialities");
 
 		res.status(200).json({
 			hasActivePackage: true,
@@ -164,6 +182,18 @@ export const getMyPtPackage: RequestHandler = async (req, res, next) => {
 							imageUrl: assignedTrainer.imageUrl || "",
 							specialities: assignedTrainer.specialities || [],
 							keySentence: assignedTrainer.keySentence || "",
+						}
+					: null,
+				pendingTrainerChange: pendingChange
+					? {
+							id: pendingChange._id.toString(),
+							requestedTrainerId:
+								(pendingChange.requestedTrainerId as any)?._id?.toString() ||
+								pendingChange.requestedTrainerId?.toString(),
+							requestedTrainerName:
+								(pendingChange.requestedTrainerId as any)?.trainerName || "Coach",
+							reason: pendingChange.reason || "",
+							createdAt: pendingChange.createdAt,
 						}
 					: null,
 				allowEarlyRenewal: membership.allowEarlyRenewal !== false,
@@ -217,6 +247,10 @@ export const bookPersonalTraining: RequestHandler = async (req, res, next) => {
 			booking,
 		});
 	} catch (error: any) {
+		if (error.name === "TrainerLockedError") {
+			res.status(403).json({ message: error.message, code: "TRAINER_LOCKED" });
+			return;
+		}
 		if (error.name === "SlotConflictError") {
 			res.status(409).json({ message: error.message, code: "SLOT_CONFLICT" });
 			return;
@@ -416,7 +450,17 @@ export const getTrainerChangeRequestsAdmin: RequestHandler = async (
 			.populate("currentTrainerId", "trainerName imageUrl")
 			.populate("requestedTrainerId", "trainerName imageUrl");
 
-		res.status(200).json({ requests });
+		const formatted = requests.map((r: any) => {
+			const obj = r.toObject ? r.toObject() : { ...r };
+			const reqId = r._id?.toString() || r.id?.toString() || "";
+			return {
+				...obj,
+				id: reqId,
+				_id: reqId,
+			};
+		});
+
+		res.status(200).json({ requests: formatted });
 	} catch (error) {
 		next(error);
 	}
@@ -436,11 +480,16 @@ export const resolveTrainerChangeRequestAdmin: RequestHandler = async (
 			return;
 		}
 
+		const adminId =
+			(req.user as any)?.id ||
+			(req.user as any)?._id ||
+			(req.user as any)?.userId;
+
 		const request = await resolveTrainerChangeRequest(
 			id,
 			action,
 			adminNotes,
-			req.user?.id || "",
+			adminId ? String(adminId) : undefined,
 		);
 
 		res.status(200).json({

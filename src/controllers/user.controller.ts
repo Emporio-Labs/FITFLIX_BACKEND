@@ -9,8 +9,10 @@ import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import BcaMetric from "../models/BcaMetric";
 import MedicalReport from "../models/MedicalReport";
+import Membership from "../models/Membership";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
+import { buildActivePtMembershipFilter } from "../utils/membership-status.util";
 import {
 	ActiveXError,
 	fetchBcaRecords,
@@ -1092,6 +1094,7 @@ export const updateAssignedTrainer: RequestHandler = async (req, res, next) => {
 
 	try {
 		const { trainerId } = parsedBody.data;
+		let assignedTrainerName = "";
 
 		if (trainerId) {
 			if (!mongoose.Types.ObjectId.isValid(trainerId)) {
@@ -1103,14 +1106,15 @@ export const updateAssignedTrainer: RequestHandler = async (req, res, next) => {
 				return;
 			}
 
-			const trainerExists = await Trainer.exists({ _id: trainerId });
-			if (!trainerExists) {
+			const trainer = await Trainer.findById(trainerId).select("trainerName");
+			if (!trainer) {
 				res.status(404).json({
 					error: "Trainer not found",
 					code: "NOT_FOUND",
 				});
 				return;
 			}
+			assignedTrainerName = trainer.trainerName || "";
 		}
 
 		const user = await User.findByIdAndUpdate(
@@ -1129,7 +1133,29 @@ export const updateAssignedTrainer: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		res.status(200).json({ message: "Assigned trainer updated", user });
+		// Mirror onto every active PT-bearing membership. `User.assignedTrainer`
+		// is what this admin screen edits, but the member app's booking flow
+		// (and getMyPtPackage) reads `Membership.assignedTrainerId` — a
+		// different field on a different document that historically was only
+		// ever written by the trainer-change-request approval flow. Without
+		// this sync, assigning a trainer here had no effect on what the app
+		// showed: the booking screen kept offering the full trainer picker
+		// instead of locking to the assigned coach.
+		const membershipSync = await Membership.updateMany(
+			buildActivePtMembershipFilter(id),
+			{
+				$set: {
+					assignedTrainerId: trainerId ?? null,
+					assignedTrainerName,
+				},
+			},
+		);
+
+		res.status(200).json({
+			message: "Assigned trainer updated",
+			user,
+			membershipsSynced: membershipSync.modifiedCount,
+		});
 	} catch (error) {
 		if (error instanceof ActiveXError) {
 			res.status(error.status).json({

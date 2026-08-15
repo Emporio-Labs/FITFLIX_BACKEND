@@ -1,11 +1,16 @@
 import mongoose from "mongoose";
 import { Gender, UserStatus } from "../src/models/Enums";
 import User from "../src/models/User";
+import Membership from "../src/models/Membership";
+import { CreditTransactionSource, MembershipStatus } from "../src/models/Enums";
 import {
-	allocatePlanCredits,
-	consumeCreditsAtomic,
+	CreditServiceError,
+	addCreditsToMembership,
+	consumeCredits,
 	getUserCreditBalance,
+	mapCreditServiceError,
 } from "../src/utils/credit.service";
+
 import {
 	assert,
 	fetchJson,
@@ -13,12 +18,39 @@ import {
 	startTestServer,
 } from "./test-helpers";
 
+/**
+ * consumeCredits throws rather than returning a result object (the old
+ * consumeCreditsAtomic returned one). Adapt it here so these assertions keep
+ * testing behaviour rather than the calling convention.
+ */
+async function tryConsume(input: {
+	userId: string;
+	amount: number;
+	reason: string;
+}): Promise<{ success: boolean; statusCode: number }> {
+	try {
+		await consumeCredits({
+			userId: input.userId,
+			amount: input.amount,
+			sourceType: CreditTransactionSource.Booking,
+			reason: input.reason,
+		});
+		return { success: true, statusCode: 200 };
+	} catch (error) {
+		if (error instanceof CreditServiceError) {
+			return { success: false, statusCode: mapCreditServiceError(error).status };
+		}
+		throw error;
+	}
+}
+
 async function runFeature013Tests() {
 	console.log("=== Feature Test: FEATURE-013 Credits Engine ===");
 	const { baseUrl, close } = await startTestServer();
 
 	let testUserId = "";
 	let testToken = "";
+	let testMembershipId = "";
 
 	try {
 		console.log("\n1. Creating test User account...");
@@ -40,15 +72,31 @@ async function runFeature013Tests() {
 		testToken = generateTestToken("user", testUserId);
 
 		console.log("\n2. Testing Plan Auto-Allocation (CREDIT Entry)...");
-		const planRefId = new mongoose.Types.ObjectId().toString();
-		const allocation = await allocatePlanCredits({
-			userId: testUserId,
-			creditAmount: 50,
-			reason: "PLAN_ASSIGNMENT",
-			referenceId: planRefId,
+		// Credits attach to a real membership. The removed allocatePlanCredits
+		// used to conjure a junk "Default Plan" membership when none existed,
+		// which hid the fact that credits without a membership are meaningless.
+		const membership = await Membership.create({
+			user: new mongoose.Types.ObjectId(testUserId),
+			planName: "Credits Engine Test Plan",
+			price: 0,
+			creditsIncluded: 0,
+			creditsRemaining: 0,
+			status: MembershipStatus.Active,
+			startDate: new Date(Date.now() - 60_000),
+			endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
 		});
-		assert(allocation.success === true, "Plan credits allocated successfully");
-		assert(allocation.creditsRemaining === 50, "User credits balance is 50");
+		testMembershipId = membership._id.toString();
+
+		const allocation = await addCreditsToMembership({
+			userId: testUserId,
+			amount: 50,
+			reason: "PLAN_ASSIGNMENT",
+			actorRole: "admin",
+		});
+		assert(
+			allocation.creditsRemaining === 50,
+			`User credits balance is 50 (Got: ${allocation.creditsRemaining})`,
+		);
 
 		console.log(
 			"\n3. Testing REST Endpoints (GET /api/v1/credits/balance & GET /api/v1/credits/ledger)...",
@@ -77,14 +125,14 @@ async function runFeature013Tests() {
 			"Ledger returns transaction history items",
 		);
 		assert(
-			ledgerRes.data.transactions[0].sourceId === planRefId,
-			"Ledger transaction contains matching Reference ID",
+			ledgerRes.data.transactions[0].membership === testMembershipId,
+			"Ledger transaction is attributed to the funding membership",
 		);
 
 		console.log(
 			"\n4. Testing Insufficient Credits Guard (402 Payment Required)...",
 		);
-		const insufficientRes = await consumeCreditsAtomic({
+		const insufficientRes = await tryConsume({
 			userId: testUserId,
 			amount: 100, // exceeds 50 available
 			reason: "OVERDRAFT_TEST",
@@ -99,7 +147,7 @@ async function runFeature013Tests() {
 			"\n5. Testing Overdraft Prevention (20 Concurrent Debit Attempts for 10 Credits)...",
 		);
 		const concurrentDebits = Array.from({ length: 20 }, () =>
-			consumeCreditsAtomic({
+			tryConsume({
 				userId: testUserId,
 				amount: 10,
 				reason: "CONCURRENT_BOOKING",
@@ -129,6 +177,9 @@ async function runFeature013Tests() {
 
 		console.log("\n🎉 FEATURE-013 Credits Engine Tests Passed!");
 	} finally {
+		if (testMembershipId) {
+			await Membership.findByIdAndDelete(testMembershipId);
+		}
 		if (testUserId) {
 			await User.findByIdAndDelete(testUserId);
 		}

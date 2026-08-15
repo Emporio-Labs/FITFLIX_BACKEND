@@ -14,6 +14,7 @@
 		"backfill:class-sessions": "bun run scripts/backfill-class-sessions.ts",
 		"backfill:session-room-ids": "bun run scripts/backfill-session-room-ids.ts",
 		"seed:exercises": "bun run scripts/seed-exercises.ts",
+		"seed:locations": "bun run scripts/seed-locations.ts",
 		"import:meal-plan": "bun run scripts/import-meal-plan.ts",
 		"export:meal-plan": "bun run scripts/export-meal-plan.ts",
 		"seed:servings": "bun run scripts/seed-servings.ts",
@@ -45,7 +46,9 @@
 		"community:smoke": "bun run scripts/community-smoke.ts",
 		"community:setup": "bun run scripts/community-setup.ts",
 		"community:teardown": "bun run scripts/community-setup.ts --down",
-		"test:community-profiles": "bun run tests/community/profiles.test.ts"
+		"test:community-profiles": "bun run tests/community/profiles.test.ts",
+		"expiry:dry-run": "bun run scripts/run-membership-expiry.ts",
+		"expiry:commit": "bun run scripts/run-membership-expiry.ts --commit"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.8",

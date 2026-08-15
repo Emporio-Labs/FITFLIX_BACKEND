@@ -14,6 +14,7 @@ import Admin from "../models/Admin";
 import Notification from "../models/Notification";
 import { notify } from "./notification.service";
 import { expireStaleNutritionistBookings } from "./nutritionist-expiry.service";
+import { expireMemberships } from "./membership-lifecycle.service";
 import {
 	expireDueRooms,
 	prepareDueRooms,
@@ -195,6 +196,20 @@ export async function processReminders(): Promise<{
 		console.error("[reminder-poller] session room lifecycle sweep failed", err);
 	}
 
+	// Membership expiry. Throttled to hourly rather than riding the 60s tick —
+	// expiry is date-granular, so a minute-by-minute sweep would be pure load.
+	// Access is never stale in the meantime: every gating query carries its own
+	// date bounds (utils/membership-status.util.ts), so a membership that
+	// lapsed since the last sweep is already refused.
+	if (now.getTime() - lastMembershipExpirySweep >= MEMBERSHIP_EXPIRY_INTERVAL_MS) {
+		lastMembershipExpirySweep = now.getTime();
+		try {
+			await expireMemberships(now);
+		} catch (err) {
+			console.error("[reminder-poller] membership expiry sweep failed", err);
+		}
+	}
+
 	return { fired, failed };
 }
 
@@ -260,6 +275,10 @@ export async function checkMembershipExpiries(): Promise<void> {
 // ─── In-process interval (non-serverless) ────────────────────────────────────
 
 let pollerTimer: ReturnType<typeof setInterval> | null = null;
+
+// Set to 0 so the first tick after boot always sweeps.
+let lastMembershipExpirySweep = 0;
+const MEMBERSHIP_EXPIRY_INTERVAL_MS = 60 * 60 * 1000;
 
 export function startReminderPoller(intervalMs = 60_000): void {
 	if (pollerTimer) return; // already running

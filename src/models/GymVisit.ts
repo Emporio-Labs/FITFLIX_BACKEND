@@ -18,6 +18,13 @@ const gymVisitSchema = new mongoose.Schema(
 			required: true,
 			index: true,
 		},
+		// Which branch they walked into.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+			index: true,
+		},
 		checkInAt: { type: Date, required: true, default: Date.now, index: true },
 		checkOutAt: { type: Date, default: null },
 		// Duration in minutes, computed on check-out. Denormalised so analytics
@@ -48,6 +55,8 @@ const gymVisitSchema = new mongoose.Schema(
 gymVisitSchema.index({ userId: 1, checkInAt: -1 });
 // Fast lookup for "who is still inside" — checkOutAt is null while active.
 gymVisitSchema.index({ checkOutAt: 1, checkInAt: -1 });
+// Per-branch traffic: "who is in this club now" and daily footfall.
+gymVisitSchema.index({ locationId: 1, checkInAt: -1 });
 
 applyIdTransform(gymVisitSchema);
 

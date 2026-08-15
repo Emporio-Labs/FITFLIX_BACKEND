@@ -85,14 +85,18 @@ async function runTests() {
 		assert(schedule !== null, "ExpertSchedule created/retrieved successfully");
 		assert(schedule.slotDurationMinutes === 45, "Default slot duration is 45 minutes");
 
-		const tomorrow = new Date();
-		tomorrow.setDate(tomorrow.getDate() + 1);
-		const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+		const testDate = new Date();
+		testDate.setDate(testDate.getDate() + 1);
+		// If testDate lands on Sunday (day 0, unavailable by default), advance to Monday
+		if (testDate.getDay() === 0) {
+			testDate.setDate(testDate.getDate() + 1);
+		}
+		const testDateStr = testDate.toISOString().slice(0, 10);
 
-		const availableSlots = await calculateAvailableSlots(trainer1._id.toString(), tomorrowStr);
+		const availableSlots = await calculateAvailableSlots(trainer1._id.toString(), testDateStr);
 		assert(Array.isArray(availableSlots), "Slots returned as array");
 		assert(availableSlots.length > 0, "Available slots generated for working hours");
-		console.log(`  Generated ${availableSlots.length} available slots for tomorrow (${tomorrowStr})`);
+		console.log(`  Generated ${availableSlots.length} available slots for working day (${testDateStr})`);
 
 		// ── Test 2: Invoicing Sequential Counter ──
 		console.log("\n[Test 2] Sequential Invoice Counter (FF-INV-YYYY-XXXXX)");
@@ -144,7 +148,7 @@ async function runTests() {
 		const booking1 = await createPersonalTrainingBooking({
 			userId: testUserId.toString(),
 			trainerId: trainer1._id.toString(),
-			bookingDate: tomorrow,
+			bookingDate: testDate,
 			startTime: "09:00",
 			endTime: "09:45",
 			appointmentMode: AppointmentMode.ONLINE,
@@ -165,7 +169,7 @@ async function runTests() {
 			await createPersonalTrainingBooking({
 				userId: testUserId.toString(),
 				trainerId: trainer1._id.toString(),
-				bookingDate: tomorrow,
+				bookingDate: testDate,
 				startTime: "09:00",
 				endTime: "09:45",
 				appointmentMode: AppointmentMode.ONLINE,
@@ -250,8 +254,27 @@ async function runTests() {
 		const refreshedLead = await Lead.findById(lead._id);
 		assert(refreshedLead?.isEscalated === true, "Overdue lead automatically escalated to High Priority");
 
-		// ── Test 9: Trainer Change Request & Admin Approval ──
-		console.log("\n[Test 9] Trainer Change Request & Assignment");
+		// ── Test 9: Trainer Lock Enforcement & Change Request Workflow ──
+		console.log("\n[Test 9] Trainer Lock Enforcement & Change Request Workflow");
+
+		// Attempting to book with trainer2 while assigned to trainer1 MUST fail with TrainerLockedError
+		let lockCaught = false;
+		try {
+			await createPersonalTrainingBooking({
+				userId: testUserId.toString(),
+				trainerId: trainer2._id.toString(),
+				bookingDate: threeDaysAhead,
+				startTime: "14:00",
+				endTime: "14:45",
+				appointmentMode: AppointmentMode.ONLINE,
+			});
+		} catch (e: any) {
+			lockCaught = true;
+			assert(e.name === "TrainerLockedError", `Trainer lock error caught: ${e.message}`);
+		}
+		assert(lockCaught, "Non-assigned trainer booking was strictly blocked by TrainerLockedError");
+
+		// Member requests switch to trainer2
 		const changeReq = await createTrainerChangeRequest({
 			userId: testUserId.toString(),
 			requestedTrainerId: trainer2._id.toString(),
@@ -274,7 +297,18 @@ async function runTests() {
 			`Membership reassigned to new trainer: ${trainer2.trainerName}`,
 		);
 
-		console.log("\n✨ ALL 9 TEST CASES PASSED WITH 100% SUCCESS!\n");
+		// Now member can book with trainer2
+		const bookingTrainer2 = await createPersonalTrainingBooking({
+			userId: testUserId.toString(),
+			trainerId: trainer2._id.toString(),
+			bookingDate: threeDaysAhead,
+			startTime: "14:00",
+			endTime: "14:45",
+			appointmentMode: AppointmentMode.ONLINE,
+		});
+		assert(bookingTrainer2 !== null, "Successfully booked session with newly assigned trainer2");
+
+		console.log("\n✨ ALL 9 TEST CASES (INCLUDING TRAINER LOCK) PASSED WITH 100% SUCCESS!\n");
 	} finally {
 		await close();
 	}

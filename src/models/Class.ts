@@ -7,6 +7,13 @@ const classSchema = new mongoose.Schema(
 			type: String,
 			default: () => randomUUID(),
 		},
+		// Branch this class runs at.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+			index: true,
+		},
 		name: {
 			type: String,
 			required: true,

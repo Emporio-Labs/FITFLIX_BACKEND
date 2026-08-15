@@ -61,13 +61,13 @@ router.post(
 router.get(
 	"/admin/trainer-change-requests",
 	authenticateToken,
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "staff"]),
 	getTrainerChangeRequestsAdmin,
 );
 router.post(
 	"/admin/trainer-change-requests/:id/resolve",
 	authenticateToken,
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "staff"]),
 	resolveTrainerChangeRequestAdmin,
 );
 

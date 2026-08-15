@@ -49,6 +49,9 @@ export enum CreditTransactionSource {
 	Admin = "Admin",
 	PersonalTraining = "PersonalTraining",
 	Therapy = "Therapy",
+	// Written by the expiry job when unused value lapses. Distinct from Admin
+	// so lapsed value is separable from staff adjustments in reporting.
+	Expiry = "Expiry",
 }
 
 export enum MuscleGroup {

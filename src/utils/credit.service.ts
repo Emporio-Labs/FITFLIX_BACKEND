@@ -6,6 +6,7 @@ import {
 	MembershipStatus,
 } from "../models/Enums";
 import Membership from "../models/Membership";
+import { buildActiveMembershipFilter } from "./membership-status.util";
 
 type ActorRole =
 	| "admin"
@@ -41,19 +42,9 @@ const toOptionalObjectId = (
 	return new mongoose.Types.ObjectId(value);
 };
 
-const buildActiveMembershipFilter = (
-	userId: mongoose.Types.ObjectId,
-	now: Date,
-): Record<string, unknown> => ({
-	user: userId,
-	status: MembershipStatus.Active,
-	startDate: { $lte: now },
-	$or: [
-		{ endDate: { $exists: false } },
-		{ endDate: null },
-		{ endDate: { $gte: now } },
-	],
-});
+// Moved to utils/membership-status.util.ts so every access-gating query shares
+// one definition — several call sites used to check `status: Active` alone and
+// thereby honoured expired memberships.
 
 type MembershipBalanceSnapshot = {
 	_id: mongoose.Types.ObjectId;
@@ -111,6 +102,10 @@ type CreditContext = {
 	actorRole?: ActorRole;
 	reason?: string;
 	metadata?: Record<string, unknown>;
+	// Branch where the value was spent or granted. Recorded on every ledger
+	// row because consumption history cannot be reconstructed after the fact,
+	// and a member on a multi-club package may train away from their home club.
+	locationId?: string;
 };
 
 export const getUserCreditBalance = async (userId: string) => {
@@ -254,6 +249,7 @@ export const consumeCredits = async (
 
 	const sourceId = toOptionalObjectId(input.sourceId);
 	const actorId = toOptionalObjectId(input.actorId);
+	const locationId = toOptionalObjectId(input.locationId);
 
 	try {
 		await CreditTransaction.insertMany(
@@ -264,6 +260,7 @@ export const consumeCredits = async (
 				type: CreditTransactionType.Consume,
 				sourceType: input.sourceType,
 				...(sourceId ? { sourceId } : {}),
+				...(locationId ? { locationId } : {}),
 				...(input.reason ? { reason: input.reason } : {}),
 				...(actorId ? { actorId } : {}),
 				...(input.actorRole ? { actorRole: input.actorRole } : {}),
@@ -539,111 +536,18 @@ export const getUserCreditHistory = async (input: {
 	};
 };
 
-export const allocatePlanCredits = async (input: {
-	userId: string;
-	creditAmount: number;
-	reason?: string;
-	referenceId?: string;
-}) => {
-	const userObjectId = toObjectId(
-		input.userId,
-		"INVALID_ARGUMENT",
-		"Invalid user id",
-	);
-
-	let membership = await Membership.findOne({
-		user: userObjectId,
-		status: MembershipStatus.Active,
-	});
-
-	if (!membership) {
-		membership = await Membership.create({
-			user: userObjectId,
-			planName: "Default Plan",
-			price: 0,
-			creditsRemaining: 0,
-			creditsTotal: 0,
-			status: MembershipStatus.Active,
-			startDate: new Date(),
-		});
-	}
-
-	membership.creditsRemaining =
-		Number(membership.creditsRemaining ?? 0) + input.creditAmount;
-	membership.creditsTotal =
-		Number(membership.creditsTotal ?? 0) + input.creditAmount;
-	await membership.save();
-
-	const refObjectId = toOptionalObjectId(input.referenceId);
-
-	const transaction = await CreditTransaction.create({
-		user: userObjectId,
-		membership: membership._id,
-		amount: input.creditAmount,
-		type: CreditTransactionType.AdminTopUp,
-		sourceType: CreditTransactionSource.Admin,
-		sourceId: refObjectId || membership._id,
-		reason: input.reason || "PLAN_ASSIGNMENT",
-	});
-
-	return {
-		success: true,
-		transactionId: transaction._id.toString(),
-		creditsRemaining: membership.creditsRemaining,
-	};
-};
-
-export const consumeCreditsAtomic = async (input: {
-	userId: string;
-	amount: number;
-	reason?: string;
-	referenceId?: string;
-}) => {
-	const userObjectId = toObjectId(
-		input.userId,
-		"INVALID_ARGUMENT",
-		"Invalid user id",
-	);
-
-	// Atomic conditional deduction ($gte: amount)
-	const membership = await Membership.findOneAndUpdate(
-		{
-			user: userObjectId,
-			status: MembershipStatus.Active,
-			creditsRemaining: { $gte: input.amount },
-		},
-		{
-			$inc: { creditsRemaining: -input.amount },
-		},
-		{ new: true },
-	);
-
-	if (!membership) {
-		const currentBalance = await getUserCreditBalance(input.userId);
-		return {
-			success: false,
-			statusCode: 402,
-			message: "Insufficient credit balance",
-			code: "INSUFFICIENT_CREDITS",
-			availableCredits: currentBalance.availableCredits,
-		};
-	}
-
-	const refObjectId = toOptionalObjectId(input.referenceId);
-
-	const transaction = await CreditTransaction.create({
-		user: userObjectId,
-		membership: membership._id,
-		amount: -input.amount,
-		type: CreditTransactionType.Consume,
-		sourceType: CreditTransactionSource.Booking,
-		sourceId: refObjectId || membership._id,
-		reason: input.reason || "SERVICE_CONSUMED",
-	});
-
-	return {
-		success: true,
-		transactionId: transaction._id.toString(),
-		creditsRemaining: membership.creditsRemaining,
-	};
-};
+/*
+ * Removed: allocatePlanCredits and consumeCreditsAtomic.
+ *
+ * allocatePlanCredits was dead code (no callers) and incremented a
+ * `creditsTotal` field that does not exist on the Membership schema, so
+ * Mongoose stripped it on save. It also fabricated a junk "Default Plan"
+ * membership when the user had none, and filtered on status alone — honouring
+ * expired memberships. Use addCreditsToMembership / grantGraceEntitlement.
+ *
+ * consumeCreditsAtomic was a second, non-pooling consumption implementation
+ * that deducted from a single membership, so a member holding two packages
+ * could be told they had insufficient credits while holding plenty across
+ * both. consumeCredits above is the one implementation: it pools across all
+ * active memberships oldest-expiry-first and compensates on partial failure.
+ */

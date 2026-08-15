@@ -32,6 +32,15 @@ const creditTransactionSchema = new mongoose.Schema(
 			default: undefined,
 		},
 		reason: { type: String, default: "" },
+		// Where the value was actually consumed or granted, which is not
+		// necessarily where the package was sold. Consumption history cannot be
+		// reconstructed after the fact, so this is recorded from day one even
+		// while only one branch is live.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 		actorId: {
 			type: mongoose.Schema.Types.ObjectId,
 			default: undefined,
@@ -52,6 +61,8 @@ const creditTransactionSchema = new mongoose.Schema(
 creditTransactionSchema.index({ user: 1, createdAt: -1 });
 creditTransactionSchema.index({ sourceType: 1, sourceId: 1, type: 1 });
 creditTransactionSchema.index({ membership: 1, createdAt: -1 });
+// Per-branch usage and settlement reporting.
+creditTransactionSchema.index({ locationId: 1, createdAt: -1 });
 
 type CreditTransactionDocument = mongoose.InferSchemaType<
 	typeof creditTransactionSchema

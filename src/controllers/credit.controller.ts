@@ -12,6 +12,12 @@ import {
 	creditHistoryQuerySchema,
 	topUpCreditsBodySchema,
 } from "../validators/credit.validator";
+import {
+	GraceGrantError,
+	grantGraceEntitlement,
+	mapGraceGrantError,
+} from "../services/grace-grant.service";
+import { normalizeRole } from "../middleware/rbac.middleware";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -237,6 +243,79 @@ export const topUpUserCreditsById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		next(error);
+	}
+};
+
+/**
+ * Admin / front-desk grace grant.
+ *
+ * Distinct from the top-up endpoint above: a top-up adds credits to an
+ * existing purchased membership, whereas a grant issues its own zero-price
+ * membership with an independent expiry, so comped value stays separable from
+ * revenue and can lapse on its own schedule.
+ */
+export const grantGraceToUserById: RequestHandler = async (req, res, next) => {
+	const userId = getIdParam(req.params.userId);
+	if (!userId) {
+		res.status(400).json({ message: "Invalid userId" });
+		return;
+	}
+
+	if (!req.user) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	try {
+		const result = await grantGraceEntitlement({
+			userId,
+			type: req.body?.type,
+			amount: req.body?.amount,
+			reason: req.body?.reason,
+			expiryDays: req.body?.expiryDays,
+			locationId:
+				typeof req.body?.locationId === "string"
+					? req.body.locationId
+					: undefined,
+			actorId: req.user.id,
+			actorRole: normalizeRole(req.user.role),
+		});
+
+		console.info("[GRACE_GRANT_SUCCESS]", {
+			userId,
+			type: result.type,
+			amount: result.amount,
+			actorId: req.user.id,
+			actorRole: req.user.role,
+			locationId: String(result.locationId),
+		});
+
+		res.status(201).json({
+			message: `Granted ${result.amount} ${
+				result.type === "CREDIT" ? "credits" : "PT sessions"
+			}, expiring ${result.expiresAt.toISOString().slice(0, 10)}`,
+			grant: {
+				membershipId: result.membership._id.toString(),
+				type: result.type,
+				amount: result.amount,
+				expiresAt: result.expiresAt,
+				locationId: String(result.locationId),
+			},
+		});
+	} catch (error) {
+		if (error instanceof GraceGrantError) {
+			const mapped = mapGraceGrantError(error);
+			console.warn("[GRACE_GRANT_REJECTED]", {
+				userId,
+				actorId: req.user.id,
+				code: mapped.code,
+			});
+			res
+				.status(mapped.status)
+				.json({ message: mapped.message, code: mapped.code });
+			return;
+		}
 		next(error);
 	}
 };

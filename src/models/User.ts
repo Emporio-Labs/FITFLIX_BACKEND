@@ -17,6 +17,14 @@ const userSchema = new mongoose.Schema(
 		// Basic-profile goal collected at phone signup (distinct from onboarding healthGoals[]).
 		goal: { type: String, default: undefined },
 		healthGoals: { type: [String], default: [] },
+		// The member's home club. Access scope and default booking branch are
+		// derived from this; null falls back to the sole active location.
+		homeLocationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+			index: true,
+		},
 		dateOfBirth: { type: Date, default: undefined },
 		emergencyContact: { type: String, default: undefined },
 		address: { type: String, default: undefined },
