@@ -117,17 +117,62 @@ export const resolveSessionAccess = async ({
 	// only to resolve the instructor for host detection — it has no wall-clock
 	// time, so it can never satisfy a join window and falls through to
 	// NO_SCHEDULE below rather than being treated as always-open.
-	const session = sessionObjId
+	let session = sessionObjId
 		? await ScheduledSession.findById(sessionObjId)
 		: null;
 
-	const klass = session
+	if (!session) {
+		session = await ScheduledSession.findOne({ videoRoomId: sessionId });
+	}
+
+	let klass = session
 		? await ClassModel.findById(session.classId)
 				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes")
 				.lean()
 		: await ClassModel.findById(sessionId)
 				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes")
 				.lean();
+
+	if (!session && klass) {
+		let candidates = await ScheduledSession.find({
+			classId: klass._id,
+			status: { $ne: "CANCELLED" },
+		}).sort({ sessionDate: -1 });
+
+		if (candidates.length === 0) {
+			try {
+				const { syncSessionsForClass } = await import("../controllers/class.controller");
+				const fullClassDoc = await ClassModel.findById(klass._id).lean();
+				if (fullClassDoc) {
+					await syncSessionsForClass(fullClassDoc);
+					candidates = await ScheduledSession.find({
+						classId: klass._id,
+						status: { $ne: "CANCELLED" },
+					}).sort({ sessionDate: -1 });
+				}
+			} catch (err) {
+				console.error("[session-access] Auto syncSessionsForClass failed:", err);
+			}
+		}
+
+		console.log("[session-access debug] Found candidates length:", candidates.length);
+		if (candidates.length > 0) {
+			const activeCandidate = candidates.find((c) => {
+				const start = combineSessionDateTime(c.sessionDate, c.startTime);
+				const end = combineSessionDateTime(c.sessionDate, c.endTime);
+				if (!start || !end) return false;
+				const leadMs = ((klass as any)?.occurrenceLeadMinutes ?? 30) * 60_000;
+				const windowStart = new Date(start.getTime() - leadMs);
+				const windowEnd = new Date(end.getTime() + 30 * 60_000);
+				return now >= windowStart && now <= windowEnd;
+			});
+			session = activeCandidate || candidates[0];
+			console.log("[session-access debug] Selected session:", session?._id, "activeCandidate found:", !!activeCandidate);
+		}
+	}
+
+	console.log("[session-access debug] session after resolution:", session ? session._id : null, "klass:", klass ? klass._id : null);
+
 
 	if (!session && !klass) {
 		const cleanId = sessionId.startsWith("nutri_session_")
