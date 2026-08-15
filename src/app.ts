@@ -10,6 +10,7 @@ import classRouter from "./routes/class.routes";
 import classScheduleRouter from "./routes/class-schedule.routes";
 import locationRouter from "./routes/location.routes";
 import personalTrainingRouter from "./routes/personal-training.routes";
+import promotionRouter from "./routes/promotion.routes";
 
 import communityAdminRouter from "./routes/community-admin.routes";
 import communityPublicRouter from "./routes/community-public.routes";
@@ -268,6 +269,8 @@ app.use("/dashboard", dashboardRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
 app.use("/api/v1/locations", apiRateLimit, locationRouter);
+app.use("/api/v1/promotions", apiRateLimit, promotionRouter);
+app.use("/promotions", apiRateLimit, promotionRouter);
 app.use("/api/v1/pt", apiRateLimit, personalTrainingRouter);
 app.use("/pt", apiRateLimit, personalTrainingRouter);
 app.use("/api/v1/billing", apiRateLimit, billingRouter);
