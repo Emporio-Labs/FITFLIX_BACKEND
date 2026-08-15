@@ -2,6 +2,20 @@ import mongoose from "mongoose";
 import { applyIdTransform } from "../utils/mongoose-serialization";
 import { ExpertType } from "./Enums";
 
+const shiftConfigSchema = new mongoose.Schema(
+	{
+		startTime: {
+			type: String,
+			required: true,
+		},
+		endTime: {
+			type: String,
+			required: true,
+		},
+	},
+	{ _id: false },
+);
+
 const weeklySlotConfigSchema = new mongoose.Schema(
 	{
 		dayOfWeek: {
@@ -12,11 +26,15 @@ const weeklySlotConfigSchema = new mongoose.Schema(
 		},
 		startTime: {
 			type: String,
-			required: true, // "06:00"
+			required: false, // "06:00"
 		},
 		endTime: {
 			type: String,
-			required: true, // "20:00"
+			required: false, // "20:00"
+		},
+		shifts: {
+			type: [shiftConfigSchema],
+			default: undefined,
 		},
 		isAvailable: {
 			type: Boolean,

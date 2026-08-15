@@ -17,6 +17,7 @@ import Membership from "../models/Membership";
 import MembershipPlan from "../models/MembershipPlan";
 import WebhookEvent from "../models/WebhookEvent";
 import { generateInvoiceNumber } from "../utils/invoice-number";
+import { resolvePlanDurationDays, resolvePlanEndDate } from "../utils/plan-duration";
 import { executeInTransaction } from "../utils/transaction.util";
 
 export const getRazorpayClient = (): Razorpay | null => {
@@ -78,7 +79,7 @@ export const createPaymentOrder = async (
 				taxAmount,
 				grandTotal,
 				ptSessionsIncluded: plan.ptSessionsIncluded,
-				durationDays: plan.durationDays || 30,
+				durationDays: resolvePlanDurationDays(plan),
 			},
 			message: "Online payment gateway is not configured. Please use fallback booking.",
 		};
@@ -111,7 +112,7 @@ export const createPaymentOrder = async (
 			taxAmount,
 			grandTotal,
 			ptSessionsIncluded: plan.ptSessionsIncluded,
-			durationDays: plan.durationDays || 30,
+			durationDays: resolvePlanDurationDays(plan),
 		},
 	};
 };
@@ -195,7 +196,7 @@ export const verifyAndProvisionPayment = async (params: {
 					total: grandTotal,
 					planSnapshot: {
 						name: plan.name,
-						durationInDays: plan.durationDays || 30,
+						durationInDays: resolvePlanDurationDays(plan),
 						price: basePrice,
 						includedCredits: plan.creditsIncluded || 0,
 					},
@@ -210,8 +211,7 @@ export const verifyAndProvisionPayment = async (params: {
 
 		// 4. Provision or Extend Membership / PT Quota
 		const now = new Date();
-		const durationDays = plan.durationDays || (plan.durationMonths ? plan.durationMonths * 30 : 30);
-		const endDate = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+		const endDate = resolvePlanEndDate(plan, now);
 
 		const isPT = plan.category === "PERSONAL_TRAINING" || (plan.ptSessionsIncluded || 0) > 0;
 		const ptQuota = plan.ptSessionsIncluded || 0;

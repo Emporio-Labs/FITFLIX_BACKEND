@@ -10,6 +10,9 @@ export const createMembershipPlanSchema = z.object({
 	active: z.boolean().optional(),
 	gymId: z.string().trim().min(1),
 	durationMonths: z.coerce.number().int().positive().default(1),
+	// `.nullable()` wraps the coercion so an explicit null short-circuits instead of
+	// being coerced to 0 and failing `.positive()`. null clears a day-based duration.
+	durationDays: z.coerce.number().int().positive().nullable().optional(),
 	benefits: z.record(z.string(), z.any()).default({}),
 });
 
