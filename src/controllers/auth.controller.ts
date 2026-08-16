@@ -183,7 +183,13 @@ export const signup: RequestHandler = async (req, res, next) => {
 						leadName: username,
 						phone: phone ?? "",
 						source: "app-signup",
-						status: LeadStatus.Converted,
+						// Signing up is not converting. `Converted` is reserved for an
+						// actual sale — set by convertLeadToUser and by invoice payment
+						// (invoice.service.ts) — so a signup that lands here still has
+						// to be worked by sales. The phone/OTP signup path already does
+						// this; these two were disagreeing about the same event.
+						// `convertedUser` still links the account that was created.
+						status: LeadStatus.New,
 						convertedUser: createdUser._id,
 					},
 					$addToSet: { tags: { $each: ["signup", "app-signup"] } },
