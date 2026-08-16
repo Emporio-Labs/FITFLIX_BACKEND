@@ -49,8 +49,9 @@ export const updateExpertSchedule = async (
 	data: {
 		weeklySlots?: Array<{
 			dayOfWeek: number;
-			startTime: string;
-			endTime: string;
+			startTime?: string;
+			endTime?: string;
+			shifts?: Array<{ startTime: string; endTime: string }>;
 			isAvailable: boolean;
 		}>;
 		slotDurationMinutes?: number;
@@ -59,6 +60,49 @@ export const updateExpertSchedule = async (
 		isActive?: boolean;
 	},
 ) => {
+	// Validate split shift windows for overlaps and invalid durations
+	if (Array.isArray(data.weeklySlots)) {
+		for (const slotConfig of data.weeklySlots) {
+			if (!slotConfig.isAvailable) continue;
+
+			const shifts: Array<{ startTime: string; endTime: string }> = [];
+			if (Array.isArray(slotConfig.shifts) && slotConfig.shifts.length > 0) {
+				shifts.push(...slotConfig.shifts);
+			} else if (slotConfig.startTime && slotConfig.endTime) {
+				shifts.push({
+					startTime: slotConfig.startTime,
+					endTime: slotConfig.endTime,
+				});
+			}
+
+			// 1. Check for invalid end times
+			for (const shift of shifts) {
+				const startMin = parseTimeToMinutes(shift.startTime);
+				const endMin = parseTimeToMinutes(shift.endTime);
+				if (endMin <= startMin) {
+					throw new Error(
+						`Invalid shift window (${shift.startTime} to ${shift.endTime}). End time must be after start time.`,
+					);
+				}
+			}
+
+			// 2. Sort shifts by start time and check for internal overlaps
+			const sortedShifts = shifts.slice().sort(
+				(a, b) => parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime),
+			);
+
+			for (let i = 0; i < sortedShifts.length - 1; i++) {
+				const currentEnd = parseTimeToMinutes(sortedShifts[i].endTime);
+				const nextStart = parseTimeToMinutes(sortedShifts[i + 1].startTime);
+				if (nextStart < currentEnd) {
+					throw new Error(
+						`Shift window conflict on day ${slotConfig.dayOfWeek}: Shift starting at ${sortedShifts[i + 1].startTime} overlaps with shift ending at ${sortedShifts[i].endTime}.`,
+					);
+				}
+			}
+		}
+	}
+
 	const expertObjId = new mongoose.Types.ObjectId(expertId);
 	const schedule = await ExpertSchedule.findOneAndUpdate(
 		{ expertId: expertObjId },
@@ -126,8 +170,30 @@ export const calculateAvailableSlots = async (
 		return [];
 	}
 
-	const dayStartMin = parseTimeToMinutes(dayConfig.startTime);
-	const dayEndMin = parseTimeToMinutes(dayConfig.endTime);
+	const shiftWindows: Array<{ startTime: string; endTime: string }> = [];
+	if (Array.isArray(dayConfig.shifts) && dayConfig.shifts.length > 0) {
+		shiftWindows.push(...dayConfig.shifts);
+	} else if (dayConfig.startTime && dayConfig.endTime) {
+		shiftWindows.push({
+			startTime: dayConfig.startTime,
+			endTime: dayConfig.endTime,
+		});
+	}
+
+	if (shiftWindows.length === 0) {
+		return [];
+	}
+
+	// Filter valid windows & sort chronologically by start time
+	const validShiftWindows = shiftWindows
+		.filter(
+			(s) => parseTimeToMinutes(s.endTime) > parseTimeToMinutes(s.startTime),
+		)
+		.sort(
+			(a, b) =>
+				parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime),
+		);
+
 	const slotDuration = schedule.slotDurationMinutes || 45;
 	const buffer = schedule.bufferMinutes || 15;
 	const step = slotDuration + buffer;
@@ -151,43 +217,49 @@ export const calculateAvailableSlots = async (
 		endMin: parseTimeToMinutes(b.endTime),
 	}));
 
-	// 4. Generate discrete slot candidates.
-	// Both halves of the "is this slot already past?" test must be read in the
-	// branch's zone. Previously the date came from now.toISOString() (UTC) while
-	// the clock came from now.getHours() (server-local): on an IST server the
-	// UTC date rolls over at 18:30, so from then until midnight `isToday` was
-	// false for the actual current day and past slots were offered as bookable.
+	// 4. Generate discrete slot candidates
 	const now = new Date();
 	// rawDateStr is already the requested calendar day; compare it against what
 	// day it currently is *at the branch*, not on the server.
 	const isToday = formatDateInZone(now, timeZone) === rawDateStr;
 	const currentMinuteOfDay = minutesIntoDayInZone(now, timeZone);
 
-	const availableSlots: AvailableSlotDto[] = [];
+	const slotMap = new Map<string, AvailableSlotDto>();
 
-	for (let min = dayStartMin; min + slotDuration <= dayEndMin; min += step) {
-		const slotStartMin = min;
-		const slotEndMin = min + slotDuration;
+	for (const shift of validShiftWindows) {
+		const dayStartMin = parseTimeToMinutes(shift.startTime);
+		const dayEndMin = parseTimeToMinutes(shift.endTime);
 
-		// Filter out past slots if today (with 15 min buffer)
-		if (isToday && slotStartMin <= currentMinuteOfDay + 15) {
-			continue;
-		}
+		for (let min = dayStartMin; min + slotDuration <= dayEndMin; min += step) {
+			const slotStartMin = min;
+			const slotEndMin = min + slotDuration;
 
-		// Check overlap with any active booking: (slotStart < bookedEnd && slotEnd > bookedStart)
-		const isColliding = bookedIntervals.some(
-			(b) => slotStartMin < b.endMin && slotEndMin > b.startMin,
-		);
+			// Filter out past slots if today (with 15 min buffer)
+			if (isToday && slotStartMin <= currentMinuteOfDay + 15) {
+				continue;
+			}
 
-		if (!isColliding) {
-			availableSlots.push({
-				startTime: formatMinutesToTime(slotStartMin),
-				endTime: formatMinutesToTime(slotEndMin),
-				durationMinutes: slotDuration,
-				isAvailable: true,
-			});
+			// Check overlap with any active booking: (slotStart < bookedEnd && slotEnd > bookedStart)
+			const isColliding = bookedIntervals.some(
+				(b) => slotStartMin < b.endMin && slotEndMin > b.startMin,
+			);
+
+			if (!isColliding) {
+				const startFormatted = formatMinutesToTime(slotStartMin);
+				if (!slotMap.has(startFormatted)) {
+					slotMap.set(startFormatted, {
+						startTime: startFormatted,
+						endTime: formatMinutesToTime(slotEndMin),
+						durationMinutes: slotDuration,
+						isAvailable: true,
+					});
+				}
+			}
 		}
 	}
 
-	return availableSlots;
+	return Array.from(slotMap.values()).sort(
+		(a, b) =>
+			parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime),
+	);
 };

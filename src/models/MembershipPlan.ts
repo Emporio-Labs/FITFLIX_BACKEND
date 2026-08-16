@@ -20,7 +20,10 @@ const membershipPlanSchema = new mongoose.Schema(
 		active: { type: Boolean, default: true },
 		gymId: { type: String, required: false },
 		durationMonths: { type: Number, required: true, min: 1, default: 1 },
-		durationDays: { type: Number, default: 30 },
+		// Optional day-level duration. `null` means the plan is measured in months —
+		// consumers fall back to durationMonths. A non-null default here would make
+		// durationMonths permanently unreachable.
+		durationDays: { type: Number, default: null },
 		benefits: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
 	},
 	{ timestamps: true },

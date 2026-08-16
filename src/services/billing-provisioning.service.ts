@@ -19,6 +19,11 @@ import WebhookEvent from "../models/WebhookEvent";
 import User from "../models/User";
 import { generateInvoiceNumber } from "../utils/invoice-number";
 import { buildActiveMembershipFilterWith } from "../utils/membership-status.util";
+import {
+	computeNewEndDate,
+	computeRenewalEndDate,
+	resolvePlanDurationDays,
+} from "../utils/membership-duration.util";
 
 /**
  * A brand-new PT membership should inherit whatever trainer the admin already
@@ -32,10 +37,6 @@ const getInheritedTrainerId = async (
 	const user = await User.findById(userId).select("assignedTrainer");
 	return user?.assignedTrainer ?? null;
 };
-import {
-	computeNewEndDate,
-	computeRenewalEndDate,
-} from "../utils/membership-duration.util";
 import { executeInTransaction } from "../utils/transaction.util";
 
 export const getRazorpayClient = (): Razorpay | null => {
@@ -97,7 +98,7 @@ export const createPaymentOrder = async (
 				taxAmount,
 				grandTotal,
 				ptSessionsIncluded: plan.ptSessionsIncluded,
-				durationDays: plan.durationDays || 30,
+				durationDays: resolvePlanDurationDays(plan),
 			},
 			message: "Online payment gateway is not configured. Please use fallback booking.",
 		};
@@ -130,7 +131,7 @@ export const createPaymentOrder = async (
 			taxAmount,
 			grandTotal,
 			ptSessionsIncluded: plan.ptSessionsIncluded,
-			durationDays: plan.durationDays || 30,
+			durationDays: resolvePlanDurationDays(plan),
 		},
 	};
 };
@@ -214,7 +215,7 @@ export const verifyAndProvisionPayment = async (params: {
 					total: grandTotal,
 					planSnapshot: {
 						name: plan.name,
-						durationInDays: plan.durationDays || 30,
+						durationInDays: resolvePlanDurationDays(plan),
 						price: basePrice,
 						includedCredits: plan.creditsIncluded || 0,
 					},
