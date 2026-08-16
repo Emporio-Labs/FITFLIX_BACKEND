@@ -42,3 +42,11 @@ export const recordActivitySchema = z.object({
 });
 
 export type RecordActivityInput = z.infer<typeof recordActivitySchema>;
+
+/// Explicit rather than a toggle-with-no-body: a request that has to state the
+/// value it wants cannot flip someone's consent by being replayed.
+export const updateConsentSchema = z.object({
+	behaviouralTracking: z.boolean(),
+});
+
+export type UpdateConsentInput = z.infer<typeof updateConsentSchema>;

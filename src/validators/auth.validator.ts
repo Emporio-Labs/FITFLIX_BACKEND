@@ -91,6 +91,10 @@ export const phoneRegisterBodySchema = z.object({
 	goal: z.string().trim().min(1),
 	age: signupAgeSchema,
 	gender: signupGenderSchema,
+	// Optional so an older app build still registers, and defaulting to false
+	// because a client that says nothing has not obtained consent. The
+	// controller additionally discards a `true` from anyone under 18.
+	marketingConsent: z.boolean().optional().default(false),
 });
 
 export type SignupBody = z.infer<typeof signupBodySchema>;

@@ -2,10 +2,15 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import BehaviourEvent from "../models/BehaviourEvent";
 import User from "../models/User";
-import { mayRecordBehaviour } from "../utils/activity-consent";
+import {
+	mayRecordBehaviour,
+	MINOR_AGE_THRESHOLD,
+	resolveAge,
+} from "../utils/activity-consent";
 import {
 	MAX_CLOCK_SKEW_MS,
 	recordActivitySchema,
+	updateConsentSchema,
 } from "../validators/activity.validator";
 
 const invalidPayload = (
@@ -79,6 +84,95 @@ export const recordActivity: RequestHandler = async (req, res, next) => {
 		await BehaviourEvent.insertMany(docs, { ordered: false });
 
 		res.status(202).json({ recorded: docs.length });
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * Your own consent state, plus whether it can be changed at all.
+ *
+ * `eligible` is false for a minor, so the app can explain why the control is
+ * unavailable instead of showing a switch that silently refuses to move.
+ */
+export const getMyConsent: RequestHandler = async (req, res, next) => {
+	try {
+		const userId = req.user?.id;
+		if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+			res
+				.status(401)
+				.json({ message: "Authentication required", code: "UNAUTHENTICATED" });
+			return;
+		}
+
+		const user = await User.findById(userId).select(
+			"age dateOfBirth privacyConsent",
+		);
+		if (!user) {
+			res.status(404).json({ message: "User not found", code: "USER_NOT_FOUND" });
+			return;
+		}
+
+		const age = resolveAge(user);
+		res.status(200).json({
+			behaviouralTracking: user.privacyConsent?.behaviouralTracking === true,
+			eligible: age !== null && age >= MINOR_AGE_THRESHOLD,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * Read or change your own tracking consent.
+ *
+ * Withdrawal has to be as easy as granting, so this is a plain toggle on the
+ * user's own record rather than a support request. Turning it off also deletes
+ * what was already collected — keeping a behavioural history for someone who
+ * has just asked you to stop watching them is the wrong reading of "stop".
+ */
+export const updateMyConsent: RequestHandler = async (req, res, next) => {
+	try {
+		const userId = req.user?.id;
+		if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+			res
+				.status(401)
+				.json({ message: "Authentication required", code: "UNAUTHENTICATED" });
+			return;
+		}
+
+		const parsed = updateConsentSchema.safeParse(req.body);
+		if (!parsed.success) {
+			invalidPayload(res, parsed.error.flatten());
+			return;
+		}
+
+		const user = await User.findById(userId).select("age dateOfBirth");
+		if (!user) {
+			res.status(404).json({ message: "User not found", code: "USER_NOT_FOUND" });
+			return;
+		}
+
+		const age = resolveAge(user);
+		// A minor cannot switch this on, and neither can anyone on their behalf.
+		const granted =
+			parsed.data.behaviouralTracking === true &&
+			age !== null &&
+			age >= MINOR_AGE_THRESHOLD;
+
+		await User.findByIdAndUpdate(userId, {
+			privacyConsent: {
+				behaviouralTracking: granted,
+				marketingContact: granted,
+				updatedAt: new Date(),
+			},
+		});
+
+		if (!granted) {
+			await BehaviourEvent.deleteMany({ userId });
+		}
+
+		res.status(200).json({ behaviouralTracking: granted });
 	} catch (error) {
 		next(error);
 	}
