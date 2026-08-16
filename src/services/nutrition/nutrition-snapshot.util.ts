@@ -52,6 +52,7 @@ export const resolveItemsToSnapshots = async (items: MealItemInput[]) => {
 			foodId: food._id,
 			foodName: food.name,
 			quantityG: item.quantityG,
+			recipeSource: item.recipeSource ?? null,
 			...macros,
 		};
 	});
@@ -109,6 +110,7 @@ export const resolveDaysToSnapshots = async (days: DayInput[]) => {
 			foodId: food._id,
 			foodName: food.name,
 			quantityG: item.quantityG,
+			recipeSource: item.recipeSource ?? null,
 			...macros,
 		};
 	};
@@ -119,19 +121,21 @@ export const resolveDaysToSnapshots = async (days: DayInput[]) => {
 			const items = (meal.items ?? []).map(snapshotItem);
 
 			const options = (meal.options ?? []).map((opt: any) => {
-				const foods = (opt.foods ?? []).map(snapshotItem);
+				const optFoods = (opt.foods ?? []).map(snapshotItem);
+				const resolvedRecipeName =
+					opt.recipeName && !/^Option\s+\d+$/i.test(opt.recipeName)
+						? opt.recipeName
+						: (optFoods.find((f: any) => f.recipeSource)?.recipeSource ??
+							(opt.title && !/^Option\s+\d+$/i.test(opt.title) ? opt.title : null));
+
 				return {
-					title: opt.title ?? opt.recipeName ?? opt.label,
+					title: resolvedRecipeName ?? opt.title ?? opt.label ?? "Option",
 					recipeId: opt.recipeId ?? null,
-					recipeName:
-						opt.recipeName && !/^Option\s+\d+$/i.test(opt.recipeName)
-							? opt.recipeName
-							: (foods.find((f: any) => f.recipeSource)?.recipeSource ??
-								(opt.title && !/^Option\s+\d+$/i.test(opt.title) ? opt.title : null)),
+					recipeName: resolvedRecipeName,
 					isDefault: opt.isDefault ?? false,
 					reasoning: opt.reasoning ?? "",
-					foods,
-					macros: sumMacros(foods),
+					foods: optFoods,
+					macros: sumMacros(optFoods),
 				};
 			});
 
