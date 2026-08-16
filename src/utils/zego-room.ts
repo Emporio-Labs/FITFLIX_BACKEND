@@ -175,6 +175,45 @@ export const combineSessionDateTime = (
 	return new Date(naive - zoneOffsetMs(firstPass, BUSINESS_TIMEZONE));
 };
 
+/**
+ * A session's start and end as absolute instants.
+ *
+ * Use this rather than calling [combineSessionDateTime] twice. A session is
+ * stored as one date plus two "HH:mm" strings, so a 23:30–00:30 booking
+ * resolves its end to 23 hours *before* its own start when both are composed
+ * against the same day. Every consequence of that is silent and wrong: the
+ * join window closes before it opens, so a member is refused the room their
+ * session is about to start in.
+ *
+ * An end at or before the start belongs to the next day. The wrap re-enters
+ * [combineSessionDateTime] with the following calendar date rather than adding
+ * 24 hours to the result, so the timezone offset is resolved for the day the
+ * session actually ends — adding a fixed day would be wrong across a DST
+ * boundary even though [BUSINESS_TIMEZONE] does not currently observe one.
+ */
+export const combineSessionWindow = (
+	sessionDate: Date | string | null | undefined,
+	startTime: string | null | undefined,
+	endTime: string | null | undefined,
+): { startsAt: Date | null; endsAt: Date | null } => {
+	const startsAt = combineSessionDateTime(sessionDate, startTime);
+	let endsAt = combineSessionDateTime(sessionDate, endTime);
+
+	if (startsAt && endsAt && endsAt.getTime() <= startsAt.getTime()) {
+		const base = new Date(sessionDate as Date | string);
+		const nextDay = new Date(
+			Date.UTC(
+				base.getUTCFullYear(),
+				base.getUTCMonth(),
+				base.getUTCDate() + 1,
+			),
+		);
+		endsAt = combineSessionDateTime(nextDay, endTime);
+	}
+
+	return { startsAt, endsAt };
+};
+
 export type SessionRole = "host" | "member";
 
 export type JoinWindow = {

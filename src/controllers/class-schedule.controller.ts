@@ -5,7 +5,7 @@ import ScheduledSession from "../models/ScheduledSession";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
 import { normalizeDeliveryType } from "../utils/delivery-type";
 import {
-	combineSessionDateTime,
+	combineSessionWindow,
 	deriveRoomId,
 	resolveSessionRoomId,
 } from "../utils/zego-room";
@@ -22,11 +22,20 @@ import { syncSessionsForClass } from "./class.controller";
 /// was fixed to read that string as business-timezone, not UTC).
 const withAbsoluteTimes = <T extends { sessionDate: Date; startTime: string; endTime: string }>(
 	session: T,
-): T & { startsAtUtc: string | null; endsAtUtc: string | null } => ({
-	...session,
-	startsAtUtc: combineSessionDateTime(session.sessionDate, session.startTime)?.toISOString() ?? null,
-	endsAtUtc: combineSessionDateTime(session.sessionDate, session.endTime)?.toISOString() ?? null,
-});
+): T & { startsAtUtc: string | null; endsAtUtc: string | null } => {
+	// Paired: a session ending past midnight ends on the next day, and these
+	// are the instants the app trusts instead of re-deriving them.
+	const { startsAt, endsAt } = combineSessionWindow(
+		session.sessionDate,
+		session.startTime,
+		session.endTime,
+	);
+	return {
+		...session,
+		startsAtUtc: startsAt?.toISOString() ?? null,
+		endsAtUtc: endsAt?.toISOString() ?? null,
+	};
+};
 
 function parseTimeToMinutes(timeStr: string): number {
 	const parts = (timeStr || "00:00").split(":").map(Number);

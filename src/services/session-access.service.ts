@@ -8,7 +8,7 @@ import { normalizeRole } from "../middleware/rbac.middleware";
 import type { AuthenticatedUser } from "../types/auth";
 import {
 	buildJoinWindow,
-	combineSessionDateTime,
+	combineSessionWindow,
 	nonCancelledBookingStatusFilter,
 	resolveSessionRoomId,
 	ROOM_LEAD_MINUTES,
@@ -182,15 +182,18 @@ export const resolveSessionAccess = async ({
 				return deny("ENDED");
 			}
 
-			const startsAt = combineSessionDateTime(
+			// Paired, so a session running past midnight ends on the next day
+			// rather than 23 hours before it started — which closed this
+			// window before it opened and refused the member their own room.
+			const window = combineSessionWindow(
 				unifiedBooking.bookingDate,
 				unifiedBooking.startTime,
+				unifiedBooking.endTime,
 			);
+			const startsAt = window.startsAt;
 			const endsAt =
-				combineSessionDateTime(
-					unifiedBooking.bookingDate,
-					unifiedBooking.endTime,
-				) || new Date((startsAt?.getTime() ?? Date.now()) + 45 * 60_000);
+				window.endsAt ||
+				new Date((startsAt?.getTime() ?? Date.now()) + 45 * 60_000);
 
 			if (!startsAt) {
 				return deny("NO_SCHEDULE");
@@ -282,8 +285,15 @@ export const resolveSessionAccess = async ({
 			return deny("ENDED");
 		}
 
-		const startsAt = combineSessionDateTime(nutriBooking.bookingDate, nutriBooking.startTime);
-		const endsAt = combineSessionDateTime(nutriBooking.bookingDate, nutriBooking.endTime) || new Date((startsAt?.getTime() ?? Date.now()) + 30 * 60_000);
+		// Paired — see combineSessionWindow. A late-evening consult would
+		// otherwise resolve an end before its own start.
+		const nutriWindow = combineSessionWindow(
+			nutriBooking.bookingDate,
+			nutriBooking.startTime,
+			nutriBooking.endTime,
+		);
+		const startsAt = nutriWindow.startsAt;
+		const endsAt = nutriWindow.endsAt || new Date((startsAt?.getTime() ?? Date.now()) + 30 * 60_000);
 
 		if (!startsAt) {
 			return deny("NO_SCHEDULE");
@@ -351,13 +361,13 @@ export const resolveSessionAccess = async ({
 		return deny("ENDED");
 	}
 
-	// 4. Absolute start/end, fail closed on anything unparseable.
-	const startsAt = session
-		? combineSessionDateTime(session.sessionDate, session.startTime)
-		: null;
-	const endsAtRaw = session
-		? combineSessionDateTime(session.sessionDate, session.endTime)
-		: null;
+	// 4. Absolute start/end, fail closed on anything unparseable. Paired so a
+	// class running past midnight ends on the following day.
+	const sessionWindow = session
+		? combineSessionWindow(session.sessionDate, session.startTime, session.endTime)
+		: { startsAt: null, endsAt: null };
+	const startsAt = sessionWindow.startsAt;
+	const endsAtRaw = sessionWindow.endsAt;
 
 	if (!startsAt) {
 		return deny("NO_SCHEDULE");
