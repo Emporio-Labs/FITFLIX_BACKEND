@@ -15,7 +15,7 @@ import {
 } from "../services/slot-reservation.service";
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
 import { getActiveMembership } from "../utils/membership.guard";
-import { combineSessionDateTime, resolveSessionRoomId } from "../utils/zego-room";
+import { combineSessionWindow, resolveSessionRoomId } from "../utils/zego-room";
 import {
 	changeBookingStatusBodySchema,
 	createBookingBodySchema,
@@ -380,11 +380,21 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 					: (typeof obj.sessionId === "string" ? obj.sessionId : null),
 				videoRoomId: roomId,
 				videoConferenceId: roomId,
+				// Paired so a session ending past midnight does not report an
+				// end before its own start (see combineSessionWindow).
 				startsAtUtc: scheduledSession
-					? combineSessionDateTime(scheduledSession.sessionDate, scheduledSession.startTime)?.toISOString() ?? null
+					? combineSessionWindow(
+							scheduledSession.sessionDate,
+							scheduledSession.startTime,
+							scheduledSession.endTime,
+						).startsAt?.toISOString() ?? null
 					: null,
 				endsAtUtc: scheduledSession
-					? combineSessionDateTime(scheduledSession.sessionDate, scheduledSession.endTime)?.toISOString() ?? null
+					? combineSessionWindow(
+							scheduledSession.sessionDate,
+							scheduledSession.startTime,
+							scheduledSession.endTime,
+						).endsAt?.toISOString() ?? null
 					: null,
 				// The client can only decide "waiting for host" vs. "live" from
 				// this — everything else on the join gate is already derivable

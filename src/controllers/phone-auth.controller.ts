@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import Lead from "../models/Lead";
 import User from "../models/User";
 import { Gender, LeadStatus, OnboardingStep } from "../models/Enums";
+import { MINOR_AGE_THRESHOLD } from "../utils/activity-consent";
 import type { AuthenticatedUser } from "../types/auth";
 import {
 	getJwtConfig,
@@ -196,8 +197,15 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 	}
 
 	const { firebaseUid, phoneNumber } = identity;
-	const { name, goal, age, gender } = parsed.data;
+	const { name, goal, age, gender, marketingConsent } = parsed.data;
 	const last10 = phoneNumber.replace(/\D/g, "").slice(-10);
+
+	// A minor cannot consent to behavioural profiling and nobody can consent on
+	// their behalf, so the client's answer is discarded rather than trusted.
+	// The app hides the checkbox below this age too; this is the half that
+	// actually binds, since the endpoint is reachable without the app.
+	const consentGranted =
+		marketingConsent === true && age >= MINOR_AGE_THRESHOLD;
 
 	try {
 		// Idempotency: if the account already exists, return its login response
@@ -229,6 +237,13 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 				age,
 				gender: gender as Gender,
 				goal,
+				privacyConsent: {
+					behaviouralTracking: consentGranted,
+					marketingContact: consentGranted,
+					// Timestamped only when something was actually granted; a
+					// decline leaves no record to later mistake for a grant.
+					updatedAt: consentGranted ? new Date() : null,
+				},
 				onboardingStatus: defaultOnboardingStatus(),
 			});
 		} catch (error) {

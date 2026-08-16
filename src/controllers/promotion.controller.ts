@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Promotion from "../models/Promotion";
+import { resolveMemberAudience } from "../utils/membership.guard";
 import {
 	buildPromotionFilter,
 	canSeeHiddenPromotions,
@@ -61,12 +62,26 @@ export const getAllPromotions: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// Staff manage the whole catalogue, so they are not audience-filtered;
+		// everyone else sees only what is pitched at them. Resolving the
+		// audience costs a membership lookup, so it is skipped for the staff
+		// path that is about to ignore it anyway.
+		const includeInactive =
+			String(req.query.includeInactive ?? "") === "true";
+		const isStaffListing =
+			includeInactive && canSeeHiddenPromotions(req.user?.role);
+		const audience =
+			isStaffListing || !req.user?.id
+				? null
+				: await resolveMemberAudience(req.user.id);
+
 		// Members only ever see live, in-window promotions; staff can ask for
 		// the full list to manage it.
 		const filter = buildPromotionFilter({
 			role: req.user?.role,
 			locationId: location.locationId,
-			includeInactive: String(req.query.includeInactive ?? "") === "true",
+			includeInactive,
+			audience,
 		});
 
 		const promotions = await Promotion.find(filter).sort(PROMOTION_SORT);
@@ -92,8 +107,13 @@ export const getPublicPromotions: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// Nobody is signed in here, so the viewer is a prospect by definition.
+		// Member-only and win-back offers must not leak onto the landing page.
 		const promotions = await Promotion.find(
-			buildPromotionFilter({ locationId: location.locationId }),
+			buildPromotionFilter({
+				locationId: location.locationId,
+				audience: "non_member",
+			}),
 		).sort(PROMOTION_SORT);
 
 		res.status(200).json({ promotions, count: promotions.length });
