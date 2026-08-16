@@ -189,9 +189,19 @@ function resolveScheduleForClass(classDoc: any): {
 /**
  * Materialize `ScheduledSession` rows for a class's recurrence.
  *
- * Regenerating is destructive by nature, so two invariants hold: future sessions
- * are only removed once a replacement set has actually been computed, and
- * sessions that already carry bookings are never deleted.
+ * Idempotent by day: a date that already has a session is *updated in place*,
+ * never dropped and re-created. That is not a performance nicety — a session's
+ * `_id` is its room identity (`deriveRoomId(_id)`, see utils/zego-room.ts) and
+ * the id every client holds after listing the schedule. This function runs on
+ * every admin/member schedule read (ensureSessionsMaterializedForActiveClasses),
+ * so re-creating rows handed out fresh `_id`s several times a minute and any
+ * client that had already loaded the list was left asking for a session that no
+ * longer existed — the 409 NO_SCHEDULE / "This session has no valid schedule."
+ * seen when hosting a class.
+ *
+ * Two invariants still hold: sessions are only removed once a replacement set
+ * has actually been computed, and sessions that carry bookings are never
+ * deleted.
  */
 export async function syncSessionsForClass(
 	classDoc: any,
@@ -224,72 +234,132 @@ export async function syncSessionsForClass(
 		};
 	}
 
-	const todayStart = new Date();
-	todayStart.setUTCHours(0, 0, 0, 0);
+	const dayKeyOf = (d: Date | string): string =>
+		new Date(d).toISOString().slice(0, 10);
 
-	// 2. Sessions with bookings are load-bearing for members — keep them, and
-	//    remember their dates so step 4 doesn't create a duplicate alongside.
-	const booked = await ScheduledSession.find({
-		classId: classDoc._id,
-		currentBookings: { $gt: 0 },
-	})
-		.select("sessionDate")
-		.lean();
+	// 2. Load every existing session for the class, not just the booked ones —
+	//    the unbooked ones have to be matched by day and reused, not wiped.
+	const existing = await ScheduledSession.find({ classId: classDoc._id });
 
-	const preservedDayKeys = new Set(
-		booked.map((s: any) => new Date(s.sessionDate).toISOString().slice(0, 10)),
+	// One session per day is the model. Where history left duplicates for a day,
+	// the booked one wins (dropping it would orphan members' bookings); the
+	// oldest wins otherwise, since that is the id clients have had longest.
+	const keepByDay = new Map<string, (typeof existing)[number]>();
+	const redundant: typeof existing = [];
+	for (const session of existing) {
+		const key = dayKeyOf(session.sessionDate);
+		const incumbent = keepByDay.get(key);
+		if (!incumbent) {
+			keepByDay.set(key, session);
+			continue;
+		}
+		const incumbentBooked = (incumbent.currentBookings ?? 0) > 0;
+		const challengerBooked = (session.currentBookings ?? 0) > 0;
+		const challengerWins =
+			(challengerBooked && !incumbentBooked) ||
+			(challengerBooked === incumbentBooked &&
+				String(session._id) < String(incumbent._id));
+		if (challengerWins) {
+			keepByDay.set(key, session);
+			redundant.push(incumbent);
+		} else {
+			redundant.push(session);
+		}
+	}
+
+	const targetDayKeys = new Set(dates.map(dayKeyOf));
+	const reusedDayKeys = new Set(
+		[...keepByDay.keys()].filter((key) => targetDayKeys.has(key)),
 	);
+	const toCreate = dates.filter((d) => !keepByDay.has(dayKeyOf(d)));
+
+	// A session the schedule no longer covers goes only if nobody booked it; a
+	// booked one outside the new recurrence is honoured rather than cancelled
+	// out from under the member.
+	const stale = [...keepByDay.entries()]
+		.filter(([key]) => !targetDayKeys.has(key))
+		.map(([, session]) => session)
+		.filter((session) => (session.currentBookings ?? 0) <= 0);
+	const removable = [
+		...stale,
+		...redundant.filter((session) => (session.currentBookings ?? 0) <= 0),
+	];
 
 	if (options.dryRun) {
-		const toCreate = dates.filter(
-			(d) => !preservedDayKeys.has(d.toISOString().slice(0, 10)),
-		);
 		return {
 			created: toCreate.length,
-			deleted: 0,
-			preserved: preservedDayKeys.size,
+			deleted: removable.length,
+			preserved: reusedDayKeys.size,
 			skipped: false,
 		};
 	}
 
-	// 3. Clear unbooked sessions for this class (including misdated legacy rows).
-	const deleteResult = await ScheduledSession.deleteMany({
-		classId: classDoc._id,
-		$or: [{ currentBookings: { $lte: 0 } }, { currentBookings: null }],
-	});
-
-	// 4. Recreate, deriving deliveryType from the parent class's mode.
 	const deliveryType = normalizeDeliveryType(classDoc.mode);
 	const capacity = classDoc.maxParticipants || 20;
-	let created = 0;
 
-	for (const sessionDate of dates) {
-		if (preservedDayKeys.has(sessionDate.toISOString().slice(0, 10))) continue;
+	// 3. Update the surviving sessions in place, keeping `_id` (room identity),
+	//    `status` (a COMPLETED occurrence stays completed) and the booking
+	//    counters, and taking only the class-derived fields from the template.
+	for (const key of reusedDayKeys) {
+		const session = keepByDay.get(key);
+		if (!session) continue;
+		session.startTime = startTime;
+		session.endTime = endTime;
+		session.deliveryType = deliveryType;
+		session.locationAddress = classDoc.locationAddress || null;
+		// Zego layout template, not a room id — see resolveSessionRoomId.
+		session.streamRoomId = classDoc.streamRoomId || null;
+		// Resizing a session that people have already booked into would have to
+		// reconcile remainingCapacity against those bookings; leave that to the
+		// capacity engine and only apply the class default to empty sessions.
+		if ((session.currentBookings ?? 0) <= 0) {
+			session.capacity = capacity;
+			session.remainingCapacity = capacity;
+		}
+		if (session.isModified()) await session.save();
+	}
 
-		await ScheduledSession.create({
-			classId: classDoc._id,
-			trainerId: null,
-			sessionDate,
-			startTime,
-			endTime,
-			deliveryType,
-			locationAddress: classDoc.locationAddress || null,
-			// Zego layout template, not a room id. `videoRoomId` is deliberately
-			// left unset — the lifecycle job stamps it at (start - lead), and every
-			// reader derives the identical value from _id until then.
-			streamRoomId: classDoc.streamRoomId || null,
-			capacity,
-			currentBookings: 0,
-			remainingCapacity: capacity,
-			status: "SCHEDULED",
+	// 4. Create the days that have no session yet. Upsert rather than create:
+	//    this runs on every schedule read, so two concurrent readers would
+	//    otherwise both materialize the same day and hand two different room ids
+	//    out for one class.
+	for (const sessionDate of toCreate) {
+		await ScheduledSession.findOneAndUpdate(
+			{ classId: classDoc._id, sessionDate },
+			{
+				$setOnInsert: {
+					trainerId: null,
+					startTime,
+					endTime,
+					deliveryType,
+					locationAddress: classDoc.locationAddress || null,
+					streamRoomId: classDoc.streamRoomId || null,
+					// `videoRoomId` is deliberately left unset — the lifecycle job
+					// stamps it at (start - lead), and every reader derives the
+					// identical value from _id until then.
+					capacity,
+					currentBookings: 0,
+					remainingCapacity: capacity,
+					status: "SCHEDULED",
+				},
+			},
+			{ upsert: true, setDefaultsOnInsert: true },
+		);
+	}
+
+	// 5. Drop what the schedule no longer covers, plus historical duplicates.
+	let deleted = 0;
+	if (removable.length > 0) {
+		const result = await ScheduledSession.deleteMany({
+			_id: { $in: removable.map((session) => session._id) },
 		});
-		created += 1;
+		deleted = result.deletedCount ?? 0;
 	}
 
 	return {
-		created,
-		deleted: deleteResult.deletedCount ?? 0,
-		preserved: preservedDayKeys.size,
+		created: toCreate.length,
+		deleted,
+		preserved: reusedDayKeys.size,
 		skipped: false,
 	};
 }

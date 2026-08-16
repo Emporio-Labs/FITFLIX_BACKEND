@@ -80,8 +80,8 @@ const scheduledSessionSchema = new mongoose.Schema(
 			default: null,
 		},
 		// Room lifecycle, tracked separately from `status` because a room outlives
-		// the class by the expiry grace: members are locked out at the scheduled
-		// end while the host is still inside a READY room.
+		// the class by the expiry grace: the session reads as over while hosts and
+		// members are both still able to rejoin a READY room during overrun.
 		roomStatus: {
 			type: String,
 			enum: ["PENDING", "READY", "EXPIRED"],

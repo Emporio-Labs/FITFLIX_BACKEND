@@ -60,8 +60,7 @@ export const resolveSessionRoomId = (
 };
 
 /// A host needs setup time; a member should not be milling about in the room
-/// long before the class. The member grace is deliberately zero — once the
-/// class is over, the room is closed to members (there is no "just this once".)
+/// long before the class.
 ///
 /// The host lead doubles as the provisioning trigger: the lifecycle job stamps
 /// a session's room ID at exactly the moment the host becomes able to join it.
@@ -71,7 +70,6 @@ export const ROOM_LEAD_MINUTES = Number(
 export const MEMBER_JOIN_LEAD_MINUTES = Number(
 	process.env.SESSION_MEMBER_LEAD_MINUTES ?? 5,
 );
-export const MEMBER_JOIN_GRACE_AFTER_MINUTES = 0;
 
 /// A class routinely runs a little over, so the host's window stays open past
 /// the scheduled end — but only until the room expires and is torn down. This
@@ -80,6 +78,16 @@ export const MEMBER_JOIN_GRACE_AFTER_MINUTES = 0;
 export const ROOM_EXPIRY_GRACE_MINUTES = Number(
 	process.env.SESSION_ROOM_EXPIRY_MINUTES ?? 30,
 );
+
+/// The room persists past the scheduled end for *everyone*, not just the host:
+/// a member whose connection drops in the last minute, or who is still in a
+/// class that ran over, can rejoin for as long as the room is actually alive.
+///
+/// Deliberately the same number as the expiry grace rather than an independent
+/// constant — a member window that outlived the room would hand out tokens for
+/// a room the lifecycle job had already torn down, which surfaces to the member
+/// as a join that succeeds and then immediately fails.
+export const MEMBER_JOIN_GRACE_AFTER_MINUTES = ROOM_EXPIRY_GRACE_MINUTES;
 
 /// How long after a nutritionist appointment's scheduled end an ACCEPTED
 /// booking is still allowed to be honoured before the expiry sweep marks it
@@ -179,7 +187,8 @@ export type RoomTimeline = {
 	roomReadyAt: Date;
 	/// Booked members may join.
 	memberOpensAt: Date;
-	/// Member access closes — the scheduled end, exactly.
+	/// Member access closes — the scheduled end plus the grace, which tracks
+	/// the room's own expiry, so it coincides with `roomExpiresAt`.
 	memberClosesAt: Date;
 	/// Room is torn down and the session is durably over.
 	roomExpiresAt: Date;

@@ -405,9 +405,14 @@ export const resolveSessionAccess = async ({
 	// The class may widen the host's lead beyond the platform default; the
 	// lifecycle job reads the same override when it provisions the room, so the
 	// room is always ready by the time the host's window opens.
-	const leadMinutes = Number.isFinite(Number(klass?.occurrenceLeadMinutes))
-		? Number(klass?.occurrenceLeadMinutes)
-		: ROOM_LEAD_MINUTES;
+	// `typeof === "number"`, not `Number.isFinite(Number(...))`: a stored `null`
+	// coerces to 0, which would silently collapse the host's 30-minute lead to
+	// "start time exactly". An explicit 0 from the admin is still honoured.
+	const leadMinutes =
+		typeof klass?.occurrenceLeadMinutes === "number" &&
+		Number.isFinite(klass.occurrenceLeadMinutes)
+			? klass.occurrenceLeadMinutes
+			: ROOM_LEAD_MINUTES;
 	const window = buildJoinWindow(startsAt, endsAt, role, leadMinutes);
 	if (now.getTime() < window.opensAt.getTime()) {
 		return deny("NOT_OPEN_YET", { startsAt, endsAt });
