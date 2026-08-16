@@ -319,32 +319,33 @@ export async function syncSessionsForClass(
 		if (session.isModified()) await session.save();
 	}
 
-	// 4. Create the days that have no session yet. Upsert rather than create:
-	//    this runs on every schedule read, so two concurrent readers would
-	//    otherwise both materialize the same day and hand two different room ids
-	//    out for one class.
-	for (const sessionDate of toCreate) {
-		await ScheduledSession.findOneAndUpdate(
-			{ classId: classDoc._id, sessionDate },
-			{
-				$setOnInsert: {
-					trainerId: null,
-					startTime,
-					endTime,
-					deliveryType,
-					locationAddress: classDoc.locationAddress || null,
-					streamRoomId: classDoc.streamRoomId || null,
-					// `videoRoomId` is deliberately left unset — the lifecycle job
-					// stamps it at (start - lead), and every reader derives the
-					// identical value from _id until then.
-					capacity,
-					currentBookings: 0,
-					remainingCapacity: capacity,
-					status: "SCHEDULED",
+	// 4. Create the days that have no session yet. Batch upsert via bulkWrite
+	//    to avoid N sequential database roundtrips.
+	if (toCreate.length > 0) {
+		const bulkOps = toCreate.map((sessionDate) => ({
+			updateOne: {
+				filter: { classId: classDoc._id, sessionDate },
+				update: {
+					$setOnInsert: {
+						trainerId: null,
+						startTime,
+						endTime,
+						deliveryType,
+						locationAddress: classDoc.locationAddress || null,
+						streamRoomId: classDoc.streamRoomId || null,
+						// `videoRoomId` is deliberately left unset — the lifecycle job
+						// stamps it at (start - lead), and every reader derives the
+						// identical value from _id until then.
+						capacity,
+						currentBookings: 0,
+						remainingCapacity: capacity,
+						status: "SCHEDULED",
+					},
 				},
+				upsert: true,
 			},
-			{ upsert: true, setDefaultsOnInsert: true },
-		);
+		}));
+		await ScheduledSession.bulkWrite(bulkOps as any);
 	}
 
 	// 5. Drop what the schedule no longer covers, plus historical duplicates.

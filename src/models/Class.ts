@@ -191,6 +191,8 @@ const classSchema = new mongoose.Schema(
 	},
 );
 
+classSchema.index({ status: 1, isPublished: 1 });
+
 type ClassDocument = mongoose.InferSchemaType<typeof classSchema>;
 
 export default (mongoose.models.Class as mongoose.Model<ClassDocument>) ||

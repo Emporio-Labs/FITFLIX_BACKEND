@@ -105,4 +105,25 @@ router.post("/leads/followup", async (req: Request, res: Response) => {
 	}
 });
 
+/**
+ * POST /internal/sessions/materialize/tick
+ * Periodic job to roll forward session materialization for recurring classes.
+ */
+router.post("/sessions/materialize/tick", async (req: Request, res: Response) => {
+	if (!verifyInternalSecret(req, res)) return;
+
+	try {
+		const { ensureSessionsMaterializedForActiveClasses } = await import(
+			"../controllers/class-schedule.controller"
+		);
+		await ensureSessionsMaterializedForActiveClasses();
+		res.status(200).json({ ok: true, message: "Recurring sessions materialized" });
+	} catch (err) {
+		console.error("[internal/sessions/materialize/tick] Error", err);
+		res
+			.status(500)
+			.json({ error: "Session materialization failed", code: "INTERNAL_ERROR" });
+	}
+});
+
 export default router;

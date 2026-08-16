@@ -50,7 +50,7 @@ function normalizeDateStart(dateInput: string | Date): Date {
 	return d;
 }
 
-async function ensureSessionsMaterializedForActiveClasses(): Promise<void> {
+export async function ensureSessionsMaterializedForActiveClasses(): Promise<void> {
 	try {
 		const activeClasses = await ClassModel.find({
 			isPublished: { $ne: false },
@@ -208,7 +208,6 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 	next,
 ) => {
 	try {
-		await ensureSessionsMaterializedForActiveClasses();
 		const { classId, trainerId, date, startDate, endDate } = req.query;
 		const query: any = {};
 
@@ -261,7 +260,6 @@ export const getSchedulesForMembers: RequestHandler = async (
 	next,
 ) => {
 	try {
-		await ensureSessionsMaterializedForActiveClasses();
 		const { date } = req.query;
 		// FULL sessions stay in the member feed so a sold-out class renders as full
 		// rather than disappearing — capacity-engine flips SCHEDULED -> FULL at zero

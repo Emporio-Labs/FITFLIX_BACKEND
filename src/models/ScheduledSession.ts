@@ -142,6 +142,11 @@ scheduledSessionSchema.index({ roomStatus: 1, roomExpiresAt: 1 });
 // that haven't confirmed a host yet.
 scheduledSessionSchema.index({ roomStatus: 1, hostLiveAt: 1 });
 
+// Query & sync acceleration indexes: avoids full collection scans on class schedule listings & upserts
+scheduledSessionSchema.index({ classId: 1, sessionDate: 1 });
+scheduledSessionSchema.index({ status: 1, isPublished: 1, sessionDate: 1, startTime: 1 });
+scheduledSessionSchema.index({ sessionDate: 1, startTime: 1 });
+
 type ScheduledSessionDocument = mongoose.InferSchemaType<
 	typeof scheduledSessionSchema
 >;
