@@ -7,6 +7,7 @@ import authRouter from "./routes/auth.routes";
 import billingRouter from "./routes/billing.routes";
 import bookingRouter from "./routes/booking.routes";
 import classRouter from "./routes/class.routes";
+import activityRouter from "./routes/activity.routes";
 import classScheduleRouter from "./routes/class-schedule.routes";
 import contentRouter from "./routes/content.routes";
 import locationRouter from "./routes/location.routes";
@@ -268,6 +269,8 @@ app.use("/promotions", apiRateLimit, promotionRouter);
 // matched before the routers mounted at bare "/api/v1", or it answers 401.
 app.use("/api/v1/content", apiRateLimit, contentRouter);
 app.use("/content", apiRateLimit, contentRouter);
+app.use("/api/v1/activity", apiRateLimit, activityRouter);
+app.use("/activity", apiRateLimit, activityRouter);
 app.use("/api/v1", classScheduleRouter);
 app.use("/api/v1", classRouter);
 app.use("/api/v1/zego", zegoRouter);

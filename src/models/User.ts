@@ -26,6 +26,20 @@ const userSchema = new mongoose.Schema(
 			index: true,
 		},
 		dateOfBirth: { type: Date, default: undefined },
+		// DPDP Act 2023 consent, granular and separate on purpose. This is NOT
+		// onboardingStatus.consentCompleted — that one covers health onboarding,
+		// and a blanket consent reused across purposes is exactly what the Act
+		// stopped treating as valid. Both default false: absence is refusal, and
+		// every legacy user reads as not having agreed until they say so.
+		// utils/activity-consent.ts is the only thing that should interpret this.
+		privacyConsent: {
+			// Recording in-app behaviour for sales follow-up.
+			behaviouralTracking: { type: Boolean, default: false },
+			// Being contacted by a human off the back of it.
+			marketingContact: { type: Boolean, default: false },
+			// Withdrawal has to be as easy as granting, so this moves both ways.
+			updatedAt: { type: Date, default: null },
+		},
 		emergencyContact: { type: String, default: undefined },
 		address: { type: String, default: undefined },
 		passwordHash: { type: String, select: false },
