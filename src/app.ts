@@ -256,6 +256,13 @@ app.use("/leads", apiRateLimit, leadRouter);
 app.use("/gym-visits", apiRateLimit, gymVisitRouter);
 app.use("/invoices", apiRateLimit, invoiceRouter);
 app.use("/api/invoices", apiRateLimit, invoiceRouter);
+// Mounted before the bare "/api/v1" routers below. classRouter and
+// classScheduleRouter are mounted at "/api/v1" itself and each call
+// router.use(authenticateToken), so they match every /api/v1/* path that
+// reaches them — anything registered after them loses its public routes to a
+// 401. /api/v1/promotions/public did exactly that.
+app.use("/api/v1/promotions", apiRateLimit, promotionRouter);
+app.use("/promotions", apiRateLimit, promotionRouter);
 app.use("/api/v1", classScheduleRouter);
 app.use("/api/v1", classRouter);
 app.use("/api/v1/zego", zegoRouter);
@@ -269,8 +276,6 @@ app.use("/dashboard", dashboardRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
 app.use("/api/v1/locations", apiRateLimit, locationRouter);
-app.use("/api/v1/promotions", apiRateLimit, promotionRouter);
-app.use("/promotions", apiRateLimit, promotionRouter);
 app.use("/api/v1/pt", apiRateLimit, personalTrainingRouter);
 app.use("/pt", apiRateLimit, personalTrainingRouter);
 app.use("/api/v1/billing", apiRateLimit, billingRouter);
