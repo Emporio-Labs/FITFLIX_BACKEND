@@ -3,6 +3,11 @@ import mongoose from "mongoose";
 import { AppointmentMode, MeetingStatus, NutritionistBookingStatus, OnboardingStep } from "../models/Enums";
 import NutritionistBooking from "../models/NutritionistBooking";
 import Slot from "../models/Slots";
+import {
+	releaseSlotCapacity,
+	reserveSlotCapacity,
+	resolveConcreteSlotForBooking,
+} from "../services/slot-reservation.service";
 import User from "../models/User";
 import { advanceStep, getOnboardingStatus } from "../utils/onboarding.service";
 import { combineSessionDateTime } from "../utils/zego-room";
@@ -45,28 +50,49 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 		let endTime = reqEndTime ?? "10:30";
 		let resolvedSlotId: mongoose.Types.ObjectId | null = null;
 
+		const bookingDate = new Date(date);
+
 		if (slotId && mongoose.Types.ObjectId.isValid(slotId)) {
-			resolvedSlotId = new mongoose.Types.ObjectId(slotId);
-			const slot = await Slot.findById(resolvedSlotId);
+			const slot = await Slot.findById(new mongoose.Types.ObjectId(slotId));
 			if (slot) {
-				if (slot.remainingCapacity <= 0) {
+				// `slotId` is usually a *daily template* — a slot with no date that
+				// stands for "this window, every day". Reserving against the template
+				// itself drains it globally and permanently, so the window dies for
+				// every future date once its capacity is spent. Materialize the
+				// per-date child instead, exactly as the therapy flow does, and book
+				// that. The template is left untouched and resets naturally each day.
+				const concreteSlot = await resolveConcreteSlotForBooking(
+					slot,
+					bookingDate,
+				);
+
+				if (!concreteSlot) {
+					res.status(400).json({
+						error: "Selected slot is not available on that date",
+						code: "SLOT_UNAVAILABLE",
+					});
+					return;
+				}
+
+				const reservedSlot = await reserveSlotCapacity(
+					concreteSlot._id.toString(),
+				);
+
+				if (!reservedSlot) {
 					res.status(400).json({
 						error: "Selected slot is fully booked",
 						code: "SLOT_FULL",
 					});
 					return;
 				}
-				startTime = slot.startTime;
-				endTime = slot.endTime;
-				// Atomically decrement slot capacity
-				await Slot.findByIdAndUpdate(resolvedSlotId, {
-					$inc: { remainingCapacity: -1 },
-					$set: { isBooked: slot.remainingCapacity - 1 <= 0 },
-				});
+
+				// The booking must point at the concrete child, not the template —
+				// the release paths (reject / expire / reschedule) $inc this id back.
+				resolvedSlotId = concreteSlot._id;
+				startTime = concreteSlot.startTime;
+				endTime = concreteSlot.endTime;
 			}
 		}
-
-		const bookingDate = new Date(date);
 
 		const booking = new NutritionistBooking({
 			userId: new mongoose.Types.ObjectId(user.id),
@@ -346,10 +372,7 @@ export const rejectBooking: RequestHandler = async (req, res, next) => {
 		// Release the slot capacity that bookNutritionist reserved, mirroring
 		// the atomic decrement performed at creation time.
 		if (booking.slotId) {
-			await Slot.findByIdAndUpdate(booking.slotId, {
-				$inc: { remainingCapacity: 1 },
-				$set: { isBooked: false },
-			});
+			await releaseSlotCapacity(booking.slotId.toString());
 		}
 
 		booking.status = NutritionistBookingStatus.REJECTED;
@@ -442,18 +465,19 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		// Atomically reserve the new slot before touching the booking, so a
-		// failed reservation leaves everything unchanged.
-		const newSlotId = new mongoose.Types.ObjectId(slotId);
-		const newSlot = await Slot.findOneAndUpdate(
-			{ _id: newSlotId, remainingCapacity: { $gt: 0 } },
-			{
-				$inc: { remainingCapacity: -1 },
-			},
-			{ returnDocument: "after" },
-		);
+		// The date the rescheduled appointment lands on — needed before reserving,
+		// since capacity is now held per date rather than on the template.
+		let rescheduledDate = booking.bookingDate;
+		if (date) {
+			const parsedDate = new Date(date);
+			if (!Number.isNaN(parsedDate.getTime())) {
+				rescheduledDate = parsedDate;
+			}
+		}
 
-		if (!newSlot) {
+		const requestedSlot = await Slot.findById(new mongoose.Types.ObjectId(slotId));
+
+		if (!requestedSlot) {
 			res.status(409).json({
 				error: "Selected slot is fully booked or does not exist",
 				code: "SLOT_FULL",
@@ -461,22 +485,40 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		// Flip isBooked once the reserve took effect and reflected the new count.
-		if (newSlot.remainingCapacity <= 0) {
-			await Slot.findByIdAndUpdate(newSlotId, { $set: { isBooked: true } });
+		// Same template→concrete resolution as bookNutritionist: reserve the
+		// per-date child so the template's capacity survives the reschedule.
+		const newSlot = await resolveConcreteSlotForBooking(
+			requestedSlot,
+			rescheduledDate,
+		);
+
+		if (!newSlot) {
+			res.status(409).json({
+				error: "Selected slot is not available on that date",
+				code: "SLOT_UNAVAILABLE",
+			});
+			return;
+		}
+
+		// Atomically reserve the new slot before touching the booking, so a
+		// failed reservation leaves everything unchanged.
+		const newSlotId = newSlot._id;
+		const reservedSlot = await reserveSlotCapacity(newSlotId.toString());
+
+		if (!reservedSlot) {
+			res.status(409).json({
+				error: "Selected slot is fully booked or does not exist",
+				code: "SLOT_FULL",
+			});
+			return;
 		}
 
 		const oldSlotId = booking.slotId;
 
 		booking.slotId = newSlotId;
-		booking.startTime = newSlot.startTime;
-		booking.endTime = newSlot.endTime;
-		if (date) {
-			const parsedDate = new Date(date);
-			if (!Number.isNaN(parsedDate.getTime())) {
-				booking.bookingDate = parsedDate;
-			}
-		}
+		booking.startTime = reservedSlot.startTime;
+		booking.endTime = reservedSlot.endTime;
+		booking.bookingDate = rescheduledDate;
 		booking.status = NutritionistBookingStatus.PENDING;
 		booking.acceptedAt = null;
 		await booking.save();
@@ -485,10 +527,7 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 		// the successful reservation + booking update above.
 		if (oldSlotId) {
 			try {
-				await Slot.findByIdAndUpdate(oldSlotId, {
-					$inc: { remainingCapacity: 1 },
-					$set: { isBooked: false },
-				});
+				await releaseSlotCapacity(oldSlotId.toString());
 			} catch (err) {
 				console.error(
 					`[nutritionist-reschedule] Old slot release failed for booking ${String(booking._id)}`,

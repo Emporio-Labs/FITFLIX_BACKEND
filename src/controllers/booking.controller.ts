@@ -8,6 +8,11 @@ import Slot from "../models/Slots";
 import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
 import { releaseSeatAtomic } from "../services/capacity-engine.service";
+import {
+	releaseSlotCapacity,
+	reserveSlotCapacity,
+	resolveConcreteSlotForBooking,
+} from "../services/slot-reservation.service";
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
 import { getActiveMembership } from "../utils/membership.guard";
 import { combineSessionDateTime, resolveSessionRoomId } from "../utils/zego-room";
@@ -45,14 +50,6 @@ const nonCancelledBookingStatusFilter = {
 	$nin: [BookingStatus.Cancelled, String(BookingStatus.Cancelled), "Cancelled"],
 };
 
-const normalizeToUtcDate = (value: Date): Date =>
-	new Date(
-		Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
-	);
-
-const isSameUtcDate = (left: Date, right: Date): boolean =>
-	normalizeToUtcDate(left).getTime() === normalizeToUtcDate(right).getTime();
-
 const isSlotLinkedToService = (
 	serviceSlotIds: Array<mongoose.Types.ObjectId>,
 	slot: {
@@ -66,118 +63,6 @@ const isSlotLinkedToService = (
 
 	return serviceSlotIds.some(
 		(serviceSlotId) => serviceSlotId.toString() === linkedSlotId,
-	);
-};
-
-const resolveConcreteSlotForBooking = async (
-	slot: {
-		_id: mongoose.Types.ObjectId;
-		date?: Date | null;
-		isDaily?: boolean;
-		startTime: string;
-		endTime: string;
-		capacity?: number;
-		parentTemplate?: mongoose.Types.ObjectId | null;
-	},
-	bookingDate: Date,
-) => {
-	const bookingDay = normalizeToUtcDate(bookingDate);
-
-	if (slot.parentTemplate) {
-		if (!slot.date || !isSameUtcDate(slot.date, bookingDay)) {
-			return null;
-		}
-
-		return slot;
-	}
-
-	if (slot.isDaily) {
-		const templateCapacity = Math.max(1, Number(slot.capacity ?? 1));
-
-		const concreteSlot = await Slot.findOneAndUpdate(
-			{
-				parentTemplate: slot._id,
-				date: bookingDay,
-				startTime: slot.startTime,
-				endTime: slot.endTime,
-			},
-			{
-				$setOnInsert: {
-					date: bookingDay,
-					isDaily: false,
-					startTime: slot.startTime,
-					endTime: slot.endTime,
-					capacity: templateCapacity,
-					remainingCapacity: templateCapacity,
-					isBooked: templateCapacity <= 0,
-					parentTemplate: slot._id,
-				},
-			},
-			{
-				upsert: true,
-				setDefaultsOnInsert: true,
-				returnDocument: "after",
-			},
-		);
-
-		return concreteSlot;
-	}
-
-	if (!slot.date || !isSameUtcDate(slot.date, bookingDay)) {
-		return null;
-	}
-
-	return slot;
-};
-
-const reserveSlotCapacity = async (slotId: string) => {
-	let reservedSlot = await Slot.findOneAndUpdate(
-		{ _id: slotId, remainingCapacity: { $gt: 0 } },
-		{ $inc: { remainingCapacity: -1 } },
-		{ returnDocument: "after" },
-	);
-
-	if (!reservedSlot) {
-		return null;
-	}
-
-	const derivedBooked = Number(reservedSlot.remainingCapacity ?? 0) <= 0;
-
-	if (reservedSlot.isBooked !== derivedBooked) {
-		const syncedSlot = await Slot.findByIdAndUpdate(
-			slotId,
-			{ isBooked: derivedBooked },
-			{ returnDocument: "after" },
-		);
-
-		if (syncedSlot) {
-			reservedSlot = syncedSlot;
-		}
-	}
-
-	return reservedSlot;
-};
-
-const releaseSlotCapacity = async (
-	slotId: string,
-	session?: mongoose.ClientSession,
-): Promise<void> => {
-	await Slot.findOneAndUpdate(
-		{
-			_id: slotId,
-			$expr: {
-				$lt: [
-					{ $ifNull: ["$remainingCapacity", 0] },
-					{ $ifNull: ["$capacity", 1] },
-				],
-			},
-		},
-		{
-			$max: { capacity: 1 },
-			$inc: { remainingCapacity: 1 },
-			$set: { isBooked: false },
-		},
-		{ returnDocument: "after", ...(session ? { session } : {}) },
 	);
 };
 

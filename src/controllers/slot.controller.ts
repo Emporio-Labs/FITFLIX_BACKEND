@@ -89,6 +89,31 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// Guard against duplicate daily templates for the same window. Prod
+		// currently carries 16-19 duplicates per window from before this check
+		// existed — each one used to inflate /slots/available's summed count
+		// while only one of them was ever reachable by a booking. A DB-level
+		// unique index isn't safe to add on top of that existing duplicate
+		// data (Mongoose would fail to build it against the live collection),
+		// so this is enforced here at write time instead.
+		if (derivedState.isDaily) {
+			const duplicate = await Slot.findOne({
+				isDaily: true,
+				parentTemplate: null,
+				startTime: parsedBody.data.startTime,
+				endTime: parsedBody.data.endTime,
+			}).select("_id");
+
+			if (duplicate) {
+				res.status(409).json({
+					message: "A daily template already exists for this time window",
+					code: "DUPLICATE_TEMPLATE",
+					existingSlotId: duplicate._id,
+				});
+				return;
+			}
+		}
+
 		const slot = await Slot.create({
 			date: derivedState.date,
 			isDaily: derivedState.isDaily,
@@ -143,12 +168,19 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 			),
 		);
 
+		// `remainingCapacity`/`isBooked` selected (and filtered) here too: a
+		// template drained by a booking against it directly — the bug the
+		// nutritionist flow used to have, before reservations were moved to
+		// per-date concrete children — must stop being offered, not keep
+		// advertising its original `capacity` forever.
 		const dailyTemplates = await Slot.find({
 			isDaily: true,
 			parentTemplate: null,
 			capacity: { $gt: 0 },
+			remainingCapacity: { $gt: 0 },
+			isBooked: false,
 		})
-			.select("_id startTime endTime capacity")
+			.select("_id startTime endTime capacity remainingCapacity")
 			.sort({ startTime: 1 });
 
 		const templateRows = dailyTemplates
@@ -164,7 +196,13 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 				startTime: t.startTime,
 				endTime: t.endTime,
 				capacity: t.capacity,
-				remainingCapacity: t.capacity,
+				// A template's own remainingCapacity should normally equal its
+				// capacity (per-date bookings drain a materialized child instead —
+				// see resolveConcreteSlotForBooking), but take the min defensively
+				// so a template left over-drained by old data never overstates
+				// what a booking against it can actually reserve.
+				remainingCapacity: Math.min(t.capacity, t.remainingCapacity),
+				parentTemplate: null as string | null,
 			}));
 
 		const concreteRows = concreteSlots.map((s) => ({
@@ -174,34 +212,26 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 			endTime: s.endTime,
 			capacity: s.capacity,
 			remainingCapacity: s.remainingCapacity,
+			parentTemplate: s.parentTemplate ? s.parentTemplate.toString() : null,
 		}));
 
 		// Multiple daily-template rows can legitimately exist for the same
-		// startTime/endTime window (no uniqueness constraint on templates) —
-		// collapse them into one card per window so the UI never shows
-		// duplicate "same time, different count" slots. Any of the grouped
-		// slotIds still resolves correctly when booking.
-		const grouped = new Map<
-			string,
-			{
-				slotId: (typeof concreteRows)[number]["slotId"];
-				date: (typeof concreteRows)[number]["date"];
-				startTime: string;
-				endTime: string;
-				capacity: number;
-				remainingCapacity: number;
-			}
-		>();
+		// startTime/endTime window (no uniqueness constraint on templates).
+		// Collapse them into one card per window so the UI never shows
+		// duplicate "same time, different count" slots — but unlike before,
+		// keep only the single row with the most capacity rather than summing
+		// every row's remainingCapacity onto one row's id. Summing let a card
+		// advertise e.g. "107 spots" while the one bookable id behind it had 0
+		// left, because the other 16 templates' capacity was folded into a
+		// number nobody could actually claim.
+		const grouped = new Map<string, (typeof concreteRows)[number]>();
 
 		for (const row of [...concreteRows, ...templateRows]) {
 			const key = `${row.startTime}::${row.endTime}`;
 			const existing = grouped.get(key);
-			if (!existing) {
-				grouped.set(key, { ...row });
-				continue;
+			if (!existing || row.remainingCapacity > existing.remainingCapacity) {
+				grouped.set(key, row);
 			}
-			existing.capacity = Math.max(existing.capacity, row.capacity);
-			existing.remainingCapacity += row.remainingCapacity;
 		}
 
 		const slots = Array.from(grouped.values()).sort((a, b) =>

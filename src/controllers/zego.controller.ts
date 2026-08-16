@@ -77,6 +77,18 @@ const mintRoomToken = (
 	};
 };
 
+/// ZIM (the signaling channel co-host invitations ride on) is a separate
+/// login from RTC and rejects a room-bound payload — it wants an empty one.
+/// Deliberately not reusing mintRoomToken's token for this: that one is
+/// scoped to a single room by design (see the comment above), and ZIM login
+/// happens once per user session, independent of which room they're in.
+const mintZimToken = (
+	config: ZegoConfig,
+	userId: string,
+	ttlSeconds: number,
+): string =>
+	generateToken04(config.appID, userId, config.serverSecret, ttlSeconds, "");
+
 /// `req.user` is a JWT-derived {id, email, role} — no display name. Load the
 /// member document for one; hosts authenticating as admin/trainer accounts
 /// may have no matching User doc, so fall back to the email's local part.
@@ -187,8 +199,16 @@ export const generateSessionToken: RequestHandler = async (req, res, next) => {
 			await access.booking.save();
 		}
 
+		// Only live streams use ZIM (co-host invitations); minting it for every
+		// session would be one more token the client never uses.
+		const zimToken =
+			access.klass?.sessionType === "live_stream"
+				? mintZimToken(config, user.id, access.ttlSeconds)
+				: undefined;
+
 		res.status(200).json({
 			token,
+			zimToken,
 			appID: config.appID,
 			roomId: access.roomId,
 			userId: user.id,

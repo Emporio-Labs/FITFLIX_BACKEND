@@ -1,10 +1,10 @@
 import { MeetingStatus, NutritionistBookingStatus } from "../models/Enums";
 import NutritionistBooking from "../models/NutritionistBooking";
-import Slot from "../models/Slots";
 import {
 	combineSessionDateTime,
 	NUTRI_EXPIRY_GRACE_MINUTES,
 } from "../utils/zego-room";
+import { releaseSlotCapacity } from "./slot-reservation.service";
 
 /**
  * Two independent staleness rules for nutritionist bookings, both terminal.
@@ -43,7 +43,10 @@ export async function expireStaleNutritionistBookings(
 
 	for (const row of pending) {
 		try {
-			const startInstant = combineSessionDateTime(row.bookingDate, row.startTime);
+			const startInstant = combineSessionDateTime(
+				row.bookingDate,
+				row.startTime,
+			);
 			if (!startInstant || startInstant.getTime() > now.getTime()) {
 				continue; // still in the future — leave it PENDING
 			}
@@ -63,10 +66,7 @@ export async function expireStaleNutritionistBookings(
 			// if this fails we still want the status transition to stick.
 			if (row.slotId) {
 				try {
-					await Slot.findByIdAndUpdate(row.slotId, {
-						$inc: { remainingCapacity: 1 },
-						$set: { isBooked: false },
-					});
+					await releaseSlotCapacity(row.slotId.toString());
 				} catch (err) {
 					console.error(
 						`[nutritionist-expiry] Slot release failed for booking ${String(row._id)}`,
