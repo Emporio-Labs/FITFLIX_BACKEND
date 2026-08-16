@@ -1,6 +1,10 @@
 import mongoose from "mongoose";
 import z from "zod";
-import { PROMOTION_LINK_TYPES, PROMOTION_MODES } from "../models/Promotion";
+import {
+	PROMOTION_AUDIENCES,
+	PROMOTION_LINK_TYPES,
+	PROMOTION_MODES,
+} from "../models/Promotion";
 
 const objectId = z
 	.string()
@@ -85,6 +89,10 @@ const promotionFields = z.object({
 	// Null is meaningful: it matches both audiences. Distinct from absent on
 	// an update, which leaves the stored value alone.
 	mode: z.enum(PROMOTION_MODES).nullable().optional(),
+	// Unlike `mode`, null is not meaningful here — "everyone" is spelled "all",
+	// so the enum stays closed and the filter never has to special-case it.
+	audience: z.enum(PROMOTION_AUDIENCES).optional(),
+	ctaLabel: z.string().trim().max(40).optional(),
 	link: linkSchema,
 	activeFrom: z.coerce.date(),
 	activeTo: z.coerce.date(),

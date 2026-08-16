@@ -35,6 +35,12 @@ export interface PromotionFilterOptions {
 	locationId?: string | null;
 	/** Honoured for staff only. */
 	includeInactive?: boolean;
+	/**
+	 * The *viewer's* segment, from utils/membership.guard. Absent imposes no
+	 * audience constraint, which is what the admin list wants — staff manage
+	 * every promotion regardless of who it is aimed at.
+	 */
+	audience?: "member" | "lapsed" | "non_member" | null;
 }
 
 export const buildPromotionFilter = ({
@@ -42,8 +48,17 @@ export const buildPromotionFilter = ({
 	now = new Date(),
 	locationId = null,
 	includeInactive = false,
+	audience = null,
 }: PromotionFilterOptions = {}): Record<string, unknown> => {
 	const filter: Record<string, unknown> = {};
+
+	// `null` in the list is load-bearing: Mongo's $in matches a missing field
+	// against null, and every promotion written before this field existed has
+	// no `audience` at all. Without it, adding audience targeting would have
+	// silently hidden the entire existing catalogue.
+	if (audience) {
+		filter.audience = { $in: ["all", audience, null] };
+	}
 
 	// Company-wide promotions ride along with a branch's own rather than being
 	// shadowed by them. Asking for no branch imposes no constraint, which is

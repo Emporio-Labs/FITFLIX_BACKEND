@@ -23,6 +23,22 @@ export const PROMOTION_LINK_TYPES = [
 
 export const PROMOTION_MODES = ["online", "offline"] as const;
 
+/**
+ * Who a promotion is pitched at. Distinct from `mode`, which is about how the
+ * thing is delivered rather than who should be hearing about it.
+ *
+ * "all" is the default and the escape hatch. The other three mirror
+ * utils/membership.guard's MemberAudience, because a promotion is matched
+ * against a viewer's resolved audience and the two vocabularies drifting apart
+ * would silently stop matching.
+ */
+export const PROMOTION_AUDIENCES = [
+	"all",
+	"non_member",
+	"member",
+	"lapsed",
+] as const;
+
 const linkSchema = new mongoose.Schema(
 	{
 		type: { type: String, enum: PROMOTION_LINK_TYPES, required: true },
@@ -51,6 +67,15 @@ const promotionSchema = new mongoose.Schema(
 		subtext: { type: String, default: "", trim: true },
 		tag: { type: String, default: "", trim: true },
 		mode: { type: String, enum: [...PROMOTION_MODES, null], default: null },
+		audience: {
+			type: String,
+			enum: PROMOTION_AUDIENCES,
+			default: "all",
+		},
+		// Overrides the app's built-in button text for this promo. Optional, and
+		// empty means "use whatever the app would have said" — the point is that
+		// a campaign can say "Claim your free week" without an app release.
+		ctaLabel: { type: String, default: "", trim: true, maxlength: 40 },
 		link: { type: linkSchema, required: true },
 		activeFrom: { type: Date, required: true },
 		// Required on purpose. A promo nobody remembers to switch off is the

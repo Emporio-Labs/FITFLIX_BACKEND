@@ -23,6 +23,9 @@ type SampleDoc = {
 	activeFrom: Date;
 	activeTo: Date;
 	locationId: mongoose.Types.ObjectId | null;
+	// Optional on purpose: promotions written before audience targeting existed
+	// carry no such field, and those must keep showing.
+	audience?: "all" | "non_member" | "member" | "lapsed";
 };
 
 /**
@@ -53,8 +56,13 @@ const matches = (filter: Record<string, unknown>, doc: SampleDoc): boolean => {
 					const wanted = (operand as unknown[]).map((v) =>
 						v === null ? null : String(v),
 					);
-					if (!wanted.includes(value === null ? null : String(value)))
-						return false;
+					// Mongo matches a missing field against null in $in, and the
+					// audience filter depends on that to keep pre-existing
+					// promotions visible. Modelling it any other way here would
+					// make this test agree with a filter that hides them.
+					const actual =
+						value === null || value === undefined ? null : String(value);
+					if (!wanted.includes(actual)) return false;
 					break;
 				}
 				default:
@@ -260,6 +268,70 @@ function runUnitTests() {
 		assert(
 			shown.includes("branch-a") && shown.includes("branch-b"),
 			"an unscoped list spans every branch — what the admin list wants",
+		);
+	}
+
+	console.log("\n7b. Audience targeting — who a promotion is pitched at...");
+	{
+		const audienceSeeds: Array<Pick<SampleDoc, "label" | "audience">> = [
+			{ label: "everyone", audience: "all" },
+			{ label: "prospects", audience: "non_member" },
+			{ label: "members", audience: "member" },
+			{ label: "win-back", audience: "lapsed" },
+			// No audience field: written before targeting existed.
+			{ label: "legacy" },
+		];
+		const audienceDocs: SampleDoc[] = audienceSeeds.map((d) => ({
+			isActive: true,
+			activeFrom: new Date(now.getTime() - day),
+			activeTo: new Date(now.getTime() + day),
+			locationId: null,
+			...d,
+		}));
+
+		const forProspect = visible(
+			buildPromotionFilter({ now, audience: "non_member" }),
+			audienceDocs,
+		);
+		assert(
+			forProspect.includes("everyone") && forProspect.includes("prospects"),
+			"a prospect sees all-audience and prospect-targeted promotions",
+		);
+		assert(
+			!forProspect.includes("members") && !forProspect.includes("win-back"),
+			"a prospect never sees member-only or win-back offers",
+		);
+		assert(
+			forProspect.includes("legacy"),
+			"a promotion predating this field keeps showing — no migration needed",
+		);
+
+		const forMember = visible(
+			buildPromotionFilter({ now, audience: "member" }),
+			audienceDocs,
+		);
+		assert(
+			forMember.includes("members") && !forMember.includes("prospects"),
+			"a member sees member offers and not the join-us pitch",
+		);
+
+		const forLapsed = visible(
+			buildPromotionFilter({ now, audience: "lapsed" }),
+			audienceDocs,
+		);
+		assert(
+			forLapsed.includes("win-back") && !forLapsed.includes("members"),
+			"a lapsed member gets the win-back, not the member-only offer",
+		);
+		assert(
+			!forLapsed.includes("prospects"),
+			"lapsed and never-joined are distinct audiences, not one bucket",
+		);
+
+		assert(
+			visible(buildPromotionFilter({ now }), audienceDocs).length ===
+				audienceDocs.length,
+			"omitting the audience imposes no constraint — the admin list sees all",
 		);
 	}
 
