@@ -9,7 +9,7 @@ import {
 	mapCreditServiceError,
 	refundCreditsBySource,
 } from "../utils/credit.service";
-import { evaluateBookingRules } from "./booking-rules-engine.service";
+import { evaluateBookingRules, parseInTimezone } from "./booking-rules-engine.service";
 import { allocateSeatAtomic, releaseSeatAtomic } from "./capacity-engine.service";
 
 import { syncSessionsForClass } from "../controllers/class.controller";
@@ -22,6 +22,73 @@ export interface GroupClassRegistrationResult {
 	remainingCapacity?: number;
 	details?: any;
 	reason?: string;
+}
+
+/// How far back to look for candidate sessions.
+///
+/// The query filters on `sessionDate`, a calendar day, while the decision is
+/// made on a real instant in the class's own timezone. Twenty-four hours of
+/// slack means a session dated "yesterday" in UTC that has not started yet in
+/// Asia/Kolkata is still a candidate.
+const SESSION_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+/// Upper bound on candidates scanned before giving up.
+///
+/// Generous on purpose: within the ~36-hour boundary this only has to step over
+/// sessions that already started today, and even a class running back-to-back
+/// 15-minute slots produces fewer than 100 of those.
+const SESSION_SCAN_LIMIT = 200;
+
+/// The class's soonest session that has **not started yet**.
+///
+/// Replaces a `sessionDate: { $gte: <UTC midnight today> }` query whose
+/// ascending sort returned the *earliest session of today* — including one that
+/// finished hours ago. At 7pm in Asia/Kolkata a class with an 8am slot resolved
+/// to the 8am slot, and the booking was then rejected by the rules engine with
+/// "Booking window closed as class has already started" — for a class the
+/// member could see an open evening slot for.
+///
+/// It also replaces the last-ditch fallback that dropped the date filter
+/// entirely and returned the oldest SCHEDULED session ever recorded, which is
+/// past by definition. A class whose only sessions are in the past now
+/// correctly reports that nothing upcoming is scheduled instead of offering a
+/// booking that can never succeed.
+///
+/// Whether a *future* session is still inside its booking window is not decided
+/// here — [evaluateBookingRules] owns that, and its "closed N minutes before
+/// start" message is the useful one. This only answers "which occurrence are we
+/// talking about".
+async function findNextUpcomingSession(
+	targetClass: any,
+	now: Date = new Date(),
+): Promise<any | null> {
+	const classTimezone = (targetClass as any).timezone || "Asia/Kolkata";
+
+	const lookbackFrom = new Date(now.getTime() - SESSION_LOOKBACK_MS);
+	lookbackFrom.setUTCHours(0, 0, 0, 0);
+
+	const candidates = await ScheduledSession.find({
+		classId: targetClass._id,
+		status: "SCHEDULED",
+		sessionDate: { $gte: lookbackFrom },
+	})
+		.sort({ sessionDate: 1, startTime: 1 })
+		.limit(SESSION_SCAN_LIMIT);
+
+	for (const candidate of candidates) {
+		// Same construction the rules engine uses, so the occurrence picked here
+		// and the window evaluated there can never disagree about when it starts.
+		const startsAt = parseInTimezone(
+			new Date(candidate.sessionDate),
+			candidate.startTime,
+			classTimezone,
+		);
+		if (startsAt.getTime() > now.getTime()) {
+			return candidate;
+		}
+	}
+
+	return null;
 }
 
 export async function registerGroupClassBooking(params: {
@@ -56,29 +123,12 @@ export async function registerGroupClassBooking(params: {
 			};
 		}
 		if (targetClass) {
-			const todayStart = new Date();
-			todayStart.setUTCHours(0, 0, 0, 0);
-			session = await ScheduledSession.findOne({
-				classId: targetClass._id,
-				status: "SCHEDULED",
-				sessionDate: { $gte: todayStart },
-			}).sort({ sessionDate: 1, startTime: 1 });
+			session = await findNextUpcomingSession(targetClass);
 
 			if (!session) {
 				// Auto-materialize scheduled sessions for classes whose schedule was updated
 				await syncSessionsForClass(targetClass);
-				session = await ScheduledSession.findOne({
-					classId: targetClass._id,
-					status: "SCHEDULED",
-					sessionDate: { $gte: todayStart },
-				}).sort({ sessionDate: 1, startTime: 1 });
-
-				if (!session) {
-					session = await ScheduledSession.findOne({
-						classId: targetClass._id,
-						status: "SCHEDULED",
-					}).sort({ sessionDate: 1, startTime: 1 });
-				}
+				session = await findNextUpcomingSession(targetClass);
 			}
 		}
 	}
