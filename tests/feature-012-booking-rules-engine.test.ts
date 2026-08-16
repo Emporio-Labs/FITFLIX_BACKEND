@@ -1,7 +1,10 @@
 import ClassModel from "../src/models/Class";
 import { Gender, UserStatus } from "../src/models/Enums";
 import User from "../src/models/User";
-import { evaluateBookingRules } from "../src/services/booking-rules-engine.service";
+import {
+	evaluateBookingRules,
+	parseInTimezone,
+} from "../src/services/booking-rules-engine.service";
 import { assert, startTestServer } from "./test-helpers";
 
 async function runFeature012Tests() {
@@ -124,13 +127,34 @@ async function runFeature012Tests() {
 		);
 
 		console.log("\n5. Testing Custom Admin Configured Window (2 Days / 48h)...");
-		// 60 hours in advance (too early for 48h window, but allowed under 72h)
+		// 60 hours in advance: too early for the 48h window, allowed under 72h.
+		//
+		// The offset is measured from the session's *real* start instant rather
+		// than from `Date.now()`. `parseInTimezone` keeps only the calendar date
+		// of `sessionDate` and rebuilds the time from `startTime`, so the old
+		// `Date.now() + 2.5 days` did not mean "60 hours away" — it meant
+		// "10:00 on whatever day 60 hours from now lands on". Run before 10:00
+		// local that is 58 - <hour> hours out, and this assertion failed for
+		// every run between 10:00 and 11:59 in the class timezone while passing
+		// the rest of the day.
+		const customSessionDate = new Date(Date.now() + 86400000 * 3);
+		const customStartsAt = parseInTimezone(
+			customSessionDate,
+			"10:00",
+			// Neither fixture class sets `timezone`, so the engine defaults to
+			// this; the test has to resolve the instant the same way.
+			"Asia/Kolkata",
+		);
+		const sixtyHoursBeforeStart = new Date(
+			customStartsAt.getTime() - 60 * 60 * 60 * 1000,
+		);
+
 		const customEarlyResult = await evaluateBookingRules({
 			userId: activeUserId,
 			classId: class48hId,
-			sessionDate: new Date(Date.now() + 86400000 * 2.5),
+			sessionDate: customSessionDate,
 			startTime: "10:00",
-			now: new Date(),
+			now: sixtyHoursBeforeStart,
 		});
 		assert(
 			customEarlyResult.allowed === false,
