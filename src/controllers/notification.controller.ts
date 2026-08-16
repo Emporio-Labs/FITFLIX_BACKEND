@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Notification from "../models/Notification";
-import { registerFcmToken } from "../services/fcm.service";
+import { isAllowedTopic, registerFcmToken, sendPushToTopic } from "../services/fcm.service";
 import type { AuthenticatedUser } from "../types/auth";
 
 const getIdParam = (v: unknown): string | null => {
@@ -113,6 +113,47 @@ export const registerToken: RequestHandler = async (req, res, next) => {
 	try {
 		await registerFcmToken(user.id, token, platform as "ios" | "android");
 		res.status(200).json({ message: "FCM token registered" });
+	} catch (err) {
+		next(err);
+	}
+};
+
+/**
+ * Broadcast a push notification to every device subscribed to an FCM topic.
+ * Admin-only (see notification.routes.ts). This is the scale-safe campaign
+ * path: one FCM call reaches every subscriber regardless of audience size,
+ * with no per-user DB read and no in-app Notification rows written — see
+ * fcm.service.ts for the fan-out rationale and sendPushToTopic's limits.
+ */
+export const broadcastToTopic: RequestHandler = async (req, res, next) => {
+	const { topic, title, body, data } = req.body as {
+		topic?: string;
+		title?: string;
+		body?: string;
+		data?: Record<string, unknown>;
+	};
+
+	if (!topic || typeof topic !== "string" || !isAllowedTopic(topic)) {
+		res.status(400).json({
+			error: "topic must be one of the allowed broadcast topics",
+			code: "VALIDATION_ERROR",
+		});
+		return;
+	}
+	if (!title || !body) {
+		res.status(400).json({
+			error: "title and body are required",
+			code: "VALIDATION_ERROR",
+		});
+		return;
+	}
+
+	try {
+		const stringData = data
+			? Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)]))
+			: undefined;
+		await sendPushToTopic(topic, { title, body, data: stringData });
+		res.status(200).json({ message: "Broadcast sent", topic });
 	} catch (err) {
 		next(err);
 	}

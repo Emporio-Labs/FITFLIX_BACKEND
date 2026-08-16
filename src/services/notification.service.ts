@@ -30,10 +30,13 @@ export async function notify(payload: NotifyPayload): Promise<void> {
 			)
 		: undefined;
 
-	// In-app persistence
+	// In-app persistence. The created doc's id is threaded into the FCM data
+	// payload below so a tapped push can mark the right notification read
+	// without a round trip to look it up by content.
+	let createdId: string | undefined;
 	if (channels.includes(NotificationChannel.InApp)) {
 		try {
-			await Notification.create({
+			const created = await Notification.create({
 				userId: payload.userId,
 				kind: payload.kind,
 				title: payload.title,
@@ -42,6 +45,7 @@ export async function notify(payload: NotifyPayload): Promise<void> {
 				channels,
 				deliveredAt: new Date(),
 			});
+			createdId = String(created._id);
 		} catch (err) {
 			console.error("[notify] Failed to persist Notification", err);
 		}
@@ -60,12 +64,18 @@ export async function notify(payload: NotifyPayload): Promise<void> {
 		}
 	}
 
-	// FCM push
+	// FCM push. `kind` and the persisted notification id ride along in the
+	// data payload — without them the client can only guess at a tap's
+	// destination and can't mark the right inbox row read.
 	if (channels.includes(NotificationChannel.Push)) {
 		sendPushToUser(payload.userId, {
 			title: payload.title,
 			body: payload.body,
-			data: stringData,
+			data: {
+				...stringData,
+				kind: payload.kind,
+				...(createdId ? { notificationId: createdId } : {}),
+			},
 		}).catch((err) => console.error("[notify] FCM push failed", err));
 	}
 }

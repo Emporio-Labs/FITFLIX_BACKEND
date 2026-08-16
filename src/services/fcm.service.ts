@@ -94,21 +94,86 @@ export async function sendPushToUser(
 }
 
 /**
+ * Send one push to every device subscribed to an FCM topic.
+ *
+ * This is the broadcast path: devices call
+ * `FirebaseMessaging.subscribeToTopic()` directly against Google, which
+ * costs this server nothing, so a campaign reaching millions of devices is
+ * still exactly one call here — no per-user DB read, no per-user send.
+ * Trade-off: a topic message can't be personalised (no per-user data), and
+ * Google's guidance caps sustained throughput at roughly one message/second
+ * per topic, so this is for campaigns, not transactional notifications —
+ * {@link sendPushToUser} remains the path for those.
+ *
+ * Callers MUST validate `topic` against {@link isAllowedTopic} first; this
+ * function does not — it is not itself a trust boundary.
+ */
+export async function sendPushToTopic(
+	topic: string,
+	message: FcmMessage,
+): Promise<void> {
+	const app = getApp();
+	if (!app) return;
+
+	await admin.messaging(app).send({
+		topic,
+		notification: { title: message.title, body: message.body },
+		data: message.data,
+		android: { priority: "high" },
+		apns: {
+			payload: {
+				aps: {
+					alert: { title: message.title, body: message.body },
+					sound: "default",
+				},
+			},
+		},
+	});
+}
+
+/**
+ * Static topics the client is allowed to subscribe to, plus the
+ * `gym_<locationId>` pattern (validated as a real ObjectId, not just the
+ * prefix — a broadcast topic is not a place to trust arbitrary client
+ * input). Keep in sync with the client's subscription list.
+ */
+const STATIC_TOPICS = new Set(["all_users", "plat_android", "plat_ios"]);
+const GYM_TOPIC_RE = /^gym_([a-f0-9]{24})$/;
+
+export function isAllowedTopic(topic: string): boolean {
+	if (STATIC_TOPICS.has(topic)) return true;
+	const match = GYM_TOPIC_RE.exec(topic);
+	return match !== null && mongoose.Types.ObjectId.isValid(match[1]!);
+}
+
+/**
  * Register or refresh an FCM token for a user.
- * Called by the mobile app when it receives a new FCM token.
+ * Called by the mobile app when it receives a new FCM token — in steady
+ * state this is a heartbeat on an already-registered token, so the common
+ * path is a single write: try to bump `lastSeenAt` on the existing array
+ * entry, and only fall back to a second write (`$addToSet`) the first time a
+ * given token is seen. Two sequential $pull/$push writes on every call, as
+ * this used to do, doubles write load for no benefit once a token is stable.
  */
 export async function registerFcmToken(
 	userId: string,
 	token: string,
 	platform: "ios" | "android",
 ): Promise<void> {
-	await User.findByIdAndUpdate(userId, {
-		$pull: { fcmTokens: { token } }, // remove if exists (avoid dups)
-	});
-
-	await User.findByIdAndUpdate(userId, {
-		$push: {
-			fcmTokens: { token, platform, lastSeenAt: new Date() },
+	const updated = await User.updateOne(
+		{ _id: userId, "fcmTokens.token": token },
+		{
+			$set: {
+				"fcmTokens.$.platform": platform,
+				"fcmTokens.$.lastSeenAt": new Date(),
+			},
 		},
-	});
+	);
+
+	if (updated.matchedCount > 0) return;
+
+	await User.updateOne(
+		{ _id: userId },
+		{ $addToSet: { fcmTokens: { token, platform, lastSeenAt: new Date() } } },
+	);
 }
