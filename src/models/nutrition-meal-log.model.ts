@@ -12,6 +12,7 @@ const loggedItemSchema = new mongoose.Schema(
 			default: null,
 		},
 		foodName: { type: String, required: true },
+		recipeSource: { type: String, default: null },
 		quantityG: { type: Number, required: true },
 		caloriesKcal: { type: Number, required: true },
 		proteinG: { type: Number, required: true },

@@ -123,6 +123,7 @@ export const markMealCompleted = async (
 	const items = sourceItems.map((item) => ({
 		foodId: item.foodId,
 		foodName: item.foodName,
+		recipeSource: (item as any).recipeSource ?? null,
 		quantityG: item.quantityG,
 		caloriesKcal: item.caloriesKcal,
 		proteinG: item.proteinG,
@@ -152,10 +153,13 @@ export const markMealCompleted = async (
 	const resolvedRecipeName =
 		(selectedOption?.recipeName && !/^Option\s+\d+$/i.test(selectedOption.recipeName)
 			? selectedOption.recipeName
-			: items.find((i) => i.recipeSource)?.recipeSource) ||
+			: (items.find((i) => i.recipeSource)?.recipeSource ??
+				((selectedOption?.foods || []).find((f: any) => f.recipeSource)?.recipeSource ?? null))) ||
 		(selectedOption?.title && !/^Option\s+\d+$/i.test(selectedOption.title)
 			? selectedOption.title
-			: (meal as any).name || meal.mealType || "");
+			: (meal as any).name && !/^Option\s+\d+$/i.test((meal as any).name)
+				? (meal as any).name
+				: (items.length === 1 ? items[0].foodName : meal.mealType || ""));
 
 	const mealTitle = resolvedRecipeName;
 

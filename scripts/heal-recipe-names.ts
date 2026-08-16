@@ -2,7 +2,8 @@ import { config } from "dotenv";
 import mongoose from "mongoose";
 import Recipe from "../src/models/Recipe";
 import "../src/models/User";
-import "../src/models/nutrition-food.model";
+import NutritionFood from "../src/models/nutrition-food.model";
+import NutritionMealLog from "../src/models/nutrition-meal-log.model";
 import UserNutritionPlan from "../src/models/nutrition-plan.model";
 import NutritionTemplate from "../src/models/nutrition-template.model";
 import connectDB from "../src/utils/db";
@@ -189,6 +190,50 @@ async function run() {
 			tmpl.markModified("days");
 			await tmpl.save();
 			console.log(`Updated template: ${tmpl.name} (${tmpl._id})`);
+		}
+	}
+
+	// 3. Heal NutritionMealLogs (Diary & History records)
+	const mealLogs = await NutritionMealLog.find({});
+	console.log(`Found ${mealLogs.length} NutritionMealLogs to heal.`);
+
+	for (const log of mealLogs) {
+		let modified = false;
+		const rawNotes = (log.notes || "").trim();
+		const isPlaceholder = !rawNotes || /^Option\s*\d+$/i.test(rawNotes) || ["breakfast", "lunch", "dinner", "snack", "preworkout", "postworkout", "earlymorning", "custom", "breakfast meal", "lunch meal", "dinner meal", "snack meal", "postworkout meal", "preworkout meal"].includes(rawNotes.toLowerCase().replace(/[\s\-_]/g, ""));
+
+		const matched = matchRecipe({ foods: log.items, title: log.notes }, log.mealType || "");
+		if (matched.recipeName) {
+			if (log.notes !== matched.recipeName) {
+				log.notes = matched.recipeName;
+				modified = true;
+			}
+			for (const food of log.items || []) {
+				if (!(food as any).recipeSource) {
+					(food as any).recipeSource = matched.recipeName;
+					modified = true;
+				}
+			}
+		} else if (isPlaceholder && log.items && log.items.length > 0) {
+			const fallbackTitle = log.items.length === 1 ? log.items[0].foodName : log.items.map((i: any) => i.foodName).filter(Boolean).join(", ");
+			if (fallbackTitle && log.notes !== fallbackTitle) {
+				log.notes = fallbackTitle;
+				modified = true;
+			}
+		}
+
+		if (log.status && typeof log.status === "string") {
+			const normStatus = log.status.charAt(0).toUpperCase() + log.status.slice(1).toLowerCase();
+			if (["Logged", "Skipped"].includes(normStatus) && log.status !== normStatus) {
+				log.status = normStatus as any;
+				modified = true;
+			}
+		}
+
+		if (modified) {
+			log.markModified("items");
+			await log.save({ validateBeforeSave: false });
+			console.log(`Updated meal log ${log._id} -> notes: "${log.notes}"`);
 		}
 	}
 
