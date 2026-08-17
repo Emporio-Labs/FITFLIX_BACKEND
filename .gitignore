@@ -49,5 +49,8 @@ archive_docs/
 
 scratch/test-jwt-and-api.ts
 
-# Generated Vercel bundle — built by `bun run build:vercel`, not tracked.
+# Vercel is no longer used — the backend is deployed to EC2 (api.fitflix.in).
+# Ignored so a stray `vercel` CLI run cannot re-introduce the config or the
+# generated bundle, which is what took production down on 2026-08-17.
+vercel.json
 api/index.bundle.cjs
