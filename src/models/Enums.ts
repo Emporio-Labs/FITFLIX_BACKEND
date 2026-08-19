@@ -211,6 +211,9 @@ export enum PlanGoal {
 	Endurance = "Endurance",
 	WeightLoss = "WeightLoss",
 	Maintenance = "Maintenance",
+	MuscleGain = "MuscleGain",
+	Mobility = "Mobility",
+	GeneralFitness = "GeneralFitness",
 	Custom = "Custom",
 }
 
@@ -227,6 +230,7 @@ export enum SplitType {
 	UpperLower = "UpperLower",
 	PushPull = "PushPull",
 	PushPullLegs = "PushPullLegs",
+	BroSplit = "BroSplit",
 	Custom = "Custom",
 }
 
