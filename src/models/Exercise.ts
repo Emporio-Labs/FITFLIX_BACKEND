@@ -30,6 +30,11 @@ const exerciseSchema = new mongoose.Schema(
 			default: ["workout"],
 		},
 		imageUrl: { type: String, default: null },
+		imageUrls: { type: [String], default: [] },
+		// S3 object keys for the exercise demo frames. The DB stores KEYS, not
+		// URLs: the bucket is private, so the read endpoints sign these into
+		// short-lived URLs and project them onto imageUrl/imageUrls on the way out.
+		imageKeys: { type: [String], default: [] },
 		isSystem: { type: Boolean, default: false },
 		// Soft delete. Plans and assignments store only `exerciseId`, and every
 		// read re-joins against this collection to resolve the name, so removing
