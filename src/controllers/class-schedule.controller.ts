@@ -4,6 +4,7 @@ import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
 import { normalizeDeliveryType } from "../utils/delivery-type";
+import { resolveTimeZone } from "../utils/location.resolver";
 import {
 	combineSessionWindow,
 	deriveRoomId,
@@ -22,19 +23,65 @@ import { syncSessionsForClass } from "./class.controller";
 /// was fixed to read that string as business-timezone, not UTC).
 const withAbsoluteTimes = <T extends { sessionDate: Date; startTime: string; endTime: string }>(
 	session: T,
+	timeZone?: string,
 ): T & { startsAtUtc: string | null; endsAtUtc: string | null } => {
 	// Paired: a session ending past midnight ends on the next day, and these
 	// are the instants the app trusts instead of re-deriving them.
+	//
+	// `timeZone` is the owning branch's, resolved by the caller. Omitted, it
+	// falls back to the platform default — which is what every branch uses
+	// until one is opened outside IST.
 	const { startsAt, endsAt } = combineSessionWindow(
 		session.sessionDate,
 		session.startTime,
 		session.endTime,
+		timeZone,
 	);
 	return {
 		...session,
 		startsAtUtc: startsAt?.toISOString() ?? null,
 		endsAtUtc: endsAt?.toISOString() ?? null,
 	};
+};
+
+/// The class id a session hangs off, whether `classId` came back populated or
+/// as a bare ref.
+const classIdOf = (session: { classId?: unknown }): string => {
+	const klass = session.classId as { _id?: unknown } | string | null | undefined;
+	return klass && typeof klass === "object"
+		? String(klass._id ?? "")
+		: String(klass ?? "");
+};
+
+/**
+ * Branch timezone per class for a listing.
+ *
+ * Resolved once per class rather than per row — a day's schedule is many
+ * sessions across a handful of classes — and behind location.resolver's cache,
+ * so a listing costs at most one branch lookup.
+ */
+const resolveZonesByClassId = async (
+	sessions: Array<{ classId?: unknown }>,
+): Promise<Map<string, string>> => {
+	const zones = new Map<string, string>();
+
+	for (const session of sessions) {
+		const classId = classIdOf(session);
+		if (!classId || zones.has(classId)) continue;
+
+		const klass = session.classId as { locationId?: unknown } | null | undefined;
+		zones.set(
+			classId,
+			await resolveTimeZone({
+				locationId:
+					klass && typeof klass === "object"
+						? (klass.locationId as string | null | undefined)
+						: null,
+			}),
+		);
+	}
+
+	return zones;
 };
 
 function parseTimeToMinutes(timeStr: string): number {
@@ -227,12 +274,14 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes imageUrl format startDate endDate enrollmentOpensAt enrollmentClosesAt status")
+			.populate("classId", "name description creditCost locationId mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes imageUrl format startDate endDate enrollmentOpensAt enrollmentClosesAt status")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
 		// Filter out sessions belonging to retired (INACTIVE) classes
 		const activeSessions = sessions.filter((s: any) => s.classId && s.classId.status !== "INACTIVE");
+
+		const zonesByClassId = await resolveZonesByClassId(activeSessions);
 
 		res.status(200).json({
 			message: "Scheduled sessions retrieved successfully",
@@ -242,11 +291,14 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 				// separately) so the Admin host and User App can never resolve
 				// different rooms.
 				const videoRoomId = resolveSessionRoomId(s as any);
-				return withAbsoluteTimes({
-					...s,
-					videoRoomId,
-					videoConferenceId: videoRoomId,
-				});
+				return withAbsoluteTimes(
+					{
+						...s,
+						videoRoomId,
+						videoConferenceId: videoRoomId,
+					},
+					zonesByClassId.get(classIdOf(s)),
+				);
 			}),
 		});
 	} catch (error) {
@@ -282,7 +334,7 @@ export const getSchedulesForMembers: RequestHandler = async (
 		}
 
 		const sessions = await ScheduledSession.find(query)
-			.populate("classId", "name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes imageUrl format startDate endDate enrollmentOpensAt enrollmentClosesAt status isPublished")
+			.populate("classId", "name description creditCost locationId mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes imageUrl format startDate endDate enrollmentOpensAt enrollmentClosesAt status isPublished")
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
@@ -298,6 +350,8 @@ export const getSchedulesForMembers: RequestHandler = async (
 				s.classId.isPublished !== false,
 		);
 
+		const zonesByClassId = await resolveZonesByClassId(activeSessions);
+
 		res.status(200).json({
 			message: "Active scheduled sessions retrieved successfully",
 			count: activeSessions.length,
@@ -306,11 +360,14 @@ export const getSchedulesForMembers: RequestHandler = async (
 				// separately) so the Admin host and User App can never resolve
 				// different rooms.
 				const videoRoomId = resolveSessionRoomId(s as any);
-				return withAbsoluteTimes({
-					...s,
-					videoRoomId,
-					videoConferenceId: videoRoomId,
-				});
+				return withAbsoluteTimes(
+					{
+						...s,
+						videoRoomId,
+						videoConferenceId: videoRoomId,
+					},
+					zonesByClassId.get(classIdOf(s)),
+				);
 			}),
 		});
 	} catch (error) {
@@ -339,7 +396,7 @@ export const getScheduledSessionByIdForMembers: RequestHandler = async (
 		const session = await ScheduledSession.findById(id)
 			.populate(
 				"classId",
-				"name description creditCost mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes imageUrl format startDate endDate enrollmentOpensAt enrollmentClosesAt status isPublished",
+				"name description creditCost locationId mode sessionType instructor instructorUserId tags durationMinutes maxParticipants scheduleInfo recurrenceRule schedulePattern scheduleType daysOfWeek locationAddress streamRoomId enableWaitlist bookingWindowValue bookingWindowUnit bookingCloseValue bookingCloseUnit occurrenceLeadMinutes imageUrl format startDate endDate enrollmentOpensAt enrollmentClosesAt status isPublished",
 			)
 			.lean();
 
@@ -362,11 +419,17 @@ export const getScheduledSessionByIdForMembers: RequestHandler = async (
 
 		const videoRoomId = resolveSessionRoomId(session as any);
 		res.status(200).json({
-			session: withAbsoluteTimes({
-				...session,
-				videoRoomId,
-				videoConferenceId: videoRoomId,
-			}),
+			session: withAbsoluteTimes(
+				{
+					...session,
+					videoRoomId,
+					videoConferenceId: videoRoomId,
+				},
+				await resolveTimeZone({
+					locationId: (sessionClass as { locationId?: unknown } | null)
+						?.locationId as string | null | undefined,
+				}),
+			),
 		});
 	} catch (error) {
 		next(error);

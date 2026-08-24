@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import Location from "../models/Location";
+import User from "../models/User";
+import { IST_TIMEZONE, normalizeTimeZone } from "./timezone.util";
 
 /**
  * Location resolution.
@@ -144,7 +146,7 @@ export const getLocationOrThrow = async (
 export const resolveBookingTimeContext = async (
 	locationId?: string | mongoose.Types.ObjectId | null,
 ): Promise<{ timezone: string; cancellationWindowHours: number }> => {
-	const fallback = { timezone: "Asia/Kolkata", cancellationWindowHours: 24 };
+	const fallback = { timezone: IST_TIMEZONE, cancellationWindowHours: 24 };
 
 	try {
 		const resolvedId = await resolveLocationId(locationId ?? undefined);
@@ -157,7 +159,10 @@ export const resolveBookingTimeContext = async (
 		}
 
 		return {
-			timezone: location.timezone || fallback.timezone,
+			// Normalised, not trusted: a branch row edited by hand can hold
+			// anything, and an unusable zone reaches Intl as a RangeError on
+			// whichever request happens to touch that branch next.
+			timezone: normalizeTimeZone(location.timezone, fallback.timezone),
 			cancellationWindowHours: Number(
 				location.settings?.cancellationWindowHours ??
 					fallback.cancellationWindowHours,
@@ -178,4 +183,117 @@ export const getLocationSettings = async (
 	const resolvedId = await resolveLocationId(locationId ?? undefined);
 	const location = await getLocationOrThrow(resolvedId);
 	return { locationId: resolvedId, location, settings: location.settings };
+};
+
+/* -------------------------------------------------------------------------
+ * Timezone resolution
+ *
+ * A branch's zone decides what the "HH:mm" on its sessions actually means.
+ * Every read of that answer goes through here so the join gate, the room
+ * lifecycle job and the schedule listings can never disagree about when a
+ * class starts — which is the disagreement that refused a host their own
+ * class for a whole evening.
+ * ---------------------------------------------------------------------- */
+
+/// Short enough that an admin editing a branch's zone sees it take effect
+/// within one class, long enough that the video-token path — which the
+/// frontdesk retries on NOT_OPEN_YET — does not add a lookup per attempt.
+const TIMEZONE_CACHE_TTL_MS = 5 * 60_000;
+
+/// `null` is a cached *answer* ("this id has no usable zone"), distinct from a
+/// cache miss, so an unknown branch does not re-query on every token mint.
+const timeZoneCache = new Map<
+	string,
+	{ value: string | null; expiresAt: number }
+>();
+
+const cacheRead = (key: string): string | null | undefined => {
+	const hit = timeZoneCache.get(key);
+	if (!hit) return undefined;
+	if (hit.expiresAt <= Date.now()) {
+		timeZoneCache.delete(key);
+		return undefined;
+	}
+	return hit.value;
+};
+
+const cacheWrite = (key: string, value: string | null): string | null => {
+	timeZoneCache.set(key, {
+		value,
+		expiresAt: Date.now() + TIMEZONE_CACHE_TTL_MS,
+	});
+	return value;
+};
+
+/** Drops the cache. For tests, and for an admin changing a branch's zone. */
+export const clearTimeZoneCache = (): void => {
+	timeZoneCache.clear();
+};
+
+const readLocationTimeZone = async (
+	locationId: string | mongoose.Types.ObjectId,
+): Promise<string | null> => {
+	const raw = String(locationId);
+	if (!mongoose.Types.ObjectId.isValid(raw)) return null;
+
+	const cached = cacheRead(`loc:${raw}`);
+	if (cached !== undefined) return cached;
+
+	const location = await Location.findById(raw).select("timezone").lean();
+	return cacheWrite(
+		`loc:${raw}`,
+		location?.timezone ? normalizeTimeZone(location.timezone) : null,
+	);
+};
+
+const readHomeLocationId = async (
+	userId: string | mongoose.Types.ObjectId,
+): Promise<string | null> => {
+	const raw = String(userId);
+	if (!mongoose.Types.ObjectId.isValid(raw)) return null;
+
+	const cached = cacheRead(`user:${raw}`);
+	if (cached !== undefined) return cached;
+
+	const user = await User.findById(raw).select("homeLocationId").lean();
+	return cacheWrite(
+		`user:${raw}`,
+		user?.homeLocationId ? String(user.homeLocationId) : null,
+	);
+};
+
+/**
+ * The timezone a wall-clock time should be read in.
+ *
+ * Order: the branch that owns the thing being scheduled, then the member's
+ * home club, then IST. Never throws — a missing, inactive or unseeded branch
+ * degrades to IST, matching resolveBookingTimeContext. A join gate that threw
+ * because a class predates locations would be a worse failure than one that
+ * assumed the company's home zone.
+ */
+export const resolveTimeZone = async ({
+	locationId,
+	userId,
+}: {
+	locationId?: string | mongoose.Types.ObjectId | null;
+	userId?: string | mongoose.Types.ObjectId | null;
+} = {}): Promise<string> => {
+	try {
+		if (locationId) {
+			const branchZone = await readLocationTimeZone(locationId);
+			if (branchZone) return branchZone;
+		}
+
+		if (userId) {
+			const homeLocationId = await readHomeLocationId(userId);
+			if (homeLocationId) {
+				const homeZone = await readLocationTimeZone(homeLocationId);
+				if (homeZone) return homeZone;
+			}
+		}
+	} catch (error) {
+		console.warn("[timezone] branch lookup failed, using IST:", error);
+	}
+
+	return IST_TIMEZONE;
 };

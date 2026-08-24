@@ -1,4 +1,9 @@
 import { BookingStatus } from "../models/Enums";
+import {
+	IST_TIMEZONE,
+	normalizeTimeZone,
+	zonedDateTimeToInstant,
+} from "./timezone.util";
 
 /// Bookings store status inconsistently across older and newer writes (numeric
 /// enum, its stringified form, and the literal "Cancelled"), so every read that
@@ -101,41 +106,18 @@ export const NUTRI_EXPIRY_GRACE_MINUTES = Number(
 /// and that string is gym wall-clock time, not UTC. Reading it as UTC shifts
 /// every class by the zone offset — 5h30m for IST, which is long enough to
 /// close the join window before the class has even started.
-export const BUSINESS_TIMEZONE = process.env.BUSINESS_TIMEZONE ?? "Asia/Kolkata";
-
-/**
- * Offset of [timeZone] from UTC at a given instant, in milliseconds.
- *
- * Derived via `Intl` rather than hardcoded to +05:30 so the value stays correct
- * if the business timezone is ever repointed somewhere that observes DST.
- */
-const zoneOffsetMs = (instant: Date, timeZone: string): number => {
-	const parts = Object.fromEntries(
-		new Intl.DateTimeFormat("en-US", {
-			timeZone,
-			hour12: false,
-			year: "numeric",
-			month: "2-digit",
-			day: "2-digit",
-			hour: "2-digit",
-			minute: "2-digit",
-			second: "2-digit",
-		})
-			.formatToParts(instant)
-			.map((part) => [part.type, part.value]),
-	);
-
-	return (
-		Date.UTC(
-			Number(parts.year),
-			Number(parts.month) - 1,
-			Number(parts.day),
-			Number(parts.hour) % 24,
-			Number(parts.minute),
-			Number(parts.second),
-		) - instant.getTime()
-	);
-};
+///
+/// Normalised on the way in: a value this runtime cannot resolve (a quoted
+/// `.env` line, a typo, "IST") falls back to Asia/Kolkata with a warning rather
+/// than reaching `Intl` and throwing mid-request. A *valid* but wrong zone —
+/// `BUSINESS_TIMEZONE=UTC` — is not something normalisation can detect; the
+/// startup check in index.ts exists for that case.
+///
+/// This is the platform-wide default only. A class at a branch in another zone
+/// resolves through Location.timezone — see utils/location.resolver.ts.
+export const BUSINESS_TIMEZONE = normalizeTimeZone(
+	process.env.BUSINESS_TIMEZONE ?? IST_TIMEZONE,
+);
 
 /**
  * Combines a session's date with its "HH:mm" wall-clock time, interpreting that
@@ -147,6 +129,7 @@ const zoneOffsetMs = (instant: Date, timeZone: string): number => {
 export const combineSessionDateTime = (
 	sessionDate: Date | string | null | undefined,
 	time: string | null | undefined,
+	timeZone: string = BUSINESS_TIMEZONE,
 ): Date | null => {
 	if (!sessionDate || !time) return null;
 
@@ -160,19 +143,14 @@ export const combineSessionDateTime = (
 	const minutes = Number(match[2]);
 	if (hours > 23 || minutes > 59) return null;
 
+	// The zone arithmetic itself lives in exactly one place — timezone.util.ts
+	// resolves the offset twice so a DST boundary between the first guess and
+	// the true instant lands on the right side. This function keeps only the
+	// parsing and the fail-closed nulls, which are what its callers depend on.
+	//
 	// `sessionDate` is written at UTC midnight, so its UTC calendar date is the
-	// intended day. Resolve twice: the first pass picks the offset from a rough
-	// instant, the second re-reads it at the corrected one, which is what makes
-	// this right across a DST boundary.
-	const naive = Date.UTC(
-		base.getUTCFullYear(),
-		base.getUTCMonth(),
-		base.getUTCDate(),
-		hours,
-		minutes,
-	);
-	const firstPass = new Date(naive - zoneOffsetMs(new Date(naive), BUSINESS_TIMEZONE));
-	return new Date(naive - zoneOffsetMs(firstPass, BUSINESS_TIMEZONE));
+	// intended day; zonedDateTimeToInstant reads exactly that.
+	return zonedDateTimeToInstant(base, `${hours}:${minutes}`, timeZone);
 };
 
 /**
@@ -195,9 +173,10 @@ export const combineSessionWindow = (
 	sessionDate: Date | string | null | undefined,
 	startTime: string | null | undefined,
 	endTime: string | null | undefined,
+	timeZone: string = BUSINESS_TIMEZONE,
 ): { startsAt: Date | null; endsAt: Date | null } => {
-	const startsAt = combineSessionDateTime(sessionDate, startTime);
-	let endsAt = combineSessionDateTime(sessionDate, endTime);
+	const startsAt = combineSessionDateTime(sessionDate, startTime, timeZone);
+	let endsAt = combineSessionDateTime(sessionDate, endTime, timeZone);
 
 	if (startsAt && endsAt && endsAt.getTime() <= startsAt.getTime()) {
 		const base = new Date(sessionDate as Date | string);
@@ -208,7 +187,7 @@ export const combineSessionWindow = (
 				base.getUTCDate() + 1,
 			),
 		);
-		endsAt = combineSessionDateTime(nextDay, endTime);
+		endsAt = combineSessionDateTime(nextDay, endTime, timeZone);
 	}
 
 	return { startsAt, endsAt };

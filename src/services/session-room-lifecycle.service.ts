@@ -1,5 +1,6 @@
 import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
+import { resolveTimeZone } from "../utils/location.resolver";
 import {
 	buildRoomTimeline,
 	combineSessionDateTime,
@@ -56,20 +57,40 @@ export async function prepareDueRooms(
 	// session — most of a tick's candidates share a handful of classes.
 	const classIds = [...new Set(candidates.map((c) => String(c.classId)))];
 	const classes = await ClassModel.find({ _id: { $in: classIds } })
-		.select("occurrenceLeadMinutes")
+		.select("occurrenceLeadMinutes locationId")
 		.lean();
 	const leadByClassId = new Map(
 		classes.map((c) => [String(c._id), c.occurrenceLeadMinutes]),
 	);
 
+	// The join gate resolves the branch zone the same way. If this job used a
+	// different one it would stamp a room ready at a different moment than the
+	// host is allowed through — the two must read the same clock.
+	const zoneByClassId = new Map<string, string>();
+	for (const c of classes) {
+		zoneByClassId.set(
+			String(c._id),
+			await resolveTimeZone({ locationId: c.locationId }),
+		);
+	}
+
 	for (const session of candidates) {
 		try {
-			const start = combineSessionDateTime(session.sessionDate, session.startTime);
+			const timeZone = zoneByClassId.get(String(session.classId));
+			const start = combineSessionDateTime(
+				session.sessionDate,
+				session.startTime,
+				timeZone,
+			);
 			if (!start) {
 				skipped++;
 				continue;
 			}
-			const end = combineSessionDateTime(session.sessionDate, session.endTime);
+			const end = combineSessionDateTime(
+				session.sessionDate,
+				session.endTime,
+				timeZone,
+			);
 
 			const leadOverride = leadByClassId.get(String(session.classId));
 			const leadMinutes = Number.isFinite(Number(leadOverride))

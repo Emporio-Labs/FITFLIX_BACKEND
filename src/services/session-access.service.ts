@@ -6,6 +6,7 @@ import ScheduledSession from "../models/ScheduledSession";
 import UnifiedBooking from "../models/UnifiedBooking";
 import { normalizeRole } from "../middleware/rbac.middleware";
 import type { AuthenticatedUser } from "../types/auth";
+import { resolveTimeZone } from "../utils/location.resolver";
 import {
 	buildJoinWindow,
 	combineSessionWindow,
@@ -125,10 +126,10 @@ export const resolveSessionAccess = async ({
 
 	const klass = session
 		? await ClassModel.findById(session.classId)
-				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes")
+				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes locationId")
 				.lean()
 		: await ClassModel.findById(sessionId)
-				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes")
+				.select("instructorUserId sessionType name streamRoomId access bookingRequirement creditCost occurrenceLeadMinutes locationId")
 				.lean();
 
 	if (!session && !klass) {
@@ -185,10 +186,18 @@ export const resolveSessionAccess = async ({
 			// Paired, so a session running past midnight ends on the next day
 			// rather than 23 hours before it started — which closed this
 			// window before it opened and refused the member their own room.
+			//
+			// Read in the booking's own branch zone: "09:00" at a branch means
+			// 09:00 there, and resolving it against a global default would put
+			// the session hours from where both parties expect it.
 			const window = combineSessionWindow(
 				unifiedBooking.bookingDate,
 				unifiedBooking.startTime,
 				unifiedBooking.endTime,
+				await resolveTimeZone({
+					locationId: unifiedBooking.locationId,
+					userId: unifiedBooking.userId,
+				}),
 			);
 			const startsAt = window.startsAt;
 			const endsAt =
@@ -287,10 +296,13 @@ export const resolveSessionAccess = async ({
 
 		// Paired — see combineSessionWindow. A late-evening consult would
 		// otherwise resolve an end before its own start.
+		// A nutritionist booking carries no branch of its own, so the member's
+		// home club decides the zone; resolveTimeZone falls back to IST.
 		const nutriWindow = combineSessionWindow(
 			nutriBooking.bookingDate,
 			nutriBooking.startTime,
 			nutriBooking.endTime,
+			await resolveTimeZone({ userId: nutriBooking.userId }),
 		);
 		const startsAt = nutriWindow.startsAt;
 		const endsAt = nutriWindow.endsAt || new Date((startsAt?.getTime() ?? Date.now()) + 30 * 60_000);
@@ -364,7 +376,17 @@ export const resolveSessionAccess = async ({
 	// 4. Absolute start/end, fail closed on anything unparseable. Paired so a
 	// class running past midnight ends on the following day.
 	const sessionWindow = session
-		? combineSessionWindow(session.sessionDate, session.startTime, session.endTime)
+		? combineSessionWindow(
+				session.sessionDate,
+				session.startTime,
+				session.endTime,
+				// The class's branch owns the meaning of its "HH:mm"; the caller's
+				// home club is the fallback, IST the last resort.
+				await resolveTimeZone({
+					locationId: klass?.locationId,
+					userId: rawUserId,
+				}),
+			)
 		: { startsAt: null, endsAt: null };
 	const startsAt = sessionWindow.startsAt;
 	const endsAtRaw = sessionWindow.endsAt;

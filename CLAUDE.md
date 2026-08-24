@@ -418,6 +418,7 @@ There is no `/onboarding/appointments`, `/onboarding/sports-scientist`, or
 | `ACTIVEX_API_KEY` | For BCA sync | — | ActiveX external API key (`x-api-key`) |
 | `ACTIVEX_BASE_URL` | No | `https://api.activex.ai/external/bca` | ActiveX BCA endpoint |
 | `ACTIVEX_BCA_LOOKBACK_DAYS` | No | `365` | Lookback window for the sync `Date` filter |
+| `BUSINESS_TIMEZONE` | No | `Asia/Kolkata` | IANA zone that a session's `"HH:mm"` is read in. Set it wrong and every class shifts by the offset — the startup check in `index.ts` warns when it does not resolve to +05:30. A branch's own `Location.timezone` overrides it per class. |
 
 ---
 
