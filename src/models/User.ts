@@ -8,7 +8,12 @@ const userSchema = new mongoose.Schema(
 		phone: { type: String, required: true },
 		// Firebase phone-auth identity (user app). Sparse-unique so legacy
 		// email/password users without a firebaseUid are unaffected.
-		firebaseUid: { type: String, unique: true, sparse: true, default: undefined },
+		firebaseUid: {
+			type: String,
+			unique: true,
+			sparse: true,
+			default: undefined,
+		},
 		phoneVerified: { type: Boolean, default: false },
 		// Email/password are no longer required for user-app (phone-auth) accounts.
 		email: { type: String, unique: true, sparse: true, default: undefined },
@@ -85,12 +90,20 @@ const userSchema = new mongoose.Schema(
 				default: OnboardingStep.HEALTH_MARKERS,
 			},
 			completedSteps: [{ type: String, enum: Object.values(OnboardingStep) }],
+			// Legacy app-owned flags retained for the existing member wizard.
 			healthMarkersCompleted: { type: Boolean, default: false },
 			healthGoalsCompleted: { type: Boolean, default: false },
 			consentCompleted: { type: Boolean, default: false },
 			reportsUploaded: { type: Boolean, default: false },
-			sportsScientistBooked: { type: Boolean, default: false },
 			nutritionistBooked: { type: Boolean, default: false },
+			// Shared membership onboarding flags. They are independent and may be
+			// completed in any order by the app or centre staff.
+			activeXTestCompleted: { type: Boolean, default: false },
+			dnaSampleCompleted: { type: Boolean, default: false },
+			valdTestCompleted: { type: Boolean, default: false },
+			sportsScientistBooked: { type: Boolean, default: false },
+			planTrainerAssignmentCompleted: { type: Boolean, default: false },
+			appOnboardingCompleted: { type: Boolean, default: false },
 			onboardingCompleted: { type: Boolean, default: false },
 			startedAt: { type: Date, default: undefined },
 			completedAt: { type: Date, default: undefined },

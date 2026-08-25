@@ -1,10 +1,9 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import ConsentForm from "../models/ConsentForm";
-import {
-	type Gender,
-	OnboardingStep,
-} from "../models/Enums";
+import ExpertAppointment from "../models/ExpertAppointment";
+import NutritionistBooking from "../models/NutritionistBooking";
+import { type Gender, OnboardingStep } from "../models/Enums";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import BcaMetric from "../models/BcaMetric";
@@ -86,11 +85,20 @@ export const createUser: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { password, onboarded = false, email, phone, ...rest } = parsedBody.data;
+	const {
+		password,
+		onboarded = false,
+		email,
+		phone,
+		...rest
+	} = parsedBody.data;
 
 	try {
 		const passwordHash = password ? await hashPassword(password) : undefined;
-		const sanitizedEmail = (email && typeof email === "string" && email.trim() !== "") ? email.trim() : undefined;
+		const sanitizedEmail =
+			email && typeof email === "string" && email.trim() !== ""
+				? email.trim()
+				: undefined;
 		const last10 = phone.replace(/\D/g, "").slice(-10);
 
 		// Enforce phone number uniqueness:
@@ -133,6 +141,13 @@ export const createUser: RequestHandler = async (req, res, next) => {
 				healthGoalsCompleted: false,
 				consentCompleted: false,
 				reportsUploaded: false,
+				nutritionistBooked: false,
+				activeXTestCompleted: false,
+				dnaSampleCompleted: false,
+				valdTestCompleted: false,
+				sportsScientistBooked: false,
+				planTrainerAssignmentCompleted: false,
+				appOnboardingCompleted: false,
 				onboardingCompleted: false,
 				startedAt: new Date(),
 			},
@@ -178,9 +193,7 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 		const sortOrder = order === "asc" ? 1 : -1;
 		const sortField = sort;
 
-		const aggregatePipeline: mongoose.PipelineStage[] = [
-			{ $match: filter },
-		];
+		const aggregatePipeline: mongoose.PipelineStage[] = [{ $match: filter }];
 
 		aggregatePipeline.push(
 			// ── HealthMarkers lookup (one-to-one, userId unique index) ──────────
@@ -244,11 +257,26 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 								bookingStatus: {
 									$switch: {
 										branches: [
-											{ case: { $eq: ["$status", "ACCEPTED"] }, then: "Confirmed" },
-											{ case: { $eq: ["$status", "COMPLETED"] }, then: "Completed" },
-											{ case: { $eq: ["$status", "REJECTED"] }, then: "Cancelled" },
-											{ case: { $eq: ["$status", "RESCHEDULE_REQUIRED"] }, then: "RescheduleRequired" },
-											{ case: { $eq: ["$status", "EXPIRED"] }, then: "Expired" },
+											{
+												case: { $eq: ["$status", "ACCEPTED"] },
+												then: "Confirmed",
+											},
+											{
+												case: { $eq: ["$status", "COMPLETED"] },
+												then: "Completed",
+											},
+											{
+												case: { $eq: ["$status", "REJECTED"] },
+												then: "Cancelled",
+											},
+											{
+												case: { $eq: ["$status", "RESCHEDULE_REQUIRED"] },
+												then: "RescheduleRequired",
+											},
+											{
+												case: { $eq: ["$status", "EXPIRED"] },
+												then: "Expired",
+											},
 										],
 										default: "Pending",
 									},
@@ -291,7 +319,9 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					gender: 1,
 					createdAt: 1,
 					updatedAt: 1,
-					onboarded: { $ifNull: ["$onboarded", "$onboardingStatus.onboardingCompleted"] },
+					onboarded: {
+						$ifNull: ["$onboarded", "$onboardingStatus.onboardingCompleted"],
+					},
 					onboardingStatus: {
 						currentStep: "$onboardingStatus.currentStep",
 						completedSteps: {
@@ -309,7 +339,30 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 						reportsUploaded: {
 							$ifNull: ["$onboardingStatus.reportsUploaded", false],
 						},
-
+						activeXTestCompleted: {
+							$ifNull: ["$onboardingStatus.activeXTestCompleted", false],
+						},
+						dnaSampleCompleted: {
+							$ifNull: ["$onboardingStatus.dnaSampleCompleted", false],
+						},
+						valdTestCompleted: {
+							$ifNull: ["$onboardingStatus.valdTestCompleted", false],
+						},
+						sportsScientistBooked: {
+							$ifNull: ["$onboardingStatus.sportsScientistBooked", false],
+						},
+						nutritionistBooked: {
+							$ifNull: ["$onboardingStatus.nutritionistBooked", false],
+						},
+						planTrainerAssignmentCompleted: {
+							$ifNull: [
+								"$onboardingStatus.planTrainerAssignmentCompleted",
+								false,
+							],
+						},
+						appOnboardingCompleted: {
+							$ifNull: ["$onboardingStatus.appOnboardingCompleted", false],
+						},
 
 						onboardingCompleted: {
 							$ifNull: ["$onboardingStatus.onboardingCompleted", false],
@@ -544,20 +597,35 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const [healthMarkers, healthGoals, consent, reports] =
-			await Promise.all([
-				HealthMarkers.findOne({ userId: id }),
-				HealthGoals.findOne({ userId: id }),
-				ConsentForm.findOne({ userId: id }),
-				MedicalReport.find({ userId: id }).sort({ uploadedAt: -1 }),
-			]);
+		const [
+			healthMarkers,
+			healthGoals,
+			consent,
+			reports,
+			nutritionistAppointments,
+			sportsScientistAppointments,
+		] = await Promise.all([
+			HealthMarkers.findOne({ userId: id }),
+			HealthGoals.findOne({ userId: id }),
+			ConsentForm.findOne({ userId: id }),
+			MedicalReport.find({ userId: id }).sort({ uploadedAt: -1 }),
+			NutritionistBooking.find({ userId: id, status: { $ne: "REJECTED" } })
+				.sort({ createdAt: -1 })
+				.lean(),
+			ExpertAppointment.find({
+				userId: id,
+				expertType: "sports_scientist",
+				bookingStatus: { $ne: "Cancelled" },
+			})
+				.sort({ createdAt: -1 })
+				.lean(),
+		]);
 
 		const status = user.onboardingStatus;
-		const onboardingStatus = {
-			currentStep: status?.currentStep ?? "HEALTH_MARKERS",
-			completedSteps: status?.completedSteps ?? [],
-			isCompleted: Boolean(status?.onboardingCompleted),
-		};
+		// Return the complete shared status object. The member app and
+		// front-desk profile must read the same flags, not a reduced legacy
+		// projection that drops the physical-test fields.
+		const onboardingStatus = status ?? null;
 
 		const reportsWithUrls = await Promise.all(
 			reports.map(async (report) => {
@@ -592,7 +660,39 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 			healthGoals: healthGoals ?? null,
 			consents: consent?.consents ?? [],
 			reports: reportsWithUrls,
-			appointments: [],
+			appointments: [
+				...nutritionistAppointments.map((appointment) => ({
+					id: appointment._id.toString(),
+					_id: appointment._id.toString(),
+					userId: id,
+					expertType: "nutritionist",
+					bookingStatus: appointment.status,
+					appointmentDate: appointment.bookingDate,
+					appointmentStart: appointment.startTime,
+					startTime: appointment.startTime,
+					endTime: appointment.endTime,
+					meetingLink: null,
+					meetingUrl: null,
+					zegoRoomId: appointment.zegoRoomId ?? null,
+					appointmentMode: appointment.appointmentMode,
+					assignedNutritionistName:
+						appointment.assignedNutritionistName ?? null,
+				})),
+				...sportsScientistAppointments.map((appointment) => ({
+					id: appointment._id.toString(),
+					_id: appointment._id.toString(),
+					userId: id,
+					expertType: appointment.expertType,
+					bookingStatus: appointment.bookingStatus,
+					appointmentDate: appointment.appointmentDate,
+					appointmentStart: appointment.startTime,
+					startTime: appointment.startTime,
+					endTime: appointment.endTime,
+					meetingLink: appointment.meetingLink ?? null,
+					meetingUrl: appointment.meetingLink ?? null,
+					appointmentMode: appointment.appointmentMode,
+				})),
+			],
 		});
 	} catch (error) {
 		next(error);
@@ -679,8 +779,13 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 
 	try {
 		const { password, email, phone, ...rest } = parsedBody.data;
-		const sanitizedEmail = (email && typeof email === "string" && email.trim() !== "") ? email.trim() : undefined;
-		const normalizedPhone = phone ? phone.replace(/\D/g, "").slice(-10) : undefined;
+		const sanitizedEmail =
+			email && typeof email === "string" && email.trim() !== ""
+				? email.trim()
+				: undefined;
+		const normalizedPhone = phone
+			? phone.replace(/\D/g, "").slice(-10)
+			: undefined;
 
 		if (normalizedPhone) {
 			const existingPhoneUser = await User.findOne({
@@ -1123,6 +1228,7 @@ export const updateAssignedTrainer: RequestHandler = async (req, res, next) => {
 				$set: {
 					assignedTrainer: trainerId ?? null,
 					assignedTrainerAt: trainerId ? new Date() : null,
+					"onboardingStatus.planTrainerAssignmentCompleted": Boolean(trainerId),
 				},
 			},
 			{ new: true },

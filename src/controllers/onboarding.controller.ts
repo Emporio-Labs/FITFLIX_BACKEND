@@ -3,7 +3,14 @@ import type { Request, RequestHandler } from "express";
 import mongoose from "mongoose";
 
 import ConsentForm from "../models/ConsentForm";
-import { ConsentType, OnboardingStep } from "../models/Enums";
+import ExpertAppointment from "../models/ExpertAppointment";
+import {
+	AppointmentBookingStatus,
+	AppointmentMode,
+	ConsentType,
+	ExpertType,
+	OnboardingStep,
+} from "../models/Enums";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import MedicalReport from "../models/MedicalReport";
@@ -14,6 +21,7 @@ import {
 	completeOnboarding,
 	getOnboardingStatus,
 	OnboardingServiceError,
+	updateSharedOnboardingStep,
 	validateStepAllowed,
 } from "../utils/onboarding.service";
 import {
@@ -464,7 +472,127 @@ export const submitReport = async (
 	}
 };
 
+export const bookSportsScientist: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester || requester.role !== "user") {
+		res.status(403).json({
+			error: "Only members can book a sport scientist appointment",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
 
+	const appointmentDate = new Date(String(req.body?.appointmentDate ?? ""));
+	if (Number.isNaN(appointmentDate.getTime())) {
+		res.status(400).json({
+			error: "appointmentDate must be a valid date",
+			code: "VALIDATION_ERROR",
+		});
+		return;
+	}
+
+	const rawMode = String(
+		req.body?.appointmentMode ?? AppointmentMode.IN_PERSON,
+	).toUpperCase();
+	const appointmentMode = Object.values(AppointmentMode).includes(
+		rawMode as AppointmentMode,
+	)
+		? (rawMode as AppointmentMode)
+		: AppointmentMode.IN_PERSON;
+
+	try {
+		const appointment = await ExpertAppointment.findOneAndUpdate(
+			{
+				userId: requester.id,
+				expertType: ExpertType.SportsScientist,
+				bookingStatus: {
+					$in: [
+						AppointmentBookingStatus.Pending,
+						AppointmentBookingStatus.Confirmed,
+					],
+				},
+			},
+			{
+				$set: {
+					appointmentDate,
+					appointmentMode,
+					meetingLink: req.body?.meetingLink || null,
+					startTime: req.body?.startTime || null,
+					endTime: req.body?.endTime || null,
+					notes: req.body?.notes || null,
+				},
+				$setOnInsert: {
+					userId: requester.id,
+					expertType: ExpertType.SportsScientist,
+					bookingStatus: AppointmentBookingStatus.Pending,
+				},
+			},
+			{ new: true, upsert: true, setDefaultsOnInsert: true },
+		);
+
+		await updateSharedOnboardingStep(
+			requester.id,
+			OnboardingStep.SPORT_SCIENTIST_APPOINTMENT,
+			true,
+		);
+		res
+			.status(201)
+			.json({ message: "Sport scientist appointment booked", appointment });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const updateSharedStep: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester || !["admin", "frontdesk"].includes(requester.role)) {
+		res.status(403).json({
+			error: "Only front desk staff can update shared onboarding steps",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	const rawStep = String(req.params.step ?? "")
+		.trim()
+		.toUpperCase();
+	if (!Object.values(OnboardingStep).includes(rawStep as OnboardingStep)) {
+		res
+			.status(400)
+			.json({ error: "Invalid onboarding step", code: "VALIDATION_ERROR" });
+		return;
+	}
+	const centreManagedSteps = new Set([
+		OnboardingStep.ACTIVE_X_TEST,
+		OnboardingStep.DNA_SAMPLE,
+		OnboardingStep.VALD_TEST,
+	]);
+	if (!centreManagedSteps.has(rawStep as OnboardingStep)) {
+		res.status(403).json({
+			error:
+				"This onboarding step is completed in the member app or by its owning workflow",
+			code: "STEP_NOT_ALLOWED",
+		});
+		return;
+	}
+	if (typeof req.body?.completed !== "boolean") {
+		res
+			.status(400)
+			.json({ error: "completed must be a boolean", code: "VALIDATION_ERROR" });
+		return;
+	}
+
+	try {
+		const status = await updateSharedOnboardingStep(
+			String(req.params.userId ?? ""),
+			rawStep as OnboardingStep,
+			req.body.completed,
+		);
+		res.status(200).json({ message: "Onboarding step updated", status });
+	} catch (error) {
+		handleServiceError(error, res, next);
+	}
+};
 
 export const submitComplete = async (
 	req: RequestWithUser,

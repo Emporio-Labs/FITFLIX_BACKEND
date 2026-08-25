@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+	bookSportsScientist,
 	getStatus,
 	getStatusByUserId,
 	submitComplete,
@@ -7,6 +8,7 @@ import {
 	submitHealthGoals,
 	submitHealthMarkers,
 	submitReport,
+	updateSharedStep,
 } from "../controllers/onboarding.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
@@ -23,6 +25,16 @@ onboardingRouter.get(
 	"/status/:userId",
 	authorize(["admin", "frontdesk"]),
 	getStatusByUserId,
+);
+onboardingRouter.patch(
+	"/steps/:userId/:step",
+	authorize(["admin", "frontdesk"]),
+	updateSharedStep,
+);
+onboardingRouter.post(
+	"/sports-scientist",
+	authorize(["user"]),
+	bookSportsScientist,
 );
 onboardingRouter.post(
 	"/health-markers",

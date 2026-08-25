@@ -83,11 +83,22 @@ export enum WorkoutSessionStatus {
 }
 
 export enum OnboardingStep {
+	// Legacy app-owned setup steps. Kept for compatibility with the existing
+	// member app wizard and its currentStep pointer.
 	HEALTH_MARKERS = "HEALTH_MARKERS",
 	HEALTH_GOALS = "HEALTH_GOALS",
 	CONSENT = "CONSENT",
 	REPORT_UPLOAD = "REPORT_UPLOAD",
 	NUTRITIONIST_BOOKING = "NUTRITIONIST_BOOKING",
+
+	// Shared membership onboarding steps. These are independent flags and are
+	// intentionally not part of the app wizard's sequential currentStep path.
+	ACTIVE_X_TEST = "ACTIVE_X_TEST",
+	DNA_SAMPLE = "DNA_SAMPLE",
+	VALD_TEST = "VALD_TEST",
+	NUTRITION_APPOINTMENT = "NUTRITION_APPOINTMENT",
+	SPORT_SCIENTIST_APPOINTMENT = "SPORT_SCIENTIST_APPOINTMENT",
+	PLAN_TRAINER_ASSIGNMENT = "PLAN_TRAINER_ASSIGNMENT",
 	COMPLETED = "COMPLETED",
 }
 

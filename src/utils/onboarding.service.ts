@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { NutritionistBookingStatus, OnboardingStep } from "../models/Enums";
+import ExpertAppointment from "../models/ExpertAppointment";
 import NutritionistBooking from "../models/NutritionistBooking";
 import User from "../models/User";
 
@@ -36,6 +37,39 @@ const STEP_FLAG_MAP: Record<string, string> = {
 	[OnboardingStep.NUTRITIONIST_BOOKING]: "nutritionistBooked",
 };
 
+const SHARED_STEP_FLAG_MAP: Record<string, string> = {
+	[OnboardingStep.ACTIVE_X_TEST]: "activeXTestCompleted",
+	[OnboardingStep.DNA_SAMPLE]: "dnaSampleCompleted",
+	[OnboardingStep.VALD_TEST]: "valdTestCompleted",
+	[OnboardingStep.NUTRITION_APPOINTMENT]: "nutritionistBooked",
+	[OnboardingStep.SPORT_SCIENTIST_APPOINTMENT]: "sportsScientistBooked",
+	[OnboardingStep.PLAN_TRAINER_ASSIGNMENT]: "planTrainerAssignmentCompleted",
+};
+
+const SHARED_ONBOARDING_STEPS = Object.keys(
+	SHARED_STEP_FLAG_MAP,
+) as OnboardingStep[];
+
+const getSharedCompletedSteps = (status: any): OnboardingStep[] =>
+	SHARED_ONBOARDING_STEPS.filter((step) =>
+		Boolean(status?.[SHARED_STEP_FLAG_MAP[step]]),
+	);
+
+const isSharedOnboardingComplete = (status: any): boolean =>
+	SHARED_ONBOARDING_STEPS.every((step) =>
+		Boolean(status?.[SHARED_STEP_FLAG_MAP[step]]),
+	);
+
+const isAppOnboardingComplete = (status: any): boolean =>
+	Boolean(
+		status?.appOnboardingCompleted === true ||
+			(status?.healthMarkersCompleted &&
+				status?.healthGoalsCompleted &&
+				status?.consentCompleted &&
+				status?.reportsUploaded &&
+				status?.nutritionistBooked),
+	);
+
 const getNextStep = (currentStep: OnboardingStep): OnboardingStep | null => {
 	const currentIndex = STEP_ORDER.indexOf(currentStep);
 	if (currentIndex === -1 || currentIndex >= STEP_ORDER.length - 1) {
@@ -60,6 +94,8 @@ const toObjectId = (
 export type OnboardingStatusResponse = {
 	currentStep: string;
 	completedSteps: string[];
+	sharedCompletedSteps: string[];
+	appOnboardingCompleted: boolean;
 	onboardingCompleted: boolean;
 	allowedNextStep: string | null;
 	bookingDetails?: {
@@ -76,6 +112,16 @@ export type OnboardingStatusResponse = {
 		endTime?: string;
 		acceptedAt?: Date | null;
 	} | null;
+	sportsScientistBookingDetails?: {
+		_id: string;
+		expertType: string;
+		bookingStatus: string;
+		appointmentDate: Date;
+		appointmentMode: string;
+		meetingLink: string | null;
+		startTime?: string | null;
+		endTime?: string | null;
+	} | null;
 };
 
 export const getOnboardingStatus = async (
@@ -83,11 +129,18 @@ export const getOnboardingStatus = async (
 ): Promise<OnboardingStatusResponse> => {
 	const userObjectId = toObjectId(userId, "NOT_FOUND", "Invalid user ID");
 
-	const [user, booking] = await Promise.all([
+	const [user, booking, sportsScientistBooking] = await Promise.all([
 		User.findById(userObjectId).select("onboardingStatus"),
 		NutritionistBooking.findOne({
 			userId: userObjectId,
 			status: { $ne: NutritionistBookingStatus.REJECTED },
+		})
+			.sort({ createdAt: -1 })
+			.lean(),
+		ExpertAppointment.findOne({
+			userId: userObjectId,
+			expertType: "sports_scientist",
+			bookingStatus: { $ne: "Cancelled" },
 		})
 			.sort({ createdAt: -1 })
 			.lean(),
@@ -100,7 +153,9 @@ export const getOnboardingStatus = async (
 	const status = user.onboardingStatus;
 	const currentStep = status?.currentStep ?? OnboardingStep.HEALTH_MARKERS;
 	const completedSteps = status?.completedSteps ?? [];
-	const onboardingCompleted = status?.onboardingCompleted ?? false;
+	const sharedCompletedSteps = getSharedCompletedSteps(status);
+	const appOnboardingCompleted = isAppOnboardingComplete(status);
+	const onboardingCompleted = isSharedOnboardingComplete(status);
 
 	const bookingDetails = booking
 		? {
@@ -118,15 +173,31 @@ export const getOnboardingStatus = async (
 				startTime: booking.startTime,
 				endTime: booking.endTime,
 				acceptedAt: booking.acceptedAt ?? null,
-		  }
+			}
+		: null;
+
+	const sportsScientistBookingDetails = sportsScientistBooking
+		? {
+				_id: sportsScientistBooking._id.toString(),
+				expertType: sportsScientistBooking.expertType,
+				bookingStatus: sportsScientistBooking.bookingStatus,
+				appointmentDate: sportsScientistBooking.appointmentDate,
+				appointmentMode: sportsScientistBooking.appointmentMode,
+				meetingLink: sportsScientistBooking.meetingLink ?? null,
+				startTime: sportsScientistBooking.startTime ?? null,
+				endTime: sportsScientistBooking.endTime ?? null,
+			}
 		: null;
 
 	return {
 		currentStep,
 		completedSteps: completedSteps as string[],
+		sharedCompletedSteps: sharedCompletedSteps as string[],
+		appOnboardingCompleted,
 		onboardingCompleted,
 		allowedNextStep: onboardingCompleted ? null : currentStep,
 		bookingDetails,
+		sportsScientistBookingDetails,
 	};
 };
 
@@ -149,6 +220,58 @@ export const validateStepAllowed = async (
 			`Step ${requiredStep} is not allowed. Current step is ${status.currentStep}`,
 		);
 	}
+};
+
+export const updateSharedOnboardingStep = async (
+	userId: string,
+	step: OnboardingStep,
+	completed: boolean,
+): Promise<OnboardingStatusResponse> => {
+	const flagField = SHARED_STEP_FLAG_MAP[step];
+	if (!flagField) {
+		throw new OnboardingServiceError(
+			"STEP_NOT_ALLOWED",
+			`Step ${step} is not a shared onboarding step`,
+		);
+	}
+
+	const userObjectId = toObjectId(userId, "NOT_FOUND", "Invalid user ID");
+	const update: Record<string, unknown> = {
+		$set: {
+			[`onboardingStatus.${flagField}`]: completed,
+			"onboardingStatus.startedAt": new Date(),
+		},
+	};
+
+	const user = await User.findByIdAndUpdate(userObjectId, update, {
+		new: true,
+	}).select("onboardingStatus");
+	if (!user) {
+		throw new OnboardingServiceError("NOT_FOUND", "User not found");
+	}
+
+	const status = user.onboardingStatus;
+	if (isSharedOnboardingComplete(status)) {
+		await User.findByIdAndUpdate(userObjectId, {
+			$set: {
+				onboarded: true,
+				"onboardingStatus.onboardingCompleted": true,
+				"onboardingStatus.completedAt": new Date(),
+				"onboardingStatus.currentStep": OnboardingStep.COMPLETED,
+			},
+		});
+	} else if (status?.onboardingCompleted && !completed) {
+		await User.findByIdAndUpdate(userObjectId, {
+			$set: {
+				onboarded: false,
+				"onboardingStatus.onboardingCompleted": false,
+				"onboardingStatus.completedAt": undefined,
+				"onboardingStatus.currentStep": OnboardingStep.HEALTH_MARKERS,
+			},
+		});
+	}
+
+	return getOnboardingStatus(userId);
 };
 
 export const advanceStep = async (
@@ -230,6 +353,12 @@ export const completeOnboarding = async (userId: string): Promise<Date> => {
 		missingSteps.push("nutritionistBooked");
 	}
 
+	for (const sharedStep of SHARED_ONBOARDING_STEPS) {
+		if (!status?.[SHARED_STEP_FLAG_MAP[sharedStep]]) {
+			missingSteps.push(sharedStep);
+		}
+	}
+
 	if (missingSteps.length > 0) {
 		throw new OnboardingServiceError(
 			"MISSING_STEPS",
@@ -242,6 +371,7 @@ export const completeOnboarding = async (userId: string): Promise<Date> => {
 	await User.findByIdAndUpdate(userObjectId, {
 		$set: {
 			onboarded: true,
+			"onboardingStatus.appOnboardingCompleted": true,
 			"onboardingStatus.onboardingCompleted": true,
 			"onboardingStatus.completedAt": completedAt,
 			"onboardingStatus.currentStep": OnboardingStep.COMPLETED,
