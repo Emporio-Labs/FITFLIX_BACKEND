@@ -229,7 +229,7 @@ ExpertType          — nutritionist
 AppointmentBookingStatus — Pending, Confirmed, Cancelled, Rescheduled, Completed, NoShow
 AppointmentMode     — IN_PERSON, ONLINE
 MeetingStatus       — SCHEDULED, IN_PROGRESS, COMPLETED
-NutritionistBookingStatus — PENDING, ACCEPTED, REJECTED, COMPLETED, EXPIRED, RESCHEDULE_REQUIRED
+NutritionistBookingStatus — PENDING, ACCEPTED, REJECTED, CANCELLED, COMPLETED, EXPIRED, RESCHEDULE_REQUIRED
 InvoicePaymentStatus — DRAFT, PENDING, PAID, FAILED, CANCELLED, REFUNDED
 InvoicePaymentMethod — CASH, UPI, CARD, BANK_TRANSFER, NONE
 DeletionRequestStatus — Pending, Processed, Cancelled

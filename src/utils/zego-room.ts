@@ -102,6 +102,13 @@ export const NUTRI_EXPIRY_GRACE_MINUTES = Number(
 	process.env.NUTRITIONIST_EXPIRY_GRACE_MINUTES ?? 5,
 );
 
+/// How close to a nutritionist appointment's scheduled start a member may
+/// still cancel or reschedule it themselves. Inside this window the booking
+/// can only be changed by staff — see cancelMyBooking and rescheduleMyBooking.
+export const NUTRI_CANCEL_WINDOW_MINUTES = Number(
+	process.env.NUTRITIONIST_CANCEL_WINDOW_MINUTES ?? 120,
+);
+
 /// Sessions are stored as a UTC-midnight `sessionDate` plus an "HH:mm" string,
 /// and that string is gym wall-clock time, not UTC. Reading it as UTC shifts
 /// every class by the zone offset — 5h30m for IST, which is long enough to

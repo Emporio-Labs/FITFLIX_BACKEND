@@ -332,6 +332,9 @@ export enum NutritionistBookingStatus {
 	PENDING = "PENDING",
 	ACCEPTED = "ACCEPTED",
 	REJECTED = "REJECTED",
+	/** Withdrawn by the member. Distinct from REJECTED, which is a staff
+	 *  decision — the front desk needs to tell the two apart. */
+	CANCELLED = "CANCELLED",
 	COMPLETED = "COMPLETED",
 	EXPIRED = "EXPIRED",
 	RESCHEDULE_REQUIRED = "RESCHEDULE_REQUIRED",

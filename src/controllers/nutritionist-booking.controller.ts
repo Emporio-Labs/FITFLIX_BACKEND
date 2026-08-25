@@ -10,10 +10,11 @@ import {
 } from "../services/slot-reservation.service";
 import User from "../models/User";
 import { advanceStep, getOnboardingStatus } from "../utils/onboarding.service";
-import { combineSessionDateTime } from "../utils/zego-room";
+import { combineSessionDateTime, NUTRI_CANCEL_WINDOW_MINUTES } from "../utils/zego-room";
 import {
 	acceptNutritionistBookingSchema,
 	bookNutritionistSchema,
+	cancelNutritionistBookingSchema,
 	rescheduleNutritionistBookingSchema,
 	switchToOnlineSchema,
 } from "../validators/nutritionist-booking.validator";
@@ -442,27 +443,52 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const { slotId, date } = parsed.data;
+		const { slotId, date, appointmentMode } = parsed.data;
 
 		if (!mongoose.Types.ObjectId.isValid(slotId)) {
 			res.status(400).json({ error: "Invalid slotId", code: "BAD_REQUEST" });
 			return;
 		}
 
-		// Guard: only the caller's own booking that's in RESCHEDULE_REQUIRED
-		// state can be rescheduled. This is the exact state acceptBooking flips
-		// a booking into when its original slot is no longer available.
+		// A healthy PENDING/ACCEPTED booking may now self-reschedule too, not
+		// just one staff already bounced into RESCHEDULE_REQUIRED.
 		const booking = await NutritionistBooking.findOne({
 			userId: new mongoose.Types.ObjectId(user.id),
-			status: NutritionistBookingStatus.RESCHEDULE_REQUIRED,
+			status: {
+				$in: [
+					NutritionistBookingStatus.PENDING,
+					NutritionistBookingStatus.ACCEPTED,
+					NutritionistBookingStatus.RESCHEDULE_REQUIRED,
+				],
+			},
 		}).sort({ createdAt: -1 });
 
 		if (!booking) {
 			res.status(404).json({
-				error: "No booking awaiting reschedule was found",
+				error: "No active nutritionist booking was found",
 				code: "NOT_FOUND",
 			});
 			return;
+		}
+
+		// The cutoff only applies to a booking the member hasn't already been
+		// bounced out of — RESCHEDULE_REQUIRED was staff's doing, and must stay
+		// reschedulable at any time.
+		if (
+			booking.status === NutritionistBookingStatus.PENDING ||
+			booking.status === NutritionistBookingStatus.ACCEPTED
+		) {
+			const startsAt = combineSessionDateTime(booking.bookingDate, booking.startTime);
+			if (
+				startsAt &&
+				startsAt.getTime() - Date.now() < NUTRI_CANCEL_WINDOW_MINUTES * 60_000
+			) {
+				res.status(409).json({
+					error: "This appointment starts too soon to reschedule yourself — please contact the front desk",
+					code: "RESCHEDULE_WINDOW_CLOSED",
+				});
+				return;
+			}
 		}
 
 		// The date the rescheduled appointment lands on — needed before reserving,
@@ -521,6 +547,12 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 		booking.bookingDate = rescheduledDate;
 		booking.status = NutritionistBookingStatus.PENDING;
 		booking.acceptedAt = null;
+		if (appointmentMode) {
+			booking.appointmentMode = appointmentMode;
+			if (appointmentMode === AppointmentMode.ONLINE && !booking.zegoRoomId) {
+				booking.zegoRoomId = `nutri_session_${booking._id.toString()}`;
+			}
+		}
 		await booking.save();
 
 		// Release the old slot last, wrapped so a release failure doesn't hide
@@ -589,6 +621,84 @@ export const switchToOnline: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({
 			message: "Switched to online mode successfully",
+			booking,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const cancelMyBooking: RequestHandler = async (req, res, next) => {
+	try {
+		const user = req.user;
+		if (!user || !user.id) {
+			res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+			return;
+		}
+
+		const parsed = cancelNutritionistBookingSchema.safeParse(req.body ?? {});
+		if (!parsed.success) {
+			res.status(400).json({
+				error: "Validation error",
+				code: "BAD_REQUEST",
+				details: parsed.error.format(),
+			});
+			return;
+		}
+
+		// A booking already REJECTED/CANCELLED/COMPLETED/EXPIRED has nothing left
+		// to cancel; RESCHEDULE_REQUIRED is included since it's still an active
+		// request the member may simply want to withdraw.
+		const booking = await NutritionistBooking.findOne({
+			userId: new mongoose.Types.ObjectId(user.id),
+			status: {
+				$in: [
+					NutritionistBookingStatus.PENDING,
+					NutritionistBookingStatus.ACCEPTED,
+					NutritionistBookingStatus.RESCHEDULE_REQUIRED,
+				],
+			},
+		}).sort({ createdAt: -1 });
+
+		if (!booking) {
+			res.status(404).json({
+				error: "No active nutritionist booking was found",
+				code: "NOT_FOUND",
+			});
+			return;
+		}
+
+		// Unlike the reschedule cutoff, cancellation is blocked close to start
+		// regardless of status — RESCHEDULE_REQUIRED included, since staff would
+		// otherwise lose visibility into a booking the member intends to drop
+		// right before it would have needed a decision.
+		const startsAt = combineSessionDateTime(booking.bookingDate, booking.startTime);
+		if (
+			startsAt &&
+			startsAt.getTime() - Date.now() < NUTRI_CANCEL_WINDOW_MINUTES * 60_000
+		) {
+			res.status(409).json({
+				error: "This appointment starts too soon to cancel yourself — please contact the front desk",
+				code: "CANCELLATION_WINDOW_CLOSED",
+			});
+			return;
+		}
+
+		// Release the slot capacity reserved at booking/reschedule time, mirroring
+		// rejectBooking. meetingStatus is left alone — the meeting was scheduled,
+		// never held; that's a fact about the session, not the booking's outcome.
+		if (booking.slotId) {
+			await releaseSlotCapacity(booking.slotId.toString());
+		}
+
+		booking.status = NutritionistBookingStatus.CANCELLED;
+		booking.cancelledAt = new Date();
+		booking.cancelledBy = "user";
+		booking.cancellationReason = parsed.data.reason ?? null;
+		await booking.save();
+
+		res.status(200).json({
+			message: "Nutritionist booking cancelled",
 			booking,
 		});
 	} catch (error) {

@@ -258,3 +258,31 @@ export const headS3Object = async (
 		throw err;
 	}
 };
+
+/**
+ * Fetch an object's full body into memory. Only used server-side for
+ * one-off work (e.g. the media-dimensions backfill script measuring an
+ * already-uploaded image) — request-path code should keep using
+ * generateSignedUrl and let the client fetch directly, not round-trip
+ * through this process.
+ */
+export const getObjectBuffer = async (key: string): Promise<Buffer> => {
+	if (!s3Client) {
+		const targetPath = path.join(UPLOADS_DIR, key);
+		return readFile(targetPath);
+	}
+	const result = await s3Client.send(
+		new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+	);
+	const body = result.Body;
+	if (!body) {
+		throw new Error(`S3 object has no body: ${key}`);
+	}
+	const chunks: Buffer[] = [];
+	// @ts-expect-error — Node runtime returns a Readable; the SDK's browser
+	// (ReadableStream/Blob) types don't apply here.
+	for await (const chunk of body) {
+		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+	}
+	return Buffer.concat(chunks);
+};

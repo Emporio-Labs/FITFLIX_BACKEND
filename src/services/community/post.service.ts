@@ -35,6 +35,8 @@ export interface ImageRef {
 	thumbnailUrl?: string;
 	blurredUrl?: string;
 	position?: number;
+	width?: number;
+	height?: number;
 }
 
 export interface AudioRef {
@@ -89,6 +91,8 @@ interface LeanMedia {
 	mimeType?: string | null;
 	bytes?: number | null;
 	position?: number;
+	width?: number | null;
+	height?: number | null;
 }
 
 /** Infer the response Content-Type for a media object from its kind and, for
@@ -206,6 +210,8 @@ async function signMedia(media: LeanMedia[]) {
 				mimeType: m.mimeType ?? null,
 				bytes: m.bytes ?? null,
 				position: m.position ?? 0,
+				width: m.width ?? null,
+				height: m.height ?? null,
 			};
 		}),
 	);
@@ -623,6 +629,8 @@ export async function createPost(
 					thumbnailUrl: img.thumbnailUrl ?? null,
 					blurredUrl: img.blurredUrl ?? null,
 					position: img.position ?? i,
+					width: img.width ?? null,
+					height: img.height ?? null,
 				})),
 				opts,
 			);
@@ -828,6 +836,8 @@ export async function editPost(
 						thumbnailUrl: img.thumbnailUrl ?? null,
 						blurredUrl: img.blurredUrl ?? null,
 						position: img.position ?? i,
+						width: img.width ?? null,
+						height: img.height ?? null,
 					})),
 					opts,
 				);

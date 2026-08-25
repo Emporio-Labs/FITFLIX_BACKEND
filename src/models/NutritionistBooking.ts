@@ -78,6 +78,19 @@ const nutritionistBookingSchema = new mongoose.Schema(
 			type: Date,
 			default: null,
 		},
+		cancelledAt: {
+			type: Date,
+			default: null,
+		},
+		cancelledBy: {
+			type: String,
+			enum: ["user", "admin"],
+			default: null,
+		},
+		cancellationReason: {
+			type: String,
+			default: null,
+		},
 		hostLiveAt: {
 			type: Date,
 			default: null,
