@@ -3645,7 +3645,7 @@ For full field-level schemas and examples, see [docs/API_REFERENCE.md](docs/API_
 
 **Global Requirements:**
 - ✅ JWT Authentication required for all endpoints
-- ✅ User role for onboarding steps; admin-only for `DELETE /onboarding/appointments/nutritionist/:userId`
+- ✅ User role for onboarding steps
 - Backend is the **single source of truth** for onboarding progression
 - Steps must be completed in strict order — skipping returns `403`
 
@@ -4084,53 +4084,14 @@ POST /onboarding/appointments
 
 ---
 
-#### 9. Cancel Nutritionist Appointment (Admin)
-```
-DELETE /onboarding/appointments/nutritionist/:userId
-```
+#### 9. Cancel Nutritionist Booking (Member)
 
-**Authorization:** Admin only
-
-**URL Parameters:**
-| Param | Type | Description |
-|-------|------|-------------|
-| `userId` | ObjectId | The user whose nutritionist appointment should be cancelled |
-
-**Behavior:**
-- Deletes the user's nutritionist `ExpertAppointment` record.
-- Rewinds onboarding state:
-  - `onboardingStatus.nutritionistBooked = false`
-  - Removes `NUTRITIONIST_BOOKING` and `COMPLETED` from `completedSteps`
-  - Sets `currentStep = NUTRITIONIST_BOOKING`
-  - Sets `onboardingStatus.onboardingCompleted = false` and `user.onboarded = false`
-  - Clears `onboardingStatus.completedAt`
-- Used by the FrontDesk Admin → Nutritionist → Booked tab → Delete action.
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "message": "Nutritionist appointment cancelled successfully",
-  "onboardingStatus": {
-    "currentStep": "NUTRITIONIST_BOOKING",
-    "completedSteps": [
-      "HEALTH_MARKERS",
-      "HEALTH_GOALS",
-      "CONSENT",
-      "REPORT_UPLOAD",
-      "SPORTS_SCIENTIST_BOOKING"
-    ],
-    "onboardingCompleted": false,
-    "allowedNextStep": "NUTRITIONIST_BOOKING"
-  }
-}
-```
-
-**Error Responses:**
-- `400` — `BAD_REQUEST` — Invalid `userId`
-- `403` — `FORBIDDEN` — Caller is not an admin
-- `404` — `NOT_FOUND` — User not found, or no nutritionist appointment exists for this user
-- `500` — `INTERNAL_ERROR` — Unexpected server failure
+> **Superseded.** This section previously documented
+> `DELETE /onboarding/appointments/nutritionist/:userId`, an admin-only cancel
+> that no longer exists in the codebase. Self-service cancellation is now a
+> member-facing endpoint — see `PATCH, POST /nutritionist/my-booking/cancel`
+> in `docs/API_REFERENCE.md`. There is no admin-initiated cancel; staff use
+> `PATCH /nutritionist/bookings/:id/reject` instead.
 
 ---
 

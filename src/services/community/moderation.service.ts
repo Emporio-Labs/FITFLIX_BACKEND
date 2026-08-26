@@ -257,6 +257,8 @@ export async function createOfficialPost(
 					thumbnailUrl: img.thumbnailUrl ?? null,
 					blurredUrl: img.blurredUrl ?? null,
 					position: img.position ?? i,
+					width: img.width ?? null,
+					height: img.height ?? null,
 				})),
 				opt(session),
 			);

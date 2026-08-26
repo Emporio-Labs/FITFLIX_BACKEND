@@ -37,6 +37,11 @@ export const switchToOnlineSchema = z.object({
 export const rescheduleNutritionistBookingSchema = z.object({
 	slotId: z.string().trim().min(1, "slotId is required"),
 	date: optionalString,
+	appointmentMode: z.nativeEnum(AppointmentMode).optional(),
+});
+
+export const cancelNutritionistBookingSchema = z.object({
+	reason: optionalString,
 });
 
 export type BookNutritionistBody = z.infer<typeof bookNutritionistSchema>;
@@ -44,3 +49,6 @@ export type AcceptNutritionistBookingBody = z.infer<
 	typeof acceptNutritionistBookingSchema
 >;
 export type SwitchToOnlineBody = z.infer<typeof switchToOnlineSchema>;
+export type CancelNutritionistBookingBody = z.infer<
+	typeof cancelNutritionistBookingSchema
+>;

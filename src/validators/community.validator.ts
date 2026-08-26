@@ -27,6 +27,8 @@ export const imageReferenceSchema = z.object({
 	thumbnailUrl: z.string().min(1).optional(),
 	blurredUrl: z.string().min(1).optional(),
 	position: z.number().int().min(0).optional(),
+	width: z.number().int().min(1).optional(),
+	height: z.number().int().min(1).optional(),
 });
 
 /** A reference to an already-uploaded audio clip (returned by POST /community/media/audio). */

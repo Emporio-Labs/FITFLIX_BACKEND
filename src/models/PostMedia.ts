@@ -30,6 +30,12 @@ const postMediaSchema = new mongoose.Schema(
 		bytes: { type: Number, default: null, min: 0 },
 		// Ordering within a post's media carousel.
 		position: { type: Number, default: 0, min: 0 },
+		// Pixel dimensions at upload time (kind "image" only). Null for rows
+		// created before this field existed, and for non-image kinds — see
+		// scripts/backfill-post-media-dimensions.ts for the former. Lets clients
+		// render at the source aspect ratio instead of a fixed crop.
+		width: { type: Number, default: null, min: 1 },
+		height: { type: Number, default: null, min: 1 },
 	},
 	{ timestamps: true },
 );

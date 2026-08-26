@@ -214,7 +214,7 @@ Authoritative source: [src/models/Enums.ts](../src/models/Enums.ts). Numeric enu
 | `ConsentType` | `WELLNESS_SERVICES`, `GYM_FITNESS` |
 | `AppointmentMode` | `IN_PERSON`, `ONLINE` |
 | `MeetingStatus` | `SCHEDULED`, `IN_PROGRESS`, `COMPLETED` |
-| `NutritionistBookingStatus` | `PENDING`, `ACCEPTED`, `REJECTED`, `COMPLETED`, `EXPIRED`, `RESCHEDULE_REQUIRED` |
+| `NutritionistBookingStatus` | `PENDING`, `ACCEPTED`, `REJECTED`, `CANCELLED`, `COMPLETED`, `EXPIRED`, `RESCHEDULE_REQUIRED` |
 | `NutritionistApprovalStatus` | `PENDING`, `APPROVED`, `REJECTED` |
 | `InvoicePaymentStatus` | `DRAFT`, `PENDING`, `PAID`, `FAILED`, `CANCELLED`, `REFUNDED` |
 | `InvoicePaymentMethod` | `CASH`, `UPI`, `CARD`, `BANK_TRANSFER`, `NONE` |
@@ -539,6 +539,8 @@ Also mounted at `/api/v1`.
 | POST | `/onboarding/nutritionist/reschedule` | JWT | user | `rescheduleMyBooking` |
 | PATCH | `/onboarding/nutritionist/reschedule` | JWT | user | `rescheduleMyBooking` |
 | POST | `/nutritionist/my-booking/switch-to-online` | JWT | user | `switchToOnline` |
+| PATCH | `/nutritionist/my-booking/cancel` | JWT | user | `cancelMyBooking` |
+| POST | `/nutritionist/my-booking/cancel` | JWT | user | `cancelMyBooking` |
 | GET | `/nutritionist/bookings` | JWT | admin, nutritionist, frontdesk | `getAllBookingsForAdmin` |
 | PATCH | `/admin/nutrition/bookings/:id/accept` | JWT | admin, nutritionist, frontdesk | `acceptBooking` |
 | POST | `/admin/nutrition/bookings/:id/accept` | JWT | admin, nutritionist, frontdesk | `acceptBooking` |
@@ -4705,7 +4707,8 @@ All routes require a JWT.
 |---|---|---|
 | `PENDING` | `bookNutritionist`, `rescheduleMyBooking` | Awaiting staff acceptance |
 | `ACCEPTED` | `acceptBooking` | Confirmed; `acceptedAt` stamped |
-| `REJECTED` | `rejectBooking` | Declined; slot capacity released |
+| `REJECTED` | `rejectBooking` | Declined by staff; slot capacity released |
+| `CANCELLED` | `cancelMyBooking` | Withdrawn by the member; slot capacity released. Distinct from `REJECTED` so staff can tell the two apart |
 | `COMPLETED` | `completeBooking` | Consultation finished |
 | `RESCHEDULE_REQUIRED` | `acceptBooking` | Accept failed because the slot vanished or expired — the user must pick a new time |
 | `EXPIRED` | — | Declared in the enum; not written by any handler |
@@ -4821,10 +4824,13 @@ Move a booking to a new slot. Also answers at
 |---|---|---|---|
 | `slotId` | ObjectId | yes | The new slot |
 | `date` | string | no | New booking date; ignored if unparseable |
+| `appointmentMode` | `AppointmentMode` | no | Applied to the booking if supplied; generates `zegoRoomId` when switching to `ONLINE` and none exists |
 
-> **Only a booking in `RESCHEDULE_REQUIRED` can be rescheduled** — the exact
-> state `acceptBooking` sets when the original slot is gone. A `PENDING` or
-> `ACCEPTED` booking returns `404 NOT_FOUND`.
+> A booking in `PENDING`, `ACCEPTED`, or `RESCHEDULE_REQUIRED` can be
+> rescheduled. `PENDING`/`ACCEPTED` are subject to the same
+> `NUTRITIONIST_CANCEL_WINDOW_MINUTES` (default 120) cutoff as cancellation —
+> `RESCHEDULE_REQUIRED` was staff's doing and stays reschedulable at any time.
+> Any other status, or no matching booking, returns `404 NOT_FOUND`.
 
 Slot handling is ordered so a failure leaves everything unchanged: the new slot
 is reserved atomically (`findOneAndUpdate` with `remainingCapacity > 0`) *before*
@@ -4839,8 +4845,42 @@ needs staff acceptance again.
 | Status | Code | When |
 |---|---|---|
 | 400 | `BAD_REQUEST` | Missing/invalid `slotId` |
-| 404 | `NOT_FOUND` | `No booking awaiting reschedule was found` |
+| 404 | `NOT_FOUND` | `No active nutritionist booking was found` |
+| 409 | `RESCHEDULE_WINDOW_CLOSED` | `PENDING`/`ACCEPTED` booking starts within the cutoff |
 | 409 | `SLOT_FULL` | `Selected slot is fully booked or does not exist` |
+
+### PATCH, POST /nutritionist/my-booking/cancel
+
+Withdraw the caller's own booking. New endpoint — no admin-initiated
+equivalent exists; staff use `PATCH /nutritionist/bookings/:id/reject`
+instead.
+
+**Auth:** Bearer (`user`)
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `reason` | string | no | Stored as `cancellationReason` |
+
+Finds the caller's latest booking in `{PENDING, ACCEPTED,
+RESCHEDULE_REQUIRED}`. Rejects with `409 CANCELLATION_WINDOW_CLOSED` when the
+appointment starts within `NUTRITIONIST_CANCEL_WINDOW_MINUTES` (default 120)
+— this applies regardless of status, unlike the reschedule cutoff, since
+staff need visibility into a booking about to be dropped right before a
+decision would be needed. On success, releases slot capacity (mirroring
+`rejectBooking`), sets `status = CANCELLED`, stamps `cancelledAt` and
+`cancelledBy: "user"`. `meetingStatus` is left untouched.
+
+**Success (200):** `{ "message": "Nutritionist booking cancelled", "booking": { /* ... */ } }`
+
+**Errors**
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `BAD_REQUEST` | Validation error |
+| 404 | `NOT_FOUND` | `No active nutritionist booking was found` |
+| 409 | `CANCELLATION_WINDOW_CLOSED` | Appointment starts within the cutoff |
 
 ### PATCH, POST /nutritionist/my-booking/switch-to-online
 
@@ -4967,6 +5007,7 @@ Every declaration in this router, since the duplication is easy to miss:
 | `getMyBookings` | GET | `/nutritionist/my-bookings` |
 | `rescheduleMyBooking` | POST, PATCH | `/nutritionist/my-booking/reschedule`, `/onboarding/nutritionist/reschedule` |
 | `switchToOnline` | POST, PATCH | `/nutritionist/my-booking/switch-to-online` |
+| `cancelMyBooking` | POST, PATCH | `/nutritionist/my-booking/cancel` |
 | `getAllBookingsForAdmin` | GET | `/nutritionist/bookings` |
 | `acceptBooking` | POST, PATCH | `/admin/nutrition/bookings/:id/accept`; PATCH also `/nutritionist/bookings/:id/accept` |
 | `rejectBooking` | PATCH | `/nutritionist/bookings/:id/reject` |
@@ -5292,6 +5333,7 @@ expansion.
 | `/nutritionist/my-bookings` | `/api/v1/nutritionist/my-bookings` |
 | `/nutritionist/my-booking/switch-to-online` | `/api/v1/nutritionist/my-booking/switch-to-online` |
 | `/nutritionist/my-booking/reschedule` | `/api/v1/nutritionist/my-booking/reschedule` |
+| `/nutritionist/my-booking/cancel` | `/api/v1/nutritionist/my-booking/cancel` |
 | `/onboarding/nutritionist/reschedule` | `/api/v1/onboarding/nutritionist/reschedule` |
 | `/nutritionist/bookings` | `/api/v1/nutritionist/bookings` |
 | `/admin/nutrition/bookings/:id/accept` | `/api/v1/admin/nutrition/bookings/:id/accept` |

@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
 	acceptBooking,
 	bookNutritionist,
+	cancelMyBooking,
 	completeBooking,
 	getAllBookingsForAdmin,
 	getMemberBooking,
@@ -79,6 +80,18 @@ nutritionistBookingRouter.post(
 	"/nutritionist/my-booking/switch-to-online",
 	authorize(["user"]),
 	switchToOnline,
+);
+
+nutritionistBookingRouter.patch(
+	"/nutritionist/my-booking/cancel",
+	authorize(["user"]),
+	cancelMyBooking,
+);
+
+nutritionistBookingRouter.post(
+	"/nutritionist/my-booking/cancel",
+	authorize(["user"]),
+	cancelMyBooking,
 );
 
 // Admin endpoints
