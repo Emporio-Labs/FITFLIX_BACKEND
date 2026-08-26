@@ -30,6 +30,7 @@ import membershipPlanRouter from "./routes/membershipPlan.routes";
 import notificationRouter from "./routes/notification.routes";
 import nutritionRouter from "./routes/nutrition.routes";
 import nutritionistBookingRouter from "./routes/nutritionist-booking.routes";
+import expertAppointmentRouter from "./routes/expert-appointment.routes";
 
 import onboardingRouter from "./routes/onboarding.routes";
 import scheduleRouter from "./routes/schedule.routes";
@@ -279,6 +280,8 @@ app.use("/membership-plans", membershipPlanRouter);
 app.use("/onboarding", onboardingRouter);
 app.use(nutritionistBookingRouter);
 app.use("/api/v1", nutritionistBookingRouter);
+app.use(expertAppointmentRouter);
+app.use("/api/v1", expertAppointmentRouter);
 app.use("/nutrition", nutritionRouter);
 app.use("/dashboard", dashboardRouter);
 app.use("/workout-plans", workoutPlanRouter);

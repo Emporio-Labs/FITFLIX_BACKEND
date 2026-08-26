@@ -1,11 +1,26 @@
 import mongoose from "mongoose";
 
+import { ExpertType } from "./Enums";
+
 const slotSchema = new mongoose.Schema(
 	{
 		locationId: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "Location",
 			default: null,
+			index: true,
+		},
+		// Which expert/service this slot's inventory belongs to. Added
+		// 2026-08-26 so the sports-scientist onboarding step can book against
+		// its own capacity instead of draining the nutritionist pool — every
+		// pre-existing row is backfilled to "nutritionist" (see
+		// scripts/backfill-slot-expert-type.ts), since that was the only
+		// consumer of /slots/available before this field existed.
+		expertType: {
+			type: String,
+			enum: Object.values(ExpertType),
+			default: ExpertType.Nutritionist,
+			required: true,
 			index: true,
 		},
 		date: { type: Date, required: false, default: null },
@@ -26,6 +41,7 @@ const slotSchema = new mongoose.Schema(
 );
 
 slotSchema.index({ locationId: 1, date: 1, startTime: 1 });
+slotSchema.index({ expertType: 1, isDaily: 1, date: 1, startTime: 1 });
 
 slotSchema.index(
 	{ parentTemplate: 1, date: 1, startTime: 1, endTime: 1 },

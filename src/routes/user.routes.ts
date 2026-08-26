@@ -9,6 +9,7 @@ import {
 	getMyUserReports,
 	getOnboardingProfile,
 	getReportSignedUrl,
+	getUserBcaMetrics,
 	getUserById,
 	onboardUser,
 	syncMyBcaMetrics,
@@ -52,6 +53,11 @@ userRouter.get(
 	"/:id/reports/:reportId/url",
 	authorize(["admin", "doctor", "nutritionist", "trainer"]),
 	getReportSignedUrl,
+);
+userRouter.get(
+	"/:id/bca-metrics",
+	authorize(["admin", "frontdesk"]),
+	getUserBcaMetrics,
 );
 userRouter.patch("/:id/onboard", authorize(["admin", "user"]), onboardUser);
 userRouter.patch(

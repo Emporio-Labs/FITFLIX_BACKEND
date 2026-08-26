@@ -15,7 +15,7 @@ import { buildActivePtMembershipFilter } from "../utils/membership-status.util";
 import {
 	ActiveXError,
 	fetchBcaRecords,
-	mapActiveXRecordToBcaMetric,
+	upsertBcaRecordForUser,
 } from "../utils/activex.service";
 import { buildApiErrorEnvelope } from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
@@ -1112,6 +1112,32 @@ export const getMyUserBcaMetrics: RequestHandler = async (req, res, next) => {
 };
 
 /**
+ * GET /users/:id/bca-metrics — staff-facing counterpart to `/me/bca-metrics`.
+ * Before this, the only reader of `bca_metrics` was the member themselves;
+ * front-desk staff had no way to see a scan the member never opened the app
+ * to view. `authorize(["admin", "frontdesk"])` at the route matches the
+ * guard on the onboarding-steps PATCH endpoint this feeds.
+ */
+export const getUserBcaMetrics: RequestHandler = async (req, res, next) => {
+	const id = getIdParam(req.params.id);
+
+	if (!id) {
+		res.status(400).json({ message: "Invalid user id" });
+		return;
+	}
+
+	try {
+		const history = await BcaMetric.find({ userId: id })
+			.sort({ recordedAt: -1 })
+			.select("-userId -__v");
+
+		res.status(200).json({ history });
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
  * Pull the latest Body Composition Analysis records from the ActiveX API for
  * the caller's phone number, upsert them into `bca_metrics`, and return the
  * refreshed history.
@@ -1143,16 +1169,7 @@ export const syncMyBcaMetrics: RequestHandler = async (req, res, next) => {
 
 		let synced = 0;
 		for (const record of records) {
-			const payload = mapActiveXRecordToBcaMetric(
-				record,
-				userObjectId,
-				receivedAt,
-			);
-			await BcaMetric.updateOne(
-				{ userId: userObjectId, recordedAt: payload.recordedAt },
-				{ $set: payload },
-				{ upsert: true },
-			);
+			await upsertBcaRecordForUser(userObjectId, record, receivedAt);
 			synced += 1;
 		}
 

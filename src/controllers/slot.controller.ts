@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import { ExpertType } from "../models/Enums";
 import Slot from "../models/Slots";
 import {
 	createSlotBodySchema,
@@ -96,10 +97,16 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 		// unique index isn't safe to add on top of that existing duplicate
 		// data (Mongoose would fail to build it against the live collection),
 		// so this is enforced here at write time instead.
+		const expertType = parsedBody.data.expertType ?? ExpertType.Nutritionist;
+
 		if (derivedState.isDaily) {
+			// Scoped by expertType: a nutritionist and a sports-scientist template
+			// are allowed to occupy the same time window — they draw from
+			// separate capacity pools, so they are not duplicates of each other.
 			const duplicate = await Slot.findOne({
 				isDaily: true,
 				parentTemplate: null,
+				expertType,
 				startTime: parsedBody.data.startTime,
 				endTime: parsedBody.data.endTime,
 			}).select("_id");
@@ -117,6 +124,7 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 		const slot = await Slot.create({
 			date: derivedState.date,
 			isDaily: derivedState.isDaily,
+			expertType,
 			startTime: parsedBody.data.startTime,
 			endTime: parsedBody.data.endTime,
 			capacity: derivedState.capacity,
@@ -140,6 +148,21 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// Defaults to nutritionist so callers that predate this parameter (the
+	// member app sent `&expertType=nutritionist` even before the backend
+	// understood it) keep seeing exactly what they saw before expertType
+	// existed — every pre-existing slot was backfilled to that value.
+	const rawExpertType = req.query.expertType as string | undefined;
+	const expertType = rawExpertType?.trim() || ExpertType.Nutritionist;
+	if (!Object.values(ExpertType).includes(expertType as ExpertType)) {
+		res.status(400).json({
+			error: `Invalid query parameter: expertType must be one of ${Object.values(ExpertType).join(", ")}`,
+			code: "VALIDATION_ERROR",
+			details: { expertType: "Invalid expert type" },
+		});
+		return;
+	}
+
 	try {
 		const parsedDate = new Date(rawDate);
 
@@ -147,16 +170,18 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 		const dayEnd = normalizeToUtcDayEnd(parsedDate);
 
 		const concreteSlots = await Slot.find({
+			expertType,
 			date: { $gte: dayStart, $lt: dayEnd },
 			remainingCapacity: { $gt: 0 },
 			isBooked: false,
 		})
 			.select(
-				"_id date startTime endTime capacity remainingCapacity parentTemplate",
+				"_id date startTime endTime capacity remainingCapacity parentTemplate expertType",
 			)
 			.sort({ startTime: 1 });
 
 		const allConcreteForDay = await Slot.find({
+			expertType,
 			date: { $gte: dayStart, $lt: dayEnd },
 			parentTemplate: { $exists: true, $ne: null },
 		}).select("parentTemplate startTime endTime");
@@ -174,13 +199,14 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 		// per-date concrete children — must stop being offered, not keep
 		// advertising its original `capacity` forever.
 		const dailyTemplates = await Slot.find({
+			expertType,
 			isDaily: true,
 			parentTemplate: null,
 			capacity: { $gt: 0 },
 			remainingCapacity: { $gt: 0 },
 			isBooked: false,
 		})
-			.select("_id startTime endTime capacity remainingCapacity")
+			.select("_id startTime endTime capacity remainingCapacity expertType")
 			.sort({ startTime: 1 });
 
 		const templateRows = dailyTemplates
@@ -193,6 +219,7 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 			.map((t) => ({
 				slotId: t._id,
 				date: dayStart,
+				expertType: t.expertType,
 				startTime: t.startTime,
 				endTime: t.endTime,
 				capacity: t.capacity,
@@ -208,6 +235,7 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 		const concreteRows = concreteSlots.map((s) => ({
 			slotId: s._id,
 			date: s.date,
+			expertType: s.expertType,
 			startTime: s.startTime,
 			endTime: s.endTime,
 			capacity: s.capacity,
@@ -336,6 +364,9 @@ export const updateSlotById: RequestHandler = async (req, res, next) => {
 					: {}),
 				...(parsedBody.data.isDaily !== undefined
 					? { isDaily: parsedBody.data.isDaily }
+					: {}),
+				...(parsedBody.data.expertType !== undefined
+					? { expertType: parsedBody.data.expertType }
 					: {}),
 				...(parsedBody.data.startTime !== undefined
 					? { startTime: parsedBody.data.startTime }

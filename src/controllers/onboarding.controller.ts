@@ -6,7 +6,6 @@ import ConsentForm from "../models/ConsentForm";
 import ExpertAppointment from "../models/ExpertAppointment";
 import {
 	AppointmentBookingStatus,
-	AppointmentMode,
 	ConsentType,
 	ExpertType,
 	OnboardingStep,
@@ -14,6 +13,12 @@ import {
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import MedicalReport from "../models/MedicalReport";
+import Slot from "../models/Slots";
+import { normalizeRole } from "../middleware/rbac.middleware";
+import {
+	reserveSlotCapacity,
+	resolveConcreteSlotForBooking,
+} from "../services/slot-reservation.service";
 import { validateFileSignature } from "../middleware/upload.middleware";
 import type { AuthenticatedUser } from "../types/auth";
 import {
@@ -30,6 +35,7 @@ import {
 	uploadStreamToS3,
 } from "../utils/s3.service";
 import {
+	bookSportsScientistSchema,
 	consentBodySchema,
 	healthGoalsBodySchema,
 	healthMarkersBodySchema,
@@ -99,7 +105,7 @@ export const getStatusByUserId: RequestHandler = async (req, res, next) => {
 };
 
 export const getStatus: RequestHandler = async (req, res, next) => {
-	if (!req.user || req.user.role !== "user") {
+	if (!req.user || normalizeRole(req.user.role) !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
 			code: "FORBIDDEN",
@@ -120,7 +126,7 @@ export const submitHealthMarkers = async (
 	res: Parameters<RequestHandler>[1],
 	next: Parameters<RequestHandler>[2],
 ) => {
-	if (!req.user || req.user.role !== "user") {
+	if (!req.user || normalizeRole(req.user.role) !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
 			code: "FORBIDDEN",
@@ -169,7 +175,7 @@ export const submitHealthGoals = async (
 	res: Parameters<RequestHandler>[1],
 	next: Parameters<RequestHandler>[2],
 ) => {
-	if (!req.user || req.user.role !== "user") {
+	if (!req.user || normalizeRole(req.user.role) !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
 			code: "FORBIDDEN",
@@ -214,7 +220,7 @@ export const submitConsent = async (
 	next: Parameters<RequestHandler>[2],
 ) => {
 	const requester = req.user;
-	if (!requester || requester.role !== "user") {
+	if (!requester || normalizeRole(requester.role) !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
 			code: "FORBIDDEN",
@@ -318,7 +324,7 @@ export const submitReport = async (
 	_next: Parameters<RequestHandler>[2],
 ) => {
 	const requester = req.user;
-	if (!requester || requester.role !== "user") {
+	if (!requester || normalizeRole(requester.role) !== "user") {
 		res.status(403).json({
 			error: "Access Denied",
 			code: "FORBIDDEN",
@@ -474,7 +480,7 @@ export const submitReport = async (
 
 export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 	const requester = req.user;
-	if (!requester || requester.role !== "user") {
+	if (!requester || normalizeRole(requester.role) !== "user") {
 		res.status(403).json({
 			error: "Only members can book a sport scientist appointment",
 			code: "FORBIDDEN",
@@ -482,25 +488,70 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const appointmentDate = new Date(String(req.body?.appointmentDate ?? ""));
-	if (Number.isNaN(appointmentDate.getTime())) {
+	const parsed = bookSportsScientistSchema.safeParse(req.body);
+	if (!parsed.success) {
 		res.status(400).json({
-			error: "appointmentDate must be a valid date",
+			error: "Validation error",
 			code: "VALIDATION_ERROR",
+			details: parsed.error.format(),
 		});
 		return;
 	}
 
-	const rawMode = String(
-		req.body?.appointmentMode ?? AppointmentMode.IN_PERSON,
-	).toUpperCase();
-	const appointmentMode = Object.values(AppointmentMode).includes(
-		rawMode as AppointmentMode,
-	)
-		? (rawMode as AppointmentMode)
-		: AppointmentMode.IN_PERSON;
+	const { slotId, appointmentMode, meetingLink, notes } = parsed.data;
+	const appointmentDate = new Date(parsed.data.appointmentDate);
+	let startTime = parsed.data.startTime ?? null;
+	let endTime = parsed.data.endTime ?? null;
+	let resolvedSlotId: mongoose.Types.ObjectId | null = null;
 
 	try {
+		// Reserve a real seat against sports-scientist inventory when a slot was
+		// picked — mirrors bookNutritionist's flow exactly (same shared
+		// primitives), so "Sports Scientist" slots and "Nutritionist" slots at
+		// the same time draw from separate pools and neither can overbook the
+		// other. A slot id is optional: without one this still records the
+		// appointment, just without capacity enforcement.
+		if (slotId && mongoose.Types.ObjectId.isValid(slotId)) {
+			const slot = await Slot.findOne({
+				_id: slotId,
+				expertType: ExpertType.SportsScientist,
+			});
+			if (!slot) {
+				res.status(400).json({
+					error: "Selected slot is not a sports-scientist slot",
+					code: "SLOT_UNAVAILABLE",
+				});
+				return;
+			}
+
+			const concreteSlot = await resolveConcreteSlotForBooking(
+				slot,
+				appointmentDate,
+			);
+			if (!concreteSlot) {
+				res.status(400).json({
+					error: "Selected slot is not available on that date",
+					code: "SLOT_UNAVAILABLE",
+				});
+				return;
+			}
+
+			const reservedSlot = await reserveSlotCapacity(
+				concreteSlot._id.toString(),
+			);
+			if (!reservedSlot) {
+				res.status(400).json({
+					error: "Selected slot is fully booked",
+					code: "SLOT_FULL",
+				});
+				return;
+			}
+
+			resolvedSlotId = concreteSlot._id;
+			startTime = concreteSlot.startTime;
+			endTime = concreteSlot.endTime;
+		}
+
 		const appointment = await ExpertAppointment.findOneAndUpdate(
 			{
 				userId: requester.id,
@@ -516,10 +567,11 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 				$set: {
 					appointmentDate,
 					appointmentMode,
-					meetingLink: req.body?.meetingLink || null,
-					startTime: req.body?.startTime || null,
-					endTime: req.body?.endTime || null,
-					notes: req.body?.notes || null,
+					meetingLink: meetingLink || null,
+					startTime,
+					endTime,
+					notes: notes || null,
+					...(resolvedSlotId ? { slotId: resolvedSlotId } : {}),
 				},
 				$setOnInsert: {
 					userId: requester.id,
@@ -535,6 +587,13 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 			OnboardingStep.SPORT_SCIENTIST_APPOINTMENT,
 			true,
 		);
+		// Also advances the app-owned `currentStep` (SPORT_SCIENTIST_APPOINTMENT
+		// now sits between REPORT_UPLOAD and NUTRITIONIST_BOOKING in STEP_ORDER),
+		// so the member wizard's next page unlocks the same way it does after
+		// every other step — without this the sports-scientist wizard page
+		// would book successfully but the client would have no server signal
+		// to move forward to the nutritionist page.
+		await advanceStep(requester.id, OnboardingStep.SPORT_SCIENTIST_APPOINTMENT);
 		res
 			.status(201)
 			.json({ message: "Sport scientist appointment booked", appointment });
@@ -545,7 +604,7 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 
 export const updateSharedStep: RequestHandler = async (req, res, next) => {
 	const requester = req.user;
-	if (!requester || !["admin", "frontdesk"].includes(requester.role)) {
+	if (!requester || !["admin", "frontdesk"].includes(normalizeRole(requester.role))) {
 		res.status(403).json({
 			error: "Only front desk staff can update shared onboarding steps",
 			code: "FORBIDDEN",
@@ -600,7 +659,7 @@ export const submitComplete = async (
 	next: Parameters<RequestHandler>[2],
 ) => {
 	const requester = req.user;
-	if (!requester || requester.role !== "user") {
+	if (!requester || normalizeRole(requester.role) !== "user") {
 		res.status(403).json({
 			error: "Only users can access this endpoint",
 			code: "FORBIDDEN",

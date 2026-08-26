@@ -20,11 +20,19 @@ export class OnboardingServiceError extends Error {
 	}
 }
 
+// Sports scientist was reinserted here 2026-08-26, between REPORT_UPLOAD and
+// NUTRITIONIST_BOOKING, matching where it sits in the member app's wizard
+// (lib/screens/onboarding/onboarding_screen.dart). Before this it had no
+// slot in the app-owned sequence at all: bookSportsScientist only flipped
+// the shared `sportsScientistBooked` flag via updateSharedOnboardingStep,
+// never advanced `currentStep` — so a client wizard page for it would have
+// been unreachable through the normal advanceStep-driven page gate.
 const STEP_ORDER: OnboardingStep[] = [
 	OnboardingStep.HEALTH_MARKERS,
 	OnboardingStep.HEALTH_GOALS,
 	OnboardingStep.CONSENT,
 	OnboardingStep.REPORT_UPLOAD,
+	OnboardingStep.SPORT_SCIENTIST_APPOINTMENT,
 	OnboardingStep.NUTRITIONIST_BOOKING,
 	OnboardingStep.COMPLETED,
 ];
@@ -34,6 +42,7 @@ const STEP_FLAG_MAP: Record<string, string> = {
 	[OnboardingStep.HEALTH_GOALS]: "healthGoalsCompleted",
 	[OnboardingStep.CONSENT]: "consentCompleted",
 	[OnboardingStep.REPORT_UPLOAD]: "reportsUploaded",
+	[OnboardingStep.SPORT_SCIENTIST_APPOINTMENT]: "sportsScientistBooked",
 	[OnboardingStep.NUTRITIONIST_BOOKING]: "nutritionistBooked",
 };
 

@@ -175,6 +175,28 @@ export const reportBodySchema = z.object({
 	reportUrl: optionalString,
 });
 
+// Real slot-based booking, added 2026-08-26 alongside restoring the
+// sports-scientist wizard page in the member app. `slotId` is optional so a
+// caller without a matching slot can still record a plain date/time (mirrors
+// bookNutritionistSchema's shape below in nutritionist-booking.validator.ts).
+export const bookSportsScientistSchema = z.object({
+	slotId: optionalString,
+	appointmentDate: z
+		.string()
+		.trim()
+		.min(1, "appointmentDate is required")
+		.refine((val) => !Number.isNaN(new Date(val).getTime()), {
+			message: "appointmentDate must be a valid date",
+		}),
+	startTime: optionalString,
+	endTime: optionalString,
+	appointmentMode: z
+		.nativeEnum(AppointmentMode)
+		.default(AppointmentMode.IN_PERSON),
+	meetingLink: optionalString,
+	notes: optionalString,
+});
+
 export const appointmentBodySchema = z.object({
 	expertType: z.enum(expertTypeValues, {
 		message: `Expert type must be one of: ${expertTypeValues.join(", ")}`,
@@ -207,3 +229,4 @@ export type ConsentBody = z.infer<typeof consentBodySchema>;
 export type LegacyConsentBody = z.infer<typeof legacyConsentBodySchema>;
 export type ReportBody = z.infer<typeof reportBodySchema>;
 export type AppointmentBody = z.infer<typeof appointmentBodySchema>;
+export type BookSportsScientistBody = z.infer<typeof bookSportsScientistSchema>;

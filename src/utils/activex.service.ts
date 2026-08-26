@@ -1,5 +1,8 @@
 import dotenv from "dotenv";
-import type mongoose from "mongoose";
+import mongoose from "mongoose";
+import BcaMetric from "../models/BcaMetric";
+import { OnboardingStep } from "../models/Enums";
+import { updateSharedOnboardingStep } from "./onboarding.service";
 
 dotenv.config();
 
@@ -92,18 +95,36 @@ export const fetchBcaRecords = async (
 			502,
 		);
 	}
+
+	let payload: {
+		result?: { records?: ActiveXRecord[] };
+		success?: boolean;
+		error?: { code?: number; message?: string; details?: unknown };
+		unAuthorizedRequest?: boolean;
+	} = {};
+
+	try {
+		payload = (await response.json()) as typeof payload;
+	} catch (_) {
+		if (!response.ok) {
+			throw new ActiveXError(
+				`ActiveX API returned ${response.status}.`,
+				"UPSTREAM_ERROR",
+			);
+		}
+	}
+
+	if (response.status === 404 || payload.error?.message?.toLowerCase().includes("no user found")) {
+		// Normal: phone number has no scans on record in ActiveX database
+		return [];
+	}
+
 	if (!response.ok) {
 		throw new ActiveXError(
 			`ActiveX API returned ${response.status}.`,
 			"UPSTREAM_ERROR",
 		);
 	}
-
-	const payload = (await response.json()) as {
-		result?: { records?: ActiveXRecord[] };
-		success?: boolean;
-		error?: unknown;
-	};
 
 	if (payload.success === false) {
 		throw new ActiveXError(
@@ -165,4 +186,45 @@ export const mapActiveXRecordToBcaMetric = (
 		weightToLose_kg: num(r.ppControlWeightKg),
 		source: "activex",
 	};
+};
+
+/**
+ * Persist one BCA record for a resolved member and mark the shared
+ * onboarding "Active X test" step complete. Shared by both ingest paths:
+ * the member-initiated pull (`POST /users/me/bca-metrics/sync`) and the
+ * vendor-initiated push (`POST /internal/bca/ingest`) — one upsert path so
+ * `activeXTestCompleted` can never disagree with what's actually on file in
+ * `bca_metrics`.
+ *
+ * A failure ticking the onboarding flag is logged but does not roll back the
+ * metric write — the scan is the primary artifact; the flag is a derived
+ * convenience the front desk reads at check-in.
+ */
+export const upsertBcaRecordForUser = async (
+	userId: mongoose.Types.ObjectId,
+	record: ActiveXRecord,
+	receivedAt: Date = new Date(),
+) => {
+	const payload = mapActiveXRecordToBcaMetric(record, userId, receivedAt);
+
+	await BcaMetric.updateOne(
+		{ userId, recordedAt: payload.recordedAt },
+		{ $set: payload },
+		{ upsert: true },
+	);
+
+	try {
+		await updateSharedOnboardingStep(
+			userId.toString(),
+			OnboardingStep.ACTIVE_X_TEST,
+			true,
+		);
+	} catch (err) {
+		console.error(
+			`[activex] Scan saved for user ${userId.toString()} but failed to mark ACTIVE_X_TEST complete:`,
+			err,
+		);
+	}
+
+	return payload;
 };

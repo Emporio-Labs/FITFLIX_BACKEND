@@ -1,4 +1,6 @@
 import { type Request, type Response, Router } from "express";
+import type { Types } from "mongoose";
+import User from "../models/User";
 import { processReminders } from "../services/reminder.service";
 import { processLeadFollowups } from "../services/lead-followup.scheduler";
 import {
@@ -6,6 +8,10 @@ import {
 	prepareDueRooms,
 	verifyHostPresence,
 } from "../services/session-room-lifecycle.service";
+import {
+	type ActiveXRecord,
+	upsertBcaRecordForUser,
+} from "../utils/activex.service";
 
 const router = Router();
 
@@ -124,6 +130,120 @@ router.post("/sessions/materialize/tick", async (req: Request, res: Response) =>
 			.status(500)
 			.json({ error: "Session materialization failed", code: "INTERNAL_ERROR" });
 	}
+});
+
+// Guard: only allow the ActiveX vendor's own credential — deliberately a
+// separate secret from `REMINDER_TICK_SECRET` above, so rotating one never
+// affects the other, and so this one credential can be handed to a
+// third-party integration without also exposing the cron-tick secret.
+function verifyActiveXIngestSecret(req: Request, res: Response): boolean {
+	const secret = process.env.ACTIVEX_INGEST_SECRET;
+	if (!secret) {
+		res.status(503).json({
+			error: "ActiveX ingest is not configured",
+			code: "NOT_CONFIGURED",
+		});
+		return false;
+	}
+
+	const provided = req.headers["x-activex-ingest-secret"] as
+		| string
+		| undefined;
+
+	if (provided !== secret) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return false;
+	}
+
+	return true;
+}
+
+type BcaIngestResult =
+	| { status: "synced"; phone: string; userId: string }
+	| { status: "no_match"; phone: string }
+	| { status: "invalid"; reason: string };
+
+/**
+ * POST /internal/bca/ingest
+ * Called by the ActiveX machine (or its vendor cloud) when a member
+ * completes a body-composition scan, pushing results in instead of waiting
+ * for the member to open the app and tap sync.
+ *
+ * Body: `{ records: ActiveXRecord[] }` — each record is the same raw shape
+ * ActiveX's own pull API returns in `result.records[]` (must carry a
+ * `phone` field), so `upsertBcaRecordForUser` handles both ingest paths
+ * identically. ASSUMPTION (unconfirmed with the vendor): that the machine or
+ * its cloud can be configured to POST this shape to an arbitrary URL with a
+ * static secret header — if ActiveX only offers pull, this route can stay
+ * unused and a scheduled `/internal/*` tick calling `fetchBcaRecords` per
+ * active member is the fallback.
+ *
+ * A phone matching no member is reported per-record as "no_match" rather
+ * than failing the whole batch — one scan station serves many members
+ * back-to-back, and one unrecognised number should not drop the rest.
+ */
+router.post("/bca/ingest", async (req: Request, res: Response) => {
+	if (!verifyActiveXIngestSecret(req, res)) return;
+
+	const records: ActiveXRecord[] | null = Array.isArray(req.body?.records)
+		? req.body.records
+		: null;
+
+	if (!records) {
+		res.status(400).json({
+			error: "Body must be { records: ActiveXRecord[] }",
+			code: "VALIDATION_ERROR",
+		});
+		return;
+	}
+
+	const receivedAt = new Date();
+	const results: BcaIngestResult[] = [];
+
+	for (const record of records) {
+		const rawRecord = record as Record<string, unknown>;
+		const rawPhone =
+			typeof rawRecord?.phone === "string" ? rawRecord.phone : "";
+		const last10 = rawPhone.replace(/\D/g, "").slice(-10);
+
+		if (last10.length < 10) {
+			results.push({
+				status: "invalid",
+				reason: "Record is missing a valid phone number",
+			});
+			continue;
+		}
+
+		try {
+			const user = await User.findOne({
+				phone: { $regex: new RegExp(`${last10}$`) },
+			}).select("_id");
+
+			if (!user) {
+				results.push({ status: "no_match", phone: rawPhone });
+				continue;
+			}
+
+			await upsertBcaRecordForUser(
+				user._id as Types.ObjectId,
+				record,
+				receivedAt,
+			);
+			results.push({
+				status: "synced",
+				phone: rawPhone,
+				userId: user._id.toString(),
+			});
+		} catch (err) {
+			console.error("[internal/bca/ingest] Failed to process record", err);
+			results.push({ status: "invalid", reason: "Processing failed" });
+		}
+	}
+
+	const synced = results.filter((r) => r.status === "synced").length;
+	res
+		.status(200)
+		.json({ ok: true, received: records.length, synced, results });
 });
 
 export default router;

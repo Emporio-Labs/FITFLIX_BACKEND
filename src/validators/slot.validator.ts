@@ -1,8 +1,10 @@
 import z from "zod";
+import { ExpertType } from "../models/Enums";
 
 const slotBodySchema = z.object({
 	date: z.coerce.date().optional(),
 	isDaily: z.coerce.boolean().optional(),
+	expertType: z.nativeEnum(ExpertType).optional().default(ExpertType.Nutritionist),
 	startTime: z.string().min(1),
 	endTime: z.string().min(1),
 	capacity: z.coerce.number().int().positive().optional().default(1),

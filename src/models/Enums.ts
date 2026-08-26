@@ -149,6 +149,10 @@ export enum TrainerChangeRequestStatus {
 export enum AppointmentBookingStatus {
 	Pending = "Pending",
 	Confirmed = "Confirmed",
+	/** Declined by staff from the front-desk queue. Deliberately distinct from
+	 *  `Cancelled`, which is the member withdrawing — the front desk needs to
+	 *  tell the two apart, exactly as NutritionistBookingStatus already does. */
+	Rejected = "Rejected",
 	Cancelled = "Cancelled",
 	Rescheduled = "Rescheduled",
 	Completed = "Completed",
