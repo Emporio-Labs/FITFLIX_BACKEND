@@ -1,7 +1,10 @@
 import { Router } from "express";
 import {
+	bulkDeleteSlots,
+	bulkUpdateSlots,
 	createSlot,
 	deleteSlotById,
+	generateSlots,
 	getAllSlots,
 	getAvailableSlots,
 	getSlotById,
@@ -28,6 +31,9 @@ slotRouter.get(
 	authorize(["admin", "trainer", "user"]),
 	getSlotById,
 );
+slotRouter.post("/generate", authorize(["admin"]), generateSlots);
+slotRouter.post("/bulk-delete", authorize(["admin"]), bulkDeleteSlots);
+slotRouter.post("/bulk-update", authorize(["admin"]), bulkUpdateSlots);
 slotRouter.post("/", authorize(["admin"]), createSlot);
 slotRouter.patch("/:id", authorize(["admin"]), updateSlotById);
 slotRouter.delete("/:id", authorize(["admin"]), deleteSlotById);

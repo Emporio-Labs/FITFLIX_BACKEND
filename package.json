@@ -11,6 +11,7 @@
 		"migrate:credits": "bun run scripts/migrate-credits.ts",
 		"migrate:plan-duration": "bun run scripts/migrate-plan-duration.ts",
 		"backfill:slot-expert-type": "bun run scripts/backfill-slot-expert-type.ts",
+		"backfill:slot-resource-type": "bun run scripts/backfill-slot-resource-type.ts",
 		"backfill:class-sessions": "bun run scripts/backfill-class-sessions.ts",
 		"backfill:session-room-ids": "bun run scripts/backfill-session-room-ids.ts",
 		"seed:exercises": "bun run scripts/seed-exercises.ts",

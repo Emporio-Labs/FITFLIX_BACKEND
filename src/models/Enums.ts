@@ -109,6 +109,15 @@ export enum ExpertType {
 	SportsScientist = "sports_scientist",
 }
 
+export enum SlotResourceType {
+	SPORTS_SCIENTIST = "SPORTS_SCIENTIST",
+	NUTRITIONIST = "NUTRITIONIST",
+	THERAPY = "THERAPY",
+	SERVICE = "SERVICE",
+	EXPERT = "EXPERT",
+	CLASS = "CLASS",
+}
+
 export enum ServiceCategory {
 	EXPERT_SESSION = "EXPERT_SESSION",
 	GROUP_CLASS = "GROUP_CLASS",
