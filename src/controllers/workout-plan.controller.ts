@@ -8,6 +8,7 @@ import User from "../models/User";
 import WorkoutPlan from "../models/WorkoutPlan";
 import { createAssignmentForUser } from "../services/planAssignment.service";
 import { actorModelForRole } from "../utils/actor-model";
+import { withSignedImages } from "../utils/exercise-images";
 import {
 	assignUsersBodySchema,
 	createPlanBodySchema,
@@ -184,7 +185,7 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 			.populate("assignedUsers", "name email")
 			.populate(
 				"days.exercises.exerciseId",
-				"name muscleGroups difficulty equipment caloriesPerSet",
+				"name muscleGroups difficulty equipment caloriesPerSet imageKeys imageUrl imageUrls",
 			)
 			.lean();
 
@@ -213,12 +214,29 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 			[key: string]: unknown;
 		};
 		const planWithDays = plan as typeof plan & { days: PlanDay[] };
+
+		// Demo frames are private-S3 keys. The transform below is synchronous,
+		// so sign every populated exercise up front and look the result up by id.
+		const populatedDocs = planWithDays.days
+			.flatMap((day) => day.exercises.map((ex) => ex.exerciseId as any))
+			.filter((doc) => doc && typeof doc === "object" && doc._id);
+		const signedById = new Map<string, any>(
+			(await Promise.all(populatedDocs.map(withSignedImages))).map((doc) => [
+				doc._id.toString(),
+				doc,
+			]),
+		);
+
 		const transformed = {
 			...plan,
 			days: planWithDays.days.map((day) => ({
 				...day,
 				exercises: day.exercises.map((ex) => {
-					const populated = ex.exerciseId as any;
+					const rawPopulated = ex.exerciseId as any;
+					const populated =
+						rawPopulated && typeof rawPopulated === "object" && rawPopulated._id
+							? (signedById.get(rawPopulated._id.toString()) ?? rawPopulated)
+							: rawPopulated;
 					if (populated && typeof populated === "object" && populated._id) {
 						const exercise = populated as {
 							_id: { toString(): string };
@@ -227,6 +245,8 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 							difficulty: unknown;
 							equipment: unknown;
 							caloriesPerSet: unknown;
+							imageUrl?: string | null;
+							imageUrls?: string[];
 						};
 						return {
 							...ex,
@@ -241,6 +261,8 @@ export const getPlan: RequestHandler = async (req, res, next) => {
 								difficulty: exercise.difficulty,
 								equipment: exercise.equipment,
 								caloriesPerSet: exercise.caloriesPerSet,
+								imageUrl: exercise.imageUrl ?? null,
+								imageUrls: exercise.imageUrls ?? [],
 							},
 						};
 					}

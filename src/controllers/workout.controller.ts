@@ -8,6 +8,7 @@ import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import WorkoutSession from "../models/WorkoutSession";
 import type { AppUserRole } from "../types/auth";
 import { actorModelForRole } from "../utils/actor-model";
+import { withSignedImages } from "../utils/exercise-images";
 import { syncActiveSessionFromAssignment } from "../services/liveSessionSync.service";
 import { completeDayAndShift } from "../utils/workoutProgression";
 import {
@@ -62,7 +63,13 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 	// Name resolution, so it must not filter on `isDeleted` — a session in
 	// progress has to keep rendering an exercise the trainer deleted mid-plan.
 	const exercises = await Exercise.find({ _id: { $in: exerciseIds } }).lean();
-	const exerciseMap = new Map(exercises.map((e) => [e._id.toString(), e]));
+	// Demo frames are private-S3 keys; sign them onto imageUrl/imageUrls. Rows
+	// with no `imageKeys` pass through untouched, so a hand-set imageUrl on a
+	// custom exercise survives.
+	const signedExercises = await Promise.all(exercises.map(withSignedImages));
+	const exerciseMap = new Map(
+		signedExercises.map((e) => [e._id.toString(), e]),
+	);
 
 	const workoutExerciseIds = workoutExercises.map((we) => we._id);
 	const setLogs = await SetLog.find({
@@ -97,6 +104,18 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 						equipment: exercise.equipment,
 						caloriesPerSet: exercise.caloriesPerSet,
 						sectionTypes: exercise.sectionTypes ?? ["workout"],
+						// The app caches this nested object into its local
+						// exercise catalog via a FULL-ROW upsert, so every
+						// field omitted here is actively overwritten with null
+						// on the device — which is how the guided player lost
+						// its demo image and instructions. Keep this projection
+						// complete: anything the client stores must be sent.
+						imageUrl: exercise.imageUrl ?? null,
+						imageUrls: exercise.imageUrls ?? [],
+						instructions: exercise.instructions ?? "",
+						targetedMuscles: exercise.targetedMuscles ?? [],
+						tips: exercise.tips ?? [],
+						commonMistakes: exercise.commonMistakes ?? [],
 					}
 				: null,
 			sets: setLogsByExercise.get(we._id.toString()) || [],

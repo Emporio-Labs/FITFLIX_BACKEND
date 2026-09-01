@@ -5,6 +5,7 @@ import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import { createAssignmentForUser } from "../services/planAssignment.service";
 import { syncActiveSessionFromAssignment } from "../services/liveSessionSync.service";
 import { actorModelForRole } from "../utils/actor-model";
+import { withSignedImages } from "../utils/exercise-images";
 import {
 	advancePastMissedDays,
 	completeDayAndShift,
@@ -127,10 +128,16 @@ export const getUserAssignment: RequestHandler = async (req, res, next) => {
 		const exerciseDocs = await Exercise.find({
 			_id: { $in: Array.from(exerciseIds).map((id) => new mongoose.Types.ObjectId(id)) },
 		})
-			.select("_id name muscleGroups difficulty equipment caloriesPerSet")
+			.select(
+				"_id name muscleGroups difficulty equipment caloriesPerSet imageKeys imageUrl imageUrls",
+			)
 			.lean();
 
-		const exMap = new Map(exerciseDocs.map((e) => [e._id.toString(), e]));
+		// Demo frames are private-S3 keys; sign them onto imageUrl/imageUrls.
+		const signedExerciseDocs = await Promise.all(
+			exerciseDocs.map(withSignedImages),
+		);
+		const exMap = new Map(signedExerciseDocs.map((e) => [e._id.toString(), e]));
 
 		const userDaysDetailed = assignment.userDays.map((day) => ({
 			...day,
@@ -143,6 +150,8 @@ export const getUserAssignment: RequestHandler = async (req, res, next) => {
 					// lib/data/repository/workout_repository.dart); the schema
 					// stores a `muscleGroups` array, so take the first entry.
 					muscleGroup: info?.muscleGroups?.[0] ?? "FullBody",
+					imageUrl: info?.imageUrl ?? null,
+					imageUrls: info?.imageUrls ?? [],
 					// The referenced Exercise document no longer exists, so its
 					// name is unrecoverable and a trainer has to pick a
 					// replacement. Flagged rather than left to look like a
@@ -649,11 +658,17 @@ async function _respondWithDayDetail(
 	// Populate exercise details
 	const exerciseIds = userDay.exercises.map((e) => e.exerciseId);
 	const exerciseDocs = await Exercise.find({ _id: { $in: exerciseIds } })
-		.select("_id name muscleGroups difficulty equipment caloriesPerSet")
+		.select(
+			"_id name muscleGroups difficulty equipment caloriesPerSet imageKeys imageUrl imageUrls",
+		)
 		.lean();
 
+	// Demo frames are private-S3 keys; sign them onto imageUrl/imageUrls.
+	const signedExerciseDocs = await Promise.all(
+		exerciseDocs.map(withSignedImages),
+	);
 	const exerciseInfoMap = new Map(
-		exerciseDocs.map((e) => [e._id.toString(), e]),
+		signedExerciseDocs.map((e) => [e._id.toString(), e]),
 	);
 
 	const exercises = userDay.exercises.map((ex) => {
@@ -665,6 +680,8 @@ async function _respondWithDayDetail(
 			// lib/data/repository/workout_repository.dart); take the first
 			// entry from the schema's `muscleGroups` array.
 			muscleGroup: info?.muscleGroups?.[0] ?? "FullBody",
+			imageUrl: info?.imageUrl ?? null,
+			imageUrls: info?.imageUrls ?? [],
 			section: ex.section,
 			targetSets: ex.targetSets,
 			targetReps: ex.targetReps,
