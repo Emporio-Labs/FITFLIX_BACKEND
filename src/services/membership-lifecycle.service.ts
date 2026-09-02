@@ -143,7 +143,19 @@ export const expireMemberships = async (
 				}
 
 				if (writeOffs.length > 0) {
-					await CreditTransaction.create(writeOffs, { session });
+					// `ordered: true` is mandatory, not cosmetic: Mongoose refuses
+					// `create()` with a session and more than one document without
+					// it (model.js: "Cannot call `create()` with a session and
+					// multiple documents unless `ordered: true` is set"), because
+					// the driver forbids concurrent operations on one session and
+					// the unordered path saves in parallel. Both write-offs are
+					// only ever present together when a membership lapses with
+					// leftover credits *and* leftover PT sessions — which is why
+					// this threw on some memberships and not others.
+					await CreditTransaction.create(writeOffs, {
+						session,
+						ordered: true,
+					});
 				}
 
 				summary.expired += 1;

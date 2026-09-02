@@ -163,6 +163,22 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// Slots created before `expertType` existed carry no such field at all:
+	// Mongoose applies `default` only when it creates a document, never
+	// retroactively, and never injects the default into a query. So a strict
+	// `{ expertType: "nutritionist" }` filter silently drops every legacy slot
+	// whenever scripts/backfill-slot-expert-type.ts has not been run against
+	// that database — which is exactly how the member app's slot list went
+	// empty. Treat an untagged slot as nutritionist inventory, which is what it
+	// was: the nutritionist flow was /slots/available's only consumer before
+	// expertType shipped. `$in: [..., null]` matches a null field *and* a
+	// missing one. Every other expert type stays strictly filtered — an
+	// untagged row must never leak into sports-scientist inventory.
+	const expertTypeFilter =
+		expertType === ExpertType.Nutritionist
+			? { $in: [ExpertType.Nutritionist, null] }
+			: expertType;
+
 	try {
 		const parsedDate = new Date(rawDate);
 
@@ -170,7 +186,7 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 		const dayEnd = normalizeToUtcDayEnd(parsedDate);
 
 		const concreteSlots = await Slot.find({
-			expertType,
+			expertType: expertTypeFilter,
 			date: { $gte: dayStart, $lt: dayEnd },
 			remainingCapacity: { $gt: 0 },
 			isBooked: false,
@@ -181,7 +197,7 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 			.sort({ startTime: 1 });
 
 		const allConcreteForDay = await Slot.find({
-			expertType,
+			expertType: expertTypeFilter,
 			date: { $gte: dayStart, $lt: dayEnd },
 			parentTemplate: { $exists: true, $ne: null },
 		}).select("parentTemplate startTime endTime");
@@ -199,7 +215,7 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 		// per-date concrete children — must stop being offered, not keep
 		// advertising its original `capacity` forever.
 		const dailyTemplates = await Slot.find({
-			expertType,
+			expertType: expertTypeFilter,
 			isDaily: true,
 			parentTemplate: null,
 			capacity: { $gt: 0 },
@@ -219,7 +235,7 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 			.map((t) => ({
 				slotId: t._id,
 				date: dayStart,
-				expertType: t.expertType,
+				expertType: t.expertType ?? ExpertType.Nutritionist,
 				startTime: t.startTime,
 				endTime: t.endTime,
 				capacity: t.capacity,
@@ -235,7 +251,7 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 		const concreteRows = concreteSlots.map((s) => ({
 			slotId: s._id,
 			date: s.date,
-			expertType: s.expertType,
+			expertType: s.expertType ?? ExpertType.Nutritionist,
 			startTime: s.startTime,
 			endTime: s.endTime,
 			capacity: s.capacity,

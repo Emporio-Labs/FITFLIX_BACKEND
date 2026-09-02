@@ -1,4 +1,5 @@
 import type mongoose from "mongoose";
+import { ExpertType } from "../models/Enums";
 import Slot from "../models/Slots";
 
 /// Shared slot-reservation primitives.
@@ -26,6 +27,7 @@ export type ReservableSlot = {
 	endTime: string;
 	capacity?: number;
 	parentTemplate?: mongoose.Types.ObjectId | null;
+	expertType?: string | null;
 };
 
 /// Resolve the concrete, per-date slot document that a booking on [bookingDate]
@@ -74,6 +76,14 @@ export const resolveConcreteSlotForBooking = async (
 					remainingCapacity: templateCapacity,
 					isBooked: templateCapacity <= 0,
 					parentTemplate: slot._id,
+					// Without this the child falls back to the schema default
+					// (nutritionist) regardless of the template's real expertType —
+					// a sports-scientist booking would then mint a
+					// nutritionist-tagged child: invisible to the sports-scientist
+					// availability query (so the template keeps advertising seats
+					// that are already consumed) and visible in the nutritionist
+					// list at the wrong expert's time window.
+					expertType: slot.expertType ?? ExpertType.Nutritionist,
 				},
 			},
 			{

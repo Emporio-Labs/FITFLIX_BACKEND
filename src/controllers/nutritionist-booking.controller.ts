@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import { AppointmentMode, MeetingStatus, NutritionistBookingStatus, OnboardingStep } from "../models/Enums";
+import { AppointmentMode, ExpertType, MeetingStatus, NutritionistBookingStatus, OnboardingStep } from "../models/Enums";
 import NutritionistBooking from "../models/NutritionistBooking";
 import Slot from "../models/Slots";
 import {
@@ -18,6 +18,14 @@ import {
 	rescheduleNutritionistBookingSchema,
 	switchToOnlineSchema,
 } from "../validators/nutritionist-booking.validator";
+
+// Mirrors bookSportsScientist's expertType guard on the sports-scientist side
+// (onboarding.controller.ts), so a nutritionist booking can no longer reserve
+// a sports-scientist slot found by bare id. `null` is included because slots
+// created before `expertType` existed carry no such field at all and were
+// always nutritionist inventory — see the matching comment in
+// slot.controller.ts's getAvailableSlots.
+const NUTRITIONIST_SLOT_FILTER = { $in: [ExpertType.Nutritionist, null] };
 
 export const bookNutritionist: RequestHandler = async (req, res, next) => {
 	try {
@@ -54,7 +62,13 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 		const bookingDate = new Date(date);
 
 		if (slotId && mongoose.Types.ObjectId.isValid(slotId)) {
-			const slot = await Slot.findById(new mongoose.Types.ObjectId(slotId));
+			// Scoped to nutritionist inventory — bookSportsScientist applies the
+			// mirror-image guard on its side, so nutritionist and sports-scientist
+			// bookings can no longer draw from each other's slot ids.
+			const slot = await Slot.findOne({
+				_id: new mongoose.Types.ObjectId(slotId),
+				expertType: NUTRITIONIST_SLOT_FILTER,
+			});
 			if (slot) {
 				// `slotId` is usually a *daily template* — a slot with no date that
 				// stands for "this window, every day". Reserving against the template
@@ -122,8 +136,17 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 				await User.findByIdAndUpdate(user.id, {
 					$set: { "onboardingStatus.nutritionistBooked": true },
 				});
+				// SPORT_SCIENTIST_APPOINTMENT belongs here too: it was inserted
+				// into STEP_ORDER between REPORT_UPLOAD and NUTRITIONIST_BOOKING
+				// after this condition was written, so a member parked on the
+				// sports-scientist step who books a nutritionist used to get
+				// `nutritionistBooked: true` while `currentStep` stayed on step 5
+				// forever — which drops them back onto the sports-scientist page
+				// every time they land on /onboarding.
 				if (
 					onboardingStatus.currentStep === OnboardingStep.REPORT_UPLOAD ||
+					onboardingStatus.currentStep ===
+						OnboardingStep.SPORT_SCIENTIST_APPOINTMENT ||
 					onboardingStatus.currentStep === OnboardingStep.NUTRITIONIST_BOOKING
 				) {
 					await advanceStep(user.id, OnboardingStep.NUTRITIONIST_BOOKING);
@@ -501,7 +524,12 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 			}
 		}
 
-		const requestedSlot = await Slot.findById(new mongoose.Types.ObjectId(slotId));
+		// Scoped to nutritionist inventory for the same reason as bookNutritionist
+		// above — a reschedule must not be able to reserve a sports-scientist slot.
+		const requestedSlot = await Slot.findOne({
+			_id: new mongoose.Types.ObjectId(slotId),
+			expertType: NUTRITIONIST_SLOT_FILTER,
+		});
 
 		if (!requestedSlot) {
 			res.status(409).json({

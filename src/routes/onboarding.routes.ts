@@ -3,6 +3,7 @@ import {
 	bookSportsScientist,
 	getStatus,
 	getStatusByUserId,
+	skipSportsScientist,
 	submitComplete,
 	submitConsent,
 	submitHealthGoals,
@@ -35,6 +36,11 @@ onboardingRouter.post(
 	"/sports-scientist",
 	authorize(["user"]),
 	bookSportsScientist,
+);
+onboardingRouter.post(
+	"/sports-scientist/skip",
+	authorize(["user"]),
+	skipSportsScientist,
 );
 onboardingRouter.post(
 	"/health-markers",

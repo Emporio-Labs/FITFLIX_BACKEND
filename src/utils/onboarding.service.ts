@@ -286,18 +286,26 @@ export const updateSharedOnboardingStep = async (
 export const advanceStep = async (
 	userId: string,
 	completedStep: OnboardingStep,
+	options: { markCompleted?: boolean } = {},
 ): Promise<void> => {
+	const { markCompleted = true } = options;
 	const userObjectId = toObjectId(userId, "NOT_FOUND", "Invalid user ID");
 	const nextStep = getNextStep(completedStep);
 	const flagField = STEP_FLAG_MAP[completedStep];
 
-	const update: Record<string, unknown> = {
-		$addToSet: { "onboardingStatus.completedSteps": completedStep },
-	};
+	const update: Record<string, unknown> = {};
+
+	// A skip (markCompleted: false) moves currentStep forward without marking
+	// the step done — it must not land in completedSteps or flip the step's
+	// completion flag, since callers (the frontdesk queue, shared-onboarding
+	// completion) treat that flag as "a human actually did this step".
+	if (markCompleted) {
+		update.$addToSet = { "onboardingStatus.completedSteps": completedStep };
+	}
 
 	const setFields: Record<string, unknown> = {};
 
-	if (flagField) {
+	if (markCompleted && flagField) {
 		setFields[`onboardingStatus.${flagField}`] = true;
 	}
 

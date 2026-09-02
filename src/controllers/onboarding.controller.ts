@@ -602,6 +602,42 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 	}
 };
 
+export const skipSportsScientist: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester || normalizeRole(requester.role) !== "user") {
+		res.status(403).json({
+			error: "Only members can skip the sport scientist step",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	try {
+		const status = await getOnboardingStatus(requester.id);
+
+		// Idempotent: a double tap, a retry after a dropped response, or a
+		// stale client re-sending this must not error — they should just see
+		// wherever the wizard already is.
+		if (status.currentStep === OnboardingStep.SPORT_SCIENTIST_APPOINTMENT) {
+			// markCompleted: false — this only moves currentStep forward. It
+			// deliberately leaves `sportsScientistBooked` false and keeps the
+			// step out of completedSteps: that flag also drives the frontdesk
+			// sports-scientist triage queue and shared-onboarding completion,
+			// so skipping here must never look like a human actually saw one.
+			await advanceStep(requester.id, OnboardingStep.SPORT_SCIENTIST_APPOINTMENT, {
+				markCompleted: false,
+			});
+		}
+
+		res.status(200).json({
+			message: "Sport scientist step skipped",
+			status: await getOnboardingStatus(requester.id),
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const updateSharedStep: RequestHandler = async (req, res, next) => {
 	const requester = req.user;
 	if (!requester || !["admin", "frontdesk"].includes(normalizeRole(requester.role))) {
