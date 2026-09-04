@@ -65,6 +65,22 @@ const MAX_SCANS = 200;
  *  compute streaks over the same slice of history. */
 const MAX_VISITS = 500;
 
+/**
+ * Days of the nutrition diary sent to the client.
+ *
+ * The full period is walked server-side — `daysLogged`, the averages and the
+ * weekday-clustering insight rule all need every day — but the client draws
+ * seven bars. Sending all 365 made `nutrition.daily` 91% of a year-view
+ * payload (25.9 KB of 28.4 KB), so a member on a slow connection was waiting
+ * on 358 days that would never be rendered. Fourteen leaves headroom for a
+ * week-over-week comparison without putting the array back in charge of the
+ * payload size.
+ *
+ * The aggregate fields carry the truth the trimmed list no longer can:
+ * `daysLogged` and `daysInPeriod` are still computed over the whole window.
+ */
+const NUTRITION_DAILY_WINDOW = 14;
+
 const utcMidnight = (value: Date): Date =>
 	new Date(
 		Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
@@ -795,6 +811,17 @@ export const buildUserAnalytics = async (
 
 	const next = await buildNext(userId, body.latest?.recordedAt ?? null);
 
+	// Insights run against the FULL day list — the weekday-clustering rule
+	// needs every unlogged day to find the pattern — and only then is the
+	// list trimmed for the wire.
+	const insights = buildInsights({
+		body,
+		training,
+		nutrition,
+		consistency,
+		previousMuscleSplit,
+	});
+
 	return {
 		period: {
 			key: period,
@@ -805,15 +832,12 @@ export const buildUserAnalytics = async (
 		score,
 		body,
 		training,
-		nutrition,
+		nutrition: {
+			...nutrition,
+			daily: nutrition.daily.slice(-NUTRITION_DAILY_WINDOW),
+		},
 		consistency,
-		insights: buildInsights({
-			body,
-			training,
-			nutrition,
-			consistency,
-			previousMuscleSplit,
-		}),
+		insights,
 		next,
 	};
 };
