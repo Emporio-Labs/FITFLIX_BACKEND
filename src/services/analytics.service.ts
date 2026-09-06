@@ -655,16 +655,51 @@ const EXPERT_KIND: Record<string, UpcomingAppointment["kind"]> = {
  * carries no "scan due" date and no prompt to book one. `lastScanAt` is
  * reported as plain information and nothing more.
  */
+/**
+ * The real start instant of a booking.
+ *
+ * Neither model stores one. `NutritionistBooking.bookingDate` is keyed to UTC
+ * midnight and `ExpertAppointment.appointmentDate` to IST midnight (which is
+ * 18:30Z the day before), while the wall time lives separately in `startTime`
+ * as an IST "HH:mm" string.
+ *
+ * So comparing the stored date against `now` drops every appointment later
+ * TODAY — a member with a 3pm consultation booked saw an empty Next card from
+ * midnight onwards. Bucketing to the IST calendar day first normalises both
+ * storage conventions, and re-applying `startTime` gives an instant that can
+ * actually be compared and sorted.
+ */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+export const resolveStartInstant = (day: Date, startTime: unknown): Date => {
+	const istDay = toISTDateString(day);
+	const raw = typeof startTime === "string" ? startTime : "";
+	const parts = raw.split(":");
+	const h = Number.parseInt(parts[0] ?? "", 10);
+	const m = Number.parseInt(parts[1] ?? "", 10);
+	const minutes =
+		(Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+	return new Date(
+		new Date(`${istDay}T00:00:00Z`).getTime() -
+			IST_OFFSET_MS +
+			minutes * 60_000,
+	);
+};
+
 const buildNext = async (
 	userId: mongoose.Types.ObjectId,
 	lastScanAt: string | null,
 ): Promise<UserAnalyticsResponse["next"]> => {
 	const now = new Date();
+	// Generous floor: the query only narrows the scan, the precise cut happens
+	// below once startTime has been folded in. Two days back covers both
+	// midnight conventions and any timezone slop between them.
+	const dayFloor = new Date(utcMidnight(now).getTime() - 2 * DAY_MS);
 
 	const [nutritionist, expert] = await Promise.all([
 		NutritionistBooking.find({
 			userId,
-			bookingDate: { $gte: now },
+			bookingDate: { $gte: dayFloor },
 			status: {
 				$in: [
 					NutritionistBookingStatus.PENDING,
@@ -677,7 +712,7 @@ const buildNext = async (
 			.lean(),
 		ExpertAppointment.find({
 			userId,
-			appointmentDate: { $gte: now },
+			appointmentDate: { $gte: dayFloor },
 			bookingStatus: {
 				$in: [
 					AppointmentBookingStatus.Pending,
@@ -694,7 +729,7 @@ const buildNext = async (
 	const upcoming: UpcomingAppointment[] = [
 		...nutritionist.map((b: any) => ({
 			kind: "nutritionist" as const,
-			at: new Date(b.bookingDate).toISOString(),
+			at: resolveStartInstant(b.bookingDate, b.startTime).toISOString(),
 			startTime: b.startTime ?? null,
 			withName: b.assignedNutritionistName ?? null,
 			mode: b.appointmentMode ?? null,
@@ -702,13 +737,16 @@ const buildNext = async (
 		})),
 		...expert.map((b: any) => ({
 			kind: EXPERT_KIND[b.expertType] ?? ("trainer" as const),
-			at: new Date(b.appointmentDate).toISOString(),
+			at: resolveStartInstant(b.appointmentDate, b.startTime).toISOString(),
 			startTime: b.startTime ?? null,
 			withName: b.assignedExpertName ?? null,
 			mode: b.appointmentMode ?? null,
 			bookingId: String(b._id),
 		})),
 	]
+		// An appointment stays "next" for an hour past its start — a member
+		// still in the room should not watch it vanish from their dashboard.
+		.filter((a) => new Date(a.at).getTime() >= now.getTime() - 60 * 60_000)
 		.sort((a, b) => a.at.localeCompare(b.at))
 		.slice(0, 3);
 

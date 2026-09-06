@@ -13,6 +13,7 @@
  * something to say will eventually say something untrue.
  */
 
+import { resolveStartInstant } from "../src/services/analytics.service";
 import type {
 	BodyBlock,
 	ConsistencyBlock,
@@ -408,6 +409,64 @@ function runUnitTests() {
 		assert(
 			secondPeriod.some((i) => i.code === "MUSCLE_GROUP_NEGLECTED"),
 			"two low periods running is",
+		);
+	}
+
+	console.log(
+		"\n🔎 A booking's real start instant, not the day it is filed under",
+	);
+	{
+		// NutritionistBooking files bookingDate at UTC midnight; the wall time
+		// lives in startTime as an IST "HH:mm". 3pm IST is 09:30Z the same day.
+		const utcFiled = resolveStartInstant(
+			new Date("2026-08-17T00:00:00.000Z"),
+			"15:00",
+		);
+		assert(
+			utcFiled.toISOString() === "2026-08-17T09:30:00.000Z",
+			`UTC-midnight booking + 15:00 IST resolves to 09:30Z (got ${utcFiled.toISOString()})`,
+		);
+
+		// ExpertAppointment files appointmentDate at IST midnight — 18:30Z the
+		// PREVIOUS day. The same wall time must land on the same instant.
+		const istFiled = resolveStartInstant(
+			new Date("2026-08-16T18:30:00.000Z"),
+			"15:00",
+		);
+		assert(
+			istFiled.toISOString() === "2026-08-17T09:30:00.000Z",
+			`the other storage convention resolves to the same instant (got ${istFiled.toISOString()})`,
+		);
+
+		// The bug this replaced: comparing the filed date against `now`
+		// dropped every appointment later today.
+		const filedDay = new Date("2026-08-17T00:00:00.000Z");
+		const middayToday = new Date("2026-08-17T06:00:00.000Z");
+		assert(
+			filedDay.getTime() < middayToday.getTime(),
+			"the filed date alone is already in the past by midday",
+		);
+		assert(
+			resolveStartInstant(filedDay, "15:00").getTime() > middayToday.getTime(),
+			"but the resolved instant is correctly still ahead",
+		);
+
+		const noTime = resolveStartInstant(
+			new Date("2026-08-17T00:00:00.000Z"),
+			null,
+		);
+		assert(
+			noTime.toISOString() === "2026-08-16T18:30:00.000Z",
+			`a missing startTime means IST midnight (got ${noTime.toISOString()})`,
+		);
+		assert(
+			!Number.isNaN(
+				resolveStartInstant(
+					new Date("2026-08-17T00:00:00.000Z"),
+					"gibberish",
+				).getTime(),
+			),
+			"and a malformed startTime does not produce an Invalid Date",
 		);
 	}
 
