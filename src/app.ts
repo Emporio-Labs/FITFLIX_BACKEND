@@ -8,6 +8,7 @@ import billingRouter from "./routes/billing.routes";
 import bookingRouter from "./routes/booking.routes";
 import classRouter from "./routes/class.routes";
 import activityRouter from "./routes/activity.routes";
+import analyticsRouter from "./routes/analytics.routes";
 import classScheduleRouter from "./routes/class-schedule.routes";
 import contentRouter from "./routes/content.routes";
 import locationRouter from "./routes/location.routes";
@@ -284,6 +285,13 @@ app.use(expertAppointmentRouter);
 app.use("/api/v1", expertAppointmentRouter);
 app.use("/nutrition", nutritionRouter);
 app.use("/dashboard", dashboardRouter);
+// Member analytics — the Progress screen's only call. Mounted at the BARE
+// path first because the deployed EC2 build does not mount the /api/v1
+// namespace at all (see HANDOVER-ec2-deploy-api-v1-mount.md); an endpoint
+// reachable only under /api/v1 works in dev and 404s for every production
+// user. The /api/v1 alias is kept for Vercel parity.
+app.use("/analytics", apiRateLimit, analyticsRouter);
+app.use("/api/v1/analytics", apiRateLimit, analyticsRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
 app.use("/api/v1/locations", apiRateLimit, locationRouter);
