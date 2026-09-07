@@ -1,6 +1,6 @@
 # dependencies (bun install)
 node_modules
-
+scripts/seed-whiskey-bca.ts
 
 # output
 out
