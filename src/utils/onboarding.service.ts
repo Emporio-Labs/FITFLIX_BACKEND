@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import { OnboardingStep, UnifiedBookingStatus } from "../models/Enums";
+import HealthGoals from "../models/HealthGoals";
+import HealthMarkers from "../models/HealthMarkers";
 import UnifiedBooking from "../models/UnifiedBooking";
 import User from "../models/User";
 import {
@@ -190,6 +192,23 @@ export type OnboardingStatusResponse = {
 		endTime?: string | null;
 		acceptedAt?: Date | null;
 	} | null;
+	healthMarkers?: {
+		weight?: number;
+		height?: number;
+		bmi?: number;
+		allergies?: string[];
+		medications?: string[];
+		diseaseHistory?: string[];
+		sleepHours?: number;
+		activityLevel?: string;
+	} | null;
+	healthGoals?: {
+		goals?: string[];
+		targetWeight?: number | null;
+		timeline?: string | null;
+		workoutExperience?: string;
+		foodPreferences?: string[];
+	} | null;
 };
 
 export const getOnboardingStatus = async (
@@ -197,7 +216,7 @@ export const getOnboardingStatus = async (
 ): Promise<OnboardingStatusResponse> => {
 	const userObjectId = toObjectId(userId, "NOT_FOUND", "Invalid user ID");
 
-	const [user, booking, sportsScientistBooking] = await Promise.all([
+	const [user, booking, sportsScientistBooking, healthMarkersDoc, healthGoalsDoc] = await Promise.all([
 		User.findById(userObjectId).select("onboardingStatus"),
 		// Consultations live in UnifiedBooking now; REJECTED still means "staff
 		// declined it", so it cannot satisfy the nutritionist step.
@@ -221,6 +240,8 @@ export const getOnboardingStatus = async (
 		})
 			.sort({ createdAt: -1 })
 			.lean(),
+		HealthMarkers.findOne({ userId: userObjectId }).lean(),
+		HealthGoals.findOne({ userId: userObjectId }).lean(),
 	]);
 
 	if (!user) {
@@ -286,6 +307,29 @@ export const getOnboardingStatus = async (
 			}
 		: null;
 
+	const healthMarkers = healthMarkersDoc
+		? {
+				weight: healthMarkersDoc.weight,
+				height: healthMarkersDoc.height,
+				bmi: healthMarkersDoc.bmi,
+				allergies: healthMarkersDoc.allergies ?? [],
+				medications: healthMarkersDoc.medications ?? [],
+				diseaseHistory: healthMarkersDoc.diseaseHistory ?? [],
+				sleepHours: healthMarkersDoc.sleepHours ?? 7,
+				activityLevel: healthMarkersDoc.activityLevel ?? "Moderate",
+			}
+		: null;
+
+	const healthGoals = healthGoalsDoc
+		? {
+				goals: healthGoalsDoc.goals ?? [],
+				targetWeight: healthGoalsDoc.targetWeight ?? null,
+				timeline: healthGoalsDoc.timeline ?? null,
+				workoutExperience: healthGoalsDoc.workoutExperience ?? "Beginner",
+				foodPreferences: healthGoalsDoc.foodPreferences ?? [],
+			}
+		: null;
+
 	return {
 		currentStep,
 		completedSteps: completedSteps as string[],
@@ -298,6 +342,8 @@ export const getOnboardingStatus = async (
 		allowedNextStep: onboardingCompleted ? null : currentStep,
 		bookingDetails,
 		sportsScientistBookingDetails,
+		healthMarkers,
+		healthGoals,
 	};
 };
 
