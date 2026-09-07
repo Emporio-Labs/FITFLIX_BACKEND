@@ -141,9 +141,14 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 		personalDetails || assessment ? "healthscore" : "callback";
 	const submissionFormType = formType ?? inferredFormType;
 
-	const resolvedLeadName = personalDetails?.fullName ?? leadName ?? name;
 	const resolvedEmail = personalDetails?.emailAddress ?? email;
 	const resolvedPhone = personalDetails?.phoneNumber ?? phone;
+	// A phone-only callback still has to satisfy the schema's required
+	// leadName, so the number stands in as the display name until front desk
+	// speaks to them and edits it. Better an honest "+91…" on the card than a
+	// placeholder like "App user" that every row shares.
+	const resolvedLeadName =
+		personalDetails?.fullName ?? leadName ?? name ?? resolvedPhone;
 	const resolvedInterest =
 		personalDetails?.primaryHealthGoal ??
 		interestedIn ??
@@ -151,10 +156,26 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 			? normalizedCallbackInterests.join(", ")
 			: undefined);
 
-	if (!resolvedLeadName || !resolvedEmail) {
+	// Callback requests are keyed by phone; every other form still needs an
+	// email, because that is the only way we can reach a website lead.
+	const isCallback = submissionFormType === "callback";
+
+	if (!resolvedLeadName || (!isCallback && !resolvedEmail)) {
 		res.status(400).json({
 			message:
 				"Missing required identity fields: leadName/email or personalDetails.fullName/emailAddress",
+		});
+		return;
+	}
+
+	// formType is *inferred* as "callback" whenever a payload carries no
+	// personalDetails, so this branch also catches legacy leadName/email
+	// submissions from the website. Those have no phone and never did —
+	// demanding one here would reject them. What actually matters is that we
+	// end up with some way to reach the person.
+	if (isCallback && !resolvedPhone && !resolvedEmail) {
+		res.status(400).json({
+			message: "A callback request requires a phone number or an email",
 		});
 		return;
 	}
@@ -196,7 +217,7 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 			submissionFormType === "callback"
 				? {
 						name: resolvedLeadName,
-						email: resolvedEmail,
+						email: resolvedEmail ?? null,
 						phone: resolvedPhone ?? null,
 						interests: normalizedCallbackInterests,
 					}
@@ -220,7 +241,7 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 	try {
 		const lead = await Lead.create({
 			leadName: resolvedLeadName,
-			email: resolvedEmail,
+			...(resolvedEmail ? { email: resolvedEmail } : {}),
 			...(resolvedPhone ? { phone: resolvedPhone } : {}),
 			source: normalizedSource,
 			...(resolvedInterest ? { interestedIn: resolvedInterest } : {}),

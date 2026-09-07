@@ -152,21 +152,19 @@ export const publicLeadCaptureBodySchema = z
 	})
 	.superRefine((payload, ctx) => {
 		const hasLegacyIdentity = Boolean(payload.leadName || payload.email);
-		const hasFitflixIdentity = Boolean(
-			payload.personalDetails?.fullName 
-		);
-		const hasCallbackIdentity = Boolean(
-			payload.name && payload.phone || payload.email,
-		);
-
-		
+		const hasFitflixIdentity = Boolean(payload.personalDetails?.fullName);
+		// A callback request from the app is keyed by phone alone. The member
+		// is on their own handset, has already passed OTP in most cases, and
+		// every extra field on that sheet costs a lead. Front desk calls the
+		// number back; it does not need an address to do that.
+		const hasCallbackIdentity = Boolean(payload.phone);
 
 		if (!hasLegacyIdentity && !hasFitflixIdentity && !hasCallbackIdentity) {
 			ctx.addIssue({
 				code: "custom",
-				path: ["leadName"],
+				path: ["phone"],
 				message:
-					"Provide either callback name/phone/email, leadName/email, or personalDetails.fullName/emailAddress",
+					"Provide a callback phone, leadName/email, or personalDetails.fullName/emailAddress",
 			});
 		}
 	});
