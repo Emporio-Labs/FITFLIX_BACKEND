@@ -1,12 +1,15 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import ConsentForm from "../models/ConsentForm";
-import ExpertAppointment from "../models/ExpertAppointment";
 import UnifiedBooking from "../models/UnifiedBooking";
 import {
 	NUTRITIONIST_BOOKING_FILTER,
 	serializeNutritionistBooking,
 } from "../utils/nutritionist-booking.dto";
+import {
+	serializeSportsScientistBooking,
+	SPORTS_SCIENTIST_BOOKING_FILTER,
+} from "../utils/sports-scientist-booking.dto";
 import {
 	ExpertType,
 	type Gender,
@@ -644,10 +647,13 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 			})
 				.sort({ createdAt: -1 })
 				.lean(),
-			ExpertAppointment.find({
+			// Same divergence as getOnboardingStatus (onboarding.service.ts):
+			// only CANCELLED is excluded, not REJECTED, so a declined booking is
+			// still visible on the front-desk profile.
+			UnifiedBooking.find({
+				...SPORTS_SCIENTIST_BOOKING_FILTER,
 				userId: id,
-				expertType: "sports_scientist",
-				bookingStatus: { $ne: "Cancelled" },
+				status: { $ne: UnifiedBookingStatus.CANCELLED },
 			})
 				.sort({ createdAt: -1 })
 				.lean(),
@@ -713,20 +719,26 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 						appointmentMode: appointment.appointmentMode,
 						assignedNutritionistName: appointment.assignedNutritionistName,
 					})),
-				...sportsScientistAppointments.map((appointment) => ({
-					id: appointment._id.toString(),
-					_id: appointment._id.toString(),
-					userId: id,
-					expertType: appointment.expertType,
-					bookingStatus: appointment.bookingStatus,
-					appointmentDate: appointment.appointmentDate,
-					appointmentStart: appointment.startTime,
-					startTime: appointment.startTime,
-					endTime: appointment.endTime,
-					meetingLink: appointment.meetingLink ?? null,
-					meetingUrl: appointment.meetingLink ?? null,
-					appointmentMode: appointment.appointmentMode,
-				})),
+				...sportsScientistAppointments
+					.map(serializeSportsScientistBooking)
+					.map((appointment) => ({
+						id: appointment._id,
+						_id: appointment._id,
+						userId: id,
+						expertType: "sports_scientist",
+						bookingStatus: appointment.bookingStatus,
+						appointmentDate: appointment.appointmentDate,
+						appointmentStart: appointment.startTime,
+						startTime: appointment.startTime,
+						endTime: appointment.endTime,
+						// Room, not a pasted link — matches the nutritionist branch
+						// above exactly now that both consult types are Zego-native.
+						meetingLink: null,
+						meetingUrl: null,
+						zegoRoomId: appointment.zegoRoomId ?? null,
+						appointmentMode: appointment.appointmentMode,
+						assignedExpertName: appointment.assignedExpertName,
+					})),
 			],
 		});
 	} catch (error) {

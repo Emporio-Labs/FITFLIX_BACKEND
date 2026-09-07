@@ -1,12 +1,15 @@
 import mongoose from "mongoose";
 import { OnboardingStep, UnifiedBookingStatus } from "../models/Enums";
-import ExpertAppointment from "../models/ExpertAppointment";
 import UnifiedBooking from "../models/UnifiedBooking";
 import User from "../models/User";
 import {
 	NUTRITIONIST_BOOKING_FILTER,
 	serializeNutritionistBooking,
 } from "./nutritionist-booking.dto";
+import {
+	serializeSportsScientistBooking,
+	SPORTS_SCIENTIST_BOOKING_FILTER,
+} from "./sports-scientist-booking.dto";
 
 export type OnboardingServiceErrorCode =
 	| "STEP_NOT_ALLOWED"
@@ -175,13 +178,17 @@ export type OnboardingStatusResponse = {
 	} | null;
 	sportsScientistBookingDetails?: {
 		_id: string;
-		expertType: string;
 		bookingStatus: string;
-		appointmentDate: Date;
+		appointmentDate: Date | null;
 		appointmentMode: string;
-		meetingLink: string | null;
+		clinicLocation: string | null;
+		zegoRoomId: string | null;
+		assignedExpertId: string | null;
+		assignedExpertName: string | null;
+		meetingStatus: string | null;
 		startTime?: string | null;
 		endTime?: string | null;
+		acceptedAt?: Date | null;
 	} | null;
 };
 
@@ -201,10 +208,16 @@ export const getOnboardingStatus = async (
 		})
 			.sort({ createdAt: -1 })
 			.lean(),
-		ExpertAppointment.findOne({
+		// Sports-scientist consultations now live in UnifiedBooking too — see
+		// utils/sports-scientist-booking.dto.ts. Deliberately keeps only
+		// CANCELLED excluded (not REJECTED, unlike the nutritionist query
+		// above): a rejected sports-scientist booking is still surfaced here so
+		// the member's status card can show "declined, please rebook" instead
+		// of silently reverting to an empty booking state.
+		UnifiedBooking.findOne({
+			...SPORTS_SCIENTIST_BOOKING_FILTER,
 			userId: userObjectId,
-			expertType: "sports_scientist",
-			bookingStatus: { $ne: "Cancelled" },
+			status: { $ne: UnifiedBookingStatus.CANCELLED },
 		})
 			.sort({ createdAt: -1 })
 			.lean(),
@@ -250,16 +263,26 @@ export const getOnboardingStatus = async (
 			}
 		: null;
 
-	const sportsScientistBookingDetails = sportsScientistBooking
+	// Same legacy-adapter treatment as the nutritionist booking above.
+	const legacySsBooking = sportsScientistBooking
+		? serializeSportsScientistBooking(sportsScientistBooking)
+		: null;
+	const sportsScientistBookingDetails = legacySsBooking
 		? {
-				_id: sportsScientistBooking._id.toString(),
-				expertType: sportsScientistBooking.expertType,
-				bookingStatus: sportsScientistBooking.bookingStatus,
-				appointmentDate: sportsScientistBooking.appointmentDate,
-				appointmentMode: sportsScientistBooking.appointmentMode,
-				meetingLink: sportsScientistBooking.meetingLink ?? null,
-				startTime: sportsScientistBooking.startTime ?? null,
-				endTime: sportsScientistBooking.endTime ?? null,
+				_id: legacySsBooking._id,
+				bookingStatus: legacySsBooking.bookingStatus,
+				appointmentDate: legacySsBooking.appointmentDate,
+				appointmentMode: legacySsBooking.appointmentMode ?? "",
+				clinicLocation: legacySsBooking.clinicLocation ?? null,
+				zegoRoomId: legacySsBooking.zegoRoomId ?? null,
+				assignedExpertId: legacySsBooking.assignedExpertId
+					? String(legacySsBooking.assignedExpertId)
+					: null,
+				assignedExpertName: legacySsBooking.assignedExpertName ?? null,
+				meetingStatus: legacySsBooking.meetingStatus ?? null,
+				startTime: legacySsBooking.startTime ?? null,
+				endTime: legacySsBooking.endTime ?? null,
+				acceptedAt: legacySsBooking.acceptedAt ?? null,
 			}
 		: null;
 

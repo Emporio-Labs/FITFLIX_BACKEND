@@ -10,7 +10,11 @@
  * These assert instants rather than shapes, because the failure mode is
  * arithmetic: a window that is structurally fine and semantically inverted.
  */
-import { combineSessionDateTime, combineSessionWindow } from "../src/utils/zego-room";
+import {
+	combineSessionDateTime,
+	combineSessionWindow,
+	normalizeBookingDate,
+} from "../src/utils/zego-room";
 import { assert } from "./test-helpers";
 
 /** Sessions are written at UTC midnight for the intended calendar day. */
@@ -106,6 +110,63 @@ function runUnitTests() {
 			yearEnd.endsAt!.getTime() ===
 				combineSessionDateTime(day("2027-01-01"), "00:30")!.getTime(),
 			"new year's eve rolls into the next year",
+		);
+	}
+
+	console.log("\n🔎 normalizeBookingDate — pinning to UTC midnight of business calendar day");
+	{
+		// 18:30Z (IST midnight) rolls to the intended calendar day
+		const fromIstMidnight = normalizeBookingDate("2026-09-06T18:30:00Z");
+		assert(
+			fromIstMidnight.toISOString() === "2026-09-07T00:00:00.000Z",
+			"2026-09-06T18:30:00Z normalises to 2026-09-07T00:00:00.000Z",
+		);
+
+		// Already UTC midnight passes through unchanged
+		const fromUtcMidnight = normalizeBookingDate("2026-09-07T00:00:00Z");
+		assert(
+			fromUtcMidnight.toISOString() === "2026-09-07T00:00:00.000Z",
+			"2026-09-07T00:00:00Z normalises to 2026-09-07T00:00:00.000Z",
+		);
+
+		// Bare date string passes through to UTC midnight
+		const fromBareDate = normalizeBookingDate("2026-09-07");
+		assert(
+			fromBareDate.toISOString() === "2026-09-07T00:00:00.000Z",
+			"bare date '2026-09-07' normalises to 2026-09-07T00:00:00.000Z",
+		);
+
+		// Date object at 18:30Z (Mongoose model row)
+		const fromDateObj = normalizeBookingDate(new Date("2026-09-06T18:30:00.000Z"));
+		assert(
+			fromDateObj.toISOString() === "2026-09-07T00:00:00.000Z",
+			"Date object at 18:30Z normalises to 2026-09-07T00:00:00.000Z",
+		);
+
+		// Either side of local midnight (18:30:00Z is 00:00:00 IST)
+		const justBeforeLocalMidnight = normalizeBookingDate("2026-09-06T18:29:59Z");
+		assert(
+			justBeforeLocalMidnight.toISOString() === "2026-09-06T00:00:00.000Z",
+			"23:59:59 IST lands on the previous day (2026-09-06)",
+		);
+		const justAfterLocalMidnight = normalizeBookingDate("2026-09-06T18:30:01Z");
+		assert(
+			justAfterLocalMidnight.toISOString() === "2026-09-07T00:00:00.000Z",
+			"00:00:01 IST lands on the next day (2026-09-07)",
+		);
+
+		// Idempotency: calling twice yields the exact same instant
+		const doubleNormalized = normalizeBookingDate(fromIstMidnight);
+		assert(
+			doubleNormalized.getTime() === fromIstMidnight.getTime(),
+			"normalizeBookingDate is idempotent",
+		);
+
+		// Composition with combineSessionDateTime: Mon 7 Sep 17:00 IST is 2026-09-07T11:30:00Z
+		const composed = combineSessionDateTime(fromIstMidnight, "17:00");
+		assert(
+			composed !== null && composed.toISOString() === "2026-09-07T11:30:00.000Z",
+			"combineSessionDateTime(normalised, '17:00') resolves to 2026-09-07T11:30:00.000Z",
 		);
 	}
 

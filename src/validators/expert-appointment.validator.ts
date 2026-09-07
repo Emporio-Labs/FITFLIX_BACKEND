@@ -7,7 +7,9 @@ const optionalString = z
 	.optional();
 
 export const acceptSportsScientistBookingSchema = z.object({
-	meetingLink: optionalString,
+	// `meetingLink` is deliberately gone — an ONLINE booking gets an in-app
+	// Zego room automatically (mirrors the nutritionist consult), so there is
+	// nothing left for staff to paste in.
 	clinicLocation: optionalString,
 	assignedExpertId: optionalString,
 	assignedExpertName: optionalString,

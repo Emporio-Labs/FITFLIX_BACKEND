@@ -171,6 +171,16 @@ export enum AppointmentBookingStatus {
 	Rescheduled = "Rescheduled",
 	Completed = "Completed",
 	NoShow = "NoShow",
+	/** Confirmed past its end time plus grace with no completion recorded —
+	 *  mirrors NutritionistBookingStatus.EXPIRED / UnifiedBookingStatus.EXPIRED.
+	 *  Added for the sports-scientist migration onto UnifiedBooking; see
+	 *  sports-scientist-booking.dto.ts. */
+	Expired = "Expired",
+	/** Pending past its start time with no admin action — the slot's capacity
+	 *  is released and the member is expected to rebook. Mirrors
+	 *  UnifiedBookingStatus.RESCHEDULE_REQUIRED. Distinct from `Rescheduled`
+	 *  above, which nothing currently writes. */
+	RescheduleRequired = "RescheduleRequired",
 }
 
 export enum WebhookSyncStatus {

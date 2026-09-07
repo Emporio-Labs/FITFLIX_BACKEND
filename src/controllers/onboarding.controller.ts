@@ -3,20 +3,23 @@ import type { Request, RequestHandler } from "express";
 import mongoose from "mongoose";
 
 import ConsentForm from "../models/ConsentForm";
-import ExpertAppointment from "../models/ExpertAppointment";
 import {
-	AppointmentBookingStatus,
+	AppointmentMode,
 	ConsentType,
 	ExpertType,
+	MeetingStatus,
 	OnboardingStep,
+	UnifiedBookingStatus,
 } from "../models/Enums";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import MedicalReport from "../models/MedicalReport";
 import Slot from "../models/Slots";
+import UnifiedBooking from "../models/UnifiedBooking";
 import { pickExpertForSlot } from "../services/expert-schedule.service";
 import { normalizeRole } from "../middleware/rbac.middleware";
 import {
+	releaseSlotCapacity,
 	reserveSlotCapacity,
 	resolveConcreteSlotForBooking,
 } from "../services/slot-reservation.service";
@@ -38,6 +41,10 @@ import {
 	uploadStreamToS3,
 } from "../utils/s3.service";
 import {
+	SPORTS_SCIENTIST_BOOKING_FILTER,
+	serializeSportsScientistBooking,
+} from "../utils/sports-scientist-booking.dto";
+import {
 	bookSportsScientistSchema,
 	consentBodySchema,
 	healthGoalsBodySchema,
@@ -45,6 +52,7 @@ import {
 	legacyConsentBodySchema,
 	reportBodySchema,
 } from "../validators/onboarding.validator";
+import { normalizeBookingDate, ssRoomIdFor } from "../utils/zego-room";
 
 const getValidationDetails = (
 	issues: Array<{ path: PropertyKey[]; message: string }>,
@@ -501,10 +509,19 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { slotId, appointmentMode, meetingLink, notes } = parsed.data;
-	const appointmentDate = new Date(parsed.data.appointmentDate);
-	let startTime = parsed.data.startTime ?? null;
-	let endTime = parsed.data.endTime ?? null;
+	// `meetingLink` is still accepted by bookSportsScientistSchema for
+	// backward compatibility with any in-flight client, but is never stored —
+	// the room is now `zegoRoomId`, generated below exactly like the
+	// nutritionist consult's `roomIdFor` (nutritionist-booking.controller.ts).
+	const { slotId, appointmentMode, notes } = parsed.data;
+	const appointmentDate = normalizeBookingDate(parsed.data.appointmentDate);
+	// UnifiedBooking requires startTime/endTime, exactly like UnifiedBooking's
+	// nutritionist rows do — bookNutritionist resolves this the same way
+	// (nutritionist-booking.controller.ts), defaulting rather than rejecting a
+	// slot-less booking, since the app's onboarding flow does not always carry
+	// a concrete slotId. Overwritten below the moment a real slot is resolved.
+	let startTime = parsed.data.startTime ?? "10:00";
+	let endTime = parsed.data.endTime ?? "10:30";
 	let resolvedSlotId: mongoose.Types.ObjectId | null = null;
 
 	try {
@@ -575,41 +592,83 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 			endTime = assignment.endTime;
 		}
 
-		const appointment = await ExpertAppointment.findOneAndUpdate(
-			{
-				userId: requester.id,
-				expertType: ExpertType.SportsScientist,
-				bookingStatus: {
-					$in: [
-						AppointmentBookingStatus.Pending,
-						AppointmentBookingStatus.Confirmed,
-					],
-				},
+		// Sports-scientist consultations now live in `UnifiedBooking` — see
+		// utils/sports-scientist-booking.dto.ts for why the wire format is
+		// unchanged. `findOneAndUpdate` upsert (the old ExpertAppointment
+		// approach) doesn't compose cleanly with a document whose `zegoRoomId`
+		// is derived from its own `_id`, so the live booking is loaded first;
+		// `_id` is then known (or pre-minted for a fresh one) before the room id
+		// is computed, exactly once, the same way it is for every other write
+		// path in nutritionist-booking.controller.ts.
+		const existing = await UnifiedBooking.findOne({
+			...SPORTS_SCIENTIST_BOOKING_FILTER,
+			userId: new mongoose.Types.ObjectId(requester.id),
+			status: {
+				$in: [UnifiedBookingStatus.PENDING, UnifiedBookingStatus.CONFIRMED],
 			},
-			{
-				$set: {
-					appointmentDate,
-					appointmentMode,
-					meetingLink: meetingLink || null,
-					startTime,
-					endTime,
-					notes: notes || null,
-					...(resolvedSlotId ? { slotId: resolvedSlotId } : {}),
-					...(assignment
-						? {
-								assignedExpertId: assignment.expertId,
-								assignedExpertName: assignment.expertName,
-							}
-						: {}),
-				},
-				$setOnInsert: {
-					userId: requester.id,
-					expertType: ExpertType.SportsScientist,
-					bookingStatus: AppointmentBookingStatus.Pending,
-				},
-			},
-			{ new: true, upsert: true, setDefaultsOnInsert: true },
-		);
+		});
+
+		const bookingId = existing?._id ?? new mongoose.Types.ObjectId();
+		const zegoRoomId =
+			appointmentMode === AppointmentMode.ONLINE ? ssRoomIdFor(bookingId) : null;
+
+		const commonFields = {
+			bookingDate: appointmentDate,
+			startTime,
+			endTime,
+			appointmentMode,
+			location:
+				appointmentMode === AppointmentMode.ONLINE
+					? "Online Video Room"
+					: null,
+			memberNotes: notes || null,
+			zegoRoomId,
+			...(resolvedSlotId ? { slotId: resolvedSlotId } : {}),
+			...(assignment
+				? {
+						expertId: assignment.expertId,
+						expertModel: assignment.expertModel,
+						assignedExpertName: assignment.expertName,
+					}
+				: {}),
+		};
+
+		let appointment: InstanceType<typeof UnifiedBooking>;
+		try {
+			if (existing) {
+				existing.set(commonFields);
+				appointment = await existing.save();
+			} else {
+				appointment = await new UnifiedBooking({
+					_id: bookingId,
+					...SPORTS_SCIENTIST_BOOKING_FILTER,
+					userId: new mongoose.Types.ObjectId(requester.id),
+					meetingStatus: MeetingStatus.SCHEDULED,
+					status: UnifiedBookingStatus.PENDING,
+					expertModel: assignment?.expertModel ?? "User",
+					assignedExpertName: assignment?.expertName ?? "",
+					// A consultation is not drawn from a PT package quota.
+					consumptionModel: "CREDIT_POOL",
+					creditCostSnapshot: 0,
+					creditsBypassed: true,
+					...commonFields,
+				}).save();
+			}
+		} catch (err) {
+			// The partial unique index on {expertId, bookingDate, startTime}
+			// fired — mirrors bookNutritionist's identical race guard.
+			if ((err as { code?: number }).code === 11000) {
+				if (resolvedSlotId) {
+					await releaseSlotCapacity(resolvedSlotId.toString()).catch(() => {});
+				}
+				res.status(409).json({
+					error: "That time was just taken. Please pick another.",
+					code: "SLOT_CONFLICT",
+				});
+				return;
+			}
+			throw err;
+		}
 
 		await updateSharedOnboardingStep(
 			requester.id,
@@ -623,9 +682,10 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 		// would book successfully but the client would have no server signal
 		// to move forward to the nutritionist page.
 		await advanceStep(requester.id, OnboardingStep.SPORT_SCIENTIST_APPOINTMENT);
-		res
-			.status(201)
-			.json({ message: "Sport scientist appointment booked", appointment });
+		res.status(201).json({
+			message: "Sport scientist appointment booked",
+			appointment: serializeSportsScientistBooking(appointment),
+		});
 	} catch (error) {
 		next(error);
 	}

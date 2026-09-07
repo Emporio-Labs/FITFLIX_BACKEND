@@ -1,11 +1,9 @@
 import mongoose from "mongoose";
 import {
-	AppointmentBookingStatus,
 	AppointmentMode,
 	ExpertType,
 	UnifiedBookingStatus,
 } from "../models/Enums";
-import ExpertAppointment from "../models/ExpertAppointment";
 import ExpertSchedule from "../models/ExpertSchedule";
 import Trainer from "../models/Trainer";
 import UnifiedBooking from "../models/UnifiedBooking";
@@ -179,11 +177,18 @@ type BookedInterval = { startMin: number; endMin: number };
 /**
  * Every source that can occupy an expert's time, keyed by expert id.
  *
- * `UnifiedBooking.expertId` covers personal training and — after the
- * nutritionist migration — 1:1 nutrition consultations. `ExpertAppointment`
- * is still the sports-scientist collection and is keyed by `assignedExpertId`,
- * so it has to be swept too: a check that only looked at UnifiedBooking would
- * happily offer a sports scientist a time they are already booked for.
+ * `UnifiedBooking.expertId` covers personal training, and — after the
+ * nutritionist and sports-scientist migrations — both 1:1 consultation types
+ * too, so a single query now suffices. `ExpertAppointment` is deliberately
+ * NOT read here any more: once bookSportsScientist stopped writing it (see
+ * onboarding.controller.ts), it went stale by construction — an old row's
+ * `bookingStatus` there is frozen at whatever it was pre-migration, so an
+ * expert accepted/rejected/completed since would never leave "Pending" or
+ * "Confirmed" in that collection and would wrongly keep blocking their
+ * calendar forever. This mirrors the nutritionist migration exactly: no
+ * defensive read of the old `NutritionistBooking` collection exists here
+ * either. scripts/migrate-sports-scientist-bookings.ts moves any still-live
+ * history into UnifiedBooking so this stays correct.
  */
 const loadBookedIntervals = async (
 	expertIds: mongoose.Types.ObjectId[],
@@ -209,33 +214,17 @@ const loadBookedIntervals = async (
 		else byExpert.set(id, [interval]);
 	};
 
-	const [unified, appointments] = await Promise.all([
-		UnifiedBooking.find({
-			expertId: { $in: expertIds },
-			bookingDate: { $gte: startOfDay, $lte: endOfDay },
-			status: {
-				$in: [UnifiedBookingStatus.PENDING, UnifiedBookingStatus.CONFIRMED],
-			},
-		})
-			.select("expertId startTime endTime")
-			.lean(),
-		ExpertAppointment.find({
-			assignedExpertId: { $in: expertIds },
-			appointmentDate: { $gte: startOfDay, $lte: endOfDay },
-			bookingStatus: {
-				$in: [
-					AppointmentBookingStatus.Pending,
-					AppointmentBookingStatus.Confirmed,
-				],
-			},
-		})
-			.select("assignedExpertId startTime endTime")
-			.lean(),
-	]);
+	const unified = await UnifiedBooking.find({
+		expertId: { $in: expertIds },
+		bookingDate: { $gte: startOfDay, $lte: endOfDay },
+		status: {
+			$in: [UnifiedBookingStatus.PENDING, UnifiedBookingStatus.CONFIRMED],
+		},
+	})
+		.select("expertId startTime endTime")
+		.lean();
 
 	for (const b of unified) push(b.expertId, b.startTime, b.endTime);
-	for (const a of appointments)
-		push(a.assignedExpertId, a.startTime, a.endTime);
 
 	return byExpert;
 };

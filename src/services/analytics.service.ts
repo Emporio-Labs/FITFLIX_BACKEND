@@ -21,6 +21,7 @@ import {
 	AppointmentBookingStatus,
 	ExpertType,
 	NutritionistBookingStatus,
+	UnifiedBookingStatus,
 	WorkoutSessionStatus,
 } from "../models/Enums";
 import Exercise from "../models/Exercise";
@@ -30,9 +31,13 @@ import NutritionistBooking from "../models/NutritionistBooking";
 import NutritionAdherenceDaily from "../models/nutrition-adherence.model";
 import UserNutritionPlan from "../models/nutrition-plan.model";
 import SetLog from "../models/SetLog";
+import UnifiedBooking from "../models/UnifiedBooking";
 import WorkoutExercise from "../models/WorkoutExercise";
 import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import WorkoutSession from "../models/WorkoutSession";
+import {
+	SPORTS_SCIENTIST_BOOKING_FILTER,
+} from "../utils/sports-scientist-booking.dto";
 import type {
 	AnalyticsPeriodKey,
 	BodyBlock,
@@ -696,7 +701,7 @@ const buildNext = async (
 	// midnight conventions and any timezone slop between them.
 	const dayFloor = new Date(utcMidnight(now).getTime() - 2 * DAY_MS);
 
-	const [nutritionist, expert] = await Promise.all([
+	const [nutritionist, sportsScientist, expert] = await Promise.all([
 		NutritionistBooking.find({
 			userId,
 			bookingDate: { $gte: dayFloor },
@@ -710,6 +715,24 @@ const buildNext = async (
 			.sort({ bookingDate: 1 })
 			.limit(5)
 			.lean(),
+		// Sports-scientist consultations moved to UnifiedBooking — see
+		// utils/sports-scientist-booking.dto.ts. ExpertAppointment (queried
+		// below as `expert`) was its only writer and is now unwritten, so this
+		// is the query that actually surfaces new bookings here.
+		UnifiedBooking.find({
+			...SPORTS_SCIENTIST_BOOKING_FILTER,
+			userId,
+			bookingDate: { $gte: dayFloor },
+			status: {
+				$in: [UnifiedBookingStatus.PENDING, UnifiedBookingStatus.CONFIRMED],
+			},
+		})
+			.sort({ bookingDate: 1 })
+			.limit(5)
+			.lean(),
+		// Kept for any expert type that still writes ExpertAppointment
+		// (trainer/doctor — neither is live yet) and for pre-migration
+		// sports-scientist history; see the migration script's rollback note.
 		ExpertAppointment.find({
 			userId,
 			appointmentDate: { $gte: dayFloor },
@@ -732,6 +755,14 @@ const buildNext = async (
 			at: resolveStartInstant(b.bookingDate, b.startTime).toISOString(),
 			startTime: b.startTime ?? null,
 			withName: b.assignedNutritionistName ?? null,
+			mode: b.appointmentMode ?? null,
+			bookingId: String(b._id),
+		})),
+		...sportsScientist.map((b: any) => ({
+			kind: "sports_scientist" as const,
+			at: resolveStartInstant(b.bookingDate, b.startTime).toISOString(),
+			startTime: b.startTime ?? null,
+			withName: b.assignedExpertName ?? null,
 			mode: b.appointmentMode ?? null,
 			bookingId: String(b._id),
 		})),

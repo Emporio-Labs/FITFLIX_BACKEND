@@ -138,7 +138,9 @@ export const resolveSessionAccess = async ({
 			? sessionId.replace("session_", "")
 			: sessionId.startsWith("nutri_session_")
 				? sessionId.replace("nutri_session_", "")
-				: sessionId;
+				: sessionId.startsWith("ss_session_")
+					? sessionId.replace("ss_session_", "")
+					: sessionId;
 
 		let unifiedBooking: any = null;
 		let nutriBooking: any = null;
@@ -559,7 +561,9 @@ export const resolveRoomMessageAccess = async ({
 			? sessionId.replace("session_", "")
 			: sessionId.startsWith("nutri_session_")
 				? sessionId.replace("nutri_session_", "")
-				: sessionId;
+				: sessionId.startsWith("ss_session_")
+					? sessionId.replace("ss_session_", "")
+					: sessionId;
 
 		let unifiedBooking: any = null;
 		let nutriBooking: any = null;

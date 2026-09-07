@@ -12,6 +12,8 @@
 		"migrate:plan-duration": "bun run scripts/migrate-plan-duration.ts",
 		"backfill:slot-expert-type": "bun run scripts/backfill-slot-expert-type.ts",
 		"migrate:nutritionist-bookings": "bun run scripts/migrate-nutritionist-bookings.ts",
+		"migrate:sports-scientist-bookings": "bun run scripts/migrate-sports-scientist-bookings.ts",
+		"repair:sports-scientist-bookings": "bun run scripts/repair-sports-scientist-bookings.ts",
 		"seed:experts": "bun run scripts/seed-experts.ts",
 		"backfill:class-sessions": "bun run scripts/backfill-class-sessions.ts",
 		"backfill:session-room-ids": "bun run scripts/backfill-session-room-ids.ts",

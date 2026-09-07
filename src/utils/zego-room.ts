@@ -1,5 +1,6 @@
 import { BookingStatus } from "../models/Enums";
 import {
+	formatDateInZone,
 	IST_TIMEZONE,
 	normalizeTimeZone,
 	zonedDateTimeToInstant,
@@ -109,6 +110,24 @@ export const NUTRI_CANCEL_WINDOW_MINUTES = Number(
 	process.env.NUTRITIONIST_CANCEL_WINDOW_MINUTES ?? 120,
 );
 
+/// Mirrors NUTRI_EXPIRY_GRACE_MINUTES for sports-scientist consultations — see
+/// expireStaleSportsScientistBookings.
+export const SPORTS_SCIENTIST_EXPIRY_GRACE_MINUTES = Number(
+	process.env.SPORTS_SCIENTIST_EXPIRY_GRACE_MINUTES ?? 5,
+);
+
+/// The room ID for a sports-scientist consultation, derived from its own
+/// `UnifiedBooking._id`. Mirrors nutritionist-booking.controller.ts's private
+/// `roomIdFor` (`nutri_session_<id>`), but exported: unlike the nutritionist
+/// consult, sports-scientist bookings mint this id from two call sites
+/// (onboarding.controller.ts's bookSportsScientist, and
+/// expert-appointment.controller.ts's acceptBooking backfill), so the prefix
+/// needs one shared source of truth rather than a second private copy that
+/// could drift. The front desk's admin UI already assumes this exact prefix
+/// (components/sports-scientist/bookings-tab.tsx).
+export const ssRoomIdFor = (bookingId: unknown): string =>
+	`ss_session_${String(bookingId)}`;
+
 /// Sessions are stored as a UTC-midnight `sessionDate` plus an "HH:mm" string,
 /// and that string is gym wall-clock time, not UTC. Reading it as UTC shifts
 /// every class by the zone offset — 5h30m for IST, which is long enough to
@@ -125,6 +144,43 @@ export const NUTRI_CANCEL_WINDOW_MINUTES = Number(
 export const BUSINESS_TIMEZONE = normalizeTimeZone(
 	process.env.BUSINESS_TIMEZONE ?? IST_TIMEZONE,
 );
+
+/**
+ * Normalises a booking date to UTC midnight of its calendar day in [timeZone].
+ *
+ * `sessionDate` / `bookingDate` is stored at UTC midnight so its UTC calendar
+ * date is the intended day (`combineSessionDateTime` reads exactly that).
+ *
+ * Idempotent: a bare "YYYY-MM-DD" string passes through unchanged, while a
+ * full instant (e.g. an IST-midnight timestamp like 18:30:00.000Z from an older
+ * client or an unmigrated ExpertAppointment row) is bucketed to its calendar day
+ * in [timeZone] first.
+ */
+export const normalizeBookingDate = (
+	dateInput: Date | string,
+	timeZone: string = BUSINESS_TIMEZONE,
+): Date => {
+	if (typeof dateInput === "string") {
+		const trimmed = dateInput.trim();
+		if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+			const parsed = new Date(`${trimmed}T00:00:00.000Z`);
+			if (!Number.isNaN(parsed.getTime())) {
+				return parsed;
+			}
+		}
+	}
+
+	const instant =
+		typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+	if (!instant || Number.isNaN(instant.getTime())) {
+		throw new TypeError(
+			`Invalid date input for normalizeBookingDate: ${String(dateInput)}`,
+		);
+	}
+
+	const dayStr = formatDateInZone(instant, timeZone);
+	return new Date(`${dayStr}T00:00:00.000Z`);
+};
 
 /**
  * Combines a session's date with its "HH:mm" wall-clock time, interpreting that

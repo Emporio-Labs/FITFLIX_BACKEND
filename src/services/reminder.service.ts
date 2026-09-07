@@ -14,6 +14,7 @@ import Admin from "../models/Admin";
 import Notification from "../models/Notification";
 import { notify } from "./notification.service";
 import { expireStaleNutritionistBookings } from "./nutritionist-expiry.service";
+import { expireStaleSportsScientistBookings } from "./sports-scientist-expiry.service";
 import { expireMemberships } from "./membership-lifecycle.service";
 import {
 	expireDueRooms,
@@ -179,6 +180,17 @@ export async function processReminders(): Promise<{
 	} catch (err) {
 		console.error(
 			"[reminder-poller] expireStaleNutritionistBookings failed",
+			err,
+		);
+	}
+
+	// Same two rules for sports-scientist consultations, now that they live in
+	// UnifiedBooking alongside the nutritionist consult.
+	try {
+		await expireStaleSportsScientistBookings(now);
+	} catch (err) {
+		console.error(
+			"[reminder-poller] expireStaleSportsScientistBookings failed",
 			err,
 		);
 	}
