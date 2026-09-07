@@ -168,9 +168,14 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	if (isCallback && !resolvedPhone) {
+	// formType is *inferred* as "callback" whenever a payload carries no
+	// personalDetails, so this branch also catches legacy leadName/email
+	// submissions from the website. Those have no phone and never did —
+	// demanding one here would reject them. What actually matters is that we
+	// end up with some way to reach the person.
+	if (isCallback && !resolvedPhone && !resolvedEmail) {
 		res.status(400).json({
-			message: "A callback request requires a phone number",
+			message: "A callback request requires a phone number or an email",
 		});
 		return;
 	}
