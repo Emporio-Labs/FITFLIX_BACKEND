@@ -30,6 +30,7 @@ const isAppUserRole = (value: unknown): value is AppUserRole =>
 	value === "doctor" ||
 	value === "trainer" ||
 	value === "nutritionist" ||
+	value === "sports_scientist" ||
 	value === "frontdesk" ||
 	value === "staff" ||
 	value === "ROLE_FRONT_DESK_STAFF" ||

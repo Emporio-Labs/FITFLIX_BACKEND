@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Booking from "../models/Bookings";
 import ClassModel from "../models/Class";
+import { ServiceSubtype } from "../models/Enums";
 import NutritionistBooking from "../models/NutritionistBooking";
 import ScheduledSession from "../models/ScheduledSession";
 import UnifiedBooking from "../models/UnifiedBooking";
@@ -158,10 +159,24 @@ export const resolveSessionAccess = async ({
 
 		if (unifiedBooking) {
 			const userRoleNorm = normalizeRole(user.role);
+			// Nutritionists and sports scientists host through UnifiedBooking now
+			// that consultations live there — without them here, a migrated
+			// consultation would deny its own host and leave the member stuck in
+			// the lobby waiting for someone who cannot get in. Scoped to
+			// consultations on purpose: a bare-role host claim must not reach a
+			// personal-training session, whose only role host is its trainer.
+			const isConsultation =
+				unifiedBooking.serviceSubtype === ServiceSubtype.NUTRITIONIST ||
+				unifiedBooking.serviceSubtype === ServiceSubtype.SPORTS_SCIENTIST ||
+				unifiedBooking.serviceSubtype === ServiceSubtype.DOCTOR;
 			const isHostRole =
 				userRoleNorm === "admin" ||
 				userRoleNorm === "frontdesk" ||
 				userRoleNorm === "staff" ||
+				(isConsultation &&
+					(userRoleNorm === "nutritionist" ||
+						userRoleNorm === "sports_scientist" ||
+						userRoleNorm === "doctor")) ||
 				(unifiedBooking.expertId &&
 					String(unifiedBooking.expertId) === String(rawUserId));
 			const isMember = String(unifiedBooking.userId) === String(rawUserId);
@@ -565,10 +580,24 @@ export const resolveRoomMessageAccess = async ({
 
 		if (unifiedBooking) {
 			const userRoleNorm = normalizeRole(user.role);
+			// Nutritionists and sports scientists host through UnifiedBooking now
+			// that consultations live there — without them here, a migrated
+			// consultation would deny its own host and leave the member stuck in
+			// the lobby waiting for someone who cannot get in. Scoped to
+			// consultations on purpose: a bare-role host claim must not reach a
+			// personal-training session, whose only role host is its trainer.
+			const isConsultation =
+				unifiedBooking.serviceSubtype === ServiceSubtype.NUTRITIONIST ||
+				unifiedBooking.serviceSubtype === ServiceSubtype.SPORTS_SCIENTIST ||
+				unifiedBooking.serviceSubtype === ServiceSubtype.DOCTOR;
 			const isHostRole =
 				userRoleNorm === "admin" ||
 				userRoleNorm === "frontdesk" ||
 				userRoleNorm === "staff" ||
+				(isConsultation &&
+					(userRoleNorm === "nutritionist" ||
+						userRoleNorm === "sports_scientist" ||
+						userRoleNorm === "doctor")) ||
 				(unifiedBooking.expertId &&
 					String(unifiedBooking.expertId) === String(rawUserId));
 			const isMember = String(unifiedBooking.userId) === String(rawUserId);

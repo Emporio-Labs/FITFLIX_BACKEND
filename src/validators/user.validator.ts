@@ -1,5 +1,5 @@
 import z from "zod";
-import { Gender } from "../models/Enums";
+import { ExpertType, Gender } from "../models/Enums";
 
 const genderValues = Object.values(Gender) as [string, ...string[]];
 
@@ -127,6 +127,22 @@ const strongPassword = z
 	.regex(/[A-Za-z]/, "Password must include at least one letter")
 	.regex(/\d/, "Password must include at least one number");
 
+// Admin-only: which kind of expert this account is, or null for a member.
+// This is what makes a nutritionist queryable — see resolveExpertsOfType.
+// "facility" is deliberately absent: it tags fungible slot inventory, not a
+// person, so it can never be someone's staff role.
+const STAFF_ROLE_VALUES = [
+	ExpertType.Nutritionist,
+	ExpertType.Trainer,
+	ExpertType.Doctor,
+	ExpertType.SportsScientist,
+] as [string, ...string[]];
+
+const optionalStaffRole = z.preprocess(
+	(v) => (v === "" || v === "none" ? null : v),
+	z.enum(STAFF_ROLE_VALUES).nullable().optional(),
+);
+
 export const createUserBodySchema = z.object({
 	username: requiredString,
 	phone: requiredString,
@@ -138,6 +154,7 @@ export const createUserBodySchema = z.object({
 	emergencyContact: optionalString,
 	address: optionalString,
 	onboarded: z.boolean().optional().default(false),
+	staffRole: optionalStaffRole,
 });
 
 export const updateUserBodySchema = z
@@ -158,6 +175,7 @@ export const updateUserBodySchema = z
 		address: optionalString,
 		password: strongPassword.optional(),
 		onboarded: z.boolean().optional(),
+		staffRole: optionalStaffRole,
 	})
 	.refine((payload) => Object.keys(payload).length > 0, {
 		message: "At least one field is required",

@@ -7,6 +7,7 @@ export type AppUserRole =
 	| "admin"
 	| "trainer"
 	| "nutritionist"
+	| "sports_scientist"
 	| "frontdesk"
 	| "doctor"
 	| "staff"

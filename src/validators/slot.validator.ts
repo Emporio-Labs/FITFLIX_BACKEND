@@ -4,7 +4,11 @@ import { ExpertType } from "../models/Enums";
 const slotBodySchema = z.object({
 	date: z.coerce.date().optional(),
 	isDaily: z.coerce.boolean().optional(),
-	expertType: z.nativeEnum(ExpertType).optional().default(ExpertType.Nutritionist),
+	// Slots are fungible-resource inventory now; a slot that names no expert
+	// type is a facility resource, not a nutritionist appointment. Legacy rows
+	// keep their "nutritionist" tag and stay readable — only the default for
+	// new rows moved. See RETIRED_SLOT_EXPERT_TYPES in slot.controller.ts.
+	expertType: z.nativeEnum(ExpertType).optional().default(ExpertType.Facility),
 	startTime: z.string().min(1),
 	endTime: z.string().min(1),
 	capacity: z.coerce.number().int().positive().optional().default(1),

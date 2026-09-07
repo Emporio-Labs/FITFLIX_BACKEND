@@ -107,6 +107,15 @@ export enum ExpertType {
 	Trainer = "trainer",
 	Doctor = "doctor",
 	SportsScientist = "sports_scientist",
+	/**
+	 * Not a person. Tags a `Slot` as fungible, capacity-limited inventory —
+	 * a sauna, an ice bath, a recovery pod, an assessment station — where
+	 * capacity means "how many can run at once" and *who* staffs it is
+	 * irrelevant. This is what Slot models well, and it is the default for
+	 * newly created slots now that the 1:1 expert types book against
+	 * `ExpertSchedule` instead.
+	 */
+	Facility = "facility",
 }
 
 export enum ServiceCategory {
@@ -133,6 +142,11 @@ export enum ServiceSubtype {
 export enum UnifiedBookingStatus {
 	PENDING = "PENDING",
 	CONFIRMED = "CONFIRMED",
+	/** Declined by staff. Deliberately distinct from CANCELLED, which is the
+	 *  member withdrawing — the front desk needs to tell the two apart, and
+	 *  onboarding branches on "a non-REJECTED booking exists", so collapsing
+	 *  the two would let a declined consultation complete onboarding. */
+	REJECTED = "REJECTED",
 	CANCELLED = "CANCELLED",
 	COMPLETED = "COMPLETED",
 	HOST_NO_SHOW = "HOST_NO_SHOW",

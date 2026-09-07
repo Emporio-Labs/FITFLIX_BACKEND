@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
-import NutritionistBooking from "../src/models/NutritionistBooking";
+import UnifiedBooking from "../src/models/UnifiedBooking";
+import { NUTRITIONIST_BOOKING_FILTER } from "../src/utils/nutritionist-booking.dto";
 import User from "../src/models/User";
 import {
 	adminToken,
@@ -56,7 +57,10 @@ async function run1on1VideoRoomTests() {
 		);
 
 		// Clean up old bookings for test user
-		await NutritionistBooking.deleteMany({ userId: new mongoose.Types.ObjectId(testUserId) });
+		await UnifiedBooking.deleteMany({
+			...NUTRITIONIST_BOOKING_FILTER,
+			userId: new mongoose.Types.ObjectId(testUserId),
+		});
 
 		// ──────────────────────────────────────────────────────────────────────────
 		// TEST 1: Book online nutritionist appointment -> Auto-generate zegoRoomId
@@ -190,13 +194,14 @@ async function run1on1VideoRoomTests() {
 		// ──────────────────────────────────────────────────────────────────────────
 		console.log("\n[TEST 6] POST /nutritionist/my-booking/switch-to-online");
 		// Create an IN_PERSON booking first
-		const inPersonBooking = new NutritionistBooking({
+		const inPersonBooking = new UnifiedBooking({
+			...NUTRITIONIST_BOOKING_FILTER,
 			userId: new mongoose.Types.ObjectId(testUserId),
 			bookingDate: new Date(Date.now() + 172800000),
 			startTime: "14:00",
 			endTime: "14:30",
 			appointmentMode: "IN_PERSON",
-			clinicLocation: "Downtown Clinic",
+			location: "Downtown Clinic",
 			status: "PENDING",
 		});
 		await inPersonBooking.save();

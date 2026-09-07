@@ -1,16 +1,33 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import { AppointmentMode, ExpertType, MeetingStatus, NutritionistBookingStatus, OnboardingStep } from "../models/Enums";
-import NutritionistBooking from "../models/NutritionistBooking";
+import {
+	AppointmentMode,
+	ExpertType,
+	MeetingStatus,
+	OnboardingStep,
+	UnifiedBookingStatus,
+} from "../models/Enums";
 import Slot from "../models/Slots";
+import UnifiedBooking from "../models/UnifiedBooking";
+import User from "../models/User";
+import { pickExpertForSlot } from "../services/expert-schedule.service";
 import {
 	releaseSlotCapacity,
 	reserveSlotCapacity,
 	resolveConcreteSlotForBooking,
 } from "../services/slot-reservation.service";
-import User from "../models/User";
+import { normalizeAppointmentModeOr } from "../utils/appointment-mode";
+import {
+	ACTIVE_NUTRITIONIST_STATUSES,
+	fromLegacyNutritionistStatus,
+	NUTRITIONIST_BOOKING_FILTER,
+	serializeNutritionistBooking,
+} from "../utils/nutritionist-booking.dto";
 import { advanceStep, getOnboardingStatus } from "../utils/onboarding.service";
-import { combineSessionDateTime, NUTRI_CANCEL_WINDOW_MINUTES } from "../utils/zego-room";
+import {
+	combineSessionDateTime,
+	NUTRI_CANCEL_WINDOW_MINUTES,
+} from "../utils/zego-room";
 import {
 	acceptNutritionistBookingSchema,
 	bookNutritionistSchema,
@@ -19,6 +36,22 @@ import {
 	switchToOnlineSchema,
 } from "../validators/nutritionist-booking.validator";
 
+/**
+ * Nutrition consultations now live in `UnifiedBooking` alongside personal
+ * training — see utils/nutritionist-booking.dto.ts for why the wire format is
+ * unchanged.
+ *
+ * The important behavioural change is that the expert is bound *at creation*
+ * from `ExpertSchedule` availability rather than assigned afterwards by an
+ * admin. That is what makes double-booking impossible: the losing candidates
+ * were never free, and UnifiedBooking's partial unique index on
+ * `{expertId, bookingDate, startTime}` catches the concurrent case.
+ *
+ * The legacy `Slot` path is still honoured when the client sends a `slotId`,
+ * because the deployed member app books that way until it is pointed at pooled
+ * availability. Slot rows for 1:1 experts are retired once that ships.
+ */
+
 // Mirrors bookSportsScientist's expertType guard on the sports-scientist side
 // (onboarding.controller.ts), so a nutritionist booking can no longer reserve
 // a sports-scientist slot found by bare id. `null` is included because slots
@@ -26,6 +59,19 @@ import {
 // always nutritionist inventory — see the matching comment in
 // slot.controller.ts's getAvailableSlots.
 const NUTRITIONIST_SLOT_FILTER = { $in: [ExpertType.Nutritionist, null] };
+
+const roomIdFor = (bookingId: mongoose.Types.ObjectId | string) =>
+	`nutri_session_${String(bookingId)}`;
+
+const findMemberBooking = (
+	userId: string,
+	statuses: UnifiedBookingStatus[],
+) =>
+	UnifiedBooking.findOne({
+		...NUTRITIONIST_BOOKING_FILTER,
+		userId: new mongoose.Types.ObjectId(userId),
+		status: { $in: statuses },
+	}).sort({ createdAt: -1 });
 
 export const bookNutritionist: RequestHandler = async (req, res, next) => {
 	try {
@@ -55,6 +101,11 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 			notes,
 		} = parsed.data;
 
+		const mode = normalizeAppointmentModeOr(
+			appointmentMode,
+			AppointmentMode.ONLINE,
+		);
+
 		let startTime = reqStartTime ?? "10:00";
 		let endTime = reqEndTime ?? "10:30";
 		let resolvedSlotId: mongoose.Types.ObjectId | null = null;
@@ -62,6 +113,7 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 		const bookingDate = new Date(date);
 
 		if (slotId && mongoose.Types.ObjectId.isValid(slotId)) {
+			// ── Legacy Slot path ────────────────────────────────────────────────
 			// Scoped to nutritionist inventory — bookSportsScientist applies the
 			// mirror-image guard on its side, so nutritionist and sports-scientist
 			// bookings can no longer draw from each other's slot ids.
@@ -109,56 +161,99 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 			}
 		}
 
-		const booking = new NutritionistBooking({
+		// ── Bind an expert at creation ────────────────────────────────────────
+		// Returns null when nobody of that type is free then — which is the normal
+		// outcome for a legacy slot time that doesn't line up with anyone's
+		// generated grid. The booking is still accepted unassigned in that case,
+		// exactly as before, and staff assign at accept time.
+		const assignment = await pickExpertForSlot({
+			expertType: ExpertType.Nutritionist,
+			date: bookingDate,
+			startTime,
+			mode,
+		});
+
+		if (assignment) {
+			endTime = assignment.endTime;
+		}
+
+		const booking = new UnifiedBooking({
+			...NUTRITIONIST_BOOKING_FILTER,
 			userId: new mongoose.Types.ObjectId(user.id),
 			slotId: resolvedSlotId,
 			bookingDate,
 			startTime,
 			endTime,
-			appointmentMode: appointmentMode ?? AppointmentMode.ONLINE,
-			clinicLocation: clinicLocation ?? null,
-			notes: notes ?? null,
+			appointmentMode: mode,
+			location: clinicLocation ?? (mode === AppointmentMode.ONLINE ? "Online Video Room" : null),
+			memberNotes: notes ?? null,
 			meetingStatus: MeetingStatus.SCHEDULED,
-			status: NutritionistBookingStatus.PENDING,
+			status: UnifiedBookingStatus.PENDING,
+			expertId: assignment?.expertId ?? null,
+			expertModel: assignment?.expertModel ?? "User",
+			assignedExpertName: assignment?.expertName ?? "",
+			// A consultation is not a PT session drawn from a package quota.
+			consumptionModel: "CREDIT_POOL",
+			creditCostSnapshot: 0,
+			creditsBypassed: true,
 		});
 
 		// Auto-generate zegoRoomId for ONLINE mode
 		if (booking.appointmentMode === AppointmentMode.ONLINE) {
-			booking.zegoRoomId = `nutri_session_${booking._id.toString()}`;
+			booking.zegoRoomId = roomIdFor(booking._id);
 		}
 
-		await booking.save();
+		try {
+			await booking.save();
+		} catch (err) {
+			// The partial unique index on {expertId, bookingDate, startTime} fired:
+			// somebody else took this expert's slot between the availability read
+			// and this write. That is the race the index exists to catch.
+			if ((err as { code?: number }).code === 11000) {
+				if (resolvedSlotId) {
+					await releaseSlotCapacity(resolvedSlotId.toString()).catch(() => {});
+				}
+				res.status(409).json({
+					error: "That time was just taken. Please pick another.",
+					code: "SLOT_CONFLICT",
+				});
+				return;
+			}
+			throw err;
+		}
 
-		// Check onboarding status and advance if applicable
+		// Check onboarding status and advance if applicable. Unconditional now —
+		// this used to only call advanceStep when currentStep was one of three
+		// specific values, which meant a real booking made after a skip-all
+		// (currentStep already latched to COMPLETED) got `nutritionistBooked:
+		// true` but stayed recorded in `skippedSteps` and never entered
+		// `completedSteps`. advanceStep is monotonic (onboarding.service.ts's
+		// isForwardMove only ever moves currentStep forward), so calling it here
+		// regardless of currentStep cannot rewind an already-finished member —
+		// it can only do the completedSteps/skippedSteps bookkeeping this branch
+		// exists for.
 		try {
 			const onboardingStatus = await getOnboardingStatus(user.id);
 			if (!onboardingStatus.onboardingCompleted) {
 				await User.findByIdAndUpdate(user.id, {
 					$set: { "onboardingStatus.nutritionistBooked": true },
 				});
-				// SPORT_SCIENTIST_APPOINTMENT belongs here too: it was inserted
-				// into STEP_ORDER between REPORT_UPLOAD and NUTRITIONIST_BOOKING
-				// after this condition was written, so a member parked on the
-				// sports-scientist step who books a nutritionist used to get
-				// `nutritionistBooked: true` while `currentStep` stayed on step 5
-				// forever — which drops them back onto the sports-scientist page
-				// every time they land on /onboarding.
-				if (
-					onboardingStatus.currentStep === OnboardingStep.REPORT_UPLOAD ||
-					onboardingStatus.currentStep ===
-						OnboardingStep.SPORT_SCIENTIST_APPOINTMENT ||
-					onboardingStatus.currentStep === OnboardingStep.NUTRITIONIST_BOOKING
-				) {
-					await advanceStep(user.id, OnboardingStep.NUTRITIONIST_BOOKING);
-				}
+				await advanceStep(user.id, OnboardingStep.NUTRITIONIST_BOOKING);
 			}
-		} catch (_err) {
-			// Non-onboarding user or post-onboarding user — ignore error
+		} catch (err) {
+			// Non-onboarding user or post-onboarding user is routine and falls
+			// through here too (advanceStep/getOnboardingStatus throw NOT_FOUND-
+			// shaped errors for those), but a genuine failure must not vanish
+			// silently behind the 201 below.
+			console.error(
+				"bookNutritionist: failed to advance onboarding status",
+				err,
+			);
 		}
 
 		res.status(201).json({
 			message: "Nutritionist booking submitted successfully",
-			booking,
+			booking: serializeNutritionistBooking(booking),
 		});
 	} catch (error) {
 		next(error);
@@ -173,9 +268,10 @@ export const getMemberBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const booking = await NutritionistBooking.findOne({
+		const booking = await UnifiedBooking.findOne({
+			...NUTRITIONIST_BOOKING_FILTER,
 			userId: new mongoose.Types.ObjectId(user.id),
-			status: { $ne: NutritionistBookingStatus.REJECTED },
+			status: { $ne: UnifiedBookingStatus.REJECTED },
 		})
 			.sort({ createdAt: -1 })
 			.lean();
@@ -189,7 +285,7 @@ export const getMemberBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		res.status(200).json({ booking });
+		res.status(200).json({ booking: serializeNutritionistBooking(booking) });
 	} catch (error) {
 		next(error);
 	}
@@ -198,27 +294,30 @@ export const getMemberBooking: RequestHandler = async (req, res, next) => {
 export const getAllBookingsForAdmin: RequestHandler = async (req, res, next) => {
 	try {
 		const { status } = req.query;
-		const query: Record<string, unknown> = {};
+		const query: Record<string, unknown> = { ...NUTRITIONIST_BOOKING_FILTER };
 
 		if (typeof status === "string" && status) {
-			const allowed = Object.values(NutritionistBookingStatus) as string[];
-			const requested = status.toUpperCase();
-			if (!allowed.includes(requested)) {
+			// Filters still arrive in the legacy vocabulary ("ACCEPTED"), so they
+			// are translated rather than matched against stored values directly.
+			const mapped = fromLegacyNutritionistStatus(status);
+			if (!mapped) {
 				res.status(400).json({
 					error: "Invalid status filter",
 					code: "BAD_REQUEST",
 				});
 				return;
 			}
-			query.status = requested;
+			query.status = mapped;
 		}
 
-		const bookings = await NutritionistBooking.find(query)
+		const bookings = await UnifiedBooking.find(query)
 			.populate("userId", "username email phone")
 			.sort({ createdAt: -1 })
 			.lean();
 
-		res.status(200).json({ bookings });
+		res
+			.status(200)
+			.json({ bookings: bookings.map(serializeNutritionistBooking) });
 	} catch (error) {
 		next(error);
 	}
@@ -232,13 +331,16 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const bookings = await NutritionistBooking.find({
+		const bookings = await UnifiedBooking.find({
+			...NUTRITIONIST_BOOKING_FILTER,
 			userId: new mongoose.Types.ObjectId(user.id),
 		})
 			.sort({ createdAt: -1 })
 			.lean();
 
-		res.status(200).json({ bookings });
+		res
+			.status(200)
+			.json({ bookings: bookings.map(serializeNutritionistBooking) });
 	} catch (error) {
 		next(error);
 	}
@@ -263,9 +365,13 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const { clinicLocation, assignedNutritionistId, assignedNutritionistName } = parsed.data;
+		const { clinicLocation, assignedNutritionistId, assignedNutritionistName } =
+			parsed.data;
 
-		const booking = await NutritionistBooking.findById(id);
+		const booking = await UnifiedBooking.findOne({
+			_id: id,
+			...NUTRITIONIST_BOOKING_FILTER,
+		});
 		if (!booking) {
 			res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
 			return;
@@ -277,12 +383,13 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 		const now = new Date();
 
 		if (!booking.slotId && !booking.bookingDate) {
-			booking.status = NutritionistBookingStatus.RESCHEDULE_REQUIRED;
+			booking.status = UnifiedBookingStatus.RESCHEDULE_REQUIRED;
 			await booking.save();
 			res.status(409).json({
-				error: "No slot selected for this booking. The user has been asked to pick a time slot.",
+				error:
+					"No slot selected for this booking. The user has been asked to pick a time slot.",
 				code: "SLOT_REQUIRED",
-				booking,
+				booking: serializeNutritionistBooking(booking),
 			});
 			return;
 		}
@@ -293,13 +400,13 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 		if (booking.slotId) {
 			const slot = await Slot.findById(booking.slotId).lean();
 			if (!slot || slot.capacity <= 0) {
-				booking.status = NutritionistBookingStatus.RESCHEDULE_REQUIRED;
+				booking.status = UnifiedBookingStatus.RESCHEDULE_REQUIRED;
 				await booking.save();
 				res.status(409).json({
 					error:
 						"Original slot is no longer available. The user has been asked to pick a new time.",
 					code: "SLOT_NO_LONGER_AVAILABLE",
-					booking,
+					booking: serializeNutritionistBooking(booking),
 				});
 				return;
 			}
@@ -309,15 +416,21 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 
 		// Validate that the slot date/time has not already passed
 		if (appointmentDate && endTimeStr) {
-			const appointmentEndInstant = combineSessionDateTime(appointmentDate, endTimeStr);
-			if (appointmentEndInstant && appointmentEndInstant.getTime() < now.getTime()) {
-				booking.status = NutritionistBookingStatus.RESCHEDULE_REQUIRED;
+			const appointmentEndInstant = combineSessionDateTime(
+				appointmentDate,
+				endTimeStr,
+			);
+			if (
+				appointmentEndInstant &&
+				appointmentEndInstant.getTime() < now.getTime()
+			) {
+				booking.status = UnifiedBookingStatus.RESCHEDULE_REQUIRED;
 				await booking.save();
 				res.status(409).json({
 					error:
 						"This appointment slot date/time has already passed. The user has been asked to pick a new time.",
 					code: "SLOT_EXPIRED_RESCHEDULE_REQUIRED",
-					booking,
+					booking: serializeNutritionistBooking(booking),
 				});
 				return;
 			}
@@ -326,41 +439,64 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 		let nutritionistName = assignedNutritionistName ?? null;
 		let nutritionistIdObj: mongoose.Types.ObjectId | null = null;
 
-		if (assignedNutritionistId && mongoose.Types.ObjectId.isValid(assignedNutritionistId)) {
+		if (
+			assignedNutritionistId &&
+			mongoose.Types.ObjectId.isValid(assignedNutritionistId)
+		) {
 			nutritionistIdObj = new mongoose.Types.ObjectId(assignedNutritionistId);
 			if (!nutritionistName) {
-				const nutUser = await User.findById(nutritionistIdObj).select("username");
+				const nutUser = await User.findById(nutritionistIdObj).select(
+					"username",
+				);
 				if (nutUser) {
 					nutritionistName = nutUser.username;
 				}
 			}
 		}
 
-		booking.status = NutritionistBookingStatus.ACCEPTED;
+		booking.status = UnifiedBookingStatus.CONFIRMED;
 		booking.acceptedAt = new Date();
 
 		if (clinicLocation) {
-			booking.clinicLocation = clinicLocation;
+			booking.location = clinicLocation;
 		}
 
 		if (nutritionistIdObj) {
-			booking.assignedNutritionistId = nutritionistIdObj;
+			booking.expertId = nutritionistIdObj;
+			booking.expertModel = "User";
 		}
 
 		if (nutritionistName) {
-			booking.assignedNutritionistName = nutritionistName;
+			booking.assignedExpertName = nutritionistName;
 		}
 
 		// Ensure zegoRoomId exists for ONLINE mode
-		if (booking.appointmentMode === AppointmentMode.ONLINE && !booking.zegoRoomId) {
-			booking.zegoRoomId = `nutri_session_${booking._id.toString()}`;
+		if (
+			booking.appointmentMode === AppointmentMode.ONLINE &&
+			!booking.zegoRoomId
+		) {
+			booking.zegoRoomId = roomIdFor(booking._id);
 		}
 
-		await booking.save();
+		try {
+			await booking.save();
+		} catch (err) {
+			// Assigning this nutritionist would double-book them — the unique
+			// index is the authority, not a prior availability read.
+			if ((err as { code?: number }).code === 11000) {
+				res.status(409).json({
+					error:
+						"That nutritionist is already booked for this date and time.",
+					code: "EXPERT_DOUBLE_BOOKED",
+				});
+				return;
+			}
+			throw err;
+		}
 
 		res.status(200).json({
 			message: "Nutritionist booking accepted",
-			booking,
+			booking: serializeNutritionistBooking(booking),
 		});
 	} catch (error) {
 		next(error);
@@ -376,18 +512,21 @@ export const rejectBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const booking = await NutritionistBooking.findById(id);
+		const booking = await UnifiedBooking.findOne({
+			_id: id,
+			...NUTRITIONIST_BOOKING_FILTER,
+		});
 		if (!booking) {
 			res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
 			return;
 		}
 
 		if (
-			booking.status === NutritionistBookingStatus.REJECTED ||
-			booking.status === NutritionistBookingStatus.COMPLETED
+			booking.status === UnifiedBookingStatus.REJECTED ||
+			booking.status === UnifiedBookingStatus.COMPLETED
 		) {
 			res.status(400).json({
-				error: `Booking is already ${booking.status.toLowerCase()} and cannot be rejected`,
+				error: `Booking is already ${String(booking.status).toLowerCase()} and cannot be rejected`,
 				code: "INVALID_STATUS_TRANSITION",
 			});
 			return;
@@ -399,12 +538,13 @@ export const rejectBooking: RequestHandler = async (req, res, next) => {
 			await releaseSlotCapacity(booking.slotId.toString());
 		}
 
-		booking.status = NutritionistBookingStatus.REJECTED;
+		booking.status = UnifiedBookingStatus.REJECTED;
+		booking.rejectedAt = new Date();
 		await booking.save();
 
 		res.status(200).json({
 			message: "Nutritionist booking rejected",
-			booking,
+			booking: serializeNutritionistBooking(booking),
 		});
 	} catch (error) {
 		next(error);
@@ -420,13 +560,16 @@ export const completeBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const booking = await NutritionistBooking.findById(id);
+		const booking = await UnifiedBooking.findOne({
+			_id: id,
+			...NUTRITIONIST_BOOKING_FILTER,
+		});
 		if (!booking) {
 			res.status(404).json({ error: "Booking not found", code: "NOT_FOUND" });
 			return;
 		}
 
-		if (booking.status !== NutritionistBookingStatus.ACCEPTED) {
+		if (booking.status !== UnifiedBookingStatus.CONFIRMED) {
 			res.status(400).json({
 				error: "Only an accepted booking can be marked completed",
 				code: "INVALID_STATUS_TRANSITION",
@@ -434,14 +577,14 @@ export const completeBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		booking.status = NutritionistBookingStatus.COMPLETED;
+		booking.status = UnifiedBookingStatus.COMPLETED;
 		booking.meetingStatus = MeetingStatus.COMPLETED;
 		booking.completedAt = new Date();
 		await booking.save();
 
 		res.status(200).json({
 			message: "Nutritionist consultation marked complete",
-			booking,
+			booking: serializeNutritionistBooking(booking),
 		});
 	} catch (error) {
 		next(error);
@@ -466,25 +609,25 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const { slotId, date, appointmentMode } = parsed.data;
+		const {
+			slotId,
+			startTime: requestedStartTime,
+			endTime: requestedEndTime,
+			date,
+			appointmentMode,
+		} = parsed.data;
 
-		if (!mongoose.Types.ObjectId.isValid(slotId)) {
+		if (slotId && !mongoose.Types.ObjectId.isValid(slotId)) {
 			res.status(400).json({ error: "Invalid slotId", code: "BAD_REQUEST" });
 			return;
 		}
 
 		// A healthy PENDING/ACCEPTED booking may now self-reschedule too, not
 		// just one staff already bounced into RESCHEDULE_REQUIRED.
-		const booking = await NutritionistBooking.findOne({
-			userId: new mongoose.Types.ObjectId(user.id),
-			status: {
-				$in: [
-					NutritionistBookingStatus.PENDING,
-					NutritionistBookingStatus.ACCEPTED,
-					NutritionistBookingStatus.RESCHEDULE_REQUIRED,
-				],
-			},
-		}).sort({ createdAt: -1 });
+		const booking = await findMemberBooking(
+			user.id,
+			ACTIVE_NUTRITIONIST_STATUSES,
+		);
 
 		if (!booking) {
 			res.status(404).json({
@@ -498,16 +641,20 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 		// bounced out of — RESCHEDULE_REQUIRED was staff's doing, and must stay
 		// reschedulable at any time.
 		if (
-			booking.status === NutritionistBookingStatus.PENDING ||
-			booking.status === NutritionistBookingStatus.ACCEPTED
+			booking.status === UnifiedBookingStatus.PENDING ||
+			booking.status === UnifiedBookingStatus.CONFIRMED
 		) {
-			const startsAt = combineSessionDateTime(booking.bookingDate, booking.startTime);
+			const startsAt = combineSessionDateTime(
+				booking.bookingDate,
+				booking.startTime,
+			);
 			if (
 				startsAt &&
 				startsAt.getTime() - Date.now() < NUTRI_CANCEL_WINDOW_MINUTES * 60_000
 			) {
 				res.status(409).json({
-					error: "This appointment starts too soon to reschedule yourself — please contact the front desk",
+					error:
+						"This appointment starts too soon to reschedule yourself — please contact the front desk",
 					code: "RESCHEDULE_WINDOW_CLOSED",
 				});
 				return;
@@ -524,64 +671,133 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 			}
 		}
 
-		// Scoped to nutritionist inventory for the same reason as bookNutritionist
-		// above — a reschedule must not be able to reserve a sports-scientist slot.
-		const requestedSlot = await Slot.findOne({
-			_id: new mongoose.Types.ObjectId(slotId),
-			expertType: NUTRITIONIST_SLOT_FILTER,
-		});
+		const nextMode = appointmentMode
+			? normalizeAppointmentModeOr(appointmentMode, AppointmentMode.ONLINE)
+			: normalizeAppointmentModeOr(
+					booking.appointmentMode,
+					AppointmentMode.ONLINE,
+				);
 
-		if (!requestedSlot) {
-			res.status(409).json({
-				error: "Selected slot is fully booked or does not exist",
-				code: "SLOT_FULL",
+		let newSlotId: mongoose.Types.ObjectId | null = null;
+		let newStartTime: string;
+		let newEndTime: string;
+
+		if (slotId) {
+			// ── Legacy Slot path ────────────────────────────────────────────────
+			// Scoped to nutritionist inventory for the same reason as
+			// bookNutritionist above — a reschedule must not be able to reserve a
+			// sports-scientist slot.
+			const requestedSlot = await Slot.findOne({
+				_id: new mongoose.Types.ObjectId(slotId),
+				expertType: NUTRITIONIST_SLOT_FILTER,
 			});
-			return;
+
+			if (!requestedSlot) {
+				res.status(409).json({
+					error: "Selected slot is fully booked or does not exist",
+					code: "SLOT_FULL",
+				});
+				return;
+			}
+
+			// Same template→concrete resolution as bookNutritionist: reserve the
+			// per-date child so the template's capacity survives the reschedule.
+			const newSlot = await resolveConcreteSlotForBooking(
+				requestedSlot,
+				rescheduledDate,
+			);
+
+			if (!newSlot) {
+				res.status(409).json({
+					error: "Selected slot is not available on that date",
+					code: "SLOT_UNAVAILABLE",
+				});
+				return;
+			}
+
+			// Atomically reserve the new slot before touching the booking, so a
+			// failed reservation leaves everything unchanged.
+			const reservedSlot = await reserveSlotCapacity(newSlot._id.toString());
+
+			if (!reservedSlot) {
+				res.status(409).json({
+					error: "Selected slot is fully booked or does not exist",
+					code: "SLOT_FULL",
+				});
+				return;
+			}
+
+			newSlotId = newSlot._id;
+			newStartTime = reservedSlot.startTime;
+			newEndTime = reservedSlot.endTime;
+		} else {
+			// ── Pooled availability path ────────────────────────────────────────
+			// The time came from GET /api/v1/experts/nutritionist/availability, so
+			// it is only valid if somebody is still free then.
+			newStartTime = requestedStartTime as string;
+			newEndTime = requestedEndTime ?? booking.endTime;
 		}
 
-		// Same template→concrete resolution as bookNutritionist: reserve the
-		// per-date child so the template's capacity survives the reschedule.
-		const newSlot = await resolveConcreteSlotForBooking(
-			requestedSlot,
-			rescheduledDate,
-		);
+		const oldSlotId = booking.slotId;
 
-		if (!newSlot) {
+		// Re-bind the expert against the new date/time. Keeping the old
+		// assignment would carry a nutritionist into a window they may not work,
+		// which is exactly the double-booking this migration removes.
+		const assignment = await pickExpertForSlot({
+			expertType: ExpertType.Nutritionist,
+			date: rescheduledDate,
+			startTime: newStartTime,
+			mode: nextMode,
+		});
+
+		// On the pooled path an unbindable time means the member picked one that
+		// is no longer free — refuse rather than book a nutritionist-less
+		// appointment. The legacy slot path keeps its old tolerance: its capacity
+		// gate already ran, and its times rarely line up with a generated grid.
+		if (!assignment && !slotId) {
 			res.status(409).json({
-				error: "Selected slot is not available on that date",
+				error: "That time is no longer available. Please pick another.",
 				code: "SLOT_UNAVAILABLE",
 			});
 			return;
 		}
 
-		// Atomically reserve the new slot before touching the booking, so a
-		// failed reservation leaves everything unchanged.
-		const newSlotId = newSlot._id;
-		const reservedSlot = await reserveSlotCapacity(newSlotId.toString());
-
-		if (!reservedSlot) {
-			res.status(409).json({
-				error: "Selected slot is fully booked or does not exist",
-				code: "SLOT_FULL",
-			});
-			return;
+		if (assignment) {
+			newEndTime = assignment.endTime;
 		}
-
-		const oldSlotId = booking.slotId;
 
 		booking.slotId = newSlotId;
-		booking.startTime = reservedSlot.startTime;
-		booking.endTime = reservedSlot.endTime;
+		booking.startTime = newStartTime;
+		booking.endTime = newEndTime;
 		booking.bookingDate = rescheduledDate;
-		booking.status = NutritionistBookingStatus.PENDING;
+		booking.status = UnifiedBookingStatus.PENDING;
 		booking.acceptedAt = null;
+		booking.expertId = assignment?.expertId ?? null;
+		booking.expertModel = assignment?.expertModel ?? "User";
+		booking.assignedExpertName = assignment?.expertName ?? "";
+
 		if (appointmentMode) {
-			booking.appointmentMode = appointmentMode;
-			if (appointmentMode === AppointmentMode.ONLINE && !booking.zegoRoomId) {
-				booking.zegoRoomId = `nutri_session_${booking._id.toString()}`;
+			booking.appointmentMode = nextMode;
+			if (nextMode === AppointmentMode.ONLINE && !booking.zegoRoomId) {
+				booking.zegoRoomId = roomIdFor(booking._id);
 			}
 		}
-		await booking.save();
+
+		try {
+			await booking.save();
+		} catch (err) {
+			if ((err as { code?: number }).code === 11000) {
+				if (newSlotId) {
+					await releaseSlotCapacity(newSlotId.toString()).catch(() => {});
+				}
+				res.status(409).json({
+					error: "That time was just taken. Please pick another.",
+					code: "SLOT_CONFLICT",
+				});
+				return;
+			}
+			throw err;
+		}
 
 		// Release the old slot last, wrapped so a release failure doesn't hide
 		// the successful reservation + booking update above.
@@ -598,7 +814,7 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({
 			message: "Booking rescheduled — awaiting admin acceptance",
-			booking,
+			booking: serializeNutritionistBooking(booking),
 		});
 	} catch (error) {
 		next(error);
@@ -623,9 +839,10 @@ export const switchToOnline: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const booking = await NutritionistBooking.findOne({
+		const booking = await UnifiedBooking.findOne({
+			...NUTRITIONIST_BOOKING_FILTER,
 			userId: new mongoose.Types.ObjectId(user.id),
-			status: { $ne: NutritionistBookingStatus.REJECTED },
+			status: { $ne: UnifiedBookingStatus.REJECTED },
 		}).sort({ createdAt: -1 });
 
 		if (!booking) {
@@ -638,18 +855,33 @@ export const switchToOnline: RequestHandler = async (req, res, next) => {
 
 		booking.appointmentMode = AppointmentMode.ONLINE;
 		if (!booking.zegoRoomId) {
-			booking.zegoRoomId = `nutri_session_${booking._id.toString()}`;
+			booking.zegoRoomId = roomIdFor(booking._id);
+		}
+
+		// The assigned expert may be in-person-only; switching mode has to drop
+		// them rather than keep an assignment their schedule doesn't support.
+		if (booking.expertId) {
+			const assignment = await pickExpertForSlot({
+				expertType: ExpertType.Nutritionist,
+				date: booking.bookingDate,
+				startTime: booking.startTime,
+				mode: AppointmentMode.ONLINE,
+			});
+			if (!assignment) {
+				booking.expertId = null;
+				booking.assignedExpertName = "";
+			}
 		}
 
 		if (parsed.data.notes) {
-			booking.notes = parsed.data.notes;
+			booking.memberNotes = parsed.data.notes;
 		}
 
 		await booking.save();
 
 		res.status(200).json({
 			message: "Switched to online mode successfully",
-			booking,
+			booking: serializeNutritionistBooking(booking),
 		});
 	} catch (error) {
 		next(error);
@@ -677,16 +909,10 @@ export const cancelMyBooking: RequestHandler = async (req, res, next) => {
 		// A booking already REJECTED/CANCELLED/COMPLETED/EXPIRED has nothing left
 		// to cancel; RESCHEDULE_REQUIRED is included since it's still an active
 		// request the member may simply want to withdraw.
-		const booking = await NutritionistBooking.findOne({
-			userId: new mongoose.Types.ObjectId(user.id),
-			status: {
-				$in: [
-					NutritionistBookingStatus.PENDING,
-					NutritionistBookingStatus.ACCEPTED,
-					NutritionistBookingStatus.RESCHEDULE_REQUIRED,
-				],
-			},
-		}).sort({ createdAt: -1 });
+		const booking = await findMemberBooking(
+			user.id,
+			ACTIVE_NUTRITIONIST_STATUSES,
+		);
 
 		if (!booking) {
 			res.status(404).json({
@@ -700,13 +926,17 @@ export const cancelMyBooking: RequestHandler = async (req, res, next) => {
 		// regardless of status — RESCHEDULE_REQUIRED included, since staff would
 		// otherwise lose visibility into a booking the member intends to drop
 		// right before it would have needed a decision.
-		const startsAt = combineSessionDateTime(booking.bookingDate, booking.startTime);
+		const startsAt = combineSessionDateTime(
+			booking.bookingDate,
+			booking.startTime,
+		);
 		if (
 			startsAt &&
 			startsAt.getTime() - Date.now() < NUTRI_CANCEL_WINDOW_MINUTES * 60_000
 		) {
 			res.status(409).json({
-				error: "This appointment starts too soon to cancel yourself — please contact the front desk",
+				error:
+					"This appointment starts too soon to cancel yourself — please contact the front desk",
 				code: "CANCELLATION_WINDOW_CLOSED",
 			});
 			return;
@@ -719,7 +949,7 @@ export const cancelMyBooking: RequestHandler = async (req, res, next) => {
 			await releaseSlotCapacity(booking.slotId.toString());
 		}
 
-		booking.status = NutritionistBookingStatus.CANCELLED;
+		booking.status = UnifiedBookingStatus.CANCELLED;
 		booking.cancelledAt = new Date();
 		booking.cancelledBy = "user";
 		booking.cancellationReason = parsed.data.reason ?? null;
@@ -727,7 +957,7 @@ export const cancelMyBooking: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({
 			message: "Nutritionist booking cancelled",
-			booking,
+			booking: serializeNutritionistBooking(booking),
 		});
 	} catch (error) {
 		next(error);

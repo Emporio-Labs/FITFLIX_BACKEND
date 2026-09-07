@@ -34,11 +34,23 @@ export const switchToOnlineSchema = z.object({
 	notes: optionalString,
 });
 
-export const rescheduleNutritionistBookingSchema = z.object({
-	slotId: z.string().trim().min(1, "slotId is required"),
-	date: optionalString,
-	appointmentMode: z.nativeEnum(AppointmentMode).optional(),
-});
+/**
+ * Either a legacy `slotId` (the deployed member app still books that way) or a
+ * `startTime` from pooled expert availability. One of the two is required —
+ * without a time there is nothing to move the appointment to.
+ */
+export const rescheduleNutritionistBookingSchema = z
+	.object({
+		slotId: optionalString,
+		startTime: optionalString,
+		endTime: optionalString,
+		date: optionalString,
+		appointmentMode: z.nativeEnum(AppointmentMode).optional(),
+	})
+	.refine((payload) => Boolean(payload.slotId || payload.startTime), {
+		message: "Either slotId or startTime is required",
+		path: ["startTime"],
+	});
 
 export const cancelNutritionistBookingSchema = z.object({
 	reason: optionalString,
@@ -51,4 +63,7 @@ export type AcceptNutritionistBookingBody = z.infer<
 export type SwitchToOnlineBody = z.infer<typeof switchToOnlineSchema>;
 export type CancelNutritionistBookingBody = z.infer<
 	typeof cancelNutritionistBookingSchema
+>;
+export type RescheduleNutritionistBookingBody = z.infer<
+	typeof rescheduleNutritionistBookingSchema
 >;

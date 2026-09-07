@@ -66,7 +66,13 @@ export const getTrainerAvailability: RequestHandler = async (req, res, next) => 
 			return;
 		}
 
-		const slots = await calculateAvailableSlots(id, date);
+		// `mode` is optional here — a trainer who only takes in-person sessions
+		// now returns nothing for an ONLINE request, same rule as every other
+		// expert type.
+		const slots = await calculateAvailableSlots(id, date, undefined, {
+			expertType: ExpertType.Trainer,
+			mode: typeof req.query.mode === "string" ? req.query.mode : undefined,
+		});
 		res.status(200).json({ trainerId: id, date, slots });
 	} catch (error: any) {
 		res.status(400).json({ message: error.message || "Failed to calculate slots" });
@@ -110,7 +116,11 @@ export const updateTrainerScheduleHandler: RequestHandler = async (
 			return;
 		}
 
-		const schedule = await updateExpertSchedule(id, req.body);
+		const schedule = await updateExpertSchedule(
+			id,
+			req.body,
+			ExpertType.Trainer,
+		);
 		res.status(200).json({ message: "Schedule updated successfully", schedule });
 	} catch (error) {
 		next(error);
@@ -274,6 +284,7 @@ export const getMyBookings: RequestHandler = async (req, res, next) => {
 		const bookings = await UnifiedBooking.find({
 			userId: new mongoose.Types.ObjectId(user.id),
 			serviceCategory: ServiceCategory.EXPERT_SESSION,
+			serviceSubtype: { $in: [ServiceSubtype.TRAINER, null, undefined] },
 		})
 			.sort({ bookingDate: -1, startTime: -1 })
 			.populate("expertId", "trainerName imageUrl specialities");

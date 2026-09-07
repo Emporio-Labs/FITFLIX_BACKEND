@@ -1,6 +1,12 @@
 import mongoose from "mongoose";
 import { applyIdTransform } from "../utils/mongoose-serialization";
-import { CommunityRole, Gender, OnboardingStep, UserStatus } from "./Enums";
+import {
+	CommunityRole,
+	ExpertType,
+	Gender,
+	OnboardingStep,
+	UserStatus,
+} from "./Enums";
 
 const userSchema = new mongoose.Schema(
 	{
@@ -66,6 +72,24 @@ const userSchema = new mongoose.Schema(
 			default: null,
 		},
 		isActive: { type: Boolean, default: true },
+		// The only persisted marker of who is a nutritionist / sports scientist /
+		// doctor. Until now those roles existed solely inside RBAC allow-lists and
+		// the JWT union — nothing ever issued such a token and nothing could be
+		// queried for "who are the nutritionists", so pooled availability had no
+		// pool to draw from. NULL for ordinary members. Trainers keep their own
+		// collection; the value is accepted here for completeness only.
+		staffRole: {
+			type: String,
+			enum: [
+				ExpertType.Nutritionist,
+				ExpertType.Trainer,
+				ExpertType.Doctor,
+				ExpertType.SportsScientist,
+				null,
+			],
+			default: null,
+			index: true,
+		},
 		// Distinct from `status` above: `status` is the community suspend/ban
 		// gate, this is the membership lifecycle. Read by
 		// booking-rules-engine.service.ts to refuse group-class bookings for
@@ -90,6 +114,14 @@ const userSchema = new mongoose.Schema(
 				default: OnboardingStep.HEALTH_MARKERS,
 			},
 			completedSteps: [{ type: String, enum: Object.values(OnboardingStep) }],
+			// Steps the member deferred via POST /onboarding/steps/:step/skip.
+			// Distinct from completedSteps: a skipped step is not done, just
+			// postponed, and is removed from here the moment it is submitted.
+			skippedSteps: {
+				type: [String],
+				enum: Object.values(OnboardingStep),
+				default: [],
+			},
 			// Legacy app-owned flags retained for the existing member wizard.
 			healthMarkersCompleted: { type: Boolean, default: false },
 			healthGoalsCompleted: { type: Boolean, default: false },

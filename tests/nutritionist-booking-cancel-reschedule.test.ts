@@ -1,7 +1,20 @@
 import mongoose from "mongoose";
-import { Gender, NutritionistBookingStatus, UserStatus } from "../src/models/Enums";
-import NutritionistBooking from "../src/models/NutritionistBooking";
+import {
+	Gender,
+	NutritionistBookingStatus,
+	type UnifiedBookingStatus,
+	UserStatus,
+} from "../src/models/Enums";
 import Slot from "../src/models/Slots";
+import UnifiedBooking from "../src/models/UnifiedBooking";
+import {
+	fromLegacyNutritionistStatus,
+	NUTRITIONIST_BOOKING_FILTER,
+} from "../src/utils/nutritionist-booking.dto";
+
+/** Every legacy status maps, so the null branch is unreachable here. */
+const stored = (status: NutritionistBookingStatus): UnifiedBookingStatus =>
+	fromLegacyNutritionistStatus(status) as UnifiedBookingStatus;
 import User from "../src/models/User";
 import { BUSINESS_TIMEZONE } from "../src/utils/zego-room";
 import { formatDateInZone, formatTimeInZone } from "../src/utils/timezone.util";
@@ -17,6 +30,10 @@ import { assert, fetchJson, generateTestToken, startTestServer } from "./test-he
  *     RESCHEDULE_WINDOW_CLOSED
  *   - reschedule from RESCHEDULE_REQUIRED ignores the cutoff — that state is
  *     staff-forced and must stay reschedulable at any time
+ *
+ * Consultations are stored in `UnifiedBooking` now, but the wire format is
+ * still the legacy `NutritionistBookingStatus` vocabulary — which is why the
+ * seed helpers translate on write while every assertion below is unchanged.
  *
  * `bookingDate` is stored as a UTC-midnight Date whose *UTC calendar date* is
  * read as the intended BUSINESS_TIMEZONE calendar day (see
@@ -75,7 +92,8 @@ async function runNutritionistBookingCancelRescheduleTests() {
 		const start = new Date(Date.now() + opts.startsInMs);
 		const end = new Date(start.getTime() + (opts.durationMinutes ?? 30) * 60_000);
 		const { bookingDate, hhmm: startTime } = zonedParts(start);
-		const booking = await NutritionistBooking.create({
+		const booking = await UnifiedBooking.create({
+			...NUTRITIONIST_BOOKING_FILTER,
 			userId: new mongoose.Types.ObjectId(memberId),
 			slotId: opts.slotId ?? null,
 			bookingDate,
@@ -83,7 +101,7 @@ async function runNutritionistBookingCancelRescheduleTests() {
 			endTime: zonedParts(end).hhmm,
 			appointmentMode: "ONLINE",
 			meetingStatus: "SCHEDULED",
-			status: opts.status,
+			status: stored(opts.status),
 		});
 		bookingIds.push(booking._id.toString());
 		return booking;
@@ -133,9 +151,9 @@ async function runNutritionistBookingCancelRescheduleTests() {
 			releasedSlot?.remainingCapacity === 1,
 			"Cancelling releases the slot's held capacity",
 		);
-		const persisted = await NutritionistBooking.findById(cancellableBooking._id).lean();
+		const persisted = await UnifiedBooking.findById(cancellableBooking._id).lean();
 		assert(
-			persisted?.status === NutritionistBookingStatus.CANCELLED,
+			persisted?.status === stored(NutritionistBookingStatus.CANCELLED),
 			"Cancelled status persists to the DB",
 		);
 
@@ -158,8 +176,8 @@ async function runNutritionistBookingCancelRescheduleTests() {
 		console.log("\n4. Reschedule from PENDING now succeeds...");
 		// Move the still-PENDING booking from step 3 out of the way — the
 		// controller always targets the caller's single latest active booking.
-		await NutritionistBooking.findByIdAndUpdate(bookingIds[bookingIds.length - 1], {
-			status: NutritionistBookingStatus.CANCELLED,
+		await UnifiedBooking.findByIdAndUpdate(bookingIds[bookingIds.length - 1], {
+			status: stored(NutritionistBookingStatus.CANCELLED),
 		});
 		const pendingOldAt = new Date(Date.now() + 4 * HOUR);
 		const pendingOldSlot = await makeSlot({ at: pendingOldAt, remainingCapacity: 0 });
@@ -197,8 +215,8 @@ async function runNutritionistBookingCancelRescheduleTests() {
 		assert(takenNewSlot?.remainingCapacity === 0, "New slot capacity reserved");
 
 		console.log("\n5. Reschedule from ACCEPTED now succeeds...");
-		await NutritionistBooking.findByIdAndUpdate(bookingIds[bookingIds.length - 1], {
-			status: NutritionistBookingStatus.ACCEPTED,
+		await UnifiedBooking.findByIdAndUpdate(bookingIds[bookingIds.length - 1], {
+			status: stored(NutritionistBookingStatus.ACCEPTED),
 		});
 		const acceptedNewAt = new Date(Date.now() + 6 * HOUR);
 		const acceptedNewSlot = await makeSlot({ at: acceptedNewAt, remainingCapacity: 1 });
@@ -223,8 +241,8 @@ async function runNutritionistBookingCancelRescheduleTests() {
 		console.log("\n6. Reschedule from PENDING inside the window is rejected...");
 		const closeAt = new Date(Date.now() + 30 * 60_000);
 		const { bookingDate: closeBookingDate, hhmm: closeStartTime } = zonedParts(closeAt);
-		await NutritionistBooking.findByIdAndUpdate(bookingIds[bookingIds.length - 1], {
-			status: NutritionistBookingStatus.PENDING,
+		await UnifiedBooking.findByIdAndUpdate(bookingIds[bookingIds.length - 1], {
+			status: stored(NutritionistBookingStatus.PENDING),
 			bookingDate: closeBookingDate,
 			startTime: closeStartTime,
 		});
@@ -244,8 +262,8 @@ async function runNutritionistBookingCancelRescheduleTests() {
 		);
 
 		console.log("\n7. Reschedule from RESCHEDULE_REQUIRED ignores the cutoff...");
-		await NutritionistBooking.findByIdAndUpdate(bookingIds[bookingIds.length - 1], {
-			status: NutritionistBookingStatus.RESCHEDULE_REQUIRED,
+		await UnifiedBooking.findByIdAndUpdate(bookingIds[bookingIds.length - 1], {
+			status: stored(NutritionistBookingStatus.RESCHEDULE_REQUIRED),
 		});
 		const forcedNewAt = new Date(Date.now() + 9 * HOUR);
 		const forcedNewSlot = await makeSlot({ at: forcedNewAt, remainingCapacity: 1 });
@@ -270,7 +288,7 @@ async function runNutritionistBookingCancelRescheduleTests() {
 	} finally {
 		if (memberId) await User.findByIdAndDelete(memberId);
 		if (bookingIds.length > 0) {
-			await NutritionistBooking.deleteMany({ _id: { $in: bookingIds } });
+			await UnifiedBooking.deleteMany({ _id: { $in: bookingIds } });
 		}
 		if (slotIds.length > 0) {
 			await Slot.deleteMany({ _id: { $in: slotIds } });

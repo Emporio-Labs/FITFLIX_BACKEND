@@ -1,5 +1,6 @@
-import { MeetingStatus, NutritionistBookingStatus } from "../models/Enums";
-import NutritionistBooking from "../models/NutritionistBooking";
+import { MeetingStatus, UnifiedBookingStatus } from "../models/Enums";
+import UnifiedBooking from "../models/UnifiedBooking";
+import { NUTRITIONIST_BOOKING_FILTER } from "../utils/nutritionist-booking.dto";
 import {
 	combineSessionDateTime,
 	NUTRI_EXPIRY_GRACE_MINUTES,
@@ -13,7 +14,8 @@ import { releaseSlotCapacity } from "./slot-reservation.service";
  *    the booking becomes RESCHEDULE_REQUIRED and the slot's capacity is
  *    released so it can be reused. No credits are involved.
  *
- * 2. ACCEPTED past its *end* time plus NUTRI_EXPIRY_GRACE_MINUTES: the
+ * 2. CONFIRMED (legacy "ACCEPTED") past its *end* time plus
+ *    NUTRI_EXPIRY_GRACE_MINUTES: the
  *    appointment was confirmed but the meeting never happened (the
  *    nutritionist never hosted it, and nothing marked the session complete),
  *    so it becomes EXPIRED. The slot seat is NOT released here — unlike rule
@@ -35,8 +37,9 @@ export async function expireStaleNutritionistBookings(
 	// Fetch all PENDING rows and filter in-memory: startTime is stored as a
 	// business-tz "HH:mm" string, so combineSessionDateTime is what maps the
 	// (bookingDate, startTime) pair to a real UTC instant we can compare.
-	const pending = await NutritionistBooking.find({
-		status: NutritionistBookingStatus.PENDING,
+	const pending = await UnifiedBooking.find({
+		...NUTRITIONIST_BOOKING_FILTER,
+		status: UnifiedBookingStatus.PENDING,
 	})
 		.limit(500)
 		.lean();
@@ -52,9 +55,9 @@ export async function expireStaleNutritionistBookings(
 			}
 
 			// Atomic status transition — guard against a concurrent accept.
-			const claimed = await NutritionistBooking.findOneAndUpdate(
-				{ _id: row._id, status: NutritionistBookingStatus.PENDING },
-				{ $set: { status: NutritionistBookingStatus.RESCHEDULE_REQUIRED } },
+			const claimed = await UnifiedBooking.findOneAndUpdate(
+				{ _id: row._id, status: UnifiedBookingStatus.PENDING },
+				{ $set: { status: UnifiedBookingStatus.RESCHEDULE_REQUIRED } },
 				{ returnDocument: "after" },
 			);
 			if (!claimed) {
@@ -89,8 +92,9 @@ export async function expireStaleNutritionistBookings(
 	// without the meeting ever taking place.
 	const graceMs = NUTRI_EXPIRY_GRACE_MINUTES * 60_000;
 
-	const accepted = await NutritionistBooking.find({
-		status: NutritionistBookingStatus.ACCEPTED,
+	const accepted = await UnifiedBooking.find({
+		...NUTRITIONIST_BOOKING_FILTER,
+		status: UnifiedBookingStatus.CONFIRMED,
 	})
 		.limit(500)
 		.lean();
@@ -111,9 +115,9 @@ export async function expireStaleNutritionistBookings(
 			}
 
 			// Atomic status transition — a concurrent complete/cancel/reject wins.
-			const claimed = await NutritionistBooking.findOneAndUpdate(
-				{ _id: row._id, status: NutritionistBookingStatus.ACCEPTED },
-				{ $set: { status: NutritionistBookingStatus.EXPIRED } },
+			const claimed = await UnifiedBooking.findOneAndUpdate(
+				{ _id: row._id, status: UnifiedBookingStatus.CONFIRMED },
+				{ $set: { status: UnifiedBookingStatus.EXPIRED } },
 				{ returnDocument: "after" },
 			);
 			if (!claimed) {

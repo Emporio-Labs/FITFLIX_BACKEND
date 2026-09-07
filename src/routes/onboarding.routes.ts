@@ -3,7 +3,9 @@ import {
 	bookSportsScientist,
 	getStatus,
 	getStatusByUserId,
+	skipAllSteps,
 	skipSportsScientist,
+	skipStep,
 	submitComplete,
 	submitConsent,
 	submitHealthGoals,
@@ -42,6 +44,12 @@ onboardingRouter.post(
 	authorize(["user"]),
 	skipSportsScientist,
 );
+// Generic skip for any deferrable app-owned step (see SKIPPABLE_STEPS in
+// onboarding.service.ts). Superset of the sports-scientist route above.
+// The two-segment skip-all path cannot be shadowed by the three-segment
+// ":step/skip" one, so declaration order between them does not matter.
+onboardingRouter.post("/steps/skip-all", authorize(["user"]), skipAllSteps);
+onboardingRouter.post("/steps/:step/skip", authorize(["user"]), skipStep);
 onboardingRouter.post(
 	"/health-markers",
 	authorize(["user"]),

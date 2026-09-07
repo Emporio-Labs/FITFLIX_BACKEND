@@ -32,6 +32,7 @@ import notificationRouter from "./routes/notification.routes";
 import nutritionRouter from "./routes/nutrition.routes";
 import nutritionistBookingRouter from "./routes/nutritionist-booking.routes";
 import expertAppointmentRouter from "./routes/expert-appointment.routes";
+import expertScheduleRouter from "./routes/expert-schedule.routes";
 
 import onboardingRouter from "./routes/onboarding.routes";
 import scheduleRouter from "./routes/schedule.routes";
@@ -295,6 +296,10 @@ app.use("/api/v1/analytics", apiRateLimit, analyticsRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
 app.use("/api/v1/locations", apiRateLimit, locationRouter);
+// Expert-type-agnostic availability + schedule editing. The PT routes below
+// keep their trainer-shaped paths and delegate to the same service.
+app.use("/api/v1/experts", apiRateLimit, expertScheduleRouter);
+app.use("/experts", apiRateLimit, expertScheduleRouter);
 app.use("/api/v1/pt", apiRateLimit, personalTrainingRouter);
 app.use("/pt", apiRateLimit, personalTrainingRouter);
 app.use("/api/v1/billing", apiRateLimit, billingRouter);

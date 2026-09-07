@@ -7,6 +7,20 @@ import {
 	updateSlotBodySchema,
 } from "../validators/slot.validator";
 
+/**
+ * Expert types that no longer draw from Slot capacity. Trainers were never in
+ * this inventory; nutritionists and sports scientists moved to ExpertSchedule
+ * because a 1:1 consultation is bound to a *person*, and a seat count cannot
+ * express leave, working days, or one human's inability to be in two places at
+ * once. Facility and therapy resources — where identity genuinely is irrelevant
+ * — keep using slots.
+ */
+const RETIRED_SLOT_EXPERT_TYPES: ExpertType[] = [
+	ExpertType.Nutritionist,
+	ExpertType.SportsScientist,
+	ExpertType.Doctor,
+];
+
 const formatToTimeZoneTime = (isoString: string, timeZone: string): string => {
 	const date = new Date(isoString);
 	const parts = new Intl.DateTimeFormat("en-US", {
@@ -97,7 +111,20 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 		// unique index isn't safe to add on top of that existing duplicate
 		// data (Mongoose would fail to build it against the live collection),
 		// so this is enforced here at write time instead.
-		const expertType = parsedBody.data.expertType ?? ExpertType.Nutritionist;
+		const expertType = parsedBody.data.expertType ?? ExpertType.Facility;
+
+		// 1:1 experts are booked against ExpertSchedule now, not slot inventory:
+		// a Slot models N fungible seats and cannot say *who* is free, take
+		// leave, or refuse to be in two places at once. Existing rows are left
+		// readable so the deployed member app keeps working through the
+		// transition; only new ones are refused.
+		if (RETIRED_SLOT_EXPERT_TYPES.includes(expertType)) {
+			res.status(400).json({
+				message: `${expertType} availability is managed through the expert's schedule, not slots. Use PUT /api/v1/experts/${expertType}/:expertId/schedule.`,
+				code: "EXPERT_TYPE_RETIRED",
+			});
+			return;
+		}
 
 		if (derivedState.isDaily) {
 			// Scoped by expertType: a nutritionist and a sports-scientist template
@@ -368,6 +395,20 @@ export const updateSlotById: RequestHandler = async (req, res, next) => {
 		if (effectiveRemainingCapacity > effectiveCapacity) {
 			res.status(400).json({
 				message: "remainingCapacity cannot exceed capacity",
+			});
+			return;
+		}
+
+		// Same gate as createSlot: an existing slot may keep its legacy tag, but
+		// it must not be *re-pointed* at an expert type that no longer books
+		// through slot inventory.
+		if (
+			parsedBody.data.expertType !== undefined &&
+			RETIRED_SLOT_EXPERT_TYPES.includes(parsedBody.data.expertType)
+		) {
+			res.status(400).json({
+				message: `${parsedBody.data.expertType} availability is managed through the expert's schedule, not slots.`,
+				code: "EXPERT_TYPE_RETIRED",
 			});
 			return;
 		}

@@ -517,6 +517,11 @@ Also mounted at `/api/invoices`. Rate limit: `apiRateLimit`.
 |---|---|---|---|---|
 | GET | `/onboarding/status` | JWT | user | `getStatus` |
 | GET | `/onboarding/status/:userId` | JWT | admin, frontdesk | `getStatusByUserId` |
+| PATCH | `/onboarding/steps/:userId/:step` | JWT | admin, frontdesk | `updateSharedStep` |
+| POST | `/onboarding/sports-scientist` | JWT | user | `bookSportsScientist` |
+| POST | `/onboarding/sports-scientist/skip` | JWT | user | `skipSportsScientist` (deprecated, see `/onboarding/steps/:step/skip`) |
+| POST | `/onboarding/steps/:step/skip` | JWT | user | `skipStep` |
+| POST | `/onboarding/steps/skip-all` | JWT | user | `skipAllSteps` |
 | POST | `/onboarding/health-markers` | JWT | user | `submitHealthMarkers` |
 | POST | `/onboarding/health-goals` | JWT | user | `submitHealthGoals` |
 | POST | `/onboarding/consent` | JWT | user | `submitConsent` |
@@ -1606,7 +1611,11 @@ booleans live on the User document but are **not** part of this payload.
 |---|---|---|
 | `currentStep` | `OnboardingStep` | Defaults to `HEALTH_MARKERS` when unset |
 | `completedSteps` | `OnboardingStep[]` | Append-only history |
-| `onboardingCompleted` | boolean | Mirrors `onboardingStatus.onboardingCompleted` |
+| `skippedSteps` | `OnboardingStep[]` | Steps deferred via `POST /onboarding/steps/:step/skip`; a step leaves this list the moment it is actually submitted |
+| `stepOrder` | `OnboardingStep[]` | The full app-owned wizard sequence (excludes `COMPLETED`) — lets the client stop hardcoding step count/order |
+| `pendingSteps` | `OnboardingStep[]` | Every outstanding step, app- or centre-owned, skipped or never started |
+| `appOnboardingCompleted` | boolean | True once every app-owned step is completed **or** skipped (`CONSENT` can never be skipped) |
+| `onboardingCompleted` | boolean | Mirrors `onboardingStatus.onboardingCompleted`; requires every step done for real, skips included |
 | `allowedNextStep` | `OnboardingStep \| null` | Equals `currentStep`, or `null` once complete |
 | `bookingDetails` | object \| null | Latest nutritionist booking whose status is not `REJECTED` |
 
@@ -1640,6 +1649,76 @@ Same payload as above, for any user. Used by the FrontDesk dashboard.
 | Path param | Type | Notes |
 |---|---|---|
 | `userId` | ObjectId | 400 `BAD_REQUEST` if not a valid ObjectId |
+
+### POST /onboarding/steps/:step/skip
+
+Defer an app-owned onboarding step without completing it. Idempotent — a
+retried or duplicate call while the step is already skipped (or already
+completed) just returns the current status.
+
+**Auth:** Bearer (`user` only)
+
+| Path param | Type | Notes |
+|---|---|---|
+| `step` | `OnboardingStep` | Must be one of the skippable steps (see below); case-insensitive, normalized to upper case |
+
+Skippable steps: every app-owned step — `HEALTH_MARKERS`, `HEALTH_GOALS`,
+`CONSENT`, `REPORT_UPLOAD`, `SPORT_SCIENTIST_APPOINTMENT`,
+`NUTRITIONIST_BOOKING`. `CONSENT` is included deliberately: the wizard must
+never be able to trap a paying member. Skipping it only defers the signed
+liability/gym-fitness waiver — it stays on `pendingSteps` for the front desk
+and for the member app's permanent "Setup pending" warning.
+
+Skipping never satisfies `onboardingCompleted`: `POST /onboarding/complete`
+still fails with `400 MISSING_STEPS` until every skipped step is actually
+submitted. A skipped step can be submitted later from any state — it is not
+gated on `currentStep` matching it.
+
+```bash
+curl -X POST "https://api.example.com/onboarding/steps/NUTRITIONIST_BOOKING/skip" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200)**
+
+```json
+{ "message": "Onboarding step skipped", "status": { "...": "OnboardingStatusResponse" } }
+```
+
+**Errors:** 400 `VALIDATION_ERROR` (unrecognized step), 403 `FORBIDDEN`,
+403 `STEP_NOT_ALLOWED` (step is not skippable), 409 `ALREADY_COMPLETED`.
+
+Superseded, but kept for the existing app build:
+`POST /onboarding/sports-scientist/skip` — identical behavior, hardcoded to
+`SPORT_SCIENTIST_APPOINTMENT`.
+
+### POST /onboarding/steps/skip-all
+
+Defer every remaining app-owned step in one write — what the wizard's
+"Skip all" header button calls. Steps the member already completed are left
+alone; only outstanding ones are recorded as skipped. Idempotent: once
+nothing is left to defer it returns the current status unchanged.
+
+A single atomic write rather than six sequential `:step/skip` calls, so a
+half-skipped wizard is not a reachable state.
+
+**Auth:** Bearer (`user` only)
+
+```bash
+curl -X POST "https://api.example.com/onboarding/steps/skip-all" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200)** — `currentStep` comes back as `COMPLETED` and
+`appOnboardingCompleted` as `true`, so the member reaches the dashboard;
+`onboardingCompleted` stays `false` and every skipped step remains on
+`pendingSteps`.
+
+```json
+{ "message": "Onboarding steps skipped", "status": { "...": "OnboardingStatusResponse" } }
+```
+
+**Errors:** 403 `FORBIDDEN`, 409 `ALREADY_COMPLETED`.
 
 ### POST /onboarding/health-markers
 

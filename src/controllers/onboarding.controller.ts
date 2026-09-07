@@ -14,6 +14,7 @@ import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import MedicalReport from "../models/MedicalReport";
 import Slot from "../models/Slots";
+import { pickExpertForSlot } from "../services/expert-schedule.service";
 import { normalizeRole } from "../middleware/rbac.middleware";
 import {
 	reserveSlotCapacity,
@@ -26,6 +27,8 @@ import {
 	completeOnboarding,
 	getOnboardingStatus,
 	OnboardingServiceError,
+	skipAllSteps as skipAllOnboardingSteps,
+	skipStep as skipOnboardingStep,
 	updateSharedOnboardingStep,
 	validateStepAllowed,
 } from "../utils/onboarding.service";
@@ -552,6 +555,26 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 			endTime = concreteSlot.endTime;
 		}
 
+		// Bind a sports scientist at creation from their own schedule, the same
+		// way bookNutritionist does. Assignment used to be a post-hoc admin
+		// step, which is what let one person be handed two overlapping
+		// appointments; calculateAvailableSlots already excludes any time this
+		// expert is booked for (see loadBookedIntervals). Returns null when
+		// nobody is free then — the appointment is still recorded unassigned,
+		// exactly as before, and staff assign from the triage queue.
+		const assignment = startTime
+			? await pickExpertForSlot({
+					expertType: ExpertType.SportsScientist,
+					date: appointmentDate,
+					startTime,
+					mode: appointmentMode,
+				})
+			: null;
+
+		if (assignment) {
+			endTime = assignment.endTime;
+		}
+
 		const appointment = await ExpertAppointment.findOneAndUpdate(
 			{
 				userId: requester.id,
@@ -572,6 +595,12 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 					endTime,
 					notes: notes || null,
 					...(resolvedSlotId ? { slotId: resolvedSlotId } : {}),
+					...(assignment
+						? {
+								assignedExpertId: assignment.expertId,
+								assignedExpertName: assignment.expertName,
+							}
+						: {}),
 				},
 				$setOnInsert: {
 					userId: requester.id,
@@ -602,6 +631,12 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 	}
 };
 
+/**
+ * @deprecated Superseded by the generic `skipStep` (POST
+ * /onboarding/steps/:step/skip). Kept so the shipped app build (which still
+ * calls POST /onboarding/sports-scientist/skip) keeps working; both paths now
+ * share the same service logic in onboarding.service.ts.
+ */
 export const skipSportsScientist: RequestHandler = async (req, res, next) => {
 	const requester = req.user;
 	if (!requester || normalizeRole(requester.role) !== "user") {
@@ -613,28 +648,62 @@ export const skipSportsScientist: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const status = await getOnboardingStatus(requester.id);
-
-		// Idempotent: a double tap, a retry after a dropped response, or a
-		// stale client re-sending this must not error — they should just see
-		// wherever the wizard already is.
-		if (status.currentStep === OnboardingStep.SPORT_SCIENTIST_APPOINTMENT) {
-			// markCompleted: false — this only moves currentStep forward. It
-			// deliberately leaves `sportsScientistBooked` false and keeps the
-			// step out of completedSteps: that flag also drives the frontdesk
-			// sports-scientist triage queue and shared-onboarding completion,
-			// so skipping here must never look like a human actually saw one.
-			await advanceStep(requester.id, OnboardingStep.SPORT_SCIENTIST_APPOINTMENT, {
-				markCompleted: false,
-			});
-		}
-
-		res.status(200).json({
-			message: "Sport scientist step skipped",
-			status: await getOnboardingStatus(requester.id),
-		});
+		const status = await skipOnboardingStep(
+			requester.id,
+			OnboardingStep.SPORT_SCIENTIST_APPOINTMENT,
+		);
+		res.status(200).json({ message: "Sport scientist step skipped", status });
 	} catch (error) {
-		next(error);
+		handleServiceError(error, res, next);
+	}
+};
+
+export const skipAllSteps: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester || normalizeRole(requester.role) !== "user") {
+		res.status(403).json({
+			error: "Only members can skip onboarding steps",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	try {
+		const status = await skipAllOnboardingSteps(requester.id);
+		res.status(200).json({ message: "Onboarding steps skipped", status });
+	} catch (error) {
+		handleServiceError(error, res, next);
+	}
+};
+
+export const skipStep: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester || normalizeRole(requester.role) !== "user") {
+		res.status(403).json({
+			error: "Only members can skip an onboarding step",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	const rawStep = String(req.params.step ?? "")
+		.trim()
+		.toUpperCase();
+	if (!Object.values(OnboardingStep).includes(rawStep as OnboardingStep)) {
+		res
+			.status(400)
+			.json({ error: "Invalid onboarding step", code: "VALIDATION_ERROR" });
+		return;
+	}
+
+	try {
+		const status = await skipOnboardingStep(
+			requester.id,
+			rawStep as OnboardingStep,
+		);
+		res.status(200).json({ message: "Onboarding step skipped", status });
+	} catch (error) {
+		handleServiceError(error, res, next);
 	}
 };
 
@@ -657,10 +726,18 @@ export const updateSharedStep: RequestHandler = async (req, res, next) => {
 			.json({ error: "Invalid onboarding step", code: "VALIDATION_ERROR" });
 		return;
 	}
+	// Steps the front desk owns end to end. PLAN_TRAINER_ASSIGNMENT belongs
+	// here even though `PATCH /users/:id/assigned-trainer` also writes its flag:
+	// that route is admin-only, so without this entry front desk staff had no
+	// way to finish the step at all — and because the member app's permanent
+	// "Setup pending" banner is gated on all six shared flags being true, it
+	// could never be cleared. NUTRITION_APPOINTMENT and
+	// SPORT_SCIENTIST_APPOINTMENT stay out: the member books those in the app.
 	const centreManagedSteps = new Set([
 		OnboardingStep.ACTIVE_X_TEST,
 		OnboardingStep.DNA_SAMPLE,
 		OnboardingStep.VALD_TEST,
+		OnboardingStep.PLAN_TRAINER_ASSIGNMENT,
 	]);
 	if (!centreManagedSteps.has(rawStep as OnboardingStep)) {
 		res.status(403).json({

@@ -20,6 +20,7 @@ import {
 	isHashedPassword,
 	verifyPassword,
 } from "../utils/password";
+import type { AppUserRole } from "../types/auth";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import {
 	loginBodySchema,
@@ -27,7 +28,10 @@ import {
 	signupBodySchema,
 } from "../validators/auth.validator";
 
-type AppRole = "user" | "admin" | "trainer";
+// The three accounts email/password login can match, widened by `staffRole`
+// on a User document (see matchAccount) so staff get their real role.
+type AppRole = AppUserRole;
+type MatchedAccountKind = "user" | "admin" | "trainer";
 
 // ── Login lockout (in-memory; staff accounts are the top target) ──────────────
 const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS) || 5;
@@ -74,6 +78,10 @@ type AuthDocument = {
 	save: () => Promise<unknown>;
 	onboarded?: boolean;
 	onboardingStatus?: unknown;
+	// Set only on User documents, and only for staff accounts — a nutritionist,
+	// sports scientist or doctor who happens to be stored as a User. It
+	// overrides the "user" role in the issued token; see matchAccount.
+	staffRole?: string | null;
 };
 
 type LoginUserPayload = {
@@ -86,7 +94,7 @@ type LoginUserPayload = {
 
 const matchAccount = async (
 	password: string,
-	role: AppRole,
+	role: MatchedAccountKind,
 	account: AuthDocument | null,
 ) => {
 	if (!account || !account.passwordHash) {
@@ -103,10 +111,19 @@ const matchAccount = async (
 		await account.save();
 	}
 
+	// A staff account is still a User document — `staffRole` is the only thing
+	// that distinguishes it. Without this, `nutritionist` and `sports_scientist`
+	// were roles that every RBAC allow-list accepted and no login could ever
+	// produce, so the self-service availability routes were unreachable.
+	const effectiveRole: AppRole =
+		role === "user" && account.staffRole
+			? (account.staffRole as AppRole)
+			: role;
+
 	return {
 		id: account._id.toString(),
 		email: account.email ?? "",
-		role,
+		role: effectiveRole,
 	} as const;
 };
 

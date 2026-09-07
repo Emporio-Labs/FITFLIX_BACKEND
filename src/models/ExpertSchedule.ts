@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { applyIdTransform } from "../utils/mongoose-serialization";
-import { ExpertType } from "./Enums";
+import { CANONICAL_APPOINTMENT_MODES } from "../utils/appointment-mode";
+import { AppointmentMode, ExpertType } from "./Enums";
 
 const shiftConfigSchema = new mongoose.Schema(
 	{
@@ -94,11 +95,29 @@ const expertScheduleSchema = new mongoose.Schema(
 			type: [Date],
 			default: [],
 		},
+		// Which appointment modes this expert actually offers. One nutritionist
+		// may be online-only while another also takes in-person consultations,
+		// so availability has to depend on the mode the member picked — see
+		// calculateAvailableSlots. Only the two canonical values are stored;
+		// `AppointmentMode.OFFLINE` is folded to IN_PERSON on write
+		// (utils/appointment-mode.ts) so a third value can never reach the
+		// availability filter.
+		supportedModes: {
+			type: [String],
+			enum: CANONICAL_APPOINTMENT_MODES,
+			default: () => [AppointmentMode.IN_PERSON, AppointmentMode.ONLINE],
+		},
+		// How far ahead a member may book. This is now *enforced* by
+		// calculateAvailableSlots and echoed in every availability response so
+		// the client's date picker clamps to the server instead of offering
+		// days the server will refuse. The default was 14 while the member
+		// app's picker allowed 60 — they disagreed silently, and 60 is the
+		// behaviour that was actually live, so that is what it reconciles to.
 		maxAdvanceBookingDays: {
 			type: Number,
-			default: 14,
+			default: 60,
 			min: 1,
-			max: 60,
+			max: 365,
 		},
 		isActive: {
 			type: Boolean,
@@ -107,6 +126,10 @@ const expertScheduleSchema = new mongoose.Schema(
 	},
 	{ timestamps: true },
 );
+
+// Pooled availability sweeps every active expert of one type for a date, so
+// the type + active pair is the access path, not expertId.
+expertScheduleSchema.index({ expertType: 1, isActive: 1 });
 
 applyIdTransform(expertScheduleSchema);
 

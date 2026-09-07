@@ -2,8 +2,24 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import ConsentForm from "../models/ConsentForm";
 import ExpertAppointment from "../models/ExpertAppointment";
-import NutritionistBooking from "../models/NutritionistBooking";
-import { type Gender, OnboardingStep } from "../models/Enums";
+import UnifiedBooking from "../models/UnifiedBooking";
+import {
+	NUTRITIONIST_BOOKING_FILTER,
+	serializeNutritionistBooking,
+} from "../utils/nutritionist-booking.dto";
+import {
+	ExpertType,
+	type Gender,
+	OnboardingStep,
+	UnifiedBookingStatus,
+} from "../models/Enums";
+
+/** The staff roles a User document may carry — "facility" is not a person. */
+type StaffRole =
+	| ExpertType.Nutritionist
+	| ExpertType.Trainer
+	| ExpertType.Doctor
+	| ExpertType.SportsScientist;
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import BcaMetric from "../models/BcaMetric";
@@ -11,6 +27,7 @@ import MedicalReport from "../models/MedicalReport";
 import Membership from "../models/Membership";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
+import { normalizeRole } from "../middleware/rbac.middleware";
 import { buildActivePtMembershipFilter } from "../utils/membership-status.util";
 import {
 	ActiveXError,
@@ -90,6 +107,7 @@ export const createUser: RequestHandler = async (req, res, next) => {
 		onboarded = false,
 		email,
 		phone,
+		staffRole,
 		...rest
 	} = parsedBody.data;
 
@@ -127,6 +145,10 @@ export const createUser: RequestHandler = async (req, res, next) => {
 
 		const user = await User.create({
 			...rest,
+			// Zod widens the enum to `string`; the schema enum is the real gate.
+			...(staffRole !== undefined
+				? { staffRole: staffRole as StaffRole }
+				: {}),
 			gender: rest.gender as Gender,
 			phone: last10,
 			email: sanitizedEmail,
@@ -230,18 +252,22 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					as: "_healthGoalsDocs",
 				},
 			},
-			// ── Latest active NutritionistBooking (drives expertAppointments[]) ──
+			// ── Latest active nutrition consultation (drives expertAppointments[]) ──
 			// The frontend admin roster reads slot time / mode / assigned name from
 			// this. Without the lookup, the $unifiedAppointment reference below
 			// stays undefined and every row's expertAppointments comes back empty.
+			// Consultations moved into `unifiedbookings`; the subtype filter is
+			// what keeps personal-training sessions out of this roster column.
 			{
 				$lookup: {
-					from: "nutritionistbookings",
+					from: "unifiedbookings",
 					let: { uid: "$_id" },
 					pipeline: [
 						{
 							$match: {
 								$expr: { $eq: ["$userId", "$$uid"] },
+								serviceCategory: "EXPERT_SESSION",
+								serviceSubtype: "NUTRITIONIST",
 								status: { $nin: ["REJECTED", "CANCELLED"] },
 							},
 						},
@@ -258,7 +284,9 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 									$switch: {
 										branches: [
 											{
-												case: { $eq: ["$status", "ACCEPTED"] },
+												// UnifiedBooking calls this CONFIRMED; the
+												// roster still labels it "Confirmed".
+												case: { $eq: ["$status", "CONFIRMED"] },
 												then: "Confirmed",
 											},
 											{
@@ -287,7 +315,7 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 								// Legacy field the current formatBookingTime still reads.
 								appointmentStart: "$startTime",
 								appointmentMode: 1,
-								assignedNutritionistName: 1,
+								assignedNutritionistName: "$assignedExpertName",
 								zegoRoomId: 1,
 								meetingLink: 1,
 								createdAt: 1,
@@ -609,7 +637,11 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 			HealthGoals.findOne({ userId: id }),
 			ConsentForm.findOne({ userId: id }),
 			MedicalReport.find({ userId: id }).sort({ uploadedAt: -1 }),
-			NutritionistBooking.find({ userId: id, status: { $ne: "REJECTED" } })
+			UnifiedBooking.find({
+				...NUTRITIONIST_BOOKING_FILTER,
+				userId: id,
+				status: { $ne: UnifiedBookingStatus.REJECTED },
+			})
 				.sort({ createdAt: -1 })
 				.lean(),
 			ExpertAppointment.find({
@@ -661,23 +693,26 @@ export const getOnboardingProfile: RequestHandler = async (req, res, next) => {
 			consents: consent?.consents ?? [],
 			reports: reportsWithUrls,
 			appointments: [
-				...nutritionistAppointments.map((appointment) => ({
-					id: appointment._id.toString(),
-					_id: appointment._id.toString(),
-					userId: id,
-					expertType: "nutritionist",
-					bookingStatus: appointment.status,
-					appointmentDate: appointment.bookingDate,
-					appointmentStart: appointment.startTime,
-					startTime: appointment.startTime,
-					endTime: appointment.endTime,
-					meetingLink: null,
-					meetingUrl: null,
-					zegoRoomId: appointment.zegoRoomId ?? null,
-					appointmentMode: appointment.appointmentMode,
-					assignedNutritionistName:
-						appointment.assignedNutritionistName ?? null,
-				})),
+				// Serialised through the legacy adapter so `bookingStatus` stays in
+				// the vocabulary the front-desk profile already renders.
+				...nutritionistAppointments
+					.map(serializeNutritionistBooking)
+					.map((appointment) => ({
+						id: appointment._id,
+						_id: appointment._id,
+						userId: id,
+						expertType: "nutritionist",
+						bookingStatus: appointment.status,
+						appointmentDate: appointment.bookingDate,
+						appointmentStart: appointment.startTime,
+						startTime: appointment.startTime,
+						endTime: appointment.endTime,
+						meetingLink: null,
+						meetingUrl: null,
+						zegoRoomId: appointment.zegoRoomId ?? null,
+						appointmentMode: appointment.appointmentMode,
+						assignedNutritionistName: appointment.assignedNutritionistName,
+					})),
 				...sportsScientistAppointments.map((appointment) => ({
 					id: appointment._id.toString(),
 					_id: appointment._id.toString(),
@@ -778,7 +813,15 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const { password, email, phone, ...rest } = parsedBody.data;
+		const { password, email, phone, staffRole, ...rest } = parsedBody.data;
+		// PATCH /users/:id is reachable by the member themselves. `staffRole` is
+		// what makes an account a nutritionist / sports scientist, so letting it
+		// through on that path would be self-service privilege escalation —
+		// admins only.
+		const staffRolePatch =
+			staffRole !== undefined && normalizeRole(req.user.role) === "admin"
+				? { staffRole }
+				: {};
 		const sanitizedEmail =
 			email && typeof email === "string" && email.trim() !== ""
 				? email.trim()
@@ -816,6 +859,7 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 		const hashedPassword = password ? await hashPassword(password) : null;
 		const updatePayload = {
 			...rest,
+			...staffRolePatch,
 			email: sanitizedEmail,
 			...(normalizedPhone ? { phone: normalizedPhone } : {}),
 			...(hashedPassword ? { passwordHash: hashedPassword } : {}),

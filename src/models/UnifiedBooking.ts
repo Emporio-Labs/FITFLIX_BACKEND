@@ -62,11 +62,22 @@ const unifiedBookingSchema = new mongoose.Schema(
 			required: true,
 			index: true,
 		},
+		// Polymorphic, mirroring what ExpertSchedule already does. Trainers are
+		// their own collection; nutritionists, sports scientists and doctors are
+		// `User` documents carrying `staffRole`. Before this, `expertId` was
+		// hard-reffed to "Trainer", which is why nutritionist consultations
+		// needed a separate collection at all.
 		expertId: {
 			type: mongoose.Schema.Types.ObjectId,
-			ref: "Trainer",
+			refPath: "expertModel",
 			default: null,
 			index: true,
+		},
+		expertModel: {
+			type: String,
+			enum: ["Trainer", "User"],
+			default: "Trainer",
+			required: true,
 		},
 		assignedExpertName: {
 			type: String,
@@ -179,6 +190,24 @@ const unifiedBookingSchema = new mongoose.Schema(
 			type: adminResolutionSchema,
 			default: () => ({}),
 		},
+		// ── Consultation lifecycle ───────────────────────────────────────────
+		// Carried over from NutritionistBooking. A 1:1 consultation is requested
+		// by the member and accepted or declined by staff, so it has an audit
+		// trail a personal-training booking (auto-confirmed) never needed.
+		acceptedAt: { type: Date, default: null },
+		rejectedAt: { type: Date, default: null },
+		rejectionReason: { type: String, default: null },
+		cancelledAt: { type: Date, default: null },
+		cancelledBy: {
+			type: String,
+			enum: ["user", "admin", null],
+			default: null,
+		},
+		cancellationReason: { type: String, default: null },
+		// Free-text note the member attached when requesting the appointment.
+		// Distinct from `sessionNotes.dietaryAdvice`, which the expert writes
+		// afterwards.
+		memberNotes: { type: String, default: null },
 	},
 	{ timestamps: true },
 );
