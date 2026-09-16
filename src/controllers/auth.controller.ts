@@ -88,6 +88,7 @@ type LoginUserPayload = {
 	id: string;
 	email: string;
 	role: AppRole;
+	staffRole?: string | null;
 	onboarded?: boolean;
 	onboardingStatus?: unknown;
 };
@@ -136,6 +137,7 @@ const buildLoginUserPayload = (
 			id: matchedAccount.id,
 			email: matchedAccount.email,
 			role: matchedAccount.role,
+			staffRole: userAccount?.staffRole ?? null,
 		};
 	}
 
@@ -143,6 +145,7 @@ const buildLoginUserPayload = (
 		id: matchedAccount.id,
 		email: matchedAccount.email,
 		role: matchedAccount.role,
+		staffRole: userAccount?.staffRole ?? null,
 		onboarded: Boolean(userAccount?.onboarded),
 		onboardingStatus: userAccount?.onboardingStatus ?? null,
 	};
@@ -451,3 +454,5 @@ function parseExpiryMs(value: string): number {
 			return 12 * 60 * 60 * 1000;
 	}
 }
+
+
