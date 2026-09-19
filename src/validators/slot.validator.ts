@@ -1,6 +1,13 @@
 import z from "zod";
 import { ExpertType } from "../models/Enums";
 
+const locationId = z
+	.string()
+	.trim()
+	.refine((v) => /^[0-9a-fA-F]{24}$/.test(v), "Expected an object id")
+	.nullable()
+	.optional();
+
 const slotBodySchema = z.object({
 	date: z.coerce.date().optional(),
 	isDaily: z.coerce.boolean().optional(),
@@ -14,6 +21,7 @@ const slotBodySchema = z.object({
 	capacity: z.coerce.number().int().positive().optional().default(1),
 	remainingCapacity: z.coerce.number().int().nonnegative().optional(),
 	isBooked: z.coerce.boolean().optional(),
+	locationId,
 });
 
 export const createSlotBodySchema = slotBodySchema.superRefine(

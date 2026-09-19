@@ -263,6 +263,10 @@ export async function registerGroupClassBooking(params: {
 			status: "Confirmed",
 			creditCostSnapshot: creditCost,
 			creditsBypassed: false,
+			// FX-01.2: a group-class booking takes the scheduled session branch.
+			locationId:
+				(session as { locationId?: mongoose.Types.ObjectId | null })
+					.locationId ?? null,
 		});
 
 		return {

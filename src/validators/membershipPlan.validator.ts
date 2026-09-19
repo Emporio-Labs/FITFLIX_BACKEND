@@ -1,5 +1,12 @@
 import z from "zod";
 
+const locationId = z
+	.string()
+	.trim()
+	.refine((v) => /^[0-9a-fA-F]{24}$/.test(v), "Expected an object id")
+	.nullable()
+	.optional();
+
 export const createMembershipPlanSchema = z.object({
 	name: z.string().trim().min(1),
 	description: z.string().trim().optional(),
@@ -14,6 +21,7 @@ export const createMembershipPlanSchema = z.object({
 	// being coerced to 0 and failing `.positive()`. null clears a day-based duration.
 	durationDays: z.coerce.number().int().positive().nullable().optional(),
 	benefits: z.record(z.string(), z.any()).default({}),
+	locationId,
 });
 
 export const updateMembershipPlanSchema = createMembershipPlanSchema

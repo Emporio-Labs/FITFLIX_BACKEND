@@ -1,5 +1,9 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import {
+	respondToLocationError,
+	resolveWriteLocation,
+} from "../utils/location-scope";
 import { ExpertType } from "../models/Enums";
 import Slot from "../models/Slots";
 import {
@@ -148,6 +152,7 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 			}
 		}
 
+		const locationId = await resolveWriteLocation(req);
 		const slot = await Slot.create({
 			date: derivedState.date,
 			isDaily: derivedState.isDaily,
@@ -157,9 +162,13 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 			capacity: derivedState.capacity,
 			remainingCapacity: derivedState.remainingCapacity,
 			isBooked: derivedState.isBooked,
+			locationId,
 		});
 		res.status(201).json({ message: "Slot created", slot });
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };

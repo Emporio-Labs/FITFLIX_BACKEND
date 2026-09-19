@@ -56,9 +56,17 @@ const bookingSchema = new mongoose.Schema(
 		joinedAt: { type: Date, default: null },
 		leftAt: { type: Date, default: null },
 		stayDurationMinutes: { type: Number, default: 0 },
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+bookingSchema.index({ locationId: 1, bookingDate: -1 });
 
 bookingSchema.index({ user: 1, sessionId: 1 });
 

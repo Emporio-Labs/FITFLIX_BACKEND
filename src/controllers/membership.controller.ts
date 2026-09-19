@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import { resolveMemberHomeLocation } from "../utils/location-scope";
 import Membership from "../models/Membership";
 import {
 	createMembershipBodySchema,
@@ -93,6 +94,8 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		// FX-01.2: a membership takes the member's home branch.
+		const locationId = await resolveMemberHomeLocation(userId);
 		const membership = await Membership.create({
 			...rest,
 			status: rest.status as
@@ -103,6 +106,7 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 			user: userId,
 			startDate: startDateValue,
 			...(endDateValue ? { endDate: endDateValue } : {}),
+			locationId,
 		});
 
 		res.status(201).json({ message: "Membership created", membership });

@@ -4,6 +4,11 @@ import Booking from "../models/Bookings";
 import { BookingStatus, CreditTransactionSource } from "../models/Enums";
 import Service from "../models/Service";
 import Slot from "../models/Slots";
+import {
+	respondToLocationError,
+	resolveWriteLocation,
+	scopedLocationFilter,
+} from "../utils/location-scope";
 
 import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
@@ -159,7 +164,7 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 		}
 
 		const requestedSlot = await Slot.findById(slotId).select(
-			"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate",
+			"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate locationId",
 		);
 
 		if (
@@ -192,6 +197,14 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 
 		const creditCost = Math.max(1, Number(service.creditCost ?? 1));
 
+		// A booking happens where its slot is. Inherited rather than requested,
+		// so no client has to know the branch to book.
+		const locationId = await resolveWriteLocation(
+			req,
+			(reservedSlot as { locationId?: mongoose.Types.ObjectId | null })
+				.locationId ?? null,
+		);
+
 		const booking = await Booking.create({
 			bookingDate,
 			startTime: concreteSlot.startTime,
@@ -202,6 +215,7 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 			creditCostSnapshot: creditCost,
 			creditsBypassed: bypassCredits,
 			...(reportId ? { report: reportId } : {}),
+			locationId,
 		});
 
 		if (!bypassCredits) {
@@ -240,6 +254,10 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 			await releaseSlotCapacity(reservedSlotId).catch(() => null);
 		}
 
+		if (respondToLocationError(error, res)) {
+			return;
+		}
+
 		next(error);
 	}
 };
@@ -247,7 +265,9 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 export const getAllBookings: RequestHandler = async (req, res, next) => {
 	try {
 		const { userId: userIdRaw, status, search, sessionId, classId } = req.query;
-		const filter: Record<string, unknown> = {};
+		const filter: Record<string, unknown> = {
+			...scopedLocationFilter(req, { includeNull: true }),
+		};
 
 		if (typeof userIdRaw === "string" && userIdRaw.length > 0) {
 			const userId = getIdParam(userIdRaw);
@@ -302,6 +322,9 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({ bookings: mappedBookings });
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };

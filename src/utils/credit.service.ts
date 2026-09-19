@@ -484,6 +484,12 @@ export const addCreditsToMembership = async (
 		...(actorId ? { actorId } : {}),
 		...(input.actorRole ? { actorRole: input.actorRole } : {}),
 		...(input.metadata ? { metadata: input.metadata } : {}),
+		// FX-01.2: caller override wins; else follow the membership branch,
+		// which under FX-01 is the member home branch.
+		locationId:
+			input.locationId ??
+			((membership as { locationId?: mongoose.Types.ObjectId | null })
+				.locationId ?? null),
 	});
 
 	return {

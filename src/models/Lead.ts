@@ -28,9 +28,17 @@ const leadSchema = new mongoose.Schema(
 			ref: "User",
 			default: null,
 		},
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+leadSchema.index({ locationId: 1, status: 1 });
 
 // Lead responses must expose `_id` (read directly by clients/tests as `lead._id`)
 // while still keeping the `id` virtual for backward compatibility. We intentionally

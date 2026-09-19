@@ -2,6 +2,10 @@ import type { RequestHandler } from "express";
 import z from "zod";
 import mongoose from "mongoose";
 import Class from "../models/Class";
+import {
+	respondToLocationError,
+	resolveWriteLocation,
+} from "../utils/location-scope";
 import ScheduledSession from "../models/ScheduledSession";
 import Booking from "../models/Bookings";
 import { normalizeDeliveryType } from "../utils/delivery-type";
@@ -377,10 +381,14 @@ export const createClass: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const newClass = await Class.create(parsedBody.data);
+		const locationId = await resolveWriteLocation(req);
+		const newClass = await Class.create({ ...parsedBody.data, locationId });
 		await syncSessionsForClass(newClass);
 		res.status(201).json({ message: "Class created", class: newClass });
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };

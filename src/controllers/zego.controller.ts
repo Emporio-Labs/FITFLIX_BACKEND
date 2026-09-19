@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import type mongoose from "mongoose";
 import User from "../models/User";
 import RoomMessage from "../models/RoomMessage";
 import { generateToken04 } from "../utils/zego";
@@ -190,6 +191,14 @@ export const generateSessionToken: RequestHandler = async (req, res, next) => {
 					joinedAt: new Date(),
 					creditsBypassed: true,
 					creditCostSnapshot: 0,
+					// Auto-attendance record inherits the session (or class) branch.
+					locationId: ((access.session as {
+						locationId?: mongoose.Types.ObjectId | null;
+					}).locationId ??
+						(access.klass as {
+							locationId?: mongoose.Types.ObjectId | null;
+						} | undefined)?.locationId ??
+						null) as mongoose.Types.ObjectId | null,
 				});
 			} catch (err) {
 				console.error("[zego] Failed to auto-create open_to_all booking:", err);

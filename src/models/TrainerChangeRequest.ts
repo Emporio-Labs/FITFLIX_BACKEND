@@ -45,9 +45,17 @@ const trainerChangeRequestSchema = new mongoose.Schema(
 			type: Date,
 			default: null,
 		},
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+trainerChangeRequestSchema.index({ locationId: 1, status: 1 });
 
 applyIdTransform(trainerChangeRequestSchema);
 

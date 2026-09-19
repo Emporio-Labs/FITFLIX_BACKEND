@@ -2,6 +2,11 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
+import {
+	respondToLocationError,
+	resolveWriteLocation,
+	scopedLocationFilter,
+} from "../utils/location-scope";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
 import { normalizeDeliveryType } from "../utils/delivery-type";
 import { resolveTimeZone } from "../utils/location.resolver";
@@ -178,6 +183,14 @@ export const createScheduledSession: RequestHandler = async (
 			return;
 		}
 
+		// A session happens where its class does. Resolved once, outside the
+		// recurrence loop, so every occurrence in a series shares one branch.
+		const locationId = await resolveWriteLocation(
+			req,
+			(targetClass as { locationId?: mongoose.Types.ObjectId | null })
+				.locationId ?? null,
+		);
+
 		const count = recurrenceRule === "NONE" ? 1 : repeatCount;
 		const createdSessions: any[] = [];
 
@@ -234,6 +247,7 @@ export const createScheduledSession: RequestHandler = async (
 				streamRoomId: streamRoomId || targetClass.streamRoomId || null,
 				videoRoomId: deriveRoomId(sessionId),
 				isPublished,
+				locationId,
 			});
 
 			createdSessions.push(sessionDoc);
@@ -245,6 +259,9 @@ export const createScheduledSession: RequestHandler = async (
 			sessions: createdSessions,
 		});
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };
@@ -260,6 +277,8 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 
 		if (classId) query.classId = classId;
 		if (trainerId) query.trainerId = trainerId;
+		// includeNull keeps online / pre-backfill sessions visible.
+		Object.assign(query, scopedLocationFilter(req, { includeNull: true }));
 
 		if (date) {
 			const startOfDay = new Date(String(date));
@@ -302,6 +321,9 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 			}),
 		});
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };

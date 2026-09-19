@@ -123,13 +123,19 @@ const expertScheduleSchema = new mongoose.Schema(
 			type: Boolean,
 			default: true,
 		},
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
 
 // Pooled availability sweeps every active expert of one type for a date, so
 // the type + active pair is the access path, not expertId.
-expertScheduleSchema.index({ expertType: 1, isActive: 1 });
+expertScheduleSchema.index({ locationId: 1, expertType: 1, isActive: 1 });
 
 applyIdTransform(expertScheduleSchema);
 

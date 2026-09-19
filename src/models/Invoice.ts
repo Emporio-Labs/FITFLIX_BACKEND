@@ -54,9 +54,17 @@ const invoiceSchema = new mongoose.Schema(
 		issuedAt: { type: Date, default: undefined },
 		paidAt: { type: Date, default: undefined },
 		createdBy: { type: mongoose.Schema.Types.ObjectId, default: undefined },
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+invoiceSchema.index({ locationId: 1, createdAt: -1 });
 
 invoiceSchema.index({ userId: 1 });
 invoiceSchema.index({ leadId: 1 });

@@ -1,5 +1,12 @@
 import z from "zod";
 
+const locationId = z
+	.string()
+	.trim()
+	.refine((v) => /^[0-9a-fA-F]{24}$/.test(v), "Expected an object id")
+	.nullable()
+	.optional();
+
 export const createTrainerBodySchema = z.object({
 	trainerName: z.string().min(1),
 	email: z.email(),
@@ -10,6 +17,7 @@ export const createTrainerBodySchema = z.object({
 	imageUrl: z.string().optional().default(""),
 	keySentence: z.string().optional().default(""),
 	isActive: z.boolean().optional().default(true),
+	locationId,
 });
 
 export const updateTrainerBodySchema = createTrainerBodySchema

@@ -87,9 +87,17 @@ const workoutPlanAssignmentSchema = new mongoose.Schema(
 		isDeleted: { type: Boolean, default: false },
 		dayProgress: { type: [dayProgressSchema], default: [] },
 		userDays: { type: [userDaySchema], default: [] },
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+workoutPlanAssignmentSchema.index({ locationId: 1, status: 1 });
 
 workoutPlanAssignmentSchema.index({ userId: 1, status: 1 });
 workoutPlanAssignmentSchema.index({ planId: 1 });

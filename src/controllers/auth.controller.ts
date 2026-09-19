@@ -1,4 +1,6 @@
 import type { RequestHandler } from "express";
+import mongoose from "mongoose";
+import { resolveLocationId } from "../utils/location.resolver";
 import Admin from "../models/Admin";
 
 import { type Gender, LeadStatus, OnboardingStep } from "../models/Enums";
@@ -82,6 +84,9 @@ type AuthDocument = {
 	// sports scientist or doctor who happens to be stored as a User. It
 	// overrides the "user" role in the issued token; see matchAccount.
 	staffRole?: string | null;
+	// Admin documents only: the branches this account manages, and the HQ flag.
+	locationIds?: unknown;
+	isGlobal?: boolean | null;
 };
 
 type LoginUserPayload = {
@@ -120,10 +125,19 @@ const matchAccount = async (
 			? (account.staffRole as AppRole)
 			: role;
 
+	// Branch scope is admin-only. Members are scoped through
+	// User.homeLocationId at the point of use, not through the token.
+	const locationIds =
+		role === "admin" && Array.isArray(account.locationIds)
+			? account.locationIds.map((id) => String(id))
+			: undefined;
+
 	return {
 		id: account._id.toString(),
 		email: account.email ?? "",
 		role: effectiveRole,
+		...(locationIds ? { locationIds } : {}),
+		...(role === "admin" ? { isGlobal: account.isGlobal === true } : {}),
 	} as const;
 };
 
@@ -159,7 +173,21 @@ export const signup: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { username, phone, email, age, gender, password } = parsedBody.data;
+	const { username, phone, email, age, gender, password, locationId: bodyLocationId } =
+		parsedBody.data as typeof parsedBody.data & { locationId?: string | null };
+
+	// FX-01.3: every signup gets a home branch. Best-effort resolve — a public
+	// signup with no hint must never 400 on branch ambiguity, so we degrade to
+	// null (same behaviour as public lead capture) and leave a warn log.
+	let homeLocationId: mongoose.Types.ObjectId | null = null;
+	try {
+		homeLocationId = await resolveLocationId(bodyLocationId ?? null);
+	} catch (err) {
+		console.warn(
+			"[auth.signup] locationId unresolved; homeLocationId left null",
+			err instanceof Error ? err.message : err,
+		);
+	}
 
 	try {
 		const passwordHash = await hashPassword(password);
@@ -178,6 +206,7 @@ export const signup: RequestHandler = async (req, res, next) => {
 			gender: gender as Gender,
 			onboarded: false,
 			passwordHash,
+			homeLocationId,
 			onboardingStatus: {
 				currentStep: OnboardingStep.HEALTH_MARKERS,
 				completedSteps: [],

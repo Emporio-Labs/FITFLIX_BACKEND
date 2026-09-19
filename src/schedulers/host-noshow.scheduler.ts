@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import {
 	CreditTransactionSource,
 	CreditTransactionType,
@@ -71,6 +72,12 @@ export const runHostNoShowSweep = async () => {
 							sourceId: updated._id,
 							actorRole: "system",
 							reason: `Automatic quota restore: Host no-show for booking ${updated._id.toString()}`,
+							locationId:
+								((
+									updated as {
+										locationId?: mongoose.Types.ObjectId | null;
+									}
+								).locationId ?? null) as mongoose.Types.ObjectId | null,
 						});
 					}
 				}

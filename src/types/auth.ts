@@ -19,4 +19,11 @@ export type AuthenticatedUser = {
 	id: string;
 	email: string;
 	role: AppUserRole;
+	/**
+	 * Branch scope, admins only. `isGlobal` is HQ — every branch. Otherwise the
+	 * caller is confined to `locationIds`. Both are absent on member tokens,
+	 * where branch comes from User.homeLocationId instead.
+	 */
+	locationIds?: string[];
+	isGlobal?: boolean;
 };

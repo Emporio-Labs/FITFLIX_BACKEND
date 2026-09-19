@@ -89,6 +89,13 @@ export const refineEventFields = (
 	}
 };
 
+const locationId = z
+	.string()
+	.trim()
+	.refine((v) => /^[0-9a-fA-F]{24}$/.test(v), "Expected an object id")
+	.nullable()
+	.optional();
+
 export const createClassBodySchema = z.object({
 	name: z.string().trim().min(1, "Name is required and cannot be empty"),
 	description: z.string().trim().default(""),
@@ -137,6 +144,7 @@ export const createClassBodySchema = z.object({
 	endDate: optionalDate.optional().default(null),
 	enrollmentOpensAt: optionalDate.optional().default(null),
 	enrollmentClosesAt: optionalDate.optional().default(null),
+	locationId,
 }).superRefine(refineEventFields);
 
 export const updateClassBodySchema = z

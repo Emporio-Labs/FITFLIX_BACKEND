@@ -2,6 +2,11 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Service, { ServiceType } from "../models/Service";
 import {
+	respondToLocationError,
+	resolveCatalogLocation,
+	scopedLocationFilter,
+} from "../utils/location-scope";
+import {
 	createServiceBodySchema,
 	updateServiceBodySchema,
 } from "../validators/service.validator";
@@ -37,21 +42,35 @@ export const createService: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		// Null = offered at every branch. Only an explicit locationId narrows it.
+		const locationId = await resolveCatalogLocation(req);
+
 		const service = await Service.create({
 			...parsedBody.data,
 			serviceType: ServiceType.Service,
+			locationId,
 		});
 		res.status(201).json({ message: "Service created", service });
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };
 
-export const getAllServices: RequestHandler = async (_req, res, next) => {
+export const getAllServices: RequestHandler = async (req, res, next) => {
 	try {
-		const services = await Service.find({ serviceType: ServiceType.Service });
+		const services = await Service.find({
+			serviceType: ServiceType.Service,
+			// includeNull keeps company-wide services visible under a branch filter.
+			...scopedLocationFilter(req, { includeNull: true }),
+		});
 		res.status(200).json({ services });
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };

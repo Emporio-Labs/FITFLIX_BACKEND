@@ -1,5 +1,9 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import {
+	respondToLocationError,
+	resolveWriteLocation,
+} from "../utils/location-scope";
 import ConsentForm from "../models/ConsentForm";
 import UnifiedBooking from "../models/UnifiedBooking";
 import {
@@ -186,6 +190,9 @@ export const createUser: RequestHandler = async (req, res, next) => {
 
 		res.status(201).json({ message: "User created", user });
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		console.error("[POST /users] Error creating user:", error);
 		next(error);
 	}

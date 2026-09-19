@@ -130,6 +130,12 @@ const scheduledSessionSchema = new mongoose.Schema(
 			ref: "User",
 			default: null,
 		},
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
@@ -144,7 +150,13 @@ scheduledSessionSchema.index({ roomStatus: 1, hostLiveAt: 1 });
 
 // Query & sync acceleration indexes: avoids full collection scans on class schedule listings & upserts
 scheduledSessionSchema.index({ classId: 1, sessionDate: 1 });
-scheduledSessionSchema.index({ status: 1, isPublished: 1, sessionDate: 1, startTime: 1 });
+scheduledSessionSchema.index({
+	locationId: 1,
+	status: 1,
+	isPublished: 1,
+	sessionDate: 1,
+	startTime: 1,
+});
 scheduledSessionSchema.index({ sessionDate: 1, startTime: 1 });
 
 type ScheduledSessionDocument = mongoose.InferSchemaType<

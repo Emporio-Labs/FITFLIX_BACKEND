@@ -178,6 +178,12 @@ export const createPersonalTrainingBooking = async (params: {
 						sourceId: trainerObjId,
 						actorRole: "user",
 						reason: `Consumed 1 PT Session with ${trainer.trainerName} on ${params.startTime}`,
+						locationId:
+							(
+								activeMembership as {
+									locationId?: mongoose.Types.ObjectId | null;
+								}
+							).locationId ?? null,
 					},
 				],
 				{ session },
@@ -303,6 +309,12 @@ export const cancelUnifiedBooking = async (params: {
 						reason: isAdminOverride
 							? `Admin override refund for cancelled PT booking ${booking._id.toString()}`
 							: `24-hour early cancellation refund for PT booking ${booking._id.toString()}`,
+						locationId:
+							(
+								booking as {
+									locationId?: mongoose.Types.ObjectId | null;
+								}
+							).locationId ?? null,
 					},
 				],
 				{ session },
@@ -396,12 +408,21 @@ export const createTrainerChangeRequest = async (params: {
 		return existingPending;
 	}
 
+	// Which branch handles this request: the requested trainer's branch, since
+	// that's who has to accept the reassignment.
+	const requestedTrainerDoc = await Trainer.findById(reqTrainerObjId).select(
+		"locationId",
+	);
+
 	const request = await TrainerChangeRequest.create({
 		userId: userObjId,
 		currentTrainerId,
 		requestedTrainerId: reqTrainerObjId,
 		reason: params.reason,
 		status: TrainerChangeRequestStatus.PENDING,
+		locationId:
+			((requestedTrainerDoc as { locationId?: mongoose.Types.ObjectId | null })
+				?.locationId ?? null) as mongoose.Types.ObjectId | null,
 	});
 
 	return request;

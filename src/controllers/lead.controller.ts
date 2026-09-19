@@ -1,5 +1,11 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import { resolveLocationId } from "../utils/location.resolver";
+import {
+	respondToLocationError,
+	resolveWriteLocation,
+	scopedLocationFilter,
+} from "../utils/location-scope";
 import { type Gender, LeadStatus, MembershipStatus } from "../models/Enums";
 import Lead from "../models/Lead";
 import User from "../models/User";
@@ -72,6 +78,10 @@ export const createLead: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		// A lead walks into a specific branch. Resolved rather than required, so
+		// a single-branch deployment never has to send one.
+		const locationId = await resolveWriteLocation(req);
+
 		const lead = await Lead.create({
 			...leadData,
 			status: leadData.status as
@@ -79,10 +89,14 @@ export const createLead: RequestHandler = async (req, res, next) => {
 				| undefined,
 			...(followUpDateValue ? { followUpDate: followUpDateValue } : {}),
 			...(ownerId ? { owner: ownerId } : {}),
+			locationId,
 		});
 
 		res.status(201).json({ message: "Lead created", lead });
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };
@@ -238,9 +252,22 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 		submittedAt: new Date(),
 	};
 
+	// Public capture: never 400 on branch ambiguity. A marketing form has no
+	// admin session and may not know the branch, so an unresolvable location
+	// stays null and the backfill/sales team attributes it later.
+	let publicLocationId: mongoose.Types.ObjectId | null = null;
+	try {
+		publicLocationId = await resolveLocationId(
+			typeof req.body?.locationId === "string" ? req.body.locationId : null,
+		);
+	} catch {
+		publicLocationId = null;
+	}
+
 	try {
 		const lead = await Lead.create({
 			leadName: resolvedLeadName,
+			locationId: publicLocationId,
 			...(resolvedEmail ? { email: resolvedEmail } : {}),
 			...(resolvedPhone ? { phone: resolvedPhone } : {}),
 			source: normalizedSource,
@@ -275,7 +302,11 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 export const getAllLeads: RequestHandler = async (req, res, next) => {
 	try {
 		const { source, status, tags } = req.query;
-		const filter: Record<string, unknown> = {};
+		const filter: Record<string, unknown> = {
+			// Branch admins see only their own branches; omitting locationId as a
+			// global admin still means "all branches".
+			...scopedLocationFilter(req, { includeNull: true }),
+		};
 
 		if (typeof source === "string" && source) {
 			filter.source = source;
@@ -298,6 +329,9 @@ export const getAllLeads: RequestHandler = async (req, res, next) => {
 		);
 		res.status(200).json({ leads });
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };
@@ -534,6 +568,10 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 				gender: gender as Gender,
 				healthGoals,
 				passwordHash,
+				// Home branch = the branch the lead was captured at.
+				homeLocationId:
+					(lead as { locationId?: mongoose.Types.ObjectId | null })
+						.locationId ?? null,
 			});
 
 			targetUserId = createdUser._id;
@@ -544,7 +582,8 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			};
 		}
 
-		// Transactional Membership Allocation: Instantly create and save a new Membership document
+		// Complimentary membership inherits the lead's branch — the same one the
+		// just-created user now carries as their home branch (FX-01.2).
 		await Membership.create({
 			user: targetUserId,
 			planName: "Standard Protocol Membership",
@@ -553,7 +592,10 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			status: MembershipStatus.Active,
 			price: 0,
 			startDate: new Date(),
-			endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30-day default limits
+			endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+			locationId:
+				(lead as { locationId?: mongoose.Types.ObjectId | null })
+					.locationId ?? null,
 		});
 
 		// Audit Trail Update

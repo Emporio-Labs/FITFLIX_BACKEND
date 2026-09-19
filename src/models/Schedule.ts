@@ -14,9 +14,17 @@ const scheduleSchema = new mongoose.Schema(
 		todos: [
 			{ type: mongoose.Schema.Types.ObjectId, ref: "Todo", required: true },
 		],
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+scheduleSchema.index({ locationId: 1 });
 
 export default (mongoose.models.Schedule as mongoose.Model<any>) ||
 	mongoose.model("Schedule", scheduleSchema);

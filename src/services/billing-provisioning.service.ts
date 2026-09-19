@@ -18,6 +18,7 @@ import MembershipPlan from "../models/MembershipPlan";
 import WebhookEvent from "../models/WebhookEvent";
 import User from "../models/User";
 import { generateInvoiceNumber } from "../utils/invoice-number";
+import { resolveMemberHomeLocation } from "../utils/location-scope";
 import { buildActiveMembershipFilterWith } from "../utils/membership-status.util";
 import {
 	computeNewEndDate,
@@ -197,11 +198,15 @@ export const verifyAndProvisionPayment = async (params: {
 		const taxAmount = Math.round(basePrice * ((plan.taxRatePercent || 18) / 100));
 		const grandTotal = basePrice + taxAmount;
 
+		// FX-01.2: an invoice belongs to the member home branch, not the plan.
+		const memberHomeLocation = await resolveMemberHomeLocation(userObjId);
+
 		const invoice = await Invoice.create(
 			[
 				{
 					invoiceNumber,
 					userId: userObjId,
+					locationId: memberHomeLocation,
 					items: [
 						{
 							name: plan.name,
@@ -288,6 +293,7 @@ export const verifyAndProvisionPayment = async (params: {
 						endDate,
 						features: plan.features || [],
 						assignedTrainerId: inheritedTrainerId,
+						locationId: memberHomeLocation,
 					},
 				],
 				{ session },
@@ -308,6 +314,12 @@ export const verifyAndProvisionPayment = async (params: {
 						sourceId: invoice[0]._id,
 						actorRole: "system",
 						reason: `Provisioned ${ptQuota} PT Sessions via Invoice ${invoiceNumber}`,
+						locationId:
+							(
+								membership as {
+									locationId?: mongoose.Types.ObjectId | null;
+								}
+							).locationId ?? memberHomeLocation,
 					},
 				],
 				{ session },
@@ -367,11 +379,15 @@ export const purchasePlanWithCredits = async (params: {
 		// bought on the 28th expired in three days.
 		const endDate = computeNewEndDate(plan, now);
 
+		// FX-01.2: invoice and membership below both take the member's branch.
+		const memberHomeLocation = await resolveMemberHomeLocation(userObjId);
+
 		const invoice = await Invoice.create(
 			[
 				{
 					userId: userObjId,
 					invoiceNumber,
+					locationId: memberHomeLocation,
 					items: [
 						{
 							itemType: "MEMBERSHIP",
@@ -441,6 +457,7 @@ export const purchasePlanWithCredits = async (params: {
 						endDate,
 						features: plan.features || [],
 						assignedTrainerId: inheritedTrainerId,
+						locationId: memberHomeLocation,
 					},
 				],
 				{ session },
@@ -449,6 +466,9 @@ export const purchasePlanWithCredits = async (params: {
 		}
 
 		// 4. Log transactions
+		// Each ledger row attributes to the source membership branch. On a
+		// multi-club member the two rows may diverge — a spend at one club
+		// funds a grant at another — and the ledger records that faithfully.
 		await CreditTransaction.create(
 			[
 				{
@@ -460,6 +480,12 @@ export const purchasePlanWithCredits = async (params: {
 					sourceId: invoice[0]._id,
 					actorRole: "member",
 					reason: `Exchanged ${requiredCredits} credits for ${plan.name}`,
+					locationId:
+						(
+							generalMembership as {
+								locationId?: mongoose.Types.ObjectId | null;
+							}
+						).locationId ?? memberHomeLocation,
 				},
 				{
 					user: userObjId,
@@ -470,6 +496,12 @@ export const purchasePlanWithCredits = async (params: {
 					sourceId: invoice[0]._id,
 					actorRole: "system",
 					reason: `Provisioned ${ptQuota} PT Sessions via Credit Exchange`,
+					locationId:
+						(
+							ptMembership as {
+								locationId?: mongoose.Types.ObjectId | null;
+							}
+						).locationId ?? memberHomeLocation,
 				},
 			],
 			{ session },

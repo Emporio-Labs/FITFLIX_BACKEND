@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import WorkoutPlan from "../models/WorkoutPlan";
+import Trainer from "../models/Trainer";
 import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import { initializeSchedule } from "../utils/workoutProgression";
 import { syncActiveSessionFromAssignment } from "./liveSessionSync.service";
@@ -111,6 +112,19 @@ export async function createAssignmentForUser(
 		{ $set: { status: "abandoned" } },
 	);
 
+	// Attribution: when a trainer assigns, use their branch. Admin / user
+	// self-assign has no reliable branch signal here — stays null.
+	let assignmentLocationId: mongoose.Types.ObjectId | null = null;
+	if (args.assignedByModel === "Trainer") {
+		const trainerDoc = await Trainer.findById(args.assignedBy).select(
+			"locationId",
+		);
+		const raw = (trainerDoc as {
+			locationId?: mongoose.Types.ObjectId | null;
+		} | null)?.locationId;
+		assignmentLocationId = raw ?? null;
+	}
+
 	const assignment = await WorkoutPlanAssignment.create({
 		userId: userObjId,
 		planId: planObjId,
@@ -121,6 +135,7 @@ export async function createAssignmentForUser(
 		status: "active",
 		dayProgress,
 		userDays,
+		locationId: assignmentLocationId,
 	});
 
 	await syncActiveSessionFromAssignment(

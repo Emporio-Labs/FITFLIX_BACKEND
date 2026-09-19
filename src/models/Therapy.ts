@@ -13,9 +13,17 @@ const therapySchema = new mongoose.Schema(
 				required: true,
 			},
 		],
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+therapySchema.index({ locationId: 1 });
 
 export default (mongoose.models.Therapy as mongoose.Model<any>) ||
 	mongoose.model("Therapy", therapySchema);

@@ -99,9 +99,17 @@ const nutritionistBookingSchema = new mongoose.Schema(
 			type: Date,
 			default: null,
 		},
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+nutritionistBookingSchema.index({ locationId: 1, bookingDate: 1 });
 
 nutritionistBookingSchema.index({ userId: 1, status: 1 });
 nutritionistBookingSchema.index({ bookingDate: 1, status: 1 });

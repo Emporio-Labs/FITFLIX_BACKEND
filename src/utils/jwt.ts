@@ -134,6 +134,10 @@ export const signAdminToken = (
 		email: user.email,
 		role: user.role,
 		scope: "admin",
+		// Branch scope travels on the token so every handler can enforce it
+		// without a second Admin lookup per request.
+		locationIds: user.locationIds ?? [],
+		isGlobal: user.isGlobal === true,
 	};
 	return jwt.sign(
 		payload,
@@ -223,9 +227,11 @@ export const verifyAuthToken = (
 		return null;
 	}
 
-	const { sub, email, role } = payload as JwtPayload & {
+	const { sub, email, role, locationIds, isGlobal } = payload as JwtPayload & {
 		email?: unknown;
 		role?: unknown;
+		locationIds?: unknown;
+		isGlobal?: unknown;
 	};
 
 	if (typeof sub !== "string" || typeof email !== "string") {
@@ -236,10 +242,16 @@ export const verifyAuthToken = (
 		return null;
 	}
 
+	const scopedLocationIds = Array.isArray(locationIds)
+		? locationIds.filter((id): id is string => typeof id === "string")
+		: undefined;
+
 	return {
 		id: sub,
 		email,
 		role,
+		...(scopedLocationIds ? { locationIds: scopedLocationIds } : {}),
+		...(typeof isGlobal === "boolean" ? { isGlobal } : {}),
 	};
 };
 

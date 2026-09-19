@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import BcaMetric from "../models/BcaMetric";
+import User from "../models/User";
 import { OnboardingStep } from "../models/Enums";
 import { updateSharedOnboardingStep } from "./onboarding.service";
 
@@ -207,9 +208,17 @@ export const upsertBcaRecordForUser = async (
 ) => {
 	const payload = mapActiveXRecordToBcaMetric(record, userId, receivedAt);
 
+	// The scan happens on the ActiveX machine at the member's home club. If a
+	// member ever tests at a different branch we can override this at ingest
+	// time, but there's no signal for that in the raw record today.
+	const member = await User.findById(userId).select("homeLocationId");
+	const scanLocationId =
+		(member as { homeLocationId?: mongoose.Types.ObjectId | null })
+			?.homeLocationId ?? null;
+
 	await BcaMetric.updateOne(
 		{ userId, recordedAt: payload.recordedAt },
-		{ $set: payload },
+		{ $set: { ...payload, locationId: scanLocationId } },
 		{ upsert: true },
 	);
 

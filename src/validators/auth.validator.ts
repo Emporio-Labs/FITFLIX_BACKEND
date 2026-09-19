@@ -63,6 +63,13 @@ const strongPassword = z
 	.regex(/[A-Za-z]/, "Password must include at least one letter")
 	.regex(/\d/, "Password must include at least one number");
 
+const locationId = z
+	.string()
+	.trim()
+	.refine((v) => /^[0-9a-fA-F]{24}$/.test(v), "Expected an object id")
+	.nullable()
+	.optional();
+
 export const signupBodySchema = z.object({
 	username: z.string().trim().min(1),
 	phone: z.string().trim().min(1),
@@ -70,6 +77,7 @@ export const signupBodySchema = z.object({
 	age: signupAgeSchema,
 	gender: signupGenderSchema,
 	password: strongPassword,
+	locationId,
 });
 
 export const loginBodySchema = z.object({
@@ -95,6 +103,7 @@ export const phoneRegisterBodySchema = z.object({
 	// because a client that says nothing has not obtained consent. The
 	// controller additionally discards a `true` from anyone under 18.
 	marketingConsent: z.boolean().optional().default(false),
+	locationId,
 });
 
 export type SignupBody = z.infer<typeof signupBodySchema>;

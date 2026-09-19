@@ -1,6 +1,8 @@
 import type { RequestHandler } from "express";
 import Lead from "../models/Lead";
+import mongoose from "mongoose";
 import User from "../models/User";
+import { resolveLocationId } from "../utils/location.resolver";
 import { Gender, LeadStatus, OnboardingStep } from "../models/Enums";
 import { MINOR_AGE_THRESHOLD } from "../utils/activity-consent";
 import type { AuthenticatedUser } from "../types/auth";
@@ -197,7 +199,14 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 	}
 
 	const { firebaseUid, phoneNumber } = identity;
-	const { name, goal, age, gender, marketingConsent } = parsed.data;
+	const {
+		name,
+		goal,
+		age,
+		gender,
+		marketingConsent,
+		locationId: bodyLocationId,
+	} = parsed.data as typeof parsed.data & { locationId?: string | null };
 	const last10 = phoneNumber.replace(/\D/g, "").slice(-10);
 
 	// A minor cannot consent to behavioural profiling and nobody can consent on
@@ -206,6 +215,18 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 	// actually binds, since the endpoint is reachable without the app.
 	const consentGranted =
 		marketingConsent === true && age >= MINOR_AGE_THRESHOLD;
+
+	// FX-01.3: OTP signup gets a home branch too. Best-effort; a client with
+	// no hint on a multi-branch deployment stays null and gets backfilled.
+	let homeLocationId: mongoose.Types.ObjectId | null = null;
+	try {
+		homeLocationId = await resolveLocationId(bodyLocationId ?? null);
+	} catch (err) {
+		console.warn(
+			"[phone-auth.register] locationId unresolved; homeLocationId left null",
+			err instanceof Error ? err.message : err,
+		);
+	}
 
 	try {
 		// Idempotency: if the account already exists, return its login response
@@ -237,6 +258,7 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 				age,
 				gender: gender as Gender,
 				goal,
+				homeLocationId,
 				privacyConsent: {
 					behaviouralTracking: consentGranted,
 					marketingContact: consentGranted,
@@ -281,6 +303,7 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 						source: "app-signup",
 						status: LeadStatus.New,
 						convertedUser: createdUser._id,
+						locationId: homeLocationId,
 					},
 					$addToSet: { tags: { $each: ["signup", "app-signup"] } },
 				},

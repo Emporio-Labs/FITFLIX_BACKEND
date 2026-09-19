@@ -25,9 +25,17 @@ const membershipPlanSchema = new mongoose.Schema(
 		// durationMonths permanently unreachable.
 		durationDays: { type: Number, default: null },
 		benefits: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+membershipPlanSchema.index({ locationId: 1, active: 1 });
 
 membershipPlanSchema.index({ name: 1 });
 

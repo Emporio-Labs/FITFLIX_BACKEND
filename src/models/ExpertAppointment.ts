@@ -68,9 +68,17 @@ const expertAppointmentSchema = new mongoose.Schema(
 		rejectedAt: { type: Date, default: null },
 		rejectionReason: { type: String, default: null },
 		notes: { type: String, default: null },
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+expertAppointmentSchema.index({ locationId: 1, appointmentDate: 1, bookingStatus: 1 });
 
 expertAppointmentSchema.index({ userId: 1, expertType: 1, bookingStatus: 1 });
 expertAppointmentSchema.index({ appointmentDate: 1, bookingStatus: 1 });

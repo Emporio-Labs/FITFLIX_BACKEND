@@ -36,9 +36,17 @@ const nutritionTemplateSchema = new mongoose.Schema(
 			type: [lifestyleRecommendationSchema],
 			default: [],
 		},
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+nutritionTemplateSchema.index({ locationId: 1, status: 1 });
 
 nutritionTemplateSchema.index({ createdBy: 1, status: 1 });
 nutritionTemplateSchema.index({ goal: 1, status: 1 });

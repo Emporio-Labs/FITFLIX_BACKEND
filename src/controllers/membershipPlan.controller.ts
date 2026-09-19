@@ -2,6 +2,11 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import MembershipPlan from "../models/MembershipPlan";
 import {
+	respondToLocationError,
+	resolveCatalogLocation,
+	scopedLocationFilter,
+} from "../utils/location-scope";
+import {
 	createMembershipPlanSchema,
 	updateMembershipPlanSchema,
 } from "../validators/membershipPlan.validator";
@@ -42,11 +47,19 @@ export const createMembershipPlan: RequestHandler = async (req, res, _next) => {
 			requestId,
 			body: { name: parsed.data.name, gymId: parsed.data.gymId },
 		});
-		const plan = await MembershipPlan.create(parsed.data);
+		// Null = sold at every branch. `gymId` is a legacy free-text field and is
+		// left exactly as the caller sent it.
+		const locationId = await resolveCatalogLocation(req);
+
+		const plan = await MembershipPlan.create({ ...parsed.data, locationId });
 		res
 			.status(201)
 			.json({ message: "Membership plan created", plan, requestId });
 	} catch (error: unknown) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
+
 		const err = error as any;
 		if (err.name === "MongoServerError" && err.code === 11000) {
 			console.warn("createMembershipPlan duplicate key", {
@@ -74,15 +87,16 @@ export const createMembershipPlan: RequestHandler = async (req, res, _next) => {
 	}
 };
 
-export const getAllMembershipPlans: RequestHandler = async (
-	_req,
-	res,
-	next,
-) => {
+export const getAllMembershipPlans: RequestHandler = async (req, res, next) => {
 	try {
-		const plans = await MembershipPlan.find();
+		const plans = await MembershipPlan.find(
+			scopedLocationFilter(req, { includeNull: true }),
+		);
 		res.status(200).json({ plans });
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };

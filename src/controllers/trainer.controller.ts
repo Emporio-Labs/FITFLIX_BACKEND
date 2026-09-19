@@ -1,4 +1,8 @@
 import type { RequestHandler } from "express";
+import {
+	respondToLocationError,
+	resolveWriteLocation,
+} from "../utils/location-scope";
 import mongoose from "mongoose";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
@@ -65,12 +69,17 @@ export const createTrainer: RequestHandler = async (req, res, next) => {
 		}
 
 		const passwordHash = await hashPassword(password);
+		const locationId = await resolveWriteLocation(req);
 		const trainer = await Trainer.create({
 			...rest,
 			passwordHash,
+			locationId,
 		});
 		res.status(201).json({ message: "Trainer created", trainer });
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };

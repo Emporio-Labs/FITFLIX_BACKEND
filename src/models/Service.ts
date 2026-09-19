@@ -28,9 +28,17 @@ const serviceSchema = new mongoose.Schema(
 				required: true,
 			},
 		],
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );
+
+serviceSchema.index({ locationId: 1, serviceType: 1 });
 
 type ServiceDocument = mongoose.InferSchemaType<typeof serviceSchema>;
 

@@ -39,9 +39,17 @@ const bcaMetricSchema = new mongoose.Schema(
 		idealBodyWeight_kg: { type: Number, default: null },
 		weightToLose_kg: { type: Number, default: null },
 		source: { type: String, default: "activex" },
+		// Branch this record belongs to. Null = company-wide / online.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
 	},
 	{ timestamps: true, collection: "bca_metrics" },
 );
+
+bcaMetricSchema.index({ locationId: 1, recordedAt: -1 });
 
 // One scan per user per timestamp; sync upserts on this key so re-syncing is idempotent.
 bcaMetricSchema.index({ userId: 1, recordedAt: -1 }, { unique: true });

@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Location from "../models/Location";
 import User from "../models/User";
+import type { AuthenticatedUser } from "../types/auth";
 import { IST_TIMEZONE, normalizeTimeZone } from "./timezone.util";
 
 /**
@@ -122,6 +123,119 @@ export const buildLocationFilter = (
 	}
 
 	return { [field]: new mongoose.Types.ObjectId(explicitId) };
+};
+
+/**
+ * Admin branch scope.
+ *
+ * `isGlobal` is HQ — no confinement. Otherwise the admin is confined to the
+ * branches on their token. A token with neither claim is a member token or a
+ * pre-migration admin token: those are treated as unscoped so the change is
+ * non-breaking until admins are actually assigned branches.
+ */
+export const getAdminLocationScope = (
+	user: Pick<AuthenticatedUser, "locationIds" | "isGlobal"> | undefined,
+): mongoose.Types.ObjectId[] | null => {
+	if (!user || user.isGlobal === true) {
+		return null;
+	}
+
+	const ids = user.locationIds;
+	if (!Array.isArray(ids)) {
+		return null;
+	}
+
+	return ids
+		.filter((id) => mongoose.Types.ObjectId.isValid(id))
+		.map((id) => new mongoose.Types.ObjectId(id));
+};
+
+/**
+ * Write-side guard. Throws when a branch-scoped admin tries to touch a branch
+ * they don't manage. A global admin, or an unscoped token, is a no-op.
+ */
+export const assertAdminCanAccessLocation = (
+	user: Pick<AuthenticatedUser, "locationIds" | "isGlobal"> | undefined,
+	locationId: string | mongoose.Types.ObjectId | null | undefined,
+): void => {
+	const scope = getAdminLocationScope(user);
+	if (scope === null) {
+		return;
+	}
+
+	// Fail closed: an admin with an empty branch list manages nothing.
+	if (scope.length === 0) {
+		throw new LocationError(
+			"LOCATION_REQUIRED",
+			"Your account is not assigned to any branch",
+		);
+	}
+
+	// A null locationId is company-wide data, which a branch admin may not write.
+	if (!locationId) {
+		throw new LocationError(
+			"LOCATION_REQUIRED",
+			"locationId is required — your account is limited to specific branches",
+		);
+	}
+
+	const target = String(locationId);
+	if (!scope.some((id) => id.toString() === target)) {
+		throw new LocationError(
+			"LOCATION_REQUIRED",
+			"That branch is outside your account's scope",
+		);
+	}
+};
+
+/**
+ * Read-side counterpart to [assertAdminCanAccessLocation]. Intersects the
+ * caller's requested branch with the branches they manage, so a branch admin
+ * listing without a `locationId` query param still sees only their own.
+ *
+ * `includeNull` is for catalog collections where `locationId: null` means
+ * "available at every branch" — those rows ride along with a branch filter.
+ */
+export const buildScopedLocationFilter = (
+	user: Pick<AuthenticatedUser, "locationIds" | "isGlobal"> | undefined,
+	explicitId?: string | null,
+	options: { includeNull?: boolean; field?: string } = {},
+): Record<string, unknown> => {
+	const { includeNull = false, field = "locationId" } = options;
+	const scope = getAdminLocationScope(user);
+
+	if (explicitId && !mongoose.Types.ObjectId.isValid(explicitId)) {
+		throw new LocationError(
+			"INVALID_LOCATION_ID",
+			`"${explicitId}" is not a valid location id`,
+		);
+	}
+
+	let ids: mongoose.Types.ObjectId[] | null = null;
+
+	if (explicitId) {
+		const requested = new mongoose.Types.ObjectId(explicitId);
+		if (scope !== null && !scope.some((id) => id.equals(requested))) {
+			throw new LocationError(
+				"LOCATION_REQUIRED",
+				"That branch is outside your account's scope",
+			);
+		}
+		ids = [requested];
+	} else if (scope !== null) {
+		ids = scope;
+	}
+
+	if (ids === null) {
+		return {};
+	}
+
+	const values: (mongoose.Types.ObjectId | null)[] = [...ids];
+	if (includeNull) {
+		values.push(null);
+	}
+
+	return { [field]: { $in: values } };
 };
 
 /** Full location document, for settings-driven behaviour (tax, windows, caps). */

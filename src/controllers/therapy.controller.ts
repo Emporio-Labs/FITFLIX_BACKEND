@@ -2,6 +2,11 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Service, { ServiceType } from "../models/Service";
 import {
+	respondToLocationError,
+	resolveCatalogLocation,
+	scopedLocationFilter,
+} from "../utils/location-scope";
+import {
 	createTherapyBodySchema,
 	updateTherapyBodySchema,
 } from "../validators/therapy.validator";
@@ -73,6 +78,9 @@ export const createTherapy: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		// Null = offered at every branch. Only an explicit locationId narrows it.
+		const locationId = await resolveCatalogLocation(req);
+
 		const therapy = await Service.create({
 			serviceType: ServiceType.Therapy,
 			serviceName: parsedBody.data.therapyName,
@@ -81,6 +89,7 @@ export const createTherapy: RequestHandler = async (req, res, next) => {
 			description: parsedBody.data.description,
 			tags: parsedBody.data.tags,
 			slots: parsedBody.data.slots,
+			locationId,
 		});
 
 		res.status(201).json({
@@ -88,29 +97,44 @@ export const createTherapy: RequestHandler = async (req, res, next) => {
 			therapy: toTherapyResponse(therapy),
 		});
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };
 
-export const getAllTherapies: RequestHandler = async (_req, res, next) => {
-	try {
-		const therapies = await Service.find({ serviceType: ServiceType.Therapy });
-		res.status(200).json({ therapies: therapies.map(toTherapyResponse) });
-	} catch (error) {
-		next(error);
-	}
-};
-
-export const getPublicTherapies: RequestHandler = async (_req, res, next) => {
+export const getAllTherapies: RequestHandler = async (req, res, next) => {
 	try {
 		const therapies = await Service.find({
 			serviceType: ServiceType.Therapy,
+			...scopedLocationFilter(req, { includeNull: true }),
+		});
+		res.status(200).json({ therapies: therapies.map(toTherapyResponse) });
+	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
+		next(error);
+	}
+};
+
+export const getPublicTherapies: RequestHandler = async (req, res, next) => {
+	try {
+		// Public browse: an unauthenticated caller has no scope, so this is a
+		// plain branch filter when the storefront asks for one.
+		const therapies = await Service.find({
+			serviceType: ServiceType.Therapy,
+			...scopedLocationFilter(req, { includeNull: true }),
 		}).select("serviceName serviceTime description tags");
 
 		res.status(200).json({
 			therapies: therapies.map(toPublicTherapyResponse),
 		});
 	} catch (error) {
+		if (respondToLocationError(error, res)) {
+			return;
+		}
 		next(error);
 	}
 };

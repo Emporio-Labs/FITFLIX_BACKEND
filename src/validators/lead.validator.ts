@@ -5,6 +5,13 @@ import {
 	assessmentVersions,
 } from "../utils/health-score";
 
+const locationId = z
+	.string()
+	.trim()
+	.refine((v) => /^[0-9a-fA-F]{24}$/.test(v), "Expected an object id")
+	.nullable()
+	.optional();
+
 const leadStatusValues = Object.values(LeadStatus) as [string, ...string[]];
 const genderValues = Object.values(Gender).map(String);
 
@@ -128,6 +135,7 @@ export const createLeadBodySchema = z.object({
 	tags: z.array(z.string().trim().min(1)).default([]),
 	followUpDate: z.string().trim().min(1).optional(),
 	ownerId: z.string().trim().min(1).optional(),
+	locationId,
 	status: z.enum(leadStatusValues).optional(),
 });
 

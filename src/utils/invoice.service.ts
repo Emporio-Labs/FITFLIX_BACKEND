@@ -13,6 +13,7 @@ import type {
 	ListInvoicesQuery,
 } from "../validators/invoice.validator";
 import { generateInvoiceNumber } from "./invoice-number";
+import { resolveMemberHomeLocation } from "./location-scope";
 
 export const createInvoice = async (
 	data: CreateInvoiceBody,
@@ -26,8 +27,21 @@ export const createInvoice = async (
 	);
 	const total = Math.max(0, subtotal + data.tax - data.discount);
 
+	// FX-01.2: invoice belongs to the member home branch. When only a
+	// leadId is given (a pre-conversion invoice), fall back to the lead.
+	let invoiceLocationId: mongoose.Types.ObjectId | null = null;
+	if (data.userId) {
+		invoiceLocationId = await resolveMemberHomeLocation(data.userId);
+	} else if (data.leadId && mongoose.Types.ObjectId.isValid(data.leadId)) {
+		const lead = await Lead.findById(data.leadId).select("locationId").lean();
+		const raw = (lead as { locationId?: unknown } | null)?.locationId;
+		invoiceLocationId =
+			raw instanceof mongoose.Types.ObjectId ? raw : null;
+	}
+
 	const invoice = await Invoice.create({
 		invoiceNumber,
+		locationId: invoiceLocationId,
 		...(data.userId
 			? { userId: new mongoose.Types.ObjectId(data.userId) }
 			: {}),
@@ -189,6 +203,10 @@ export const transitionInvoiceStatus = async (
 		const endDate = new Date(now);
 		endDate.setDate(endDate.getDate() + snap.durationInDays);
 
+		// FX-01.2: activation membership belongs to the member home branch.
+		const membershipLocationId =
+			await resolveMemberHomeLocation(membershipUserId);
+
 		const [membership] = await Membership.create(
 			[
 				{
@@ -201,6 +219,7 @@ export const transitionInvoiceStatus = async (
 					currency: "INR",
 					startDate,
 					endDate,
+					locationId: membershipLocationId,
 				},
 			],
 			{ session },

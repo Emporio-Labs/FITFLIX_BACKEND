@@ -143,6 +143,13 @@ const optionalStaffRole = z.preprocess(
 	z.enum(STAFF_ROLE_VALUES).nullable().optional(),
 );
 
+const locationId = z
+	.string()
+	.trim()
+	.refine((v) => /^[0-9a-fA-F]{24}$/.test(v), "Expected an object id")
+	.nullable()
+	.optional();
+
 export const createUserBodySchema = z.object({
 	username: requiredString,
 	phone: requiredString,
@@ -155,6 +162,7 @@ export const createUserBodySchema = z.object({
 	address: optionalString,
 	onboarded: z.boolean().optional().default(false),
 	staffRole: optionalStaffRole,
+	locationId,
 });
 
 export const updateUserBodySchema = z
