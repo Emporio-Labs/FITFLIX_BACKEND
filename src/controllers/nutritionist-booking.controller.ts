@@ -1,3 +1,5 @@
+import MedicalReport from "../models/MedicalReport";
+import { getNutritionistClientIds, assertNutritionistOwnsMember } from "../services/nutritionistRoster.service";
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import {
@@ -960,6 +962,92 @@ export const cancelMyBooking: RequestHandler = async (req, res, next) => {
 			booking: serializeNutritionistBooking(booking),
 		});
 	} catch (error) {
+		next(error);
+	}
+};
+
+const getIdParam = (idParam: string | string[] | undefined): string | null => {
+	if (
+		typeof idParam !== "string" ||
+		!mongoose.Types.ObjectId.isValid(idParam)
+	) {
+		return null;
+	}
+	return idParam;
+};
+
+// ── GET /nutritionist/me/members (AC FX-06 / FX-07) ───────────────────────────
+export const getMyNutritionistClients: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	try {
+		const clientIds = await getNutritionistClientIds(requester.id);
+		const members = await User.find({ _id: { $in: clientIds } })
+			.select("username phone email age gender onboarded healthGoals")
+			.sort({ username: 1 })
+			.lean();
+
+		const reports = await MedicalReport.find({ userId: { $in: clientIds } })
+			.select("_id userId reportName reportType uploadedAt createdAt")
+			.lean();
+
+		const reportsByUser = new Map<string, any[]>();
+		for (const r of reports) {
+			const uid = r.userId?.toString();
+			if (!reportsByUser.has(uid)) reportsByUser.set(uid, []);
+			reportsByUser.get(uid)!.push(r);
+		}
+
+		const membersWithReports = members.map((m: any) => ({
+			...m,
+			reports: reportsByUser.get(m._id.toString()) || [],
+		}));
+
+		res.status(200).json({ members: membersWithReports });
+	} catch (error) {
+		next(error);
+	}
+};
+
+// ── GET /nutritionist/me/members/:userId ──────────────────────────────────────
+export const getMyNutritionistClientById: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	const userId = getIdParam(req.params.userId);
+	if (!userId) {
+		res.status(400).json({ message: "Invalid member id" });
+		return;
+	}
+
+	try {
+		if (requester.role === "nutritionist") {
+			await assertNutritionistOwnsMember(requester.id, userId);
+		}
+
+		const member = await User.findById(userId)
+			.select("username phone email age gender onboarded healthGoals")
+			.lean();
+
+		if (!member) {
+			res.status(404).json({ message: "Member not found" });
+			return;
+		}
+
+		const reports = await MedicalReport.find({ userId }).lean();
+		res.status(200).json({ member: { ...member, reports } });
+	} catch (error: any) {
+		if (error?.name === "NutritionistRosterError" || error?.code === "NOT_YOUR_MEMBER") {
+			res.status(403).json({ message: "This member is not assigned to you", code: "FORBIDDEN" });
+			return;
+		}
 		next(error);
 	}
 };
