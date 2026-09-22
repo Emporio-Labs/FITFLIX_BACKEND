@@ -1,6 +1,7 @@
 import type mongoose from "mongoose";
 import { ExpertType } from "../models/Enums";
 import Slot from "../models/Slots";
+import { defaultLocationId } from "../utils/location-stamp.plugin";
 
 /// Shared slot-reservation primitives.
 ///
@@ -28,6 +29,7 @@ export type ReservableSlot = {
 	capacity?: number;
 	parentTemplate?: mongoose.Types.ObjectId | null;
 	expertType?: string | null;
+	locationId?: mongoose.Types.ObjectId | null;
 };
 
 /// Resolve the concrete, per-date slot document that a booking on [bookingDate]
@@ -84,6 +86,9 @@ export const resolveConcreteSlotForBooking = async (
 					// that are already consumed) and visible in the nutritionist
 					// list at the wrong expert's time window.
 					expertType: slot.expertType ?? ExpertType.Nutritionist,
+					// An upsert skips locationStampPlugin, so stamp the branch
+					// here: the template's, else the default (FX-01).
+					locationId: slot.locationId ?? (await defaultLocationId()),
 				},
 			},
 			{
