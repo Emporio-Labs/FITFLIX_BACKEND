@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { locationStampPlugin } from "../utils/location-stamp.plugin";
 import { applyIdTransform } from "../utils/mongoose-serialization";
 import {
 	CommunityRole,
@@ -169,6 +170,11 @@ userSchema.index({ username: 1 });
 applyIdTransform(userSchema);
 
 type UserDocument = mongoose.InferSchemaType<typeof userSchema>;
+
+userSchema.plugin(locationStampPlugin, {
+	model: "User",
+	field: "homeLocationId",
+});
 
 export default (mongoose.models.User as mongoose.Model<UserDocument>) ||
 	mongoose.model<UserDocument>("User", userSchema);

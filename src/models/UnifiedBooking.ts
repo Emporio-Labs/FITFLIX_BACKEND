@@ -1,4 +1,9 @@
 import mongoose from "mongoose";
+import {
+	branchOf,
+	homeBranchOf,
+	locationStampPlugin,
+} from "../utils/location-stamp.plugin";
 import { applyIdTransform } from "../utils/mongoose-serialization";
 import {
 	AppointmentMode,
@@ -235,6 +240,15 @@ applyIdTransform(unifiedBookingSchema);
 type UnifiedBookingDocument = mongoose.InferSchemaType<
 	typeof unifiedBookingSchema
 >;
+
+unifiedBookingSchema.plugin(locationStampPlugin, {
+	model: "UnifiedBooking",
+	// A booking takes the branch of the slot it books (FX-01.2); bookings
+	// without a slot fall back to the member's home branch.
+	derive: async (doc) =>
+		(await branchOf("Slot", doc.get("slotId"))) ??
+		(await homeBranchOf(doc.get("userId"))),
+});
 
 export default (mongoose.models
 	.UnifiedBooking as mongoose.Model<UnifiedBookingDocument>) ||
