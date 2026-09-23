@@ -58,6 +58,8 @@
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts",
 		"migrate:plan-actor-refs": "bun run scripts/migrate-plan-actor-refs.ts",
 		"check:missing-branch": "bun run scripts/check-missing-branch.ts",
+		"backfill:branches": "bun run scripts/backfill-branches.ts",
+		"test:branch-backfill": "bun run tests/branch-backfill.test.ts",
 		"test:community": "bun run tests/community/community-foundation.test.ts",
 		"test:community-posts": "COMMUNITY_MAX_IMAGE_BYTES=10485760 bun run tests/community/posts-feed.test.ts",
 		"test:community-engagement": "bun run tests/community/engagement.test.ts",
