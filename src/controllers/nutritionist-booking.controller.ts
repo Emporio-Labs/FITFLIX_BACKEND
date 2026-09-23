@@ -6,12 +6,15 @@ import {
 	AppointmentMode,
 	ExpertType,
 	MeetingStatus,
+	NotificationChannel,
+	NotificationKind,
 	OnboardingStep,
 	UnifiedBookingStatus,
 } from "../models/Enums";
 import Slot from "../models/Slots";
 import UnifiedBooking from "../models/UnifiedBooking";
 import User from "../models/User";
+import { notify } from "../services/notification.service";
 import { pickExpertForSlot } from "../services/expert-schedule.service";
 import {
 	releaseSlotCapacity,
@@ -250,6 +253,31 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 			console.error(
 				"bookNutritionist: failed to advance onboarding status",
 				err,
+			);
+		}
+
+		// FX-25 · notify the assigned nutritionist that a new consultation is
+		// on their calendar. expertModel === "User" so we push directly.
+		if (booking.expertId && booking.expertModel === "User") {
+			const memberDoc = await User.findById(user.id)
+				.select("username")
+				.lean<{ username?: string } | null>();
+			const memberName = memberDoc?.username || "A member";
+			notify({
+				userId: String(booking.expertId),
+				kind: NotificationKind.AppointmentBooked,
+				title: "New consultation",
+				body: `${memberName} booked ${startTime}–${endTime}.`,
+				data: { bookingId: String(booking._id) },
+				channels: [
+					NotificationChannel.InApp,
+					NotificationChannel.Socket,
+					NotificationChannel.Push,
+				],
+				webPushUrl: `/admin/nutrition/my-clients?highlight=${user.id}`,
+				webPushPreference: "consultationEvents",
+			}).catch((err) =>
+				console.error("[nutritionist-booking] notify failed", err),
 			);
 		}
 
@@ -814,6 +842,26 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 			}
 		}
 
+		// FX-25 · alert the assigned nutritionist that this consultation moved.
+		if (booking.expertId && booking.expertModel === "User") {
+			notify({
+				userId: String(booking.expertId),
+				kind: NotificationKind.AppointmentRescheduled,
+				title: "Consultation rescheduled",
+				body: `Moved to ${booking.startTime} on ${new Date(booking.bookingDate).toDateString()}.`,
+				data: { bookingId: String(booking._id) },
+				channels: [
+					NotificationChannel.InApp,
+					NotificationChannel.Socket,
+					NotificationChannel.Push,
+				],
+				webPushUrl: `/admin/nutrition/my-clients?highlight=${booking.userId}`,
+				webPushPreference: "consultationEvents",
+			}).catch((err) =>
+				console.error("[nutritionist-booking] reschedule notify failed", err),
+			);
+		}
+
 		res.status(200).json({
 			message: "Booking rescheduled — awaiting admin acceptance",
 			booking: serializeNutritionistBooking(booking),
@@ -956,6 +1004,26 @@ export const cancelMyBooking: RequestHandler = async (req, res, next) => {
 		booking.cancelledBy = "user";
 		booking.cancellationReason = parsed.data.reason ?? null;
 		await booking.save();
+
+		// FX-25 · tell the assigned nutritionist their slot is free again.
+		if (booking.expertId && booking.expertModel === "User") {
+			notify({
+				userId: String(booking.expertId),
+				kind: NotificationKind.AppointmentCancelled,
+				title: "Consultation cancelled",
+				body: `Your ${booking.startTime} consultation was cancelled by the member.`,
+				data: { bookingId: String(booking._id) },
+				channels: [
+					NotificationChannel.InApp,
+					NotificationChannel.Socket,
+					NotificationChannel.Push,
+				],
+				webPushUrl: `/admin/nutrition/my-clients?highlight=${booking.userId}`,
+				webPushPreference: "consultationEvents",
+			}).catch((err) =>
+				console.error("[nutritionist-booking] cancel notify failed", err),
+			);
+		}
 
 		res.status(200).json({
 			message: "Nutritionist booking cancelled",

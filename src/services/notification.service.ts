@@ -9,6 +9,10 @@ import {
 	type NutritionistEvent,
 	type UserEvent,
 } from "./realtime.service";
+import {
+	sendWebPushToUser,
+	type PushEventPreferenceKey,
+} from "./webpush.service";
 
 export { NotificationChannel, NotificationKind };
 
@@ -19,6 +23,17 @@ export interface NotifyPayload {
 	body: string;
 	data?: Record<string, unknown>;
 	channels?: NotificationChannel[];
+	/**
+	 * FX-25 · staff PWA deep-link. When present, taps on the Web Push
+	 * notification navigate to this URL (`/admin/personal-training/today?highlight=<id>` etc).
+	 */
+	webPushUrl?: string;
+	/**
+	 * FX-25 · optional preference key that gates staff Web Push fan-out.
+	 * If the recipient has switched this event off, the browser push is skipped
+	 * (in-app + FCM + socket still fire per their own rules).
+	 */
+	webPushPreference?: PushEventPreferenceKey;
 }
 
 /** Send a notification through one or more channels. All failures are non-fatal. */
@@ -77,6 +92,25 @@ export async function notify(payload: NotifyPayload): Promise<void> {
 				...(createdId ? { notificationId: createdId } : {}),
 			},
 		}).catch((err) => console.error("[notify] FCM push failed", err));
+
+		// FX-25 · Web Push for the staff PWA. Same channel toggle; FCM handles
+		// the Flutter user app, Web Push handles browsers/PWAs. Preference key
+		// (if provided) lets a staff member opt out of a specific event type.
+		sendWebPushToUser(
+			payload.userId,
+			{
+				title: payload.title,
+				body: payload.body,
+				url: payload.webPushUrl,
+				tag: payload.kind,
+				data: {
+					...stringData,
+					kind: payload.kind,
+					...(createdId ? { notificationId: createdId } : {}),
+				},
+			},
+			payload.webPushPreference,
+		).catch((err) => console.error("[notify] Web Push failed", err));
 	}
 }
 

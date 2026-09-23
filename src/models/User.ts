@@ -107,6 +107,31 @@ const userSchema = new mongoose.Schema(
 			default: [],
 			select: false,
 		},
+		// FX-25 · Web Push (VAPID) subscriptions from the staff PWA. Same
+		// `select:false` guard as fcmTokens so ordinary user reads never leak
+		// device identifiers. Each entry is one browser/install; a single user
+		// may have several (phone Safari + desktop Chrome).
+		pushSubscriptions: {
+			type: [
+				{
+					endpoint: { type: String, required: true },
+					p256dh: { type: String, required: true },
+					auth: { type: String, required: true },
+					ua: { type: String, default: "" },
+					role: { type: String, default: "" },
+					preferences: {
+						oneOnOneEvents: { type: Boolean, default: true },
+						consultationEvents: { type: Boolean, default: true },
+						classReminder: { type: Boolean, default: true },
+					},
+					createdAt: { type: Date, default: Date.now },
+					lastSeenAt: { type: Date, default: Date.now },
+					lastNotifiedAt: { type: Date, default: null },
+				},
+			],
+			default: [],
+			select: false,
+		},
 		onboardingStatus: {
 			currentStep: {
 				type: String,
