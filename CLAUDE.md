@@ -24,6 +24,7 @@ bun run scripts/migrate-credits.ts   # Migrate credit data
 bun run scripts/migrate-onboarding.ts [--dry-run]  # Migrate onboarding status for existing users
 bun run scripts/seed-exercises.ts    # Seed exercise library
 bun run check:missing-branch [-- --since YYYY-MM-DD]  # Read-only: records with no branch (FX-01/02); exits 1 if any
+bun run backfill:branches [-- --apply]  # FX-02: fill empty branches on old records. Dry run unless --apply; runbook docs/runbooks/fx-02-branch-backfill.md
 npx tsc --noEmit                     # TypeScript type check (no emit)
 ```
 
@@ -401,7 +402,8 @@ It never blocks a save: with no branch or several active and none given, the
 record is saved without one and a `[location-stamp]` warning is logged.
 Upserts bypass document hooks, so `findOneAndUpdate(..., { upsert: true })`
 callers must `$setOnInsert` the branch themselves (use `defaultLocationId()`).
-Existing records are backfilled separately (FX-02).
+Existing records are backfilled by `scripts/backfill-branches.ts` with the same
+rules (`utils/branch-backfill.ts`, FX-02).
 
 ---
 
