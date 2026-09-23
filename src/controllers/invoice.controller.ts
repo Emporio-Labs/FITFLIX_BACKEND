@@ -16,6 +16,11 @@ import {
 	listInvoicesQuerySchema,
 	updateInvoiceStatusBodySchema,
 } from "../validators/invoice.validator";
+import {
+	LocationError,
+	mapLocationError,
+	resolveLocationId,
+} from "../utils/location.resolver";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -99,10 +104,30 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// Resolve the branch this invoice is issued at. With one active location
+	// the resolver supplies it automatically; with several the desk must be
+	// explicit — passing the header-selected locationId satisfies that.
+	const rawLocationId = parsed.data.locationId;
+	let resolvedLocationId: mongoose.Types.ObjectId | undefined;
+	try {
+		resolvedLocationId = await resolveLocationId(
+			typeof rawLocationId === "string" ? rawLocationId : undefined,
+		);
+	} catch (error) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+			return;
+		}
+		next(error);
+		return;
+	}
+
 	try {
 		const invoice = await createInvoice(
 			{ ...parsed.data, userId: resolvedUserId },
 			req.user?.id ?? "",
+			resolvedLocationId,
 		);
 		res.status(201).json({ message: "Invoice created", invoice });
 	} catch (error) {

@@ -10,6 +10,11 @@ import {
 	pauseMembership,
 	resumeMembership,
 } from "../services/membership-lifecycle.service";
+import {
+	LocationError,
+	mapLocationError,
+	resolveLocationId,
+} from "../utils/location.resolver";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -61,7 +66,7 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { userId, startDate, endDate, creditsIncluded, ...rest } =
+	const { userId, startDate, endDate, creditsIncluded, locationId: rawLocationId, ...rest } =
 		parsedBody.data;
 
 	if (!userId) {
@@ -92,6 +97,24 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// Resolve the branch this membership is issued at. With one active location
+	// the resolver supplies it automatically; with several the desk must be
+	// explicit — passing the header-selected locationId satisfies that.
+	let resolvedLocationId: mongoose.Types.ObjectId;
+	try {
+		resolvedLocationId = await resolveLocationId(
+			typeof rawLocationId === "string" ? rawLocationId : undefined,
+		);
+	} catch (error) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res.status(mapped.status).json({ message: mapped.message, code: mapped.code });
+			return;
+		}
+		next(error);
+		return;
+	}
+
 	try {
 		const membership = await Membership.create({
 			...rest,
@@ -101,6 +124,7 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 			creditsIncluded,
 			creditsRemaining: creditsIncluded,
 			user: userId,
+			locationId: resolvedLocationId,
 			startDate: startDateValue,
 			...(endDateValue ? { endDate: endDateValue } : {}),
 		});
