@@ -23,6 +23,7 @@ import {
 import {
 	TrainerLockedError,
 	cancelUnifiedBooking,
+	reschedulePersonalTrainingBooking,
 	completeUnifiedBooking,
 	createPersonalTrainingBooking,
 	createTrainerChangeRequest,
@@ -316,6 +317,43 @@ export const getBookingById: RequestHandler = async (req, res, next) => {
 		res.status(200).json({ booking });
 	} catch (error) {
 		next(error);
+	}
+};
+
+
+export const rescheduleBookingHandler: RequestHandler = async (req, res, next) => {
+	try {
+		const user = req.user;
+		if (!user?.id) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
+		const { id } = req.params;
+		const { bookingDate, startTime, endTime } = req.body || {};
+
+		if (!bookingDate || !startTime || !endTime) {
+			res.status(400).json({
+				message: "bookingDate, startTime, and endTime are required",
+			});
+			return;
+		}
+
+		const booking = await reschedulePersonalTrainingBooking({
+			bookingId: id,
+			requesterId: user.id,
+			requesterRole: user.role,
+			bookingDate,
+			startTime,
+			endTime,
+		});
+
+		res.status(200).json({
+			message: "Booking rescheduled successfully",
+			booking,
+		});
+	} catch (error: any) {
+		res.status(400).json({ message: error.message || "Failed to reschedule booking" });
 	}
 };
 
