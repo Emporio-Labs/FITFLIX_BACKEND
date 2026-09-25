@@ -388,9 +388,18 @@ export const refreshAccessToken: RequestHandler = async (req, res, next) => {
 		const accessToken = isAdmin
 			? signAdminToken(user, jwtConfig)
 			: signAuthToken(user, jwtConfig);
+		// Rotate the member's refresh token on every refresh (sliding session).
+		// Without this the refresh token issued at login is never replaced, so
+		// every member is force-logged-out JWT_REFRESH_EXPIRES_IN after login
+		// no matter how active they are. Admins are not rotated, so their
+		// session still ends at the original refresh expiry.
+		const refreshToken = isAdmin
+			? undefined
+			: signRefreshToken(user, refreshConfig);
 		res.status(200).json({
 			message: "Token refreshed",
 			accessToken,
+			...(refreshToken ? { refreshToken } : {}),
 			tokenType: "Bearer",
 			expiresIn: isAdmin ? ADMIN_EXPIRES_IN : jwtConfig.expiresIn,
 		});
