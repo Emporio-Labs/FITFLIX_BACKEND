@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import Lead from "../models/Lead";
 import User from "../models/User";
+import { defaultLocationId } from "../utils/location-stamp.plugin";
 import { Gender, LeadStatus, OnboardingStep } from "../models/Enums";
 import { MINOR_AGE_THRESHOLD } from "../utils/activity-consent";
 import type { AuthenticatedUser } from "../types/auth";
@@ -283,6 +284,13 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 						convertedUser: createdUser._id,
 					},
 					$addToSet: { tags: { $each: ["signup", "app-signup"] } },
+					// An upsert skips locationStampPlugin: a new lead takes the
+					// member's home branch (FX-01). An existing lead keeps its own.
+					$setOnInsert: {
+						locationId:
+							(createdUser as { homeLocationId?: unknown }).homeLocationId ??
+							(await defaultLocationId()),
+					},
 				},
 				{ upsert: true, new: true },
 			);

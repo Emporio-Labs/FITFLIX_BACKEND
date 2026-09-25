@@ -1,4 +1,9 @@
 import mongoose from "mongoose";
+import {
+	branchOf,
+	homeBranchOf,
+	locationStampPlugin,
+} from "../utils/location-stamp.plugin";
 import { applyIdTransform } from "../utils/mongoose-serialization";
 import { InvoicePaymentMethod, InvoicePaymentStatus } from "./Enums";
 
@@ -23,6 +28,14 @@ const planSnapshotSchema = new mongoose.Schema(
 
 const invoiceSchema = new mongoose.Schema(
 	{
+		// Branch this record belongs to (FX-01). Filled on create by
+		// locationStampPlugin when the caller doesn't pass one.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+			index: true,
+		},
 		invoiceNumber: { type: String, required: true, unique: true },
 		userId: {
 			type: mongoose.Schema.Types.ObjectId,
@@ -66,6 +79,15 @@ invoiceSchema.index({ createdAt: -1 });
 applyIdTransform(invoiceSchema);
 
 type InvoiceDocument = mongoose.InferSchemaType<typeof invoiceSchema>;
+
+invoiceSchema.plugin(locationStampPlugin, {
+	model: "Invoice",
+	// The member's home branch; for an invoice raised to a lead before they
+	// became a member, the lead's branch (FX-01.2).
+	derive: async (doc) =>
+		(await homeBranchOf(doc.get("userId"))) ??
+		(await branchOf("Lead", doc.get("leadId"))),
+});
 
 export default (mongoose.models.Invoice as mongoose.Model<InvoiceDocument>) ||
 	mongoose.model<InvoiceDocument>("Invoice", invoiceSchema);

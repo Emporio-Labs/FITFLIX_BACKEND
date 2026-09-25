@@ -1,8 +1,21 @@
 import mongoose from "mongoose";
+import {
+	branchOf,
+	homeBranchOf,
+	locationStampPlugin,
+} from "../utils/location-stamp.plugin";
 import { BookingStatus } from "./Enums";
 
 const bookingSchema = new mongoose.Schema(
 	{
+		// Branch this record belongs to (FX-01). Filled on create by
+		// locationStampPlugin when the caller doesn't pass one.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+			index: true,
+		},
 		bookingDate: { type: Date, required: true },
 		startTime: { type: String, required: true },
 		endTime: { type: String, required: true },
@@ -63,6 +76,29 @@ const bookingSchema = new mongoose.Schema(
 bookingSchema.index({ user: 1, sessionId: 1 });
 
 type BookingDocument = mongoose.InferSchemaType<typeof bookingSchema>;
+
+bookingSchema.plugin(locationStampPlugin, {
+	model: "Booking",
+	// A booking takes the branch of what it books (FX-01.2): the class
+	// (directly, or through the scheduled session), else the slot; then the
+	// member's home branch. ScheduledSession has no branch of its own.
+	derive: async (doc) => {
+		const sessionClassId = doc.get("sessionId")
+			? (
+					await mongoose
+						.model("ScheduledSession")
+						.findById(doc.get("sessionId"))
+						.select("classId")
+						.lean<{ classId?: string }>()
+				)?.classId
+			: null;
+		return (
+			(await branchOf("Class", doc.get("classId") ?? sessionClassId)) ??
+			(await branchOf("Slot", doc.get("slot"))) ??
+			(await homeBranchOf(doc.get("user")))
+		);
+	},
+});
 
 export default (mongoose.models.Booking as mongoose.Model<BookingDocument>) ||
 	mongoose.model<BookingDocument>("Booking", bookingSchema);

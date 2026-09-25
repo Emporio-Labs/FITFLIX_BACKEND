@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { locationStampPlugin } from "../utils/location-stamp.plugin";
 
 import { ExpertType } from "./Enums";
 
@@ -50,6 +51,8 @@ slotSchema.index(
 		partialFilterExpression: { parentTemplate: { $exists: true, $ne: null } },
 	},
 );
+
+slotSchema.plugin(locationStampPlugin, { model: "Slot" });
 
 export default (mongoose.models.Slot as mongoose.Model<any>) ||
 	mongoose.model("Slot", slotSchema);
