@@ -1,9 +1,18 @@
 import mongoose from "mongoose";
+import { locationStampPlugin } from "../utils/location-stamp.plugin";
 import { applyIdTransform } from "../utils/mongoose-serialization";
 import { LeadStatus } from "./Enums";
 
 const leadSchema = new mongoose.Schema(
 	{
+		// Branch this record belongs to (FX-01). Filled on create by
+		// locationStampPlugin when the caller doesn't pass one.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+			index: true,
+		},
 		leadName: { type: String, required: true },
 		// Optional: phone-auth (app) leads have no email and are keyed by phone.
 		email: { type: String, default: "" },
@@ -46,6 +55,8 @@ leadSchema.set("toJSON", {
 });
 
 type LeadDocument = mongoose.InferSchemaType<typeof leadSchema>;
+
+leadSchema.plugin(locationStampPlugin, { model: "Lead" });
 
 export default (mongoose.models.Lead as mongoose.Model<LeadDocument>) ||
 	mongoose.model<LeadDocument>("Lead", leadSchema);
