@@ -41,6 +41,8 @@ import { buildApiErrorEnvelope } from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import { generateSignedUrl } from "../utils/s3.service";
+import { assertTrainerOwnsMember } from "../services/trainerRoster.service";
+import { assertNutritionistOwnsMember } from "../services/nutritionistRoster.service";
 import {
 	assignTrainerBodySchema,
 	createUserBodySchema,
@@ -759,6 +761,32 @@ export const getReportSignedUrl: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// AC FX-07.3: A trainer or nutritionist can open reports only for members they look after
+	const requester = req.user;
+	if (requester?.role === "trainer") {
+		try {
+			await assertTrainerOwnsMember(requester.id, userId);
+		} catch (err) {
+			res.status(403).json({
+				error: "Forbidden",
+				code: "FORBIDDEN",
+				message: "As a trainer, you can only open medical reports for members you look after.",
+			});
+			return;
+		}
+	} else if (requester?.role === "nutritionist") {
+		try {
+			await assertNutritionistOwnsMember(requester.id, userId);
+		} catch (err) {
+			res.status(403).json({
+				error: "Forbidden",
+				code: "FORBIDDEN",
+				message: "As a nutritionist, you can only open medical reports for members you look after.",
+			});
+			return;
+		}
+	}
+
 	try {
 		const report = await MedicalReport.findOne({ _id: reportId, userId });
 
@@ -775,8 +803,9 @@ export const getReportSignedUrl: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const url = await generateSignedUrl(report.s3Key);
-		res.status(200).json({ url, expiresIn: 3600 });
+		// AC FX-07.4: Short-lived signed URL (15 minutes = 900 seconds)
+		const url = await generateSignedUrl(report.s3Key, 900, report.mimeType);
+		res.status(200).json({ url, expiresIn: 900 });
 	} catch (error) {
 		next(error);
 	}
