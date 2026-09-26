@@ -9,6 +9,9 @@
 import {
 	mayRecordBehaviour,
 	MINOR_AGE_THRESHOLD,
+	REDACTED_VALUE,
+	redactActivityParams,
+	redactPiiValue,
 	resolveAge,
 } from "../src/utils/activity-consent";
 import { assert } from "./test-helpers";
@@ -119,6 +122,73 @@ function runUnitTests() {
 		);
 	}
 
+	console.log("\n🔎 FX-11 PII redaction (phone, email, name in any field)");
+	{
+		const subject = {
+			username: "Rohan Sharma",
+			email: "rohan.sharma@example.com",
+			phone: "+91 98765 43210",
+		};
+
+		const scrubbed = redactActivityParams(
+			{
+				phone: "+91 98765 43210",
+				email: "rohan.sharma@example.com",
+				name: "Rohan",
+				full_name: "Rohan Sharma",
+				arbitraryEmailField: "someone@fitflix.in",
+				arbitraryPhoneField: "+91-98765-43210",
+				numericPhoneField: 9876543210,
+				arbitraryNameField: "Priya Verma",
+				subjectFirstNameInRoute: "Rohan",
+				route: "plan-renewal",
+				type: "therapy",
+				id: "507f1f77bcf86cd799439011",
+				surface: "visitor_hero",
+			},
+			subject,
+		);
+
+		assert(
+			scrubbed.phone === REDACTED_VALUE,
+			"phone key is replaced by '[redacted]'",
+		);
+		assert(
+			scrubbed.email === REDACTED_VALUE,
+			"email key is replaced by '[redacted]'",
+		);
+		assert(
+			scrubbed.name === REDACTED_VALUE && scrubbed.full_name === REDACTED_VALUE,
+			"name keys are replaced by '[redacted]'",
+		);
+		assert(
+			scrubbed.arbitraryEmailField === REDACTED_VALUE,
+			"email address in any field is replaced by '[redacted]'",
+		);
+		assert(
+			scrubbed.arbitraryPhoneField === REDACTED_VALUE &&
+				scrubbed.numericPhoneField === REDACTED_VALUE,
+			"phone number in any field (string or numeric) is replaced by '[redacted]'",
+		);
+		assert(
+			scrubbed.arbitraryNameField === REDACTED_VALUE &&
+				scrubbed.subjectFirstNameInRoute === REDACTED_VALUE,
+			"personal name in any field is replaced by '[redacted]'",
+		);
+		assert(
+			scrubbed.route === "plan-renewal" &&
+				scrubbed.type === "therapy" &&
+				scrubbed.id === "507f1f77bcf86cd799439011" &&
+				scrubbed.surface === "visitor_hero",
+			"screens, catalog item ObjectIds, and surfaces remain intact for sales",
+		);
+		assert(
+			redactPiiValue("sessionId", "rohan.sharma@example.com", subject) ===
+				REDACTED_VALUE,
+			"sessionId carrying PII is also replaced by '[redacted]'",
+		);
+	}
+
 	console.log("\n🎉 Activity Consent Unit Tests Passed!");
 }
 
@@ -129,3 +199,4 @@ try {
 	console.error("Activity consent unit test failed:", err);
 	process.exit(1);
 }
+

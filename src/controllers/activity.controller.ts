@@ -5,6 +5,9 @@ import User from "../models/User";
 import {
 	mayRecordBehaviour,
 	MINOR_AGE_THRESHOLD,
+	REDACTED_VALUE,
+	redactActivityParams,
+	redactPiiValue,
 	resolveAge,
 } from "../utils/activity-consent";
 import {
@@ -54,7 +57,7 @@ export const recordActivity: RequestHandler = async (req, res, next) => {
 		}
 
 		const user = await User.findById(userId).select(
-			"age dateOfBirth privacyConsent",
+			"username email phone age dateOfBirth privacyConsent",
 		);
 		if (!user) {
 			res.status(404).json({ message: "User not found", code: "USER_NOT_FOUND" });
@@ -73,10 +76,13 @@ export const recordActivity: RequestHandler = async (req, res, next) => {
 		const docs = parsed.data.events.map((e) => ({
 			userId,
 			event: e.event,
-			params: e.params ?? {},
+			params: redactActivityParams(e.params, user),
 			occurredAt:
 				e.occurredAt.getTime() > ceiling ? new Date() : e.occurredAt,
-			sessionId: e.sessionId ?? null,
+			sessionId:
+				e.sessionId != null
+					? String(redactPiiValue("sessionId", e.sessionId, user))
+					: null,
 		}));
 
 		// Unordered: one malformed row should not discard the rest of a batch
@@ -212,6 +218,7 @@ export const getInterestSummary: RequestHandler = async (req, res, next) => {
 					lastActiveAt: null,
 					eventCount: 0,
 					topInterests: [],
+					screensViewed: [],
 					planViews: 0,
 					consultTaps: 0,
 					mtmJoins: 0,
@@ -224,6 +231,7 @@ export const getInterestSummary: RequestHandler = async (req, res, next) => {
 			string,
 			{ type: string; id: string; count: number; lastViewedAt: Date }
 		>();
+		const seenScreens = new Set<string>();
 		let planViews = 0;
 		let consultTaps = 0;
 		let mtmJoins = 0;
@@ -232,12 +240,22 @@ export const getInterestSummary: RequestHandler = async (req, res, next) => {
 			if (e.event === "plan_view") planViews += 1;
 			if (e.event === "consult_tap") consultTaps += 1;
 			if (e.event === "mtm_join_tap") mtmJoins += 1;
-			if (e.event !== "catalog_item_view") continue;
 
 			const params = (e.params ?? {}) as Record<string, unknown>;
+			if (e.event === "screen_view") {
+				const route = typeof params.route === "string" ? params.route.trim() : "";
+				if (route && route !== REDACTED_VALUE && seenScreens.size < 5) {
+					seenScreens.add(route);
+				}
+				continue;
+			}
+			if (e.event !== "catalog_item_view") continue;
+
 			const type = typeof params.type === "string" ? params.type : null;
 			const id = typeof params.id === "string" ? params.id : null;
-			if (!type || !id) continue;
+			if (!type || !id || type === REDACTED_VALUE || id === REDACTED_VALUE) {
+				continue;
+			}
 
 			const mapKey = `${type}:${id}`;
 			const existing = interestCounts.get(mapKey);
@@ -267,6 +285,7 @@ export const getInterestSummary: RequestHandler = async (req, res, next) => {
 				lastActiveAt: events[0]?.occurredAt ?? null,
 				eventCount: events.length,
 				topInterests,
+				screensViewed: [...seenScreens],
 				planViews,
 				consultTaps,
 				mtmJoins,
