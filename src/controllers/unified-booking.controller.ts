@@ -26,6 +26,7 @@ import {
 	completeUnifiedBooking,
 	createPersonalTrainingBooking,
 	createTrainerChangeRequest,
+	rescheduleUnifiedBooking,
 	resolveTrainerChangeRequest,
 } from "../services/unified-booking.service";
 
@@ -346,6 +347,51 @@ export const cancelBookingHandler: RequestHandler = async (req, res, next) => {
 		});
 	} catch (error: any) {
 		res.status(400).json({ message: error.message || "Failed to cancel booking" });
+	}
+};
+
+export const rescheduleBookingHandler: RequestHandler = async (req, res, next) => {
+	try {
+		const user = req.user;
+		if (!user?.id) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
+		const { id } = req.params;
+		const { bookingDate, startTime, endTime, appointmentMode, location } =
+			req.body || {};
+
+		if (!bookingDate || !startTime || !endTime) {
+			res.status(400).json({
+				message: "bookingDate, startTime, and endTime are required",
+			});
+			return;
+		}
+
+		const booking = await rescheduleUnifiedBooking({
+			bookingId: String(id),
+			requesterId: user.id,
+			requesterRole: user.role,
+			bookingDate,
+			startTime,
+			endTime,
+			appointmentMode,
+			location,
+		});
+
+		res.status(200).json({
+			message: "Session rescheduled successfully",
+			booking,
+		});
+	} catch (error: any) {
+		if (error.name === "SlotConflictError") {
+			res.status(409).json({ message: error.message, code: "SLOT_CONFLICT" });
+			return;
+		}
+		res
+			.status(400)
+			.json({ message: error.message || "Failed to reschedule booking" });
 	}
 };
 

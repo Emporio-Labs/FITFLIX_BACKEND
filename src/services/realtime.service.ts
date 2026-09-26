@@ -20,7 +20,8 @@ export type UserEvent =
 	| "community_post_commented"
 	| "community_comment_replied"
 	| "waitlist_promoted"
-	| "waitlist_skipped_insufficient_credits";
+	| "waitlist_skipped_insufficient_credits"
+	| "session_live_now";
 
 export type NutritionistEvent =
 	| "new_user_assigned"

@@ -8,6 +8,7 @@ import {
 	resolveSessionRoomId,
 	ROOM_LEAD_MINUTES,
 } from "../utils/zego-room";
+import { notifySessionLiveNow } from "./reminder.service";
 import { finalizeSession } from "./session-finalize.service";
 import { listRoomUsers, readZegoServerConfig } from "./zego-server-api.service";
 
@@ -269,7 +270,10 @@ export async function verifyHostPresence(
 				{ _id: session._id, hostLiveAt: null },
 				{ $set: { hostLiveAt: now, hostLastSeenAt: now } },
 			);
-			if (claimed) verified++;
+			if (claimed) {
+				verified++;
+				void notifySessionLiveNow(session._id);
+			}
 		} catch (err) {
 			console.error(
 				`[session-room-lifecycle] verifyHostPresence failed for ${String(session._id)}`,

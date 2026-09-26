@@ -12,6 +12,7 @@ import {
 } from "../utils/credit.service";
 import { evaluateBookingRules, parseInTimezone } from "./booking-rules-engine.service";
 import { allocateSeatAtomic, releaseSeatAtomic } from "./capacity-engine.service";
+import { scheduleReminders } from "./reminder.service";
 
 import { syncSessionsForClass } from "../controllers/class.controller";
 
@@ -285,6 +286,19 @@ export async function registerGroupClassBooking(params: {
 				},
 			},
 		).catch(() => null);
+
+		const classTimezone = (targetClass as any)?.timezone || "Asia/Kolkata";
+		const startsAt = parseInTimezone(
+			new Date(session.sessionDate),
+			session.startTime,
+			classTimezone,
+		);
+		await scheduleReminders(booking._id, params.userId, startsAt, {
+			targetType: "group_class",
+			sessionId: resolvedSessionId,
+			classId: resolvedClassId,
+			sessionTitle: (targetClass as any)?.name || "Group Class",
+		});
 
 		return {
 			success: true,

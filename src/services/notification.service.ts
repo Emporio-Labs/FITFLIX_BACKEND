@@ -94,6 +94,7 @@ function mapKindToUserEvent(kind: NotificationKind): UserEvent {
 		[NotificationKind.WaitlistPromoted]: "waitlist_promoted",
 		[NotificationKind.WaitlistSkippedInsufficientCredits]:
 			"waitlist_skipped_insufficient_credits",
+		[NotificationKind.SessionLiveNow]: "session_live_now",
 	};
 	return map[kind];
 }

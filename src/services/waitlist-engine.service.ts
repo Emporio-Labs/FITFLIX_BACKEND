@@ -23,6 +23,7 @@ import {
 import { allocateSeatAtomic, releaseSeatAtomic } from "./capacity-engine.service";
 import { notify } from "./notification.service";
 import { emitToFrontDesk } from "./realtime.service";
+import { scheduleReminders } from "./reminder.service";
 
 const SESSION_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const SESSION_SCAN_LIMIT = 200;
@@ -598,6 +599,13 @@ export async function promoteNextFromWaitlist(
 			candidate.promotedAt = now;
 			candidate.promotedBookingId = booking._id;
 			await candidate.save();
+
+			await scheduleReminders(booking._id, candidateUserId, startsAt, {
+				targetType: "group_class",
+				sessionId: resolvedSessionId,
+				classId: resolvedClassId,
+				sessionTitle: targetClass.name || "Group Class",
+			});
 
 			await notify({
 				userId: candidateUserId,

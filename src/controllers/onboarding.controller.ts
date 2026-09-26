@@ -17,6 +17,7 @@ import MedicalReport from "../models/MedicalReport";
 import Slot from "../models/Slots";
 import UnifiedBooking from "../models/UnifiedBooking";
 import { pickExpertForSlot } from "../services/expert-schedule.service";
+import { scheduleReminders } from "../services/reminder.service";
 import { normalizeRole } from "../middleware/rbac.middleware";
 import {
 	releaseSlotCapacity,
@@ -52,7 +53,11 @@ import {
 	legacyConsentBodySchema,
 	reportBodySchema,
 } from "../validators/onboarding.validator";
-import { normalizeBookingDate, ssRoomIdFor } from "../utils/zego-room";
+import {
+	combineSessionDateTime,
+	normalizeBookingDate,
+	ssRoomIdFor,
+} from "../utils/zego-room";
 
 const getValidationDetails = (
 	issues: Array<{ path: PropertyKey[]; message: string }>,
@@ -669,6 +674,17 @@ export const bookSportsScientist: RequestHandler = async (req, res, next) => {
 			}
 			throw err;
 		}
+
+		await scheduleReminders(
+			appointment._id,
+			requester.id,
+			combineSessionDateTime(appointmentDate, startTime),
+			{
+				targetType: "consultation",
+				sessionId: appointment._id.toString(),
+				sessionTitle: "Sports Scientist Consultation",
+			},
+		);
 
 		await updateSharedOnboardingStep(
 			requester.id,

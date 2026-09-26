@@ -10,6 +10,10 @@ import {
 } from "../services/session-access.service";
 import { finalizeSession } from "../services/session-finalize.service";
 import {
+	notifyOneOnOneLiveNow,
+	notifySessionLiveNow,
+} from "../services/reminder.service";
+import {
 	videoTokenParamsSchema,
 	sendRoomMessageBodySchema,
 	listRoomMessagesQuerySchema,
@@ -417,11 +421,16 @@ export const reportHostPresence: RequestHandler = async (req, res, next) => {
 
 		if (access.nutritionistBooking) {
 			const now = new Date();
+			const wasFirstLive = !access.nutritionistBooking.hostLiveAt;
 			if (!access.nutritionistBooking.hostLiveAt) {
 				access.nutritionistBooking.hostLiveAt = now;
 			}
 			access.nutritionistBooking.hostLastSeenAt = now;
 			await access.nutritionistBooking.save();
+
+			if (wasFirstLive) {
+				void notifyOneOnOneLiveNow(access.nutritionistBooking);
+			}
 
 			res.status(200).json({ hostLiveAt: access.nutritionistBooking.hostLiveAt.toISOString() });
 			return;
@@ -429,11 +438,16 @@ export const reportHostPresence: RequestHandler = async (req, res, next) => {
 
 		if (access.unifiedBooking) {
 			const now = new Date();
+			const wasFirstLive = !access.unifiedBooking.hostLiveAt;
 			if (!access.unifiedBooking.hostLiveAt) {
 				access.unifiedBooking.hostLiveAt = now;
 			}
 			access.unifiedBooking.hostLastSeenAt = now;
 			await access.unifiedBooking.save();
+
+			if (wasFirstLive) {
+				void notifyOneOnOneLiveNow(access.unifiedBooking);
+			}
 
 			res.status(200).json({ hostLiveAt: access.unifiedBooking.hostLiveAt.toISOString() });
 			return;
@@ -445,11 +459,16 @@ export const reportHostPresence: RequestHandler = async (req, res, next) => {
 		}
 
 		const now = new Date();
+		const wasFirstLive = !access.session.hostLiveAt;
 		if (!access.session.hostLiveAt) {
 			access.session.hostLiveAt = now;
 		}
 		access.session.hostLastSeenAt = now;
 		await access.session.save();
+
+		if (wasFirstLive) {
+			void notifySessionLiveNow(access.session._id);
+		}
 
 		res.status(200).json({ hostLiveAt: access.session.hostLiveAt.toISOString() });
 	} catch (error) {

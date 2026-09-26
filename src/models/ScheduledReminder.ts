@@ -5,7 +5,6 @@ const scheduledReminderSchema = new mongoose.Schema(
 	{
 		appointmentId: {
 			type: mongoose.Schema.Types.ObjectId,
-			ref: "ExpertAppointment",
 			required: true,
 		},
 		userId: {
@@ -25,6 +24,10 @@ const scheduledReminderSchema = new mongoose.Schema(
 			enum: Object.values(ReminderStatus),
 			default: ReminderStatus.Scheduled,
 		},
+		targetType: { type: String, default: undefined },
+		sessionId: { type: String, default: undefined },
+		classId: { type: String, default: undefined },
+		sessionTitle: { type: String, default: undefined },
 		attempts: { type: Number, default: 0 },
 		lastError: { type: String, default: undefined },
 	},

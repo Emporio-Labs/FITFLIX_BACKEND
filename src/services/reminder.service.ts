@@ -1,26 +1,30 @@
 import type mongoose from "mongoose";
 import { Types } from "mongoose";
+import Admin from "../models/Admin";
+import Bookings from "../models/Bookings";
+import Class from "../models/Class";
 import {
+	MembershipStatus,
 	NotificationChannel,
 	NotificationKind,
 	ReminderKind,
 	ReminderStatus,
-	MembershipStatus,
+	ServiceSubtype,
 } from "../models/Enums";
-import ScheduledReminder from "../models/ScheduledReminder";
 import Membership from "../models/Membership";
-import User from "../models/User";
-import Admin from "../models/Admin";
 import Notification from "../models/Notification";
+import ScheduledReminder from "../models/ScheduledReminder";
+import ScheduledSession from "../models/ScheduledSession";
+import User from "../models/User";
+import { expireMemberships } from "./membership-lifecycle.service";
 import { notify } from "./notification.service";
 import { expireStaleNutritionistBookings } from "./nutritionist-expiry.service";
-import { expireStaleSportsScientistBookings } from "./sports-scientist-expiry.service";
-import { expireMemberships } from "./membership-lifecycle.service";
 import {
 	expireDueRooms,
 	prepareDueRooms,
 	verifyHostPresence,
 } from "./session-room-lifecycle.service";
+import { expireStaleSportsScientistBookings } from "./sports-scientist-expiry.service";
 
 const REMINDER_OFFSETS_MS: Record<ReminderKind, number> = {
 	[ReminderKind.TMinus24H]: 24 * 60 * 60 * 1000,
@@ -34,18 +38,40 @@ const REMINDER_LABELS: Record<ReminderKind, string> = {
 	[ReminderKind.TMinus15M]: "15 minutes",
 };
 
+export interface ReminderScheduleOptions {
+	session?: mongoose.ClientSession | null;
+	targetType?: "group_class" | "personal_training" | "consultation" | "therapy";
+	sessionId?: string;
+	classId?: string;
+	sessionTitle?: string;
+}
+
+function isClientSession(
+	val: unknown,
+): val is mongoose.ClientSession {
+	return Boolean(
+		val &&
+			typeof val === "object" &&
+			"inTransaction" in (val as Record<string, unknown>),
+	);
+}
+
 // ─── Schedule ─────────────────────────────────────────────────────────────────
 
 /**
- * Schedule T-24h, T-1h, T-15m reminders for an appointment.
- * Silently skips reminders where fireAt is already in the past.
+ * Schedule T-24h, T-1h, T-15m reminders for an appointment/booking.
+ * First cancels any previously scheduled reminders for the same appointmentId
+ * so rescheduling to a nearer time never leaves stale reminders active, then
+ * upserts all future reminder offsets.
  */
 export async function scheduleReminders(
 	appointmentId: mongoose.Types.ObjectId | string,
 	userId: mongoose.Types.ObjectId | string,
-	appointmentStart: Date,
-	session?: mongoose.ClientSession,
+	appointmentStart: Date | null | undefined,
+	sessionOrOptions?: mongoose.ClientSession | ReminderScheduleOptions | null,
 ): Promise<void> {
+	if (!appointmentStart || Number.isNaN(appointmentStart.getTime())) return;
+
 	const now = new Date();
 	const aId =
 		typeof appointmentId === "string"
@@ -53,19 +79,34 @@ export async function scheduleReminders(
 			: appointmentId;
 	const uId = typeof userId === "string" ? new Types.ObjectId(userId) : userId;
 
-	const reminders = Object.entries(REMINDER_OFFSETS_MS)
-		.map(([kind, offsetMs]) => ({
-			appointmentId: aId,
-			userId: uId,
-			kind: kind as ReminderKind,
-			fireAt: new Date(appointmentStart.getTime() - offsetMs),
-			status: ReminderStatus.Scheduled,
-		}))
-		.filter((r) => r.fireAt > now);
-
-	if (reminders.length === 0) return;
+	const session = isClientSession(sessionOrOptions)
+		? sessionOrOptions
+		: (sessionOrOptions?.session ?? undefined);
+	const opts: ReminderScheduleOptions = isClientSession(sessionOrOptions)
+		? { session: sessionOrOptions }
+		: (sessionOrOptions ?? {});
 
 	try {
+		// Cancel any existing SCHEDULED reminders first so rescheduling to a
+		// closer window (where e.g. T-24h is now in the past) clears the old row.
+		await ScheduledReminder.updateMany(
+			{ appointmentId: aId, status: ReminderStatus.Scheduled },
+			{ $set: { status: ReminderStatus.Cancelled } },
+			session ? { session } : undefined,
+		);
+
+		const reminders = Object.entries(REMINDER_OFFSETS_MS)
+			.map(([kind, offsetMs]) => ({
+				appointmentId: aId,
+				userId: uId,
+				kind: kind as ReminderKind,
+				fireAt: new Date(appointmentStart.getTime() - offsetMs),
+				status: ReminderStatus.Scheduled,
+			}))
+			.filter((r) => r.fireAt > now);
+
+		if (reminders.length === 0) return;
+
 		const ops = reminders.map((r) => ({
 			updateOne: {
 				filter: { appointmentId: r.appointmentId, kind: r.kind },
@@ -75,6 +116,10 @@ export async function scheduleReminders(
 						fireAt: r.fireAt,
 						status: r.status,
 						attempts: 0,
+						...(opts.targetType ? { targetType: opts.targetType } : {}),
+						...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+						...(opts.classId ? { classId: opts.classId } : {}),
+						...(opts.sessionTitle ? { sessionTitle: opts.sessionTitle } : {}),
 					},
 					$unset: { lastError: true as const },
 				},
@@ -90,14 +135,130 @@ export async function scheduleReminders(
 	}
 }
 
-/** Cancel all pending reminders for an appointment */
+/** Cancel all pending reminders for an appointment/booking */
 export async function cancelReminders(
 	appointmentId: mongoose.Types.ObjectId | string,
+	session?: mongoose.ClientSession | null,
 ): Promise<void> {
-	await ScheduledReminder.updateMany(
-		{ appointmentId, status: ReminderStatus.Scheduled },
-		{ $set: { status: ReminderStatus.Cancelled } },
-	);
+	try {
+		const aId =
+			typeof appointmentId === "string" && Types.ObjectId.isValid(appointmentId)
+				? new Types.ObjectId(appointmentId)
+				: appointmentId;
+		await ScheduledReminder.updateMany(
+			{ appointmentId: aId, status: ReminderStatus.Scheduled },
+			{ $set: { status: ReminderStatus.Cancelled } },
+			session ? { session } : undefined,
+		);
+	} catch (err) {
+		console.error("[cancelReminders] Failed to cancel reminders", err);
+	}
+}
+
+/**
+ * FX-10: Send a "Live Now" alert within 10 seconds to everyone booked into a
+ * group class / live stream session when the trainer starts the session.
+ */
+export async function notifySessionLiveNow(
+	sessionId: mongoose.Types.ObjectId | string,
+): Promise<{ notified: number }> {
+	try {
+		const sidStr = String(sessionId);
+		const session = await ScheduledSession.findById(sidStr).lean();
+		if (!session) return { notified: 0 };
+
+		const classDoc = await Class.findById(session.classId)
+			.select("name instructor")
+			.lean();
+		const className = (classDoc as any)?.name || "Group Class";
+		const instructorName = (classDoc as any)?.instructor || "";
+
+		const activeBookings = await Bookings.find({
+			sessionId: sidStr,
+			status: { $nin: ["Cancelled", "CANCELLED", 2] },
+		})
+			.select("_id user")
+			.lean();
+
+		if (activeBookings.length === 0) return { notified: 0 };
+
+		await Promise.allSettled(
+			activeBookings.map((booking) =>
+				notify({
+					userId: String(booking.user),
+					kind: NotificationKind.SessionLiveNow,
+					title: `${className} is Live Now!`,
+					body: instructorName
+						? `${instructorName} has started ${className}. Tap to join now!`
+						: `Your trainer has started ${className}. Tap to join now!`,
+					data: {
+						appointmentId: String(booking._id),
+						bookingId: String(booking._id),
+						sessionId: sidStr,
+						classId: String(session.classId),
+						targetType: "group_class",
+						sessionTitle: className,
+					},
+					channels: [
+						NotificationChannel.InApp,
+						NotificationChannel.Push,
+						NotificationChannel.Socket,
+					],
+				}),
+			),
+		);
+
+		return { notified: activeBookings.length };
+	} catch (err) {
+		console.error("[notifySessionLiveNow] Failed to fan out live alert", err);
+		return { notified: 0 };
+	}
+}
+
+/**
+ * FX-10: Send a "Live Now" alert to the member when the trainer/expert joins
+ * a 1:1 personal training or consultation room.
+ */
+export async function notifyOneOnOneLiveNow(booking: {
+	_id: mongoose.Types.ObjectId | string;
+	userId: mongoose.Types.ObjectId | string;
+	serviceSubtype?: string | null;
+	assignedExpertName?: string | null;
+}): Promise<void> {
+	try {
+		const bookingIdStr = String(booking._id);
+		const isPt = booking.serviceSubtype === ServiceSubtype.TRAINER;
+		const targetType = isPt ? "personal_training" : "consultation";
+		const expertLabel = booking.assignedExpertName?.trim()
+			? booking.assignedExpertName.trim()
+			: isPt
+				? "Your trainer"
+				: "Your specialist";
+		const sessionTitle = isPt
+			? `Personal Training with ${expertLabel}`
+			: `Consultation with ${expertLabel}`;
+
+		await notify({
+			userId: String(booking.userId),
+			kind: NotificationKind.SessionLiveNow,
+			title: `${sessionTitle} is Live Now!`,
+			body: `${expertLabel} has started your session. Tap to join now!`,
+			data: {
+				appointmentId: bookingIdStr,
+				bookingId: bookingIdStr,
+				sessionId: bookingIdStr,
+				targetType,
+				sessionTitle,
+			},
+			channels: [
+				NotificationChannel.InApp,
+				NotificationChannel.Push,
+				NotificationChannel.Socket,
+			],
+		});
+	} catch (err) {
+		console.error("[notifyOneOnOneLiveNow] Failed to send live alert", err);
+	}
 }
 
 // ─── Poller (one tick) ────────────────────────────────────────────────────────
@@ -135,17 +296,33 @@ export async function processReminders(): Promise<{
 
 		try {
 			const label = REMINDER_LABELS[reminder.kind as ReminderKind] ?? "soon";
+			const sessionTitle = (reminder as any).sessionTitle as string | undefined;
+			const targetType = (reminder as any).targetType as string | undefined;
+			const sessionId = (reminder as any).sessionId as string | undefined;
+			const classId = (reminder as any).classId as string | undefined;
 
 			await notify({
 				userId: String(reminder.userId),
 				kind: NotificationKind.AppointmentReminder,
-				title: "Upcoming appointment",
-				body: `Your appointment is in ${label}.`,
+				title: sessionTitle ? `Upcoming: ${sessionTitle}` : "Upcoming Session",
+				body: sessionTitle
+					? `Your ${sessionTitle} starts in ${label}.`
+					: `Your booked session starts in ${label}.`,
 				data: {
 					appointmentId: String(reminder.appointmentId),
+					bookingId: String(reminder.appointmentId),
 					kind: reminder.kind,
+					reminderKind: reminder.kind,
+					...(targetType ? { targetType } : {}),
+					...(sessionId ? { sessionId } : {}),
+					...(classId ? { classId } : {}),
+					...(sessionTitle ? { sessionTitle } : {}),
 				},
-				channels: [NotificationChannel.Push, NotificationChannel.Socket],
+				channels: [
+					NotificationChannel.InApp,
+					NotificationChannel.Push,
+					NotificationChannel.Socket,
+				],
 			});
 
 			fired++;

@@ -7,6 +7,7 @@ import Slot from "../models/Slots";
 
 import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
+import { cancelReminders, scheduleReminders } from "../services/reminder.service";
 import { releaseSeatAtomic } from "../services/capacity-engine.service";
 import {
 	getMyWaitlistEntries,
@@ -157,7 +158,7 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 
 	try {
 		const service = await Service.findById(serviceId).select(
-			"_id creditCost slots",
+			"_id serviceName creditCost slots",
 		);
 
 		if (!service) {
@@ -233,6 +234,16 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 				throw error;
 			}
 		}
+
+		const { startsAt } = combineSessionWindow(
+			bookingDate,
+			concreteSlot.startTime,
+			concreteSlot.endTime,
+		);
+		await scheduleReminders(booking._id, targetUserId, startsAt, {
+			targetType: "therapy",
+			sessionTitle: (service as any).serviceName || "Therapy Session",
+		});
 
 		res.status(201).json({
 			message: "Booking created",
@@ -618,6 +629,23 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		if (shouldReschedule && updatedBooking.bookingDate && updatedBooking.startTime) {
+			const { startsAt } = combineSessionWindow(
+				updatedBooking.bookingDate,
+				updatedBooking.startTime,
+				updatedBooking.endTime || updatedBooking.startTime,
+			);
+			await scheduleReminders(updatedBooking._id, updatedBooking.user, startsAt, {
+				targetType: updatedBooking.sessionId ? "group_class" : "therapy",
+				sessionId: updatedBooking.sessionId
+					? String(updatedBooking.sessionId)
+					: undefined,
+				classId: updatedBooking.classId
+					? String(updatedBooking.classId)
+					: undefined,
+			});
+		}
+
 		res
 			.status(200)
 			.json({ message: "Booking updated", booking: updatedBooking });
@@ -719,6 +747,8 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 
 				response = { status: 200, body: { message: "Booking deleted" } };
 			});
+
+			await cancelReminders(id);
 
 			if (releasedSessionId) {
 				try {
@@ -854,6 +884,8 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 						},
 					};
 				});
+
+				await cancelReminders(id);
 
 				if (releasedSessionId) {
 					try {

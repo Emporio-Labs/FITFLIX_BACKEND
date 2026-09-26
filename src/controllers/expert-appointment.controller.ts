@@ -9,6 +9,7 @@ import {
 import Slot from "../models/Slots";
 import UnifiedBooking from "../models/UnifiedBooking";
 import User from "../models/User";
+import { cancelReminders, scheduleReminders } from "../services/reminder.service";
 import { releaseSlotCapacity } from "../services/slot-reservation.service";
 import { updateSharedOnboardingStep } from "../utils/onboarding.service";
 import {
@@ -201,6 +202,17 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 
 		await booking.save();
 
+		await scheduleReminders(
+			booking._id,
+			booking.userId,
+			combineSessionDateTime(bookingDate, booking.startTime),
+			{
+				targetType: "consultation",
+				sessionId: booking._id.toString(),
+				sessionTitle: "Sports Scientist Consultation",
+			},
+		);
+
 		res.status(200).json({
 			message: "Sports scientist booking accepted",
 			booking: serializeSportsScientistBooking(booking),
@@ -274,6 +286,7 @@ export const rejectBooking: RequestHandler = async (req, res, next) => {
 		booking.rejectionReason = rejectionReason ?? null;
 
 		await booking.save();
+		await cancelReminders(booking._id);
 
 		res.status(200).json({
 			message: "Sports scientist booking rejected",

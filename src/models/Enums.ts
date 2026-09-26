@@ -225,6 +225,8 @@ export enum NotificationKind {
 	// FX-12 Class Waitlist notifications
 	WaitlistPromoted = "waitlist_promoted",
 	WaitlistSkippedInsufficientCredits = "waitlist_skipped_insufficient_credits",
+	// FX-10 Live session start notification
+	SessionLiveNow = "session_live_now",
 }
 
 export enum WaitlistStatus {

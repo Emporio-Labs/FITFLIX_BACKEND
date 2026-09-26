@@ -3,6 +3,7 @@ import { CreditTransactionSource } from "../models/Enums";
 import ScheduledSession from "../models/ScheduledSession";
 import { refundCreditsBySource } from "../utils/credit.service";
 import { releaseSeatAtomic } from "./capacity-engine.service";
+import { cancelReminders } from "./reminder.service";
 import { promoteNextFromWaitlist } from "./waitlist-engine.service";
 
 export interface CancellationResult {
@@ -86,6 +87,7 @@ export async function cancelBooking(params: {
 
 	booking.status = "Cancelled";
 	await booking.save();
+	await cancelReminders(booking._id);
 
 	let waitlistPromotion: CancellationResult["waitlistPromotion"];
 	if (booking.sessionId) {

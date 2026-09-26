@@ -11,6 +11,7 @@ import Slot from "../models/Slots";
 import UnifiedBooking from "../models/UnifiedBooking";
 import User from "../models/User";
 import { pickExpertForSlot } from "../services/expert-schedule.service";
+import { cancelReminders, scheduleReminders } from "../services/reminder.service";
 import {
 	releaseSlotCapacity,
 	reserveSlotCapacity,
@@ -222,6 +223,17 @@ export const bookNutritionist: RequestHandler = async (req, res, next) => {
 			throw err;
 		}
 
+		await scheduleReminders(
+			booking._id,
+			user.id,
+			combineSessionDateTime(bookingDate, startTime),
+			{
+				targetType: "consultation",
+				sessionId: booking._id.toString(),
+				sessionTitle: "Nutritionist Consultation",
+			},
+		);
+
 		// Check onboarding status and advance if applicable. Unconditional now —
 		// this used to only call advanceStep when currentStep was one of three
 		// specific values, which meant a real booking made after a skip-all
@@ -385,6 +397,7 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 		if (!booking.slotId && !booking.bookingDate) {
 			booking.status = UnifiedBookingStatus.RESCHEDULE_REQUIRED;
 			await booking.save();
+			await cancelReminders(booking._id);
 			res.status(409).json({
 				error:
 					"No slot selected for this booking. The user has been asked to pick a time slot.",
@@ -402,6 +415,7 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 			if (!slot || slot.capacity <= 0) {
 				booking.status = UnifiedBookingStatus.RESCHEDULE_REQUIRED;
 				await booking.save();
+				await cancelReminders(booking._id);
 				res.status(409).json({
 					error:
 						"Original slot is no longer available. The user has been asked to pick a new time.",
@@ -426,6 +440,7 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 			) {
 				booking.status = UnifiedBookingStatus.RESCHEDULE_REQUIRED;
 				await booking.save();
+				await cancelReminders(booking._id);
 				res.status(409).json({
 					error:
 						"This appointment slot date/time has already passed. The user has been asked to pick a new time.",
@@ -494,6 +509,17 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 			throw err;
 		}
 
+		await scheduleReminders(
+			booking._id,
+			booking.userId,
+			combineSessionDateTime(appointmentDate, booking.startTime),
+			{
+				targetType: "consultation",
+				sessionId: booking._id.toString(),
+				sessionTitle: "Nutritionist Consultation",
+			},
+		);
+
 		res.status(200).json({
 			message: "Nutritionist booking accepted",
 			booking: serializeNutritionistBooking(booking),
@@ -541,6 +567,7 @@ export const rejectBooking: RequestHandler = async (req, res, next) => {
 		booking.status = UnifiedBookingStatus.REJECTED;
 		booking.rejectedAt = new Date();
 		await booking.save();
+		await cancelReminders(booking._id);
 
 		res.status(200).json({
 			message: "Nutritionist booking rejected",
@@ -799,6 +826,17 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 			throw err;
 		}
 
+		await scheduleReminders(
+			booking._id,
+			user.id,
+			combineSessionDateTime(rescheduledDate, newStartTime),
+			{
+				targetType: "consultation",
+				sessionId: booking._id.toString(),
+				sessionTitle: "Nutritionist Consultation",
+			},
+		);
+
 		// Release the old slot last, wrapped so a release failure doesn't hide
 		// the successful reservation + booking update above.
 		if (oldSlotId) {
@@ -954,6 +992,7 @@ export const cancelMyBooking: RequestHandler = async (req, res, next) => {
 		booking.cancelledBy = "user";
 		booking.cancellationReason = parsed.data.reason ?? null;
 		await booking.save();
+		await cancelReminders(booking._id);
 
 		res.status(200).json({
 			message: "Nutritionist booking cancelled",

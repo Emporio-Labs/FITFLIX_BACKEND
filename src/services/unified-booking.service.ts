@@ -25,6 +25,8 @@ import {
 } from "../utils/membership-status.util";
 import { resolveBookingTimeContext } from "../utils/location.resolver";
 import { hoursUntilZonedDateTime } from "../utils/timezone.util";
+import { combineSessionDateTime } from "../utils/zego-room";
+import { cancelReminders, scheduleReminders } from "./reminder.service";
 
 export class SlotConflictError extends Error {
 	constructor(message = "The selected time slot is already booked or overlaps with another session.") {
@@ -219,6 +221,15 @@ export const createPersonalTrainingBooking = async (params: {
 		}
 
 		await booking.save({ session });
+
+		const startsAt = combineSessionDateTime(bookingDate, params.startTime);
+		await scheduleReminders(booking._id, userObjId, startsAt, {
+			session,
+			targetType: "personal_training",
+			sessionId: booking._id.toString(),
+			sessionTitle: `Personal Training with ${trainer.trainerName}`,
+		});
+
 		return booking;
 	});
 };
@@ -311,6 +322,7 @@ export const cancelUnifiedBooking = async (params: {
 		}
 
 		await booking.save({ session });
+		await cancelReminders(booking._id, session);
 
 		return {
 			success: true,
@@ -320,6 +332,107 @@ export const cancelUnifiedBooking = async (params: {
 			refunded: shouldRefundCredits,
 			creditRefunded,
 		};
+	});
+};
+
+export const rescheduleUnifiedBooking = async (params: {
+	bookingId: string;
+	requesterId: string;
+	requesterRole: string;
+	bookingDate: string | Date;
+	startTime: string;
+	endTime: string;
+	appointmentMode?: AppointmentMode;
+	location?: string;
+}) => {
+	const bookingObjId = new mongoose.Types.ObjectId(params.bookingId);
+	const rawDateStr =
+		typeof params.bookingDate === "string"
+			? params.bookingDate.slice(0, 10)
+			: params.bookingDate.toISOString().slice(0, 10);
+	const nextBookingDate = new Date(`${rawDateStr}T00:00:00.000Z`);
+
+	return executeInTransaction(async (session) => {
+		const booking = await UnifiedBooking.findById(bookingObjId).session(session);
+		if (!booking) {
+			throw new Error("Booking not found");
+		}
+
+		const isOwner = String(booking.userId) === String(params.requesterId);
+		const isStaffOrAdmin =
+			params.requesterRole === "admin" ||
+			params.requesterRole === "frontdesk" ||
+			params.requesterRole === "staff" ||
+			params.requesterRole === "trainer";
+
+		if (!isOwner && !isStaffOrAdmin) {
+			throw new Error("Forbidden: You cannot reschedule another member's booking");
+		}
+
+		if (
+			booking.status === UnifiedBookingStatus.CANCELLED ||
+			booking.status === UnifiedBookingStatus.COMPLETED ||
+			booking.status === UnifiedBookingStatus.REJECTED
+		) {
+			throw new Error(
+				`Booking cannot be rescheduled because it is already ${booking.status}`,
+			);
+		}
+
+		if (booking.expertId) {
+			const startOfDay = new Date(nextBookingDate);
+			startOfDay.setUTCHours(0, 0, 0, 0);
+			const endOfDay = new Date(nextBookingDate);
+			endOfDay.setUTCHours(23, 59, 59, 999);
+
+			const conflictingBooking = await UnifiedBooking.findOne({
+				_id: { $ne: booking._id },
+				expertId: booking.expertId,
+				bookingDate: { $gte: startOfDay, $lte: endOfDay },
+				status: {
+					$in: [UnifiedBookingStatus.PENDING, UnifiedBookingStatus.CONFIRMED],
+				},
+				startTime: { $lt: params.endTime },
+				endTime: { $gt: params.startTime },
+			}).session(session);
+
+			if (conflictingBooking) {
+				throw new SlotConflictError(
+					`${booking.assignedExpertName || "The selected specialist"} already has a session booked from ${conflictingBooking.startTime} to ${conflictingBooking.endTime}.`,
+				);
+			}
+		}
+
+		booking.bookingDate = nextBookingDate;
+		booking.startTime = params.startTime;
+		booking.endTime = params.endTime;
+		if (params.appointmentMode) {
+			booking.appointmentMode = params.appointmentMode;
+			if (
+				params.appointmentMode === AppointmentMode.ONLINE &&
+				!booking.zegoRoomId
+			) {
+				booking.zegoRoomId = `session_${booking._id.toString()}`;
+			}
+		}
+		if (params.location) {
+			booking.location = params.location;
+		}
+
+		await booking.save({ session });
+
+		const startsAt = combineSessionDateTime(nextBookingDate, params.startTime);
+		const isPt = booking.serviceSubtype === ServiceSubtype.TRAINER;
+		await scheduleReminders(booking._id, booking.userId, startsAt, {
+			session,
+			targetType: isPt ? "personal_training" : "consultation",
+			sessionId: booking._id.toString(),
+			sessionTitle: isPt
+				? `Personal Training with ${booking.assignedExpertName || "Coach"}`
+				: `Consultation with ${booking.assignedExpertName || "Specialist"}`,
+		});
+
+		return booking;
 	});
 };
 

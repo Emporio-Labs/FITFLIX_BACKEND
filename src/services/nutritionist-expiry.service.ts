@@ -5,6 +5,7 @@ import {
 	combineSessionDateTime,
 	NUTRI_EXPIRY_GRACE_MINUTES,
 } from "../utils/zego-room";
+import { cancelReminders } from "./reminder.service";
 import { releaseSlotCapacity } from "./slot-reservation.service";
 
 /**
@@ -64,6 +65,8 @@ export async function expireStaleNutritionistBookings(
 				skipped++;
 				continue;
 			}
+
+			await cancelReminders(row._id);
 
 			// Release the held slot seat, mirroring rejectBooking. Best-effort:
 			// if this fails we still want the status transition to stick.

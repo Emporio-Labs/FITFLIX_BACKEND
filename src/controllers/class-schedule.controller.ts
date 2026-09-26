@@ -1,8 +1,10 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import Bookings from "../models/Bookings";
 import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
+import { cancelReminders, scheduleReminders } from "../services/reminder.service";
 import { buildWaitlistMetadataBySessionId } from "../services/waitlist-engine.service";
 import { normalizeDeliveryType } from "../utils/delivery-type";
 import { resolveTimeZone } from "../utils/location.resolver";
@@ -556,12 +558,72 @@ export const updateScheduledSession: RequestHandler = async (
 			}
 		}
 
+		const wasTimeChanged =
+			Boolean(parsed.data.sessionDate) ||
+			Boolean(parsed.data.startTime) ||
+			Boolean(parsed.data.endTime);
+
 		Object.assign(session, parsed.data);
 		if (parsed.data.sessionDate) {
 			session.sessionDate = newSessionDate;
 		}
 
 		await session.save();
+
+		const sessionIdStr = String(session._id);
+		if (session.status === "CANCELLED") {
+			const activeBookings = await Bookings.find({
+				sessionId: sessionIdStr,
+				status: { $nin: ["Cancelled", "CANCELLED", 2] },
+			})
+				.select("_id")
+				.lean();
+			await Promise.allSettled(
+				activeBookings.map((b) => cancelReminders(b._id)),
+			);
+		} else if (wasTimeChanged) {
+			const targetClass = await ClassModel.findById(session.classId)
+				.select("name locationId")
+				.lean();
+			const timeZone = await resolveTimeZone({
+				locationId: (targetClass as any)?.locationId,
+			});
+			const { startsAt } = combineSessionWindow(
+				session.sessionDate,
+				session.startTime,
+				session.endTime,
+				timeZone,
+			);
+			const activeBookings = await Bookings.find({
+				sessionId: sessionIdStr,
+				status: { $nin: ["Cancelled", "CANCELLED", 2] },
+			})
+				.select("_id user")
+				.lean();
+			await Bookings.updateMany(
+				{
+					sessionId: sessionIdStr,
+					status: { $nin: ["Cancelled", "CANCELLED", 2] },
+				},
+				{
+					$set: {
+						bookingDate: session.sessionDate,
+						startTime: session.startTime,
+						endTime: session.endTime,
+					},
+				},
+			).catch(() => null);
+			await Promise.allSettled(
+				activeBookings.map((b) =>
+					scheduleReminders(b._id, b.user, startsAt, {
+						targetType: "group_class",
+						sessionId: sessionIdStr,
+						classId: String(session.classId),
+						sessionTitle: (targetClass as any)?.name || "Group Class",
+					}),
+				),
+			);
+		}
 
 		res.status(200).json({
 			message: "Scheduled session updated successfully",
