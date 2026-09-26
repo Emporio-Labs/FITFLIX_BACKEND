@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { getAdminWaitlistHandler } from "../controllers/booking.controller";
 import {
 	createClass,
 	getActiveClassesForMembers,
@@ -19,6 +20,14 @@ classRouter.use(authenticateToken);
 // Admin endpoints
 classRouter.post("/admin/classes", authorize(["admin"]), createClass);
 classRouter.get("/admin/classes", authorize(["admin"]), getAllClassesForAdmin);
+classRouter.get(
+	"/admin/classes/:id/waitlist",
+	authorize(["admin"]),
+	(req, res, next) => {
+		req.query.classId = req.params.id;
+		return getAdminWaitlistHandler(req, res, next);
+	},
+);
 classRouter.put("/admin/classes/:id", authorize(["admin"]), updateClassById);
 classRouter.patch(
 	"/admin/classes/:id/publish",

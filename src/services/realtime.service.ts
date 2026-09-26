@@ -6,7 +6,8 @@ export type FrontDeskEvent =
 	| "appointment_created"
 	| "slot_consumed"
 	| "slot_released"
-	| "onboarding_progress_changed";
+	| "onboarding_progress_changed"
+	| "waitlist_updated";
 
 export type UserEvent =
 	| "appointment_booked"
@@ -17,7 +18,9 @@ export type UserEvent =
 	| "membership_expiry_reminder"
 	| "community_post_liked"
 	| "community_post_commented"
-	| "community_comment_replied";
+	| "community_comment_replied"
+	| "waitlist_promoted"
+	| "waitlist_skipped_insufficient_credits";
 
 export type NutritionistEvent =
 	| "new_user_assigned"

@@ -9,6 +9,13 @@ import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
 import { releaseSeatAtomic } from "../services/capacity-engine.service";
 import {
+	getMyWaitlistEntries,
+	getWaitlistForAdmin,
+	joinClassWaitlist,
+	leaveClassWaitlist,
+	promoteNextFromWaitlist,
+} from "../services/waitlist-engine.service";
+import {
 	releaseSlotCapacity,
 	reserveSlotCapacity,
 	resolveConcreteSlotForBooking,
@@ -644,6 +651,7 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 		try {
 			let response: { status: number; body: Record<string, unknown> } | null =
 				null;
+			let releasedSessionId: string | null = null;
 
 			await session.withTransaction(async () => {
 				const existingBooking = await Booking.findById(id).session(session);
@@ -682,6 +690,7 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 							);
 						} else if (transitionedBooking.sessionId) {
 							await releaseSeatAtomic(transitionedBooking.sessionId);
+							releasedSessionId = transitionedBooking.sessionId;
 						}
 
 						await refundCreditsBySource({
@@ -710,6 +719,17 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 
 				response = { status: 200, body: { message: "Booking deleted" } };
 			});
+
+			if (releasedSessionId) {
+				try {
+					await promoteNextFromWaitlist(releasedSessionId);
+				} catch (promoErr) {
+					console.error(
+						"[deleteBookingById] Waitlist auto-promotion failed:",
+						promoErr,
+					);
+				}
+			}
 
 			if (response) {
 				const { status, body } = response as {
@@ -774,6 +794,7 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 			try {
 				let response: { status: number; body: Record<string, unknown> } | null =
 					null;
+				let releasedSessionId: string | null = null;
 
 				await session.withTransaction(async () => {
 					const transitionedBooking = await Booking.findOneAndUpdate(
@@ -811,6 +832,7 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 						);
 					} else if (transitionedBooking.sessionId) {
 						await releaseSeatAtomic(transitionedBooking.sessionId);
+						releasedSessionId = transitionedBooking.sessionId;
 					}
 
 					const refundResult = await refundCreditsBySource({
@@ -832,6 +854,17 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 						},
 					};
 				});
+
+				if (releasedSessionId) {
+					try {
+						await promoteNextFromWaitlist(releasedSessionId);
+					} catch (promoErr) {
+						console.error(
+							"[changeBookingStatus] Waitlist auto-promotion failed:",
+							promoErr,
+						);
+					}
+				}
 
 				if (response) {
 					const { status, body } = response as {
@@ -948,6 +981,112 @@ export const recordAttendance: RequestHandler = async (req, res, next) => {
 			message: "Attendance recorded successfully",
 			booking,
 		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+// ─── FX-12 Class Waitlist Handlers ───────────────────────────────────────────
+
+export const joinWaitlistHandler: RequestHandler = async (req, res, next) => {
+	const requester = getRequiredAuthenticatedUser(req);
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	const targetUserId =
+		requester.role === "user" ? requester.id : req.body?.userId || requester.id;
+	const sessionId = req.body?.sessionId ? String(req.body.sessionId) : undefined;
+	const classId = req.body?.classId ? String(req.body.classId) : undefined;
+
+	if (!sessionId && !classId) {
+		res.status(400).json({
+			success: false,
+			message: "sessionId or classId is required to join waitlist",
+		});
+		return;
+	}
+
+	try {
+		const result = await joinClassWaitlist({
+			userId: targetUserId,
+			sessionId,
+			classId,
+		});
+
+		res.status(result.statusCode).json({
+			success: result.success,
+			message: result.message,
+			error: result.success ? undefined : result.message,
+			code: result.code,
+			position: result.position,
+			totalWaiting: result.totalWaiting,
+			waitlistEntry: result.waitlistEntry,
+			details: result.details,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const leaveWaitlistHandler: RequestHandler = async (req, res, next) => {
+	const requester = getRequiredAuthenticatedUser(req);
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	const targetUserId =
+		requester.role === "user"
+			? requester.id
+			: (req.query?.userId ? String(req.query.userId) : requester.id);
+	const rawParamSessionId = Array.isArray(req.params.sessionId)
+		? req.params.sessionId[0]
+		: req.params.sessionId;
+	const sessionId = rawParamSessionId || (req.body?.sessionId ? String(req.body.sessionId) : undefined);
+	const classId = req.query?.classId
+		? String(req.query.classId)
+		: (req.body?.classId ? String(req.body.classId) : undefined);
+
+	try {
+		const result = await leaveClassWaitlist({
+			userId: targetUserId,
+			sessionId,
+			classId,
+		});
+
+		res.status(result.statusCode).json(result);
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getMyWaitlistHandler: RequestHandler = async (req, res, next) => {
+	const requester = getRequiredAuthenticatedUser(req);
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	try {
+		const waitlist = await getMyWaitlistEntries(requester.id);
+		res.status(200).json({ waitlist });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getAdminWaitlistHandler: RequestHandler = async (req, res, next) => {
+	try {
+		const { classId, sessionId, status, search } = req.query;
+		const waitlist = await getWaitlistForAdmin({
+			classId: typeof classId === "string" && classId ? classId : undefined,
+			sessionId: typeof sessionId === "string" && sessionId ? sessionId : undefined,
+			status: typeof status === "string" && status ? status : undefined,
+			search: typeof search === "string" && search ? search : undefined,
+		});
+		res.status(200).json({ waitlist, count: waitlist.length });
 	} catch (error) {
 		next(error);
 	}

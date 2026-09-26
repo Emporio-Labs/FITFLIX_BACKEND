@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { getAdminWaitlistHandler } from "../controllers/booking.controller";
 import {
 	createScheduledSession,
 	getAllSchedulesForAdmin,
@@ -24,6 +25,14 @@ classScheduleRouter.get(
 	"/admin/classes/schedule",
 	authorize(["admin"]),
 	getAllSchedulesForAdmin,
+);
+classScheduleRouter.get(
+	"/admin/classes/schedule/:id/waitlist",
+	authorize(["admin"]),
+	(req, res, next) => {
+		req.query.sessionId = req.params.id;
+		return getAdminWaitlistHandler(req, res, next);
+	},
 );
 classScheduleRouter.patch(
 	"/admin/classes/schedule/:id",

@@ -91,6 +91,9 @@ function mapKindToUserEvent(kind: NotificationKind): UserEvent {
 		[NotificationKind.CommunityPostLiked]: "community_post_liked",
 		[NotificationKind.CommunityPostCommented]: "community_post_commented",
 		[NotificationKind.CommunityCommentReplied]: "community_comment_replied",
+		[NotificationKind.WaitlistPromoted]: "waitlist_promoted",
+		[NotificationKind.WaitlistSkippedInsufficientCredits]:
+			"waitlist_skipped_insufficient_credits",
 	};
 	return map[kind];
 }

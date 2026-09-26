@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
+import { buildWaitlistMetadataBySessionId } from "../services/waitlist-engine.service";
 import { normalizeDeliveryType } from "../utils/delivery-type";
 import { resolveTimeZone } from "../utils/location.resolver";
 import {
@@ -282,20 +283,32 @@ export const getAllSchedulesForAdmin: RequestHandler = async (
 		const activeSessions = sessions.filter((s: any) => s.classId && s.classId.status !== "INACTIVE");
 
 		const zonesByClassId = await resolveZonesByClassId(activeSessions);
+		const waitlistMetaBySessionId = await buildWaitlistMetadataBySessionId(
+			activeSessions.map((s) => String(s._id)),
+			req.user?.id,
+		);
 
 		res.status(200).json({
 			message: "Scheduled sessions retrieved successfully",
 			count: activeSessions.length,
-			sessions: activeSessions.map((s) => {
+			sessions: activeSessions.map((s: any) => {
 				// videoConferenceId must always mirror videoRoomId (never derived
 				// separately) so the Admin host and User App can never resolve
 				// different rooms.
 				const videoRoomId = resolveSessionRoomId(s as any);
+				const sessionIdStr = String(s._id);
+				const wlMeta = waitlistMetaBySessionId.get(sessionIdStr);
+				const enableWaitlist = Boolean(s.classId?.enableWaitlist);
 				return withAbsoluteTimes(
 					{
 						...s,
 						videoRoomId,
 						videoConferenceId: videoRoomId,
+						enableWaitlist,
+						waitlistCount: wlMeta?.waitlistCount ?? 0,
+						myWaitlistPosition: wlMeta?.myWaitlistPosition ?? null,
+						myWaitlistStatus: wlMeta?.myWaitlistStatus ?? null,
+						myWaitlistSkipReason: wlMeta?.myWaitlistSkipReason ?? null,
 					},
 					zonesByClassId.get(classIdOf(s)),
 				);
@@ -351,20 +364,32 @@ export const getSchedulesForMembers: RequestHandler = async (
 		);
 
 		const zonesByClassId = await resolveZonesByClassId(activeSessions);
+		const waitlistMetaBySessionId = await buildWaitlistMetadataBySessionId(
+			activeSessions.map((s) => String(s._id)),
+			req.user?.id,
+		);
 
 		res.status(200).json({
 			message: "Active scheduled sessions retrieved successfully",
 			count: activeSessions.length,
-			sessions: activeSessions.map((s) => {
+			sessions: activeSessions.map((s: any) => {
 				// videoConferenceId must always mirror videoRoomId (never derived
 				// separately) so the Admin host and User App can never resolve
 				// different rooms.
 				const videoRoomId = resolveSessionRoomId(s as any);
+				const sessionIdStr = String(s._id);
+				const wlMeta = waitlistMetaBySessionId.get(sessionIdStr);
+				const enableWaitlist = Boolean(s.classId?.enableWaitlist);
 				return withAbsoluteTimes(
 					{
 						...s,
 						videoRoomId,
 						videoConferenceId: videoRoomId,
+						enableWaitlist,
+						waitlistCount: wlMeta?.waitlistCount ?? 0,
+						myWaitlistPosition: wlMeta?.myWaitlistPosition ?? null,
+						myWaitlistStatus: wlMeta?.myWaitlistStatus ?? null,
+						myWaitlistSkipReason: wlMeta?.myWaitlistSkipReason ?? null,
 					},
 					zonesByClassId.get(classIdOf(s)),
 				);
@@ -417,6 +442,14 @@ export const getScheduledSessionByIdForMembers: RequestHandler = async (
 			return;
 		}
 
+		const sessionIdStr = String(session._id);
+		const waitlistMetaBySessionId = await buildWaitlistMetadataBySessionId(
+			[sessionIdStr],
+			req.user?.id,
+		);
+		const wlMeta = waitlistMetaBySessionId.get(sessionIdStr);
+		const enableWaitlist = Boolean(sessionClass?.enableWaitlist);
+
 		const videoRoomId = resolveSessionRoomId(session as any);
 		res.status(200).json({
 			session: withAbsoluteTimes(
@@ -424,6 +457,11 @@ export const getScheduledSessionByIdForMembers: RequestHandler = async (
 					...session,
 					videoRoomId,
 					videoConferenceId: videoRoomId,
+					enableWaitlist,
+					waitlistCount: wlMeta?.waitlistCount ?? 0,
+					myWaitlistPosition: wlMeta?.myWaitlistPosition ?? null,
+					myWaitlistStatus: wlMeta?.myWaitlistStatus ?? null,
+					myWaitlistSkipReason: wlMeta?.myWaitlistSkipReason ?? null,
 				},
 				await resolveTimeZone({
 					locationId: (sessionClass as { locationId?: unknown } | null)

@@ -1,7 +1,8 @@
 import mongoose from "mongoose";
 import Bookings from "../models/Bookings";
 import Class from "../models/Class";
-import { CreditTransactionSource } from "../models/Enums";
+import ClassWaitlist from "../models/ClassWaitlist";
+import { CreditTransactionSource, WaitlistStatus } from "../models/Enums";
 import ScheduledSession from "../models/ScheduledSession";
 import {
 	CreditServiceError,
@@ -208,6 +209,11 @@ export async function registerGroupClassBooking(params: {
 			statusCode: 409,
 			message: "Session capacity is full",
 			reason: seatAllocation.reason,
+			details: {
+				enableWaitlist: Boolean((targetClass as any)?.enableWaitlist),
+				sessionId: resolvedSessionId,
+				classId: resolvedClassId,
+			},
 		};
 	}
 
@@ -264,6 +270,21 @@ export async function registerGroupClassBooking(params: {
 			creditCostSnapshot: creditCost,
 			creditsBypassed: false,
 		});
+
+		await ClassWaitlist.updateMany(
+			{
+				sessionId: resolvedSessionId,
+				user: userObjId,
+				status: WaitlistStatus.Waiting,
+			},
+			{
+				$set: {
+					status: WaitlistStatus.Promoted,
+					promotedAt: new Date(),
+					promotedBookingId: booking._id,
+				},
+			},
+		).catch(() => null);
 
 		return {
 			success: true,
