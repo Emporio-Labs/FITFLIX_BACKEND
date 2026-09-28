@@ -1245,7 +1245,15 @@ export const getMyStats: RequestHandler = async (req, res, next) => {
 			};
 		}
 
+		// All-time completed sessions — the member app's "Workouts" counter.
+		const totalWorkouts = await WorkoutSession.countDocuments({
+			userId,
+			status: WorkoutSessionStatus.Completed,
+			isDeleted: { $ne: true },
+		});
+
 		res.status(200).json({
+			totalWorkouts,
 			weeklyWorkouts,
 			totalSetsThisWeek,
 			caloriesBurnedWeek,
@@ -1301,6 +1309,19 @@ export const getMyHistory: RequestHandler = async (req, res, next) => {
 				? page[page.length - 1]!._id.toString()
 				: null;
 
+		// Exercise counts per session (one aggregate for the page) so clients can
+		// hide sessions that were opened and left without logging anything.
+		const exerciseCounts = await WorkoutExercise.aggregate<{
+			_id: mongoose.Types.ObjectId;
+			count: number;
+		}>([
+			{ $match: { sessionId: { $in: page.map((s) => s._id) } } },
+			{ $group: { _id: "$sessionId", count: { $sum: 1 } } },
+		]);
+		const exerciseCountBySession = new Map(
+			exerciseCounts.map((c) => [c._id.toString(), c.count]),
+		);
+
 		// Lightweight summary — no exercises or set data
 		const workouts = page.map((session) => {
 			const duration =
@@ -1321,6 +1342,8 @@ export const getMyHistory: RequestHandler = async (req, res, next) => {
 				notes: session.notes,
 				planId: session.planId,
 				duration,
+				exerciseCount:
+					exerciseCountBySession.get(session._id.toString()) ?? 0,
 			};
 		});
 
