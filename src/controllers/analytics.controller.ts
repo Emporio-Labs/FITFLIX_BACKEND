@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import { buildUserAnalytics } from "../services/analytics.service";
 import { getValidationDetails } from "../services/nutrition/nutrition-errors";
+import { autoPullBcaIfEmpty } from "../utils/activex.service";
 import { analyticsQuerySchema } from "../validators/analytics.validator";
 
 /**
@@ -28,6 +29,7 @@ export const getMyAnalytics: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		await autoPullBcaIfEmpty(req.user.id);
 		const analytics = await buildUserAnalytics(req.user.id, parsed.data.period);
 		res.status(200).json(analytics);
 	} catch (error) {

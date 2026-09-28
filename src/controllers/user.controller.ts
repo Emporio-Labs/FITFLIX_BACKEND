@@ -34,6 +34,7 @@ import { normalizeRole } from "../middleware/rbac.middleware";
 import { buildActivePtMembershipFilter } from "../utils/membership-status.util";
 import {
 	ActiveXError,
+	autoPullBcaIfEmpty,
 	fetchBcaRecords,
 	upsertBcaRecordForUser,
 } from "../utils/activex.service";
@@ -1157,6 +1158,7 @@ export const getMyUserBcaMetrics: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		await autoPullBcaIfEmpty(req.user.id);
 		const history = await BcaMetric.find({ userId: req.user.id })
 			.sort({ recordedAt: -1 })
 			.select("-userId -__v");
