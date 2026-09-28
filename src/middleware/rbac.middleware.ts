@@ -6,6 +6,7 @@ export function normalizeRole(role: AppUserRole): string {
 	if (role === "frontdesk" || role === "staff" || role === "ROLE_FRONT_END_STAFF")
 		return "frontdesk";
 	if (role === "user" || role === "ROLE_MEMBER") return "user";
+	if ((role as string) === "sports-scientist") return "sports_scientist";
 	return role;
 }
 
@@ -34,3 +35,4 @@ export const authorize = (allowedRoles: AppUserRole[]): RequestHandler => {
 		next();
 	};
 };
+

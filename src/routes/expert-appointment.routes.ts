@@ -18,85 +18,85 @@ expertAppointmentRouter.use(
 // Admin / Frontdesk endpoints
 expertAppointmentRouter.get(
 	"/sports-scientist/bookings",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	getAllBookingsForAdmin,
 );
 
 expertAppointmentRouter.get(
 	"/admin/sports-scientist/bookings",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	getAllBookingsForAdmin,
 );
 
 expertAppointmentRouter.patch(
 	"/sports-scientist/bookings/:id/accept",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	acceptBooking,
 );
 
 expertAppointmentRouter.post(
 	"/sports-scientist/bookings/:id/accept",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	acceptBooking,
 );
 
 expertAppointmentRouter.patch(
 	"/admin/sports-scientist/bookings/:id/accept",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	acceptBooking,
 );
 
 expertAppointmentRouter.post(
 	"/admin/sports-scientist/bookings/:id/accept",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	acceptBooking,
 );
 
 expertAppointmentRouter.patch(
 	"/sports-scientist/bookings/:id/reject",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	rejectBooking,
 );
 
 expertAppointmentRouter.post(
 	"/sports-scientist/bookings/:id/reject",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	rejectBooking,
 );
 
 expertAppointmentRouter.patch(
 	"/admin/sports-scientist/bookings/:id/reject",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	rejectBooking,
 );
 
 expertAppointmentRouter.post(
 	"/admin/sports-scientist/bookings/:id/reject",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	rejectBooking,
 );
 
 expertAppointmentRouter.patch(
 	"/sports-scientist/bookings/:id/complete",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	completeBooking,
 );
 
 expertAppointmentRouter.post(
 	"/sports-scientist/bookings/:id/complete",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	completeBooking,
 );
 
 expertAppointmentRouter.patch(
 	"/admin/sports-scientist/bookings/:id/complete",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	completeBooking,
 );
 
 expertAppointmentRouter.post(
 	"/admin/sports-scientist/bookings/:id/complete",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "sports_scientist", "frontdesk"]),
 	completeBooking,
 );
 

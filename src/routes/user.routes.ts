@@ -26,7 +26,7 @@ userRouter.use(authenticateToken);
 userRouter.post("/", authorize(["admin"]), createUser);
 userRouter.get(
 	"/",
-	authorize(["admin", "doctor", "nutritionist", "trainer"]),
+	authorize(["admin", "doctor", "nutritionist", "sports_scientist", "trainer", "frontdesk"]),
 	getAllUsers,
 );
 userRouter.get("/me", authorize(["user"]), getMyUser);
@@ -41,22 +41,22 @@ userRouter.post(
 userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
 userRouter.get(
 	"/:id",
-	authorize(["admin", "doctor", "nutritionist", "user", "trainer"]),
+	authorize(["admin", "doctor", "nutritionist", "sports_scientist", "trainer", "frontdesk", "user"]),
 	getUserById,
 );
 userRouter.get(
 	"/:id/onboarding-profile",
-	authorize(["admin", "doctor", "nutritionist", "user", "trainer"]),
+	authorize(["admin", "doctor", "nutritionist", "sports_scientist", "trainer", "frontdesk", "user"]),
 	getOnboardingProfile,
 );
 userRouter.get(
 	"/:id/reports/:reportId/url",
-	authorize(["admin", "doctor", "nutritionist", "trainer"]),
+	authorize(["admin", "doctor", "nutritionist", "sports_scientist", "trainer", "frontdesk"]),
 	getReportSignedUrl,
 );
 userRouter.get(
 	"/:id/bca-metrics",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "sports_scientist", "nutritionist", "trainer"]),
 	getUserBcaMetrics,
 );
 userRouter.patch("/:id/onboard", authorize(["admin", "user"]), onboardUser);
@@ -69,3 +69,4 @@ userRouter.patch("/:id", authorize(["admin", "user"]), updateUserById);
 userRouter.delete("/:id", authorize(["admin"]), deleteUserById);
 
 export default userRouter;
+

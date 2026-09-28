@@ -15,17 +15,17 @@ const slotRouter = Router();
 slotRouter.use(authenticateToken);
 slotRouter.get(
 	"/",
-	authorize(["admin", "trainer", "user"]),
+	authorize(["admin", "trainer", "nutritionist", "sports_scientist", "frontdesk", "user"]),
 	getAllSlots,
 );
 slotRouter.get(
 	"/available",
-	authorize(["admin", "trainer", "user"]),
+	authorize(["admin", "trainer", "nutritionist", "sports_scientist", "frontdesk", "user"]),
 	getAvailableSlots,
 );
 slotRouter.get(
 	"/:id",
-	authorize(["admin", "trainer", "user"]),
+	authorize(["admin", "trainer", "nutritionist", "sports_scientist", "frontdesk", "user"]),
 	getSlotById,
 );
 slotRouter.post("/", authorize(["admin"]), createSlot);
@@ -33,3 +33,4 @@ slotRouter.patch("/:id", authorize(["admin"]), updateSlotById);
 slotRouter.delete("/:id", authorize(["admin"]), deleteSlotById);
 
 export default slotRouter;
+
