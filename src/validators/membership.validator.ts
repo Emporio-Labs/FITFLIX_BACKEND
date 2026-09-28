@@ -14,6 +14,8 @@ export const createMembershipBodySchema = z.object({
 	endDate: z.string().trim().optional(),
 	features: z.array(z.string().trim().min(1)).default([]),
 	notes: z.string().trim().optional(),
+	/** The branch this membership is issued at. Resolved by resolveLocationId. */
+	locationId: z.string().trim().optional(),
 });
 
 export const updateMembershipBodySchema = createMembershipBodySchema

@@ -5,6 +5,8 @@ import {
 	CreditTransactionType,
 	MeetingStatus,
 	MembershipStatus,
+	NotificationChannel,
+	NotificationKind,
 	ServiceCategory,
 	ServiceSubtype,
 	TrainerChangeRequestStatus,
@@ -17,6 +19,8 @@ import Trainer from "../models/Trainer";
 import TrainerChangeRequest from "../models/TrainerChangeRequest";
 import UnifiedBooking from "../models/UnifiedBooking";
 import User from "../models/User";
+import { notify } from "./notification.service";
+import { resolveTrainerUserId } from "../utils/expert-user.resolver";
 import { executeInTransaction } from "../utils/transaction.util";
 import {
 	PT_MEMBERSHIP_CLAUSE,
@@ -220,6 +224,37 @@ export const createPersonalTrainingBooking = async (params: {
 
 		await booking.save({ session });
 		return booking;
+	}).then(async (booking) => {
+		// FX-25 · notify the trainer that a new 1-on-1 was booked with them.
+		// Runs after the transaction commits so failed pushes never break booking.
+		try {
+			const trainerUserId = await resolveTrainerUserId(String(booking.expertId));
+			if (trainerUserId) {
+				const bookedBy = await User.findById(booking.userId)
+					.select("username")
+					.lean<{ username?: string } | null>();
+				const memberName = bookedBy?.username || "A member";
+				notify({
+					userId: trainerUserId,
+					kind: NotificationKind.AppointmentBooked,
+					title: "New 1-on-1 booking",
+					body: `${memberName} booked ${booking.startTime}–${booking.endTime}.`,
+					data: { bookingId: String(booking._id) },
+					channels: [
+						NotificationChannel.InApp,
+						NotificationChannel.Socket,
+						NotificationChannel.Push,
+					],
+					webPushUrl: `/admin/personal-training/today?highlight=${booking._id}`,
+					webPushPreference: "oneOnOneEvents",
+				}).catch((err) =>
+					console.error("[unified-booking] Trainer notify failed", err),
+				);
+			}
+		} catch (err) {
+			console.error("[unified-booking] Trainer notify block failed", err);
+		}
+		return booking;
 	});
 };
 
@@ -320,7 +355,106 @@ export const cancelUnifiedBooking = async (params: {
 			refunded: shouldRefundCredits,
 			creditRefunded,
 		};
+	}).then(async (result) => {
+		// FX-25 · notify the trainer that their 1-on-1 was cancelled.
+		try {
+			const booking = result.booking;
+			if (booking.serviceSubtype === ServiceSubtype.TRAINER) {
+				const trainerUserId = await resolveTrainerUserId(String(booking.expertId));
+				if (trainerUserId) {
+					notify({
+						userId: trainerUserId,
+						kind: NotificationKind.AppointmentCancelled,
+						title: "Session cancelled",
+						body: `Your ${booking.startTime} slot with a member was cancelled.`,
+						data: { bookingId: String(booking._id) },
+						channels: [
+							NotificationChannel.InApp,
+							NotificationChannel.Socket,
+							NotificationChannel.Push,
+						],
+						webPushUrl: `/admin/personal-training/today?highlight=${booking._id}`,
+						webPushPreference: "oneOnOneEvents",
+					}).catch((err) =>
+						console.error("[unified-booking] Cancel notify failed", err),
+					);
+				}
+			}
+		} catch (err) {
+			console.error("[unified-booking] Cancel notify block failed", err);
+		}
+		return result;
 	});
+};
+
+
+
+export const reschedulePersonalTrainingBooking = async (params: {
+	bookingId: string;
+	requesterId: string;
+	requesterRole?: string;
+	bookingDate: string | Date;
+	startTime: string;
+	endTime: string;
+}): Promise<any> => {
+	const { bookingId, requesterId, requesterRole, bookingDate, startTime, endTime } = params;
+
+	const booking = await UnifiedBooking.findById(bookingId);
+	if (!booking) {
+		throw new Error("Booking not found");
+	}
+
+	if (booking.status === UnifiedBookingStatus.CANCELLED) {
+		throw new Error("Cancelled bookings cannot be rescheduled");
+	}
+
+	const isOwner = String(booking.userId) === requesterId;
+	const isStaff = requesterRole === "admin" || requesterRole === "frontdesk" || requesterRole === "staff";
+	let isTrainer = false;
+	if (requesterRole === "trainer") {
+		const trainerUserId = await resolveTrainerUserId(String(booking.expertId));
+		isTrainer = trainerUserId === requesterId;
+	}
+	if (!isOwner && !isStaff && !isTrainer) {
+		throw new Error("Unauthorized to reschedule this booking");
+	}
+
+	booking.bookingDate = new Date(bookingDate);
+	booking.startTime = startTime;
+	booking.endTime = endTime;
+	await booking.save();
+
+	// FX-25 · notify the trainer that this 1-on-1 was rescheduled
+	try {
+		const trainerUserId = await resolveTrainerUserId(String(booking.expertId));
+		if (trainerUserId) {
+			const memberDoc = await User.findById(booking.userId)
+				.select("username")
+				.lean<{ username?: string } | null>();
+			const memberName = memberDoc?.username || "A member";
+			const dateStr = new Date(bookingDate).toDateString();
+			notify({
+				userId: trainerUserId,
+				kind: NotificationKind.AppointmentRescheduled,
+				title: "Session rescheduled",
+				body: `${memberName} rescheduled to ${startTime}–${endTime} on ${dateStr}.`,
+				data: { bookingId: String(booking._id) },
+				channels: [
+					NotificationChannel.InApp,
+					NotificationChannel.Socket,
+					NotificationChannel.Push,
+				],
+				webPushUrl: `/admin/personal-training/today?highlight=${booking._id}`,
+				webPushPreference: "oneOnOneEvents",
+			}).catch((err) =>
+				console.error("[unified-booking] Reschedule notify failed", err),
+			);
+		}
+	} catch (err) {
+		console.error("[unified-booking] Reschedule notify block failed", err);
+	}
+
+	return booking;
 };
 
 export const completeUnifiedBooking = async (

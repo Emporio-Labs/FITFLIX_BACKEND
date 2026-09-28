@@ -6,6 +6,11 @@ import {
 	createSlotBodySchema,
 	updateSlotBodySchema,
 } from "../validators/slot.validator";
+import {
+	LocationError,
+	mapLocationError,
+	resolveLocationId,
+} from "../utils/location.resolver";
 
 /**
  * Expert types that no longer draw from Slot capacity. Trainers were never in
@@ -87,6 +92,23 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// Resolve the branch this slot belongs to. With one active location the
+	// resolver auto-supplies it; with several the desk must be explicit —
+	// passing the header-selected locationId satisfies that requirement.
+	const rawLocationId = typeof req.body?.locationId === "string" ? req.body.locationId : undefined;
+	let resolvedLocationId: mongoose.Types.ObjectId;
+	try {
+		resolvedLocationId = await resolveLocationId(rawLocationId);
+	} catch (error) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res.status(mapped.status).json({ message: mapped.message, code: mapped.code });
+			return;
+		}
+		next(error);
+		return;
+	}
+
 	try {
 		const derivedState = deriveSlotState(parsedBody.data);
 
@@ -127,13 +149,13 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 		}
 
 		if (derivedState.isDaily) {
-			// Scoped by expertType: a nutritionist and a sports-scientist template
-			// are allowed to occupy the same time window — they draw from
-			// separate capacity pools, so they are not duplicates of each other.
+			// Scoped by expertType AND locationId: two branches may validly share
+			// the same window, so the duplicate check must not cross branch lines.
 			const duplicate = await Slot.findOne({
 				isDaily: true,
 				parentTemplate: null,
 				expertType,
+				locationId: resolvedLocationId,
 				startTime: parsedBody.data.startTime,
 				endTime: parsedBody.data.endTime,
 			}).select("_id");
@@ -152,6 +174,7 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 			date: derivedState.date,
 			isDaily: derivedState.isDaily,
 			expertType,
+			locationId: resolvedLocationId,
 			startTime: parsedBody.data.startTime,
 			endTime: parsedBody.data.endTime,
 			capacity: derivedState.capacity,

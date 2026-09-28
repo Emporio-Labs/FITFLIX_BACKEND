@@ -8,6 +8,11 @@ import {
 	MembershipStatus,
 } from "../models/Enums";
 import ScheduledReminder from "../models/ScheduledReminder";
+import ClassModel from "../models/Class";
+import ScheduledSession from "../models/ScheduledSession";
+import { resolveTrainerUserId } from "../utils/expert-user.resolver";
+import { resolveTimeZone } from "../utils/location.resolver";
+import { combineSessionDateTime } from "../utils/zego-room";
 import Membership from "../models/Membership";
 import User from "../models/User";
 import Admin from "../models/Admin";
@@ -208,6 +213,14 @@ export async function processReminders(): Promise<{
 		console.error("[reminder-poller] session room lifecycle sweep failed", err);
 	}
 
+	// FX-25 · Class reminder: send an alert to the class instructor 15 minutes
+	// before the class starts.
+	try {
+		await sendClassStartReminders(now);
+	} catch (err) {
+		console.error("[reminder-poller] sendClassStartReminders failed", err);
+	}
+
 	// Membership expiry. Throttled to hourly rather than riding the 60s tick —
 	// expiry is date-granular, so a minute-by-minute sweep would be pure load.
 	// Access is never stale in the meantime: every gating query carries its own
@@ -309,4 +322,97 @@ export function stopReminderPoller(): void {
 		clearInterval(pollerTimer);
 		pollerTimer = null;
 	}
+}
+
+
+/**
+ * FX-25 · Scan scheduled classes starting in the next 15 minutes and send a push
+ * alert to the assigned instructor.
+ */
+export async function sendClassStartReminders(
+	now: Date = new Date(),
+): Promise<number> {
+	let sent = 0;
+	const candidateWindowMs = 24 * 60 * 60 * 1000;
+	const candidates = await ScheduledSession.find({
+		status: { $in: ["SCHEDULED", "FULL"] },
+		trainerId: { $ne: null },
+		instructorNotifiedAt: null,
+		sessionDate: {
+			$gte: new Date(now.getTime() - candidateWindowMs),
+			$lte: new Date(now.getTime() + candidateWindowMs),
+		},
+	})
+		.limit(100)
+		.lean();
+
+	if (candidates.length === 0) return sent;
+
+	const classIds = [...new Set(candidates.map((c) => String(c.classId)))];
+	const classes = await ClassModel.find({ _id: { $in: classIds } })
+		.select("className title locationId")
+		.lean<{ _id: unknown; className?: string; title?: string; locationId?: unknown }[]>();
+
+	const classMap = new Map(classes.map((c) => [String(c._id), c]));
+	const zoneByClassId = new Map<string, string>();
+	for (const c of classes) {
+		zoneByClassId.set(
+			String(c._id),
+			await resolveTimeZone({ locationId: c.locationId ? String(c.locationId) : undefined }),
+		);
+	}
+
+	const leadMs = 15 * 60 * 1000;
+
+	for (const session of candidates) {
+		try {
+			const timeZone = zoneByClassId.get(String(session.classId));
+			const start = combineSessionDateTime(
+				session.sessionDate,
+				session.startTime,
+				timeZone,
+			);
+			if (!start) continue;
+
+			const timeDiff = start.getTime() - now.getTime();
+			// Firing window: starts within 15 minutes (and has not already started)
+			if (timeDiff > 0 && timeDiff <= leadMs) {
+				const claimed = await ScheduledSession.findOneAndUpdate(
+					{ _id: session._id, instructorNotifiedAt: null },
+					{ $set: { instructorNotifiedAt: now } },
+					{ returnDocument: "after" },
+				);
+				if (!claimed) continue;
+
+				const instructorUserId = await resolveTrainerUserId(String(session.trainerId));
+				if (!instructorUserId) continue;
+
+				const classDoc = classMap.get(String(session.classId));
+				const className = classDoc?.className || classDoc?.title || "Your class";
+
+				await notify({
+					userId: instructorUserId,
+					kind: NotificationKind.AppointmentReminder,
+					title: "Class starting in 15 minutes",
+					body: `${className} starts at ${session.startTime}. Get ready!`,
+					data: {
+						sessionId: String(session._id),
+						classId: String(session.classId),
+					},
+					channels: [
+						NotificationChannel.InApp,
+						NotificationChannel.Socket,
+						NotificationChannel.Push,
+					],
+					webPushUrl: `/admin/personal-training/today?highlight=${session._id}`,
+					webPushPreference: "classReminder",
+				});
+				sent++;
+			}
+		} catch (err) {
+			console.error(`[sendClassStartReminders] Failed for session ${String(session._id)}`, err);
+		}
+	}
+
+	return sent;
 }

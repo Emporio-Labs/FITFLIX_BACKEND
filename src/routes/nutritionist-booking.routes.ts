@@ -5,6 +5,8 @@ import {
 	cancelMyBooking,
 	completeBooking,
 	getAllBookingsForAdmin,
+	getMyNutritionistClients,
+	getMyNutritionistClientById,
 	getMemberBooking,
 	getMyBookings,
 	rejectBooking,
@@ -129,6 +131,20 @@ nutritionistBookingRouter.patch(
 	"/nutritionist/bookings/:id/complete",
 	authorize(["admin", "nutritionist", "frontdesk"]),
 	completeBooking,
+);
+
+
+// Nutritionist roster endpoints (AC FX-06 / FX-07)
+nutritionistBookingRouter.get(
+	"/nutritionist/me/members",
+	authorize(["nutritionist", "admin"]),
+	getMyNutritionistClients,
+);
+
+nutritionistBookingRouter.get(
+	"/nutritionist/me/members/:userId",
+	authorize(["nutritionist", "admin"]),
+	getMyNutritionistClientById,
 );
 
 export default nutritionistBookingRouter;

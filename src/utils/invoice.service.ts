@@ -17,6 +17,7 @@ import { generateInvoiceNumber } from "./invoice-number";
 export const createInvoice = async (
 	data: CreateInvoiceBody,
 	createdById: string,
+	locationId?: import("mongoose").Types.ObjectId,
 ) => {
 	const invoiceNumber = await generateInvoiceNumber();
 
@@ -44,6 +45,7 @@ export const createInvoice = async (
 		paymentMethod: data.paymentMethod as InvoicePaymentMethod,
 		...(data.issuedAt ? { issuedAt: new Date(data.issuedAt) } : {}),
 		createdBy: new mongoose.Types.ObjectId(createdById),
+		...(locationId ? { locationId } : {}),
 	});
 
 	return invoice;

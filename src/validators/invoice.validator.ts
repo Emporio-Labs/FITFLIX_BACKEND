@@ -56,6 +56,8 @@ export const createInvoiceBodySchema = z.object({
 		.enum(["DRAFT", "PENDING"] as [string, ...string[]])
 		.default(InvoicePaymentStatus.DRAFT),
 	issuedAt: z.string().trim().optional(),
+	/** The branch this invoice is issued at. Resolved by resolveLocationId in the controller. */
+	locationId: z.string().trim().optional(),
 });
 
 export const updateInvoiceStatusBodySchema = z.object({
