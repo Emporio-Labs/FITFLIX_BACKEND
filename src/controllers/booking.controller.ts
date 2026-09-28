@@ -15,6 +15,7 @@ import {
 } from "../services/slot-reservation.service";
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
 import { getActiveMembership } from "../utils/membership.guard";
+import { withOptionalTransaction } from "../utils/transaction";
 import { combineSessionWindow, resolveSessionRoomId } from "../utils/zego-room";
 import {
 	changeBookingStatusBodySchema,
@@ -640,90 +641,90 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const session = await mongoose.startSession();
-		try {
-			let response: { status: number; body: Record<string, unknown> } | null =
-				null;
+		let response: { status: number; body: Record<string, unknown> } | null =
+			null;
 
-			await session.withTransaction(async () => {
-				const existingBooking = await Booking.findById(id).session(session);
+		// withOptionalTransaction, not session.withTransaction: production
+		// runs a standalone mongod, where a raw transaction fails every
+		// cancel with "Transaction numbers are only allowed on a replica set".
+		await withOptionalTransaction(async (session) => {
+			const existingBooking = await Booking.findById(id).session(
+				session ?? null,
+			);
 
-				if (!existingBooking) {
-					response = {
-						status: 404,
-						body: { message: "Booking not found" },
-					};
-					return;
-				}
-
-				if (
-					requester.role === "user" &&
-					existingBooking.user.toString() !== requester.id
-				) {
-					response = {
-						status: 403,
-						body: { message: "Forbidden" },
-					};
-					return;
-				}
-
-				if (!isCancelledBookingStatus(existingBooking.status)) {
-					const transitionedBooking = await Booking.findOneAndUpdate(
-						{ _id: id, status: nonCancelledBookingStatusFilter },
-						{ status: BookingStatus.Cancelled },
-						{ returnDocument: "after", runValidators: true, session },
-					);
-
-					if (transitionedBooking) {
-						if (transitionedBooking.slot) {
-							await releaseSlotCapacity(
-								transitionedBooking.slot.toString(),
-								session,
-							);
-						} else if (transitionedBooking.sessionId) {
-							await releaseSeatAtomic(transitionedBooking.sessionId);
-						}
-
-						await refundCreditsBySource({
-							userId: transitionedBooking.user.toString(),
-							sourceType: CreditTransactionSource.Booking,
-							sourceId: transitionedBooking._id.toString(),
-							actorId: requester.id,
-							actorRole: requester.role,
-							reason: `Booking ${transitionedBooking._id.toString()} deleted`,
-							session,
-						});
-					}
-				}
-
-				const deletedBooking = await Booking.findByIdAndDelete(id, {
-					session,
-				});
-
-				if (!deletedBooking) {
-					response = {
-						status: 404,
-						body: { message: "Booking not found" },
-					};
-					return;
-				}
-
-				response = { status: 200, body: { message: "Booking deleted" } };
-			});
-
-			if (response) {
-				const { status, body } = response as {
-					status: number;
-					body: Record<string, unknown>;
+			if (!existingBooking) {
+				response = {
+					status: 404,
+					body: { message: "Booking not found" },
 				};
-				res.status(status).json(body);
 				return;
 			}
 
-			res.status(500).json({ message: "Booking delete failed" });
-		} finally {
-			session.endSession();
+			if (
+				requester.role === "user" &&
+				existingBooking.user.toString() !== requester.id
+			) {
+				response = {
+					status: 403,
+					body: { message: "Forbidden" },
+				};
+				return;
+			}
+
+			if (!isCancelledBookingStatus(existingBooking.status)) {
+				const transitionedBooking = await Booking.findOneAndUpdate(
+					{ _id: id, status: nonCancelledBookingStatusFilter },
+					{ status: BookingStatus.Cancelled },
+					{ returnDocument: "after", runValidators: true, session },
+				);
+
+				if (transitionedBooking) {
+					if (transitionedBooking.slot) {
+						await releaseSlotCapacity(
+							transitionedBooking.slot.toString(),
+							session,
+						);
+					} else if (transitionedBooking.sessionId) {
+						await releaseSeatAtomic(transitionedBooking.sessionId);
+					}
+
+					await refundCreditsBySource({
+						userId: transitionedBooking.user.toString(),
+						sourceType: CreditTransactionSource.Booking,
+						sourceId: transitionedBooking._id.toString(),
+						actorId: requester.id,
+						actorRole: requester.role,
+						reason: `Booking ${transitionedBooking._id.toString()} deleted`,
+						session,
+					});
+				}
+			}
+
+			const deletedBooking = await Booking.findByIdAndDelete(id, {
+				session,
+			});
+
+			if (!deletedBooking) {
+				response = {
+					status: 404,
+					body: { message: "Booking not found" },
+				};
+				return;
+			}
+
+			response = { status: 200, body: { message: "Booking deleted" } };
+		});
+
+		if (response) {
+			const { status, body } = response as {
+				status: number;
+				body: Record<string, unknown>;
+			};
+			res.status(status).json(body);
+			return;
 		}
+
+		res.status(500).json({ message: "Booking delete failed" });
 	} catch (error) {
 		next(error);
 	}
@@ -770,83 +771,79 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 			return;
 		}
 		if (isCancelledBookingStatus(parsedBody.data.status)) {
-			const session = await mongoose.startSession();
-			try {
-				let response: { status: number; body: Record<string, unknown> } | null =
-					null;
+			let response: { status: number; body: Record<string, unknown> } | null =
+				null;
 
-				await session.withTransaction(async () => {
-					const transitionedBooking = await Booking.findOneAndUpdate(
-						{ _id: id, status: nonCancelledBookingStatusFilter },
-						{ status: BookingStatus.Cancelled },
-						{ returnDocument: "after", runValidators: true, session },
-					);
+			// See deleteBookingById: a raw transaction fails on standalone mongod.
+			await withOptionalTransaction(async (session) => {
+				const transitionedBooking = await Booking.findOneAndUpdate(
+					{ _id: id, status: nonCancelledBookingStatusFilter },
+					{ status: BookingStatus.Cancelled },
+					{ returnDocument: "after", runValidators: true, session },
+				);
 
-					if (!transitionedBooking) {
-						const existingBooking = await Booking.findById(id).session(session);
+				if (!transitionedBooking) {
+					const existingBooking = await Booking.findById(id).session(session ?? null);
 
-						if (!existingBooking) {
-							response = {
-								status: 404,
-								body: { message: "Booking not found" },
-							};
-							return;
-						}
-
+					if (!existingBooking) {
 						response = {
-							status: 200,
-							body: {
-								message: "Booking status changed",
-								booking: existingBooking,
-								credits: { refunded: 0 },
-							},
+							status: 404,
+							body: { message: "Booking not found" },
 						};
 						return;
 					}
-
-					if (transitionedBooking.slot) {
-						await releaseSlotCapacity(
-							transitionedBooking.slot.toString(),
-							session,
-						);
-					} else if (transitionedBooking.sessionId) {
-						await releaseSeatAtomic(transitionedBooking.sessionId);
-					}
-
-					const refundResult = await refundCreditsBySource({
-						userId: transitionedBooking.user.toString(),
-						sourceType: CreditTransactionSource.Booking,
-						sourceId: transitionedBooking._id.toString(),
-						actorId: requester.id,
-						actorRole: requester.role,
-						reason: `Booking ${transitionedBooking._id.toString()} cancelled`,
-						session,
-					});
 
 					response = {
 						status: 200,
 						body: {
 							message: "Booking status changed",
-							booking: transitionedBooking,
-							credits: { refunded: refundResult.refunded },
+							booking: existingBooking,
+							credits: { refunded: 0 },
 						},
 					};
-				});
-
-				if (response) {
-					const { status, body } = response as {
-						status: number;
-						body: Record<string, unknown>;
-					};
-					res.status(status).json(body);
 					return;
 				}
 
-				res.status(500).json({ message: "Booking cancellation failed" });
+				if (transitionedBooking.slot) {
+					await releaseSlotCapacity(
+						transitionedBooking.slot.toString(),
+						session,
+					);
+				} else if (transitionedBooking.sessionId) {
+					await releaseSeatAtomic(transitionedBooking.sessionId);
+				}
+
+				const refundResult = await refundCreditsBySource({
+					userId: transitionedBooking.user.toString(),
+					sourceType: CreditTransactionSource.Booking,
+					sourceId: transitionedBooking._id.toString(),
+					actorId: requester.id,
+					actorRole: requester.role,
+					reason: `Booking ${transitionedBooking._id.toString()} cancelled`,
+					session,
+				});
+
+				response = {
+					status: 200,
+					body: {
+						message: "Booking status changed",
+						booking: transitionedBooking,
+						credits: { refunded: refundResult.refunded },
+					},
+				};
+			});
+
+			if (response) {
+				const { status, body } = response as {
+					status: number;
+					body: Record<string, unknown>;
+				};
+				res.status(status).json(body);
 				return;
-			} finally {
-				session.endSession();
 			}
+
+			res.status(500).json({ message: "Booking cancellation failed" });
+			return;
 		}
 
 		const booking = await Booking.findOneAndUpdate(
