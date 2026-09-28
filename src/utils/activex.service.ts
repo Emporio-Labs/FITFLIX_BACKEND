@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import BcaMetric from "../models/BcaMetric";
 import { OnboardingStep } from "../models/Enums";
+import User from "../models/User";
 import { updateSharedOnboardingStep } from "./onboarding.service";
 
 dotenv.config();
@@ -48,6 +49,7 @@ export type ActiveXRecord = Record<string, unknown>;
 export const fetchBcaRecords = async (
 	phone: string,
 	sinceDate?: Date,
+	signal?: AbortSignal,
 ): Promise<ActiveXRecord[]> => {
 	if (!ACTIVEX_API_KEY) {
 		throw new ActiveXError(
@@ -73,6 +75,7 @@ export const fetchBcaRecords = async (
 				Date: date.toISOString(),
 				PhoneNumbers: [formatPhoneForActiveX(phone)],
 			}),
+			signal,
 		});
 	} catch (err) {
 		throw new ActiveXError(
@@ -227,4 +230,55 @@ export const upsertBcaRecordForUser = async (
 	}
 
 	return payload;
+};
+
+const AUTO_PULL_COOLDOWN_MS = 10 * 60 * 1000;
+const AUTO_PULL_TIMEOUT_MS = 5000;
+const lastAutoPullAt = new Map<string, number>();
+const autoPullInFlight = new Map<string, Promise<void>>();
+
+/**
+ * ActiveX never pushes to `/internal/bca/ingest`, so without this a scan only
+ * reached a member who knew to tap Sync — everyone else saw "No scans yet".
+ * Runs on the member's own reads, only while they have nothing on file, at
+ * most once per cooldown per user; concurrent reads share one upstream call.
+ * Never throws: an ActiveX outage must not break the endpoints that call it.
+ */
+export const autoPullBcaIfEmpty = async (userId: string): Promise<void> => {
+	if (!ACTIVEX_API_KEY || !mongoose.isValidObjectId(userId)) return;
+
+	const inFlight = autoPullInFlight.get(userId);
+	if (inFlight) return inFlight;
+
+	const last = lastAutoPullAt.get(userId);
+	if (last && Date.now() - last < AUTO_PULL_COOLDOWN_MS) return;
+
+	const run = (async () => {
+		try {
+			if (await BcaMetric.exists({ userId })) return;
+			lastAutoPullAt.set(userId, Date.now());
+
+			const user = await User.findById(userId).select("phone").lean();
+			const phone = user?.phone?.trim();
+			if (!phone) return;
+
+			const records = await fetchBcaRecords(
+				phone,
+				undefined,
+				AbortSignal.timeout(AUTO_PULL_TIMEOUT_MS),
+			);
+			const objectId = new mongoose.Types.ObjectId(userId);
+			const receivedAt = new Date();
+			for (const record of records) {
+				await upsertBcaRecordForUser(objectId, record, receivedAt);
+			}
+		} catch (err) {
+			console.error(`[activex] Auto-pull failed for user ${userId}:`, err);
+		} finally {
+			autoPullInFlight.delete(userId);
+		}
+	})();
+
+	autoPullInFlight.set(userId, run);
+	return run;
 };
