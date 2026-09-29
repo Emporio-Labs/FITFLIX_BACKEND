@@ -1,4 +1,8 @@
 import mongoose from "mongoose";
+import {
+	homeBranchOf,
+	locationStampPlugin,
+} from "../utils/location-stamp.plugin";
 import { CreditTransactionSource, CreditTransactionType } from "./Enums";
 
 const creditTransactionSchema = new mongoose.Schema(
@@ -67,6 +71,12 @@ creditTransactionSchema.index({ locationId: 1, createdAt: -1 });
 type CreditTransactionDocument = mongoose.InferSchemaType<
 	typeof creditTransactionSchema
 >;
+
+creditTransactionSchema.plugin(locationStampPlugin, {
+	model: "CreditTransaction",
+	// A credit entry belongs to the member's home branch (FX-01.2).
+	derive: (doc) => homeBranchOf(doc.get("user")),
+});
 
 export default (mongoose.models
 	.CreditTransaction as mongoose.Model<CreditTransactionDocument>) ||
