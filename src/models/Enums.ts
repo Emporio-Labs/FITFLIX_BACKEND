@@ -222,6 +222,17 @@ export enum NotificationKind {
 	CommunityPostLiked = "community_post_liked",
 	CommunityPostCommented = "community_post_commented",
 	CommunityCommentReplied = "community_comment_replied",
+	// FX-12 Class Waitlist notifications
+	WaitlistPromoted = "waitlist_promoted",
+	WaitlistSkippedInsufficientCredits = "waitlist_skipped_insufficient_credits",
+}
+
+export enum WaitlistStatus {
+	Waiting = "WAITING",
+	Promoted = "PROMOTED",
+	SkippedInsufficientCredits = "SKIPPED_INSUFFICIENT_CREDITS",
+	Left = "LEFT",
+	Expired = "EXPIRED",
 }
 
 export enum ReminderKind {
