@@ -21,6 +21,7 @@ const serviceSchema = new mongoose.Schema(
 		creditCost: { type: Number, required: true, min: 1, default: 1 },
 		description: { type: String, required: true },
 		tags: { type: [String], default: [] },
+		isPaused: { type: Boolean, default: false },
 		slots: [
 			{
 				type: mongoose.Schema.Types.ObjectId,
