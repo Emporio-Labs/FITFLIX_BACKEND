@@ -17,6 +17,7 @@ export const updateServiceBodySchema = z
 		description: z.string().min(1).optional(),
 		tags: z.array(z.string().min(1)).optional(),
 		slots: z.array(z.string().min(1)).min(1).optional(),
+		isPaused: z.boolean().optional(),
 	})
 	.refine((payload) => Object.keys(payload).length > 0, {
 		message: "At least one field is required",

@@ -28,6 +28,7 @@ const toTherapyResponse = (service: {
 	tags: string[];
 	slots: mongoose.Types.ObjectId[];
 	creditCost?: number;
+	isPaused?: boolean | null;
 	createdAt?: Date;
 	updatedAt?: Date;
 }) => ({
@@ -38,6 +39,7 @@ const toTherapyResponse = (service: {
 	tags: service.tags,
 	slots: service.slots,
 	creditCost: service.creditCost ?? 1,
+	isPaused: service.isPaused ?? false,
 	createdAt: service.createdAt,
 	updatedAt: service.updatedAt,
 });
@@ -48,12 +50,14 @@ const toPublicTherapyResponse = (service: {
 	serviceTime: number;
 	description: string;
 	tags: string[];
+	isPaused?: boolean | null;
 }) => ({
 	_id: service._id,
 	therapyName: service.serviceName,
 	therapyTime: service.serviceTime,
 	description: service.description,
 	tags: service.tags,
+	isPaused: service.isPaused ?? false,
 });
 
 export const createTherapy: RequestHandler = async (req, res, next) => {
@@ -105,7 +109,7 @@ export const getPublicTherapies: RequestHandler = async (_req, res, next) => {
 	try {
 		const therapies = await Service.find({
 			serviceType: ServiceType.Therapy,
-		}).select("serviceName serviceTime description tags");
+		}).select("serviceName serviceTime description tags isPaused");
 
 		res.status(200).json({
 			therapies: therapies.map(toPublicTherapyResponse),
@@ -152,7 +156,7 @@ export const getPublicTherapyById: RequestHandler = async (req, res, next) => {
 		const therapy = await Service.findOne({
 			_id: id,
 			serviceType: ServiceType.Therapy,
-		}).select("serviceName serviceTime description tags");
+		}).select("serviceName serviceTime description tags isPaused");
 
 		if (!therapy) {
 			res.status(404).json({ message: "Therapy not found" });
@@ -206,6 +210,9 @@ export const updateTherapyById: RequestHandler = async (req, res, next) => {
 					: {}),
 				...(parsedBody.data.tags ? { tags: parsedBody.data.tags } : {}),
 				...(parsedBody.data.slots ? { slots: parsedBody.data.slots } : {}),
+				...(parsedBody.data.isPaused !== undefined
+					? { isPaused: parsedBody.data.isPaused }
+					: {}),
 			},
 			{
 				returnDocument: "after",
@@ -218,8 +225,16 @@ export const updateTherapyById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		const onlyPauseChanged =
+			parsedBody.data.isPaused !== undefined &&
+			Object.keys(parsedBody.data).length === 1;
+
 		res.status(200).json({
-			message: "Therapy updated",
+			message: onlyPauseChanged
+				? parsedBody.data.isPaused
+					? "Therapy paused"
+					: "Therapy resumed"
+				: "Therapy updated",
 			therapy: toTherapyResponse(updatedTherapy),
 		});
 	} catch (error) {

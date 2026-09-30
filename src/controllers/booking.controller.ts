@@ -150,11 +150,22 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 
 	try {
 		const service = await Service.findById(serviceId).select(
-			"_id creditCost slots",
+			"_id creditCost slots isPaused",
 		);
 
 		if (!service) {
 			res.status(404).json({ message: "Service not found" });
+			return;
+		}
+
+		// 403, not 409: released member apps map every 409 to a fixed "slot
+		// unavailable" dialog, but show a 403's message as-is.
+		if (service.isPaused) {
+			res.status(403).json({
+				message:
+					"Service unavailable. This service is temporarily paused — please check back later.",
+				code: "SERVICE_PAUSED",
+			});
 			return;
 		}
 
