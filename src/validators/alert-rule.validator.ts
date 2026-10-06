@@ -15,6 +15,12 @@ export const updateAlertRuleSchema = z.object({
 	firstResponderRole: z.string().trim().min(1).optional(),
 	escalationLadder: z.array(escalationStepSchema).optional(),
 	sound: z.enum(["chime", "siren", "pulse", "bell"]).optional(),
+	gracePeriodMinutes: z
+		.number()
+		.int("Grace period must be an integer")
+		.min(0, "Grace period cannot be negative")
+		.max(60, "Grace period cannot exceed 60 minutes")
+		.optional(),
 	title: z.string().trim().optional(),
 	description: z.string().trim().optional(),
 });

@@ -17,6 +17,7 @@ import {
 } from "../validators/class-schedule.validator";
 
 import { syncSessionsForClass } from "./class.controller";
+import { autoResolveOperationalAlerts } from "./operational-alert.controller";
 
 /// Absolute instants, computed once server-side so neither the Flutter app nor
 /// frontdesk has to re-derive them from `sessionDate` + "HH:mm" (the exact
@@ -556,12 +557,33 @@ export const updateScheduledSession: RequestHandler = async (
 			}
 		}
 
+		const oldStatus = session.status;
+		const oldStartTime = session.startTime;
+		const oldDate = session.sessionDate;
+
 		Object.assign(session, parsed.data);
 		if (parsed.data.sessionDate) {
 			session.sessionDate = newSessionDate;
 		}
 
 		await session.save();
+
+		if (parsed.data.status === "CANCELLED" && oldStatus !== "CANCELLED") {
+			void autoResolveOperationalAlerts(
+				"session",
+				String(session._id),
+				"Scheduled session was cancelled",
+			);
+		} else if (
+			(parsed.data.startTime && parsed.data.startTime !== oldStartTime) ||
+			(parsed.data.sessionDate && newSessionDate.getTime() !== oldDate.getTime())
+		) {
+			void autoResolveOperationalAlerts(
+				"session",
+				String(session._id),
+				"Scheduled session was rescheduled",
+			);
+		}
 
 		res.status(200).json({
 			message: "Scheduled session updated successfully",

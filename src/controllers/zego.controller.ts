@@ -14,6 +14,7 @@ import {
 	sendRoomMessageBodySchema,
 	listRoomMessagesQuerySchema,
 } from "../validators/zego.validator";
+import { autoResolveOperationalAlerts } from "./operational-alert.controller";
 
 /// Login-room + publish-stream, granted to hosts and to every member of a
 /// group video call. A live-stream *member* (audience) gets login only —
@@ -423,6 +424,12 @@ export const reportHostPresence: RequestHandler = async (req, res, next) => {
 			access.nutritionistBooking.hostLastSeenAt = now;
 			await access.nutritionistBooking.save();
 
+			void autoResolveOperationalAlerts(
+				"booking",
+				String(access.nutritionistBooking._id),
+				"Nutritionist joined consultation",
+			);
+
 			res.status(200).json({ hostLiveAt: access.nutritionistBooking.hostLiveAt.toISOString() });
 			return;
 		}
@@ -434,6 +441,12 @@ export const reportHostPresence: RequestHandler = async (req, res, next) => {
 			}
 			access.unifiedBooking.hostLastSeenAt = now;
 			await access.unifiedBooking.save();
+
+			void autoResolveOperationalAlerts(
+				"booking",
+				String(access.unifiedBooking._id),
+				"Host joined online consultation",
+			);
 
 			res.status(200).json({ hostLiveAt: access.unifiedBooking.hostLiveAt.toISOString() });
 			return;
@@ -450,6 +463,12 @@ export const reportHostPresence: RequestHandler = async (req, res, next) => {
 		}
 		access.session.hostLastSeenAt = now;
 		await access.session.save();
+
+		void autoResolveOperationalAlerts(
+			"session",
+			String(access.session._id),
+			"Trainer joined live class",
+		);
 
 		res.status(200).json({ hostLiveAt: access.session.hostLiveAt.toISOString() });
 	} catch (error) {

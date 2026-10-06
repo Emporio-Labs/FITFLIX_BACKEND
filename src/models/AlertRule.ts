@@ -69,6 +69,12 @@ const alertRuleSchema = new mongoose.Schema(
 			enum: ["chime", "siren", "pulse", "bell"],
 			default: "chime",
 		},
+		gracePeriodMinutes: {
+			type: Number,
+			default: 2,
+			min: 0,
+			max: 60,
+		},
 		updatedBy: {
 			userId: {
 				type: mongoose.Schema.Types.ObjectId,

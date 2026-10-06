@@ -280,7 +280,13 @@ export async function autoResolveOperationalAlerts(
 	try {
 		const key = `${entityType}:${entityId}`;
 		const openAlerts = await OperationalAlert.find({
-			autoResolveKey: key,
+			$or: [
+				{ autoResolveKey: key },
+				{
+					"relatedEntity.entityType": entityType,
+					"relatedEntity.entityId": entityId,
+				},
+			],
 			status: { $in: [AlertStatus.Open, AlertStatus.Acknowledged] },
 		});
 

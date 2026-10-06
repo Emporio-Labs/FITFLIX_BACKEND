@@ -9,6 +9,7 @@ export interface DefaultAlertRuleConfig {
 	firstResponderRole: string;
 	escalationLadder: Array<{ role: string; afterMinutes: number }>;
 	sound: "chime" | "siren" | "pulse" | "bell";
+	gracePeriodMinutes?: number;
 }
 
 /**
@@ -27,6 +28,7 @@ export const DEFAULT_ALERT_RULES: Record<AlertType, DefaultAlertRuleConfig> = {
 			{ role: "admin", afterMinutes: 5 },
 		],
 		sound: "siren",
+		gracePeriodMinutes: 2,
 	},
 	[AlertType.SessionStartingNoHost]: {
 		alertType: AlertType.SessionStartingNoHost,
@@ -39,6 +41,19 @@ export const DEFAULT_ALERT_RULES: Record<AlertType, DefaultAlertRuleConfig> = {
 			{ role: "branch_manager", afterMinutes: 7 },
 		],
 		sound: "pulse",
+		gracePeriodMinutes: 2,
+	},
+	[AlertType.SessionRoomFailed]: {
+		alertType: AlertType.SessionRoomFailed,
+		title: "Session Room Failed to Open",
+		description: "Automated live room setup failed or crashed ahead of scheduled class.",
+		severity: AlertSeverity.Critical,
+		firstResponderRole: "frontdesk",
+		escalationLadder: [
+			{ role: "branch_manager", afterMinutes: 1 },
+			{ role: "admin", afterMinutes: 3 },
+		],
+		sound: "siren",
 	},
 	[AlertType.EmergencyCall]: {
 		alertType: AlertType.EmergencyCall,

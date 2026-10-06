@@ -1,13 +1,30 @@
+import Booking from "../models/Bookings";
 import ClassModel from "../models/Class";
+import OperationalAlert from "../models/OperationalAlert";
 import ScheduledSession from "../models/ScheduledSession";
-import { resolveTimeZone } from "../utils/location.resolver";
+import Trainer from "../models/Trainer";
+import UnifiedBooking from "../models/UnifiedBooking";
+import User from "../models/User";
 import {
+	AlertSeverity,
+	AlertStatus,
+	AlertType,
+	AppointmentMode,
+	UnifiedBookingStatus,
+} from "../models/Enums";
+import { autoResolveOperationalAlerts } from "../controllers/operational-alert.controller";
+import { getEffectiveAlertRule } from "../utils/default-alert-rules";
+import { resolveLocationId, resolveTimeZone } from "../utils/location.resolver";
+import {
+	BUSINESS_TIMEZONE,
 	buildRoomTimeline,
 	combineSessionDateTime,
 	deriveRoomId,
+	nonCancelledBookingStatusFilter,
 	resolveSessionRoomId,
 	ROOM_LEAD_MINUTES,
 } from "../utils/zego-room";
+import { emitOperationalAlert } from "./realtime.service";
 import { finalizeSession } from "./session-finalize.service";
 import { listRoomUsers, readZegoServerConfig } from "./zego-server-api.service";
 
@@ -55,7 +72,7 @@ export async function prepareDueRooms(
 
 	// Batch the per-class lead override lookup rather than one query per
 	// session — most of a tick's candidates share a handful of classes.
-	const classIds = [...new Set(candidates.map((c) => String(c.classId)))];
+	const classIds = Array.from(new Set(candidates.map((c) => String(c.classId))));
 	const classes = await ClassModel.find({ _id: { $in: classIds } })
 		.select("occurrenceLeadMinutes locationId")
 		.lean();
@@ -129,6 +146,7 @@ export async function prepareDueRooms(
 				err,
 			);
 			skipped++;
+			await triggerSessionRoomFailedAlert(session, err);
 		}
 	}
 
@@ -228,7 +246,7 @@ export async function verifyHostPresence(
 
 	if (candidates.length === 0) return { verified, skipped };
 
-	const classIds = [...new Set(candidates.map((c) => String(c.classId)))];
+	const classIds = Array.from(new Set(candidates.map((c) => String(c.classId))));
 	const classes = await ClassModel.find({ _id: { $in: classIds } })
 		.select("instructorUserId")
 		.lean();
@@ -269,7 +287,14 @@ export async function verifyHostPresence(
 				{ _id: session._id, hostLiveAt: null },
 				{ $set: { hostLiveAt: now, hostLastSeenAt: now } },
 			);
-			if (claimed) verified++;
+			if (claimed) {
+				verified++;
+				void autoResolveOperationalAlerts(
+					"session",
+					String(session._id),
+					"Trainer presence verified in Zego room",
+				);
+			}
 		} catch (err) {
 			console.error(
 				`[session-room-lifecycle] verifyHostPresence failed for ${String(session._id)}`,
@@ -280,4 +305,324 @@ export async function verifyHostPresence(
 	}
 
 	return { verified, skipped };
+}
+
+/**
+ * FX-40.2: A critical alert fires when a session room fails to open.
+ */
+export async function triggerSessionRoomFailedAlert(
+	session: { _id: unknown; classId: unknown; startTime?: string },
+	error: unknown,
+): Promise<void> {
+	try {
+		const existingAlert = await OperationalAlert.findOne({
+			"relatedEntity.entityType": "session",
+			"relatedEntity.entityId": String(session._id),
+			type: AlertType.SessionRoomFailed,
+			status: { $in: [AlertStatus.Open, AlertStatus.Acknowledged] },
+		});
+		if (existingAlert) return;
+
+		const classDoc = await ClassModel.findById(session.classId)
+			.select("name locationId")
+			.lean();
+		const className = classDoc?.name || "Live Session";
+		const branchId = classDoc?.locationId || (await resolveLocationId());
+		const rule = await getEffectiveAlertRule(AlertType.SessionRoomFailed);
+
+		const errorMessage =
+			error instanceof Error ? error.message : "Failed to initialize video room";
+
+		const alert = await OperationalAlert.create({
+			type: AlertType.SessionRoomFailed,
+			severity: AlertSeverity.Critical,
+			status: AlertStatus.Open,
+			title: `Room Failed to Open: ${className}`,
+			message: `Live session room for class '${className}' (${session.startTime || "Scheduled"}) failed to open: ${errorMessage}. Immediate staff intervention required.`,
+			branchId,
+			targetRoles: ["frontdesk", "admin"],
+			sound: rule.sound || "siren",
+			escalationLadder: rule.escalationLadder || [],
+			relatedEntity: {
+				entityType: "session",
+				entityId: String(session._id),
+				summary: `Room Failed | ${className} | ${session.startTime || ""}`,
+			},
+			autoResolveKey: `session:${session._id}`,
+		});
+
+		emitOperationalAlert(alert.toObject());
+	} catch (err) {
+		console.error(
+			`[session-room-lifecycle] Failed to trigger room failure alert for ${String(session._id)}`,
+			err,
+		);
+	}
+}
+
+/**
+ * FX-40.1, FX-40.3, FX-40.5:
+ * Sweeps for live classes and online sessions that have reached their scheduled
+ * start time (+ grace period configured in FX-36 AlertRules) where the trainer has
+ * NOT joined (hostLiveAt is null).
+ *
+ * - Fires a Critical OperationalAlert with sound and escalation ladder.
+ * - Names the class, trainer, start time, and count of waiting members.
+ * - Cancelled or rescheduled sessions never fire an alert (status query excludes CANCELLED/COMPLETED).
+ * - Deduplicated: skips sessions that already have an open/acknowledged alert.
+ */
+export async function checkTrainerNoShowSessions(
+	now: Date = new Date(),
+): Promise<{ checked: number; alerted: number }> {
+	let checked = 0;
+	let alerted = 0;
+
+	// 1. Fetch effective rule for grace period & alerting settings (FX-36)
+	const rule = await getEffectiveAlertRule(AlertType.SessionStartingNoHost);
+	const graceMinutes = rule.gracePeriodMinutes ?? 2;
+
+	// 2. Query candidates: only active live/hybrid sessions scheduled within the candidate window
+	// FX-40.5: CANCELLED and COMPLETED sessions are strictly excluded.
+	const candidates = await ScheduledSession.find({
+		status: { $in: ["SCHEDULED", "FULL"] },
+		deliveryType: { $in: ["ONLINE", "HYBRID"] },
+		hostLiveAt: null,
+		sessionDate: {
+			$gte: new Date(now.getTime() - CANDIDATE_WINDOW_MS),
+			$lte: new Date(now.getTime() + CANDIDATE_WINDOW_MS),
+		},
+	})
+		.limit(BATCH_LIMIT)
+		.lean();
+
+	// Process group classes and live streams
+	if (candidates.length > 0) {
+		const classIds = Array.from(new Set(candidates.map((c) => String(c.classId))));
+		const classes = await ClassModel.find({ _id: { $in: classIds } })
+			.select("name instructor instructorUserId locationId")
+			.lean();
+		const classById = new Map(classes.map((c) => [String(c._id), c]));
+
+		const trainerIds = Array.from(
+			new Set(
+				candidates
+					.map((c) => (c.trainerId ? String(c.trainerId) : null))
+					.filter(Boolean),
+			),
+		) as string[];
+		const trainers =
+			trainerIds.length > 0
+				? await Trainer.find({ _id: { $in: trainerIds } } as any)
+						.select("trainerName")
+						.lean()
+				: [];
+		const trainerById = new Map(
+			trainers.map((t) => [String(t._id), t.trainerName]),
+		);
+
+		const userIds = Array.from(
+			new Set(
+				classes
+					.map((c) =>
+						c.instructorUserId ? String(c.instructorUserId) : null,
+					)
+					.filter(Boolean),
+			),
+		) as string[];
+		const users =
+			userIds.length > 0
+				? await User.find({ _id: { $in: userIds } })
+						.select("username name")
+						.lean()
+				: [];
+		const userById = new Map(
+			users.map((u) => [String(u._id), (u as any).name || u.username]),
+		);
+
+		const zoneByClassId = new Map<string, string>();
+		for (const c of classes) {
+			zoneByClassId.set(
+				String(c._id),
+				await resolveTimeZone({ locationId: c.locationId }),
+			);
+		}
+
+		for (const session of candidates) {
+			checked++;
+			try {
+				const timeZone =
+					zoneByClassId.get(String(session.classId)) || BUSINESS_TIMEZONE;
+				const start = combineSessionDateTime(
+					session.sessionDate,
+					session.startTime,
+					timeZone,
+				);
+				if (!start) continue;
+
+				const end = combineSessionDateTime(
+					session.sessionDate,
+					session.endTime,
+					timeZone,
+				);
+
+				// FX-40.1: Check if start time + grace period has arrived
+				const thresholdTime = start.getTime() + graceMinutes * 60 * 1000;
+				if (now.getTime() < thresholdTime) {
+					continue; // Not yet past start + grace period
+				}
+
+				// Don't alert if the session ended long ago (> 20 mins after scheduled end)
+				if (end && now.getTime() > end.getTime() + 20 * 60 * 1000) {
+					continue;
+				}
+
+				// Deduplicate: check if an alert is already active for this session
+				const existingAlert = await OperationalAlert.findOne({
+					"relatedEntity.entityType": "session",
+					"relatedEntity.entityId": String(session._id),
+					type: AlertType.SessionStartingNoHost,
+					status: { $in: [AlertStatus.Open, AlertStatus.Acknowledged] },
+				});
+				if (existingAlert) {
+					continue;
+				}
+
+				// FX-40.3: Format details (class, trainer, start time, waiting members)
+				const classDoc = classById.get(String(session.classId));
+				const className = classDoc?.name || "Live Class";
+
+				let trainerName = "Staff";
+				if (
+					session.trainerId &&
+					trainerById.has(String(session.trainerId))
+				) {
+					trainerName = trainerById.get(String(session.trainerId))!;
+				} else if (
+					classDoc?.instructorUserId &&
+					userById.has(String(classDoc.instructorUserId))
+				) {
+					trainerName = userById.get(String(classDoc.instructorUserId))!;
+				} else if (classDoc?.instructor) {
+					trainerName = classDoc.instructor;
+				}
+
+				// Count waiting members
+				const waitingCount = await Booking.countDocuments({
+					sessionId: String(session._id),
+					...nonCancelledBookingStatusFilter,
+				});
+				const waitingMembersCount =
+					waitingCount > 0 ? waitingCount : (session.currentBookings || 0);
+
+				const branchId =
+					classDoc?.locationId || (await resolveLocationId());
+
+				const alert = await OperationalAlert.create({
+					type: AlertType.SessionStartingNoHost,
+					severity: rule.severity || AlertSeverity.Critical,
+					status: AlertStatus.Open,
+					title: `Trainer Missing: ${className}`,
+					message: `Live class '${className}' scheduled for ${session.startTime} with trainer ${trainerName} reached start time (+${graceMinutes}m grace), but the trainer has not joined. ${waitingMembersCount} member(s) waiting.`,
+					branchId,
+					targetRoles: rule.firstResponderRole
+						? [rule.firstResponderRole, "frontdesk", "admin"]
+						: ["frontdesk", "admin"],
+					sound: rule.sound || "siren",
+					escalationLadder: rule.escalationLadder || [],
+					relatedEntity: {
+						entityType: "session",
+						entityId: String(session._id),
+						summary: `${className} | Trainer: ${trainerName} | ${session.startTime} | ${waitingMembersCount} waiting`,
+					},
+					autoResolveKey: `session:${session._id}`,
+				});
+
+				emitOperationalAlert(alert.toObject());
+				alerted++;
+			} catch (err) {
+				console.error(
+					`[session-room-lifecycle] checkTrainerNoShowSessions failed for session ${String(session._id)}`,
+					err,
+				);
+			}
+		}
+	}
+
+	// Also check 1-on-1 online personal training / consultation sessions
+	try {
+		const candidate1on1 = await UnifiedBooking.find({
+			status: UnifiedBookingStatus.CONFIRMED,
+			appointmentMode: AppointmentMode.ONLINE,
+			hostLiveAt: null,
+			bookingDate: {
+				$gte: new Date(now.getTime() - CANDIDATE_WINDOW_MS),
+				$lte: new Date(now.getTime() + CANDIDATE_WINDOW_MS),
+			},
+		} as any)
+			.limit(BATCH_LIMIT)
+			.populate("expertId", "trainerName name username")
+			.lean();
+
+		for (const booking of candidate1on1) {
+			checked++;
+			const start = combineSessionDateTime(
+				booking.bookingDate,
+				booking.startTime,
+				BUSINESS_TIMEZONE,
+			);
+			if (!start) continue;
+
+			const thresholdTime = start.getTime() + graceMinutes * 60 * 1000;
+			if (now.getTime() < thresholdTime) continue;
+
+			// Deduplicate
+			const existingAlert = await OperationalAlert.findOne({
+				"relatedEntity.entityType": "booking",
+				"relatedEntity.entityId": String(booking._id),
+				type: AlertType.SessionStartingNoHost,
+				status: { $in: [AlertStatus.Open, AlertStatus.Acknowledged] },
+			});
+			if (existingAlert) continue;
+
+			const expertName =
+				(booking.expertId as any)?.trainerName ||
+				(booking.expertId as any)?.name ||
+				(booking.expertId as any)?.username ||
+				booking.assignedExpertName ||
+				"Assigned Expert";
+
+			const sessionTitle = `${booking.serviceSubtype || "1-on-1"} Session`;
+			const branchId = booking.locationId || (await resolveLocationId());
+
+			const alert = await OperationalAlert.create({
+				type: AlertType.SessionStartingNoHost,
+				severity: rule.severity || AlertSeverity.Critical,
+				status: AlertStatus.Open,
+				title: `Trainer Missing: ${sessionTitle}`,
+				message: `Online 1-on-1 session scheduled for ${booking.startTime} with ${expertName} reached start time (+${graceMinutes}m grace), but host has not joined. Member is waiting.`,
+				branchId,
+				targetRoles: rule.firstResponderRole
+					? [rule.firstResponderRole, "frontdesk", "admin"]
+					: ["frontdesk", "admin"],
+				sound: rule.sound || "siren",
+				escalationLadder: rule.escalationLadder || [],
+				relatedEntity: {
+					entityType: "booking",
+					entityId: String(booking._id),
+					summary: `${sessionTitle} | Host: ${expertName} | ${booking.startTime} | 1 member waiting`,
+				},
+				autoResolveKey: `booking:${booking._id}`,
+			});
+
+			emitOperationalAlert(alert.toObject());
+			alerted++;
+		}
+	} catch (err) {
+		console.error(
+			"[session-room-lifecycle] checkTrainerNoShowSessions 1-on-1 check failed",
+			err,
+		);
+	}
+
+	return { checked, alerted };
 }

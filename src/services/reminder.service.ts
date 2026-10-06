@@ -22,6 +22,7 @@ import { expireStaleNutritionistBookings } from "./nutritionist-expiry.service";
 import { expireStaleSportsScientistBookings } from "./sports-scientist-expiry.service";
 import { expireMemberships } from "./membership-lifecycle.service";
 import {
+	checkTrainerNoShowSessions,
 	expireDueRooms,
 	prepareDueRooms,
 	verifyHostPresence,
@@ -208,6 +209,7 @@ export async function processReminders(): Promise<{
 	try {
 		await prepareDueRooms(now);
 		await verifyHostPresence(now);
+		await checkTrainerNoShowSessions(now);
 		await expireDueRooms(now);
 	} catch (err) {
 		console.error("[reminder-poller] session room lifecycle sweep failed", err);

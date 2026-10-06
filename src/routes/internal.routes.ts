@@ -4,6 +4,7 @@ import User from "../models/User";
 import { processReminders } from "../services/reminder.service";
 import { processLeadFollowups } from "../services/lead-followup.scheduler";
 import {
+	checkTrainerNoShowSessions,
 	expireDueRooms,
 	prepareDueRooms,
 	verifyHostPresence,
@@ -81,12 +82,13 @@ router.post("/sessions/lifecycle/tick", async (req: Request, res: Response) => {
 
 	try {
 		const now = new Date();
-		const [prepared, hostPresence, expired] = await Promise.all([
+		const [prepared, hostPresence, noShowAlerts, expired] = await Promise.all([
 			prepareDueRooms(now),
 			verifyHostPresence(now),
+			checkTrainerNoShowSessions(now),
 			expireDueRooms(now),
 		]);
-		res.status(200).json({ ok: true, prepared, hostPresence, expired });
+		res.status(200).json({ ok: true, prepared, hostPresence, noShowAlerts, expired });
 	} catch (err) {
 		console.error("[internal/sessions/lifecycle/tick] Error", err);
 		res

@@ -539,6 +539,7 @@ export enum AlertType {
 	LeadUnclaimed = "lead_unclaimed",
 	TrainerMissing = "trainer_missing",
 	SessionStartingNoHost = "session_starting_no_host",
+	SessionRoomFailed = "session_room_failed",
 	CapacityBreached = "capacity_breached",
 	EmergencyCall = "emergency_call",
 	OperationalDisruption = "operational_disruption",
