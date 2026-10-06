@@ -8,6 +8,7 @@ import OperationalAlert from "../models/OperationalAlert";
 import Location from "../models/Location";
 import { emitOperationalAlert } from "../services/realtime.service";
 import { autoResolveOperationalAlerts } from "./operational-alert.controller";
+import { getEffectiveAlertRule } from "../utils/default-alert-rules";
 import { calculateHealthScore } from "../utils/health-score";
 import { hashPassword } from "../utils/password";
 import {
@@ -266,14 +267,17 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 			try {
 				const defaultBranch = await Location.findOne({ isActive: true }).select("_id");
 				if (defaultBranch) {
+					const rule = await getEffectiveAlertRule(AlertType.LeadUnclaimed);
 					const alert = await OperationalAlert.create({
 						type: AlertType.LeadUnclaimed,
-						severity: AlertSeverity.Critical,
+						severity: rule.severity,
 						status: AlertStatus.Open,
 						title: `Urgent Callback Lead: ${resolvedLeadName}`,
-						message: `New high-intent lead requires callback (${resolvedPhone || resolvedEmail || "Phone pending"}). Claim within 15 min.`,
+						message: `New high-intent lead requires callback (${resolvedPhone || resolvedEmail || "Phone pending"}). First responder: ${rule.firstResponderRole}.`,
 						branchId: defaultBranch._id,
-						targetRoles: ["admin", "frontdesk"],
+						targetRoles: [rule.firstResponderRole],
+						sound: rule.sound,
+						escalationLadder: rule.escalationLadder,
 						relatedEntity: {
 							entityType: "lead",
 							entityId: lead._id.toString(),

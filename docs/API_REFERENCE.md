@@ -500,6 +500,9 @@ Also mounted at `/api/invoices`. Rate limit: `apiRateLimit`.
 |---|---|---|---|---|
 | GET | `/api/v1/admin/settings/rooms` | JWT | — | `getConferenceSettings` |
 | PUT | `/api/v1/admin/settings/rooms` | JWT | — | `updateConferenceSettings` |
+| GET | `/api/v1/admin/settings/alert-rules` | JWT | admin, frontdesk | `getAllAlertRules` |
+| PUT | `/api/v1/admin/settings/alert-rules/:alertType` | JWT | admin | `updateAlertRule` |
+| POST | `/api/v1/admin/settings/alert-rules/reset` | JWT | admin | `resetAlertRules` |
 
 #### `/membership-plans` → [membershipPlan.routes.ts](../src/routes/membershipPlan.routes.ts)
 

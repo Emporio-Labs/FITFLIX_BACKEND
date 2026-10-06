@@ -48,6 +48,20 @@ const operationalAlertSchema = new mongoose.Schema(
 			type: [String],
 			default: ["admin", "frontdesk"],
 		},
+		sound: {
+			type: String,
+			enum: ["chime", "siren", "pulse", "bell"],
+			default: "chime",
+		},
+		escalationLadder: {
+			type: [
+				{
+					role: { type: String, required: true },
+					afterMinutes: { type: Number, required: true },
+				},
+			],
+			default: [],
+		},
 		targetUserId: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "User",

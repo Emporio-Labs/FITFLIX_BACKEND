@@ -13,6 +13,7 @@ import {
 	queryOperationalAlertsSchema,
 	resolveOperationalAlertSchema,
 } from "../validators/operational-alert.validator";
+import { getEffectiveAlertRule } from "../utils/default-alert-rules";
 
 const getValidationDetails = (issues: any[]): Record<string, string> => {
 	const details: Record<string, string> = {};
@@ -239,8 +240,18 @@ export const createOperationalAlert: RequestHandler = async (req, res, next) => 
 			return;
 		}
 
+		// FX-36.2 & FX-36.3: Apply effective configured rule (or sensible defaults)
+		const rule = await getEffectiveAlertRule(rest.type);
+
 		const alert = await OperationalAlert.create({
 			...rest,
+			severity: rest.severity ?? rule.severity,
+			targetRoles:
+				rest.targetRoles && rest.targetRoles.length > 0
+					? rest.targetRoles
+					: [rule.firstResponderRole],
+			sound: rule.sound,
+			escalationLadder: rule.escalationLadder,
 			branchId: new mongoose.Types.ObjectId(branchId),
 			status: AlertStatus.Open,
 			autoResolveKey: `${rest.relatedEntity.entityType}:${rest.relatedEntity.entityId}`,
