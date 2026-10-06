@@ -266,6 +266,16 @@ export const bookPersonalTraining: RequestHandler = async (req, res, next) => {
 			res.status(409).json({ message: error.message, code: "SLOT_CONFLICT" });
 			return;
 		}
+		// Belt-and-braces: a duplicate-key from the slot's partial unique index
+		// means someone won the same slot first. Map it to the same 409 rather
+		// than leaking a raw Mongo error as a 400.
+		if (error.code === 11000) {
+			res.status(409).json({
+				message: "That time slot was just booked. Please pick another time.",
+				code: "SLOT_CONFLICT",
+			});
+			return;
+		}
 		if (error.name === "InsufficientQuotaError") {
 			res.status(400).json({ message: error.message, code: "INSUFFICIENT_QUOTA" });
 			return;

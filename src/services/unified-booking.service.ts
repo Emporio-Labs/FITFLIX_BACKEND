@@ -222,7 +222,24 @@ export const createPersonalTrainingBooking = async (params: {
 			booking.zegoRoomId = `session_${booking._id.toString()}`;
 		}
 
-		await booking.save({ session });
+		try {
+			await booking.save({ session });
+		} catch (err: any) {
+			// The partial unique index on {expertId, bookingDate, startTime} is the
+			// structural backstop the earlier overlap findOne cannot provide under
+			// concurrency: when many requests race for the same slot, exactly one
+			// insert wins and the rest collide here. Surface that as the same
+			// 409-mapped SlotConflictError the caller already handles. On a replica
+			// set this throws out of the transaction, so the quota decrement and
+			// CreditTransaction written above are rolled back — a refused booking
+			// costs the member nothing.
+			if (err?.code === 11000) {
+				throw new SlotConflictError(
+					`Trainer ${trainer.trainerName} was just booked for ${params.startTime}–${params.endTime}. Please pick another time.`,
+				);
+			}
+			throw err;
+		}
 		return booking;
 	}).then(async (booking) => {
 		// FX-25 · notify the trainer that a new 1-on-1 was booked with them.
