@@ -18,6 +18,10 @@ export interface WebPushPayload {
 	url?: string;
 	tag?: string;
 	data?: Record<string, unknown>;
+	requireInteraction?: boolean;
+	severity?: string;
+	action?: string;
+	alertId?: string;
 }
 
 export interface WebPushSubscriptionJson {
@@ -100,6 +104,10 @@ export async function sendWebPushToUser(
 		url: payload.url,
 		tag: payload.tag,
 		data: payload.data,
+		requireInteraction: payload.requireInteraction,
+		severity: payload.severity,
+		action: payload.action,
+		alertId: payload.alertId,
 	});
 
 	const deadEndpoints: string[] = [];
@@ -283,4 +291,123 @@ export async function updatePushPreferences(
 		consultationEvents: first?.preferences?.consultationEvents ?? true,
 		classReminder: first?.preferences?.classReminder ?? true,
 	};
+}
+
+/**
+ * FX-39.1: Send device notification to target staff & escalation roles when
+ * a critical alert fires.
+ * Desktop notifications stay pinned via requireInteraction: true (FX-39.2).
+ * Clicking notification deep-links directly to the alert (FX-39.3).
+ */
+export async function sendWebPushForOperationalAlert(alert: any): Promise<number> {
+	if (!alert || alert.severity !== "critical") {
+		return 0; // FX-39 only sends Web Push for critical alerts; warnings/info are in-app only
+	}
+
+	const keys = getVapidKeys();
+	if (!keys) return 0;
+
+	// Gather target roles from first responder + escalation ladder
+	const roleSet = new Set<string>();
+	if (Array.isArray(alert.targetRoles)) {
+		for (const r of alert.targetRoles) {
+			if (r) roleSet.add(r);
+		}
+	}
+	if (Array.isArray(alert.escalationLadder)) {
+		for (const step of alert.escalationLadder) {
+			if (step?.role) roleSet.add(step.role);
+		}
+	}
+	// Always include admin & branch_manager
+	roleSet.add("admin");
+	roleSet.add("branch_manager");
+	const roles = Array.from(roleSet);
+
+	// Find all candidate users with push subscriptions
+	const query: any = {
+		"pushSubscriptions.0": { $exists: true },
+	};
+
+	const orConditions: any[] = [
+		{ "pushSubscriptions.role": { $in: roles } },
+		{ staffRole: { $in: roles } },
+		{ communityRole: { $in: roles } },
+	];
+	if (alert.targetUserId) {
+		orConditions.push({ _id: alert.targetUserId });
+	}
+	query.$or = orConditions;
+
+	const users = await User.find(query).select("_id homeLocationId").lean();
+	if (users.length === 0) return 0;
+
+	const payload: WebPushPayload = {
+		title: `CRITICAL ALARM: ${alert.title}`,
+		body: alert.message,
+		url: `/admin/overview?alertId=${alert._id}`,
+		tag: `alert:${alert._id}`,
+		severity: "critical",
+		requireInteraction: true,
+		alertId: String(alert._id),
+		data: {
+			alertId: String(alert._id),
+			severity: "critical",
+			requireInteraction: true,
+		},
+	};
+
+	let sentCount = 0;
+	await Promise.allSettled(
+		users.map(async (u) => {
+			try {
+				await sendWebPushToUser(String(u._id), payload);
+				sentCount++;
+			} catch (err) {
+				console.error(
+					`[webpush] Failed to send alert push to user ${String(u._id)}`,
+					err,
+				);
+			}
+		}),
+	);
+
+	return sentCount;
+}
+
+/**
+ * FX-39.4: Acknowledging in Frontdesk clears the device notification
+ * on other devices where the browser allows it.
+ */
+export async function clearWebPushForOperationalAlert(alert: any): Promise<void> {
+	if (!alert) return;
+	const alertId = String(alert._id || alert);
+
+	const keys = getVapidKeys();
+	if (!keys) return;
+
+	// Query all users who have active push subscriptions
+	const users = await User.find({
+		"pushSubscriptions.0": { $exists: true },
+	})
+		.select("_id")
+		.lean();
+
+	if (users.length === 0) return;
+
+	const clearPayload: WebPushPayload = {
+		title: "",
+		body: "",
+		tag: `alert:${alertId}`,
+		action: "clear",
+		alertId,
+		data: {
+			action: "clear",
+			alertId,
+		},
+	};
+
+	await Promise.allSettled(
+		users.map((u) => sendWebPushToUser(String(u._id), clearPayload)),
+	);
 }

@@ -1,6 +1,10 @@
 import type { Server as HttpServer } from "node:http";
 import { type Socket, Server as SocketIOServer } from "socket.io";
 import { getJwtConfig, verifyAuthToken } from "../utils/jwt";
+import {
+	clearWebPushForOperationalAlert,
+	sendWebPushForOperationalAlert,
+} from "./webpush.service";
 
 export type FrontDeskEvent =
 	| "appointment_created"
@@ -143,6 +147,11 @@ export function emitToNutritionist(
 }
 
 export function emitOperationalAlert(alert: any): void {
+	// FX-39.1: Critical alerts are also sent as a device notification to target staff & escalation roles
+	if (alert?.severity === "critical") {
+		void sendWebPushForOperationalAlert(alert);
+	}
+
 	if (!io) return;
 	const branchRoom = alert.branchId ? `branch:${alert.branchId.toString()}` : null;
 	if (branchRoom) {
@@ -152,6 +161,9 @@ export function emitOperationalAlert(alert: any): void {
 }
 
 export function emitAlertAcknowledged(alert: any): void {
+	// FX-39.4: Acknowledging clears the device notification on other devices
+	void clearWebPushForOperationalAlert(alert);
+
 	if (!io) return;
 	const branchRoom = alert.branchId ? `branch:${alert.branchId.toString()}` : null;
 	if (branchRoom) {
@@ -161,6 +173,9 @@ export function emitAlertAcknowledged(alert: any): void {
 }
 
 export function emitAlertResolved(alert: any): void {
+	// FX-39.4: Resolution clears the device notification on other devices
+	void clearWebPushForOperationalAlert(alert);
+
 	if (!io) return;
 	const branchRoom = alert.branchId ? `branch:${alert.branchId.toString()}` : null;
 	if (branchRoom) {
