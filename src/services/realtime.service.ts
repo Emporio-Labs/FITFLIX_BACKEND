@@ -83,12 +83,30 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
 		void socket.join(`user:${user.id}`);
 
 		// Join role rooms
-		if (user.role === "admin") {
+		if (user.role === "admin" || user.role === "frontdesk") {
 			void socket.join("frontdesk");
 		}
 		if (user.role === "nutritionist") {
 			void socket.join(`nutritionist:${user.id}`);
 		}
+
+		// Join branch room if provided in handshake or query (FX-35.5)
+		const branchId = socket.handshake.auth?.branchId || socket.handshake.query?.branchId;
+		if (typeof branchId === "string" && branchId.trim()) {
+			void socket.join(`branch:${branchId.trim()}`);
+		}
+
+		socket.on("join_branch", (bId: string) => {
+			if (typeof bId === "string" && bId.trim()) {
+				void socket.join(`branch:${bId.trim()}`);
+			}
+		});
+
+		socket.on("leave_branch", (bId: string) => {
+			if (typeof bId === "string" && bId.trim()) {
+				void socket.leave(`branch:${bId.trim()}`);
+			}
+		});
 
 		socket.on("disconnect", () => {
 			// Cleanup is automatic — rooms are vacated on disconnect
@@ -124,6 +142,34 @@ export function emitToNutritionist(
 	io.to(`nutritionist:${nutritionistId}`).emit(event, data);
 }
 
+export function emitOperationalAlert(alert: any): void {
+	if (!io) return;
+	const branchRoom = alert.branchId ? `branch:${alert.branchId.toString()}` : null;
+	if (branchRoom) {
+		io.to(branchRoom).emit("operational_alert:new", alert);
+	}
+	io.to("frontdesk").emit("operational_alert:new", alert);
+}
+
+export function emitAlertAcknowledged(alert: any): void {
+	if (!io) return;
+	const branchRoom = alert.branchId ? `branch:${alert.branchId.toString()}` : null;
+	if (branchRoom) {
+		io.to(branchRoom).emit("operational_alert:acknowledged", alert);
+	}
+	io.to("frontdesk").emit("operational_alert:acknowledged", alert);
+}
+
+export function emitAlertResolved(alert: any): void {
+	if (!io) return;
+	const branchRoom = alert.branchId ? `branch:${alert.branchId.toString()}` : null;
+	if (branchRoom) {
+		io.to(branchRoom).emit("operational_alert:resolved", alert);
+	}
+	io.to("frontdesk").emit("operational_alert:resolved", alert);
+}
+
 export function getIO(): SocketIOServer | null {
 	return io;
 }
+

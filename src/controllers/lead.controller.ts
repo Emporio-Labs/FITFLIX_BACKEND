@@ -1,9 +1,13 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import { type Gender, LeadStatus, MembershipStatus } from "../models/Enums";
+import { type Gender, AlertSeverity, AlertStatus, AlertType, LeadStatus, MembershipStatus } from "../models/Enums";
 import Lead from "../models/Lead";
 import User from "../models/User";
 import Membership from "../models/Membership";
+import OperationalAlert from "../models/OperationalAlert";
+import Location from "../models/Location";
+import { emitOperationalAlert } from "../services/realtime.service";
+import { autoResolveOperationalAlerts } from "./operational-alert.controller";
 import { calculateHealthScore } from "../utils/health-score";
 import { hashPassword } from "../utils/password";
 import {
@@ -252,6 +256,38 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 			publicCapture,
 		});
 
+		// FX-35.1: If lead is an urgent callback or hot lead, raise an OperationalAlert
+		const isUrgent =
+			finalTags.includes("callback") ||
+			finalTags.includes("hot") ||
+			(resolvedNotes && resolvedNotes.includes("[APP_PURCHASE_FALLBACK]"));
+
+		if (isUrgent) {
+			try {
+				const defaultBranch = await Location.findOne({ isActive: true }).select("_id");
+				if (defaultBranch) {
+					const alert = await OperationalAlert.create({
+						type: AlertType.LeadUnclaimed,
+						severity: AlertSeverity.Critical,
+						status: AlertStatus.Open,
+						title: `Urgent Callback Lead: ${resolvedLeadName}`,
+						message: `New high-intent lead requires callback (${resolvedPhone || resolvedEmail || "Phone pending"}). Claim within 15 min.`,
+						branchId: defaultBranch._id,
+						targetRoles: ["admin", "frontdesk"],
+						relatedEntity: {
+							entityType: "lead",
+							entityId: lead._id.toString(),
+							summary: `${resolvedLeadName} - ${resolvedInterest || "Membership inquiry"}`,
+						},
+						autoResolveKey: `lead:${lead._id.toString()}`,
+					});
+					emitOperationalAlert(alert.toObject());
+				}
+			} catch (alertErr) {
+				console.error("[OperationalAlert] Failed to raise alert for lead", alertErr);
+			}
+		}
+
 		const responseBody: Record<string, unknown> = {
 			message: "Lead captured",
 			leadId: lead._id,
@@ -434,6 +470,9 @@ export const updateLeadById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// FX-35.4: Auto-resolve alert when lead is claimed or updated
+		void autoResolveOperationalAlerts("lead", id, "Lead updated or claimed by staff");
+
 		res.status(200).json({ message: "Lead updated", lead: updatedLead });
 	} catch (error) {
 		next(error);
@@ -560,6 +599,9 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 		lead.status = LeadStatus.Converted;
 		lead.convertedUser = targetUserId;
 		await lead.save();
+
+		// FX-35.4: Auto-resolve alert when lead is converted to member
+		void autoResolveOperationalAlerts("lead", id, "Lead converted to member");
 
 		res.status(201).json({
 			message: "Lead converted to user",

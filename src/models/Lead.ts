@@ -23,6 +23,11 @@ const leadSchema = new mongoose.Schema(
 		slaDeadline: { type: Date, default: null },
 		isEscalated: { type: Boolean, default: false },
 		owner: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: undefined,
+		},
 		convertedUser: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "User",

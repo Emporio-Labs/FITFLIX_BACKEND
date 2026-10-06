@@ -696,6 +696,17 @@ Also mounted at `/api/v1/analytics`.
 | GET | `/analytics/funnels/booking` | JWT | admin, frontdesk | `getBookingFunnel` |
 | POST | `/analytics/events` | JWT | — | `ingestProductAnalytics` |
 
+#### `/alerts` → [operational-alert.routes.ts](../src/routes/operational-alert.routes.ts)
+
+Also mounted at `/api/v1/alerts`. Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/alerts` | JWT | admin, frontdesk, trainer | `getOperationalAlerts` |
+| POST | `/alerts` | JWT | admin, frontdesk | `createOperationalAlert` |
+| PATCH | `/alerts/:id/acknowledge` | JWT | admin, frontdesk, trainer | `acknowledgeOperationalAlert` |
+| PATCH | `/alerts/:id/resolve` | JWT | admin, frontdesk | `resolveOperationalAlert` |
+
 #### Declared inline in [src/app.ts](../src/app.ts)
 
 | Method | Path | Auth | Roles | Handler |

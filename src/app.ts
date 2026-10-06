@@ -22,6 +22,7 @@ import creditRouter from "./routes/credit.routes";
 import dashboardRouter from "./routes/dashboard.routes";
 import deleteAccountRouter from "./routes/delete-account.routes";
 import exerciseRouter from "./routes/exercise.routes";
+import operationalAlertRouter from "./routes/operational-alert.routes";
 import gymVisitRouter from "./routes/gymVisit.routes";
 import internalRouter from "./routes/internal.routes";
 import invoiceRouter from "./routes/invoice.routes";
@@ -293,6 +294,8 @@ app.use("/dashboard", dashboardRouter);
 // user. The /api/v1 alias is kept for Vercel parity.
 app.use("/analytics", apiRateLimit, analyticsRouter);
 app.use("/api/v1/analytics", apiRateLimit, analyticsRouter);
+app.use("/alerts", apiRateLimit, operationalAlertRouter);
+app.use("/api/v1/alerts", apiRateLimit, operationalAlertRouter);
 app.use("/workout-plans", workoutPlanRouter);
 app.use("/workouts", workoutRouter);
 app.use("/api/v1/locations", apiRateLimit, locationRouter);

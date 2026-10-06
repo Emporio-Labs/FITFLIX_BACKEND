@@ -522,3 +522,25 @@ export enum ModerationActionType {
 export enum BlockTargetType {
 	User = "user",
 }
+
+export enum AlertSeverity {
+	Info = "info",
+	Warning = "warning",
+	Critical = "critical",
+}
+
+export enum AlertStatus {
+	Open = "open",
+	Acknowledged = "acknowledged",
+	Resolved = "resolved",
+}
+
+export enum AlertType {
+	LeadUnclaimed = "lead_unclaimed",
+	TrainerMissing = "trainer_missing",
+	SessionStartingNoHost = "session_starting_no_host",
+	CapacityBreached = "capacity_breached",
+	EmergencyCall = "emergency_call",
+	OperationalDisruption = "operational_disruption",
+	ManualStaffAlert = "manual_staff_alert",
+}
