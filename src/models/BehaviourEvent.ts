@@ -22,8 +22,12 @@ export const BEHAVIOUR_EVENTS = [
 	"mtm_join_tap",
 	"plan_view",
 	"consult_tap",
+	"callback_requested",
 	"signup_start",
 	"signup_complete",
+	"book_tap",
+	"booking_confirmed",
+	"membership_active",
 ] as const;
 
 export type BehaviourEventName = (typeof BEHAVIOUR_EVENTS)[number];
@@ -58,12 +62,23 @@ const behaviourEventSchema = new mongoose.Schema(
 		occurredAt: { type: Date, required: true },
 		// Groups one app session's events without identifying a device.
 		sessionId: { type: String, default: null, trim: true },
+		// The member's home club (FX-22.4), supporting club-scoped funnel analytics.
+		homeLocationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+			index: true,
+		},
 	},
 	{ timestamps: { createdAt: true, updatedAt: false } },
 );
 
 // The summary read: one user's recent activity, newest first.
 behaviourEventSchema.index({ userId: 1, occurredAt: -1 });
+// Per-club funnel & activity reporting:
+behaviourEventSchema.index({ homeLocationId: 1, event: 1, occurredAt: -1 });
+// Session sequence analysis:
+behaviourEventSchema.index({ sessionId: 1, occurredAt: 1 });
 // Retention. Mongo's TTL monitor sweeps roughly every 60s.
 behaviourEventSchema.index(
 	{ occurredAt: 1 },

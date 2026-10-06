@@ -685,6 +685,17 @@ Also mounted at `/api/v1`.
 | POST | `/internal/sessions/lifecycle/tick` | Public | — | `(inline)` |
 | POST | `/internal/leads/followup` | Public | — | `(inline)` |
 
+#### `/analytics` → [analytics.routes.ts](../src/routes/analytics.routes.ts)
+
+Also mounted at `/api/v1/analytics`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/analytics/me` | JWT | user | `getMyAnalytics` |
+| GET | `/analytics/funnels/signup` | JWT | admin, frontdesk | `getSignupFunnel` |
+| GET | `/analytics/funnels/booking` | JWT | admin, frontdesk | `getBookingFunnel` |
+| POST | `/analytics/events` | JWT | — | `ingestProductAnalytics` |
+
 #### Declared inline in [src/app.ts](../src/app.ts)
 
 | Method | Path | Auth | Roles | Handler |

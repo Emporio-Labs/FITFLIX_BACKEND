@@ -30,6 +30,7 @@ const eventSchema = z.object({
 	occurredAt: z.coerce.date(),
 	params: params.optional(),
 	sessionId: z.string().trim().max(64).optional(),
+	homeLocationId: z.string().trim().optional(),
 });
 
 /** How far ahead of server time a client timestamp may sit before it is clamped. */

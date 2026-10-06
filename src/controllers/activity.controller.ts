@@ -54,7 +54,7 @@ export const recordActivity: RequestHandler = async (req, res, next) => {
 		}
 
 		const user = await User.findById(userId).select(
-			"age dateOfBirth privacyConsent",
+			"age dateOfBirth privacyConsent homeLocationId",
 		);
 		if (!user) {
 			res.status(404).json({ message: "User not found", code: "USER_NOT_FOUND" });
@@ -70,14 +70,30 @@ export const recordActivity: RequestHandler = async (req, res, next) => {
 		// A wrong device clock must not let an event park itself in the future
 		// and pin to the top of every salesperson's view.
 		const ceiling = Date.now() + MAX_CLOCK_SKEW_MS;
-		const docs = parsed.data.events.map((e) => ({
-			userId,
-			event: e.event,
-			params: e.params ?? {},
-			occurredAt:
-				e.occurredAt.getTime() > ceiling ? new Date() : e.occurredAt,
-			sessionId: e.sessionId ?? null,
-		}));
+		const userHomeLocation = (user as { homeLocationId?: mongoose.Types.ObjectId | null }).homeLocationId ?? null;
+
+		const docs = parsed.data.events.map((e) => {
+			let locId = userHomeLocation;
+			if (e.homeLocationId && mongoose.Types.ObjectId.isValid(e.homeLocationId)) {
+				locId = new mongoose.Types.ObjectId(e.homeLocationId);
+			} else if (
+				e.params &&
+				typeof (e.params as Record<string, unknown>).homeClub === "string" &&
+				mongoose.Types.ObjectId.isValid((e.params as Record<string, unknown>).homeClub as string)
+			) {
+				locId = new mongoose.Types.ObjectId((e.params as Record<string, unknown>).homeClub as string);
+			}
+
+			return {
+				userId,
+				event: e.event,
+				params: e.params ?? {},
+				occurredAt:
+					e.occurredAt.getTime() > ceiling ? new Date() : e.occurredAt,
+				sessionId: e.sessionId ?? null,
+				homeLocationId: locId,
+			};
+		});
 
 		// Unordered: one malformed row should not discard the rest of a batch
 		// the user can never resend.
