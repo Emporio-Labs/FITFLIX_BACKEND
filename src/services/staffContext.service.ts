@@ -123,18 +123,42 @@ export const resolveStaffContext = async (
 	const cached = cacheRead(`staff:${id}`);
 	if (cached) return cached;
 
-	// Admin — global super admin (acts on any branch).
-	const admin = await Admin.findById(id).select("_id status isActive").lean<
-		{ status?: string; isActive?: boolean } | null
-	>();
+	// Admin — full admins (staffRole "admin" or null) and any account flagged
+	// allBranches are GLOBAL and act on any branch. FX-32 widened the Admin
+	// collection to hold scoped staff too (manager / sales / frontdesk and the
+	// expert roles): a scoped account without allBranches is BRANCH-scoped to its
+	// branchIds, so the same branch gate that governs trainers now governs them.
+	const admin = await Admin.findById(id)
+		.select("_id status isActive staffRole branchIds allBranches")
+		.lean<
+			{
+				status?: string;
+				isActive?: boolean;
+				staffRole?: string | null;
+				branchIds?: unknown;
+				allBranches?: boolean;
+			} | null
+		>();
 	if (admin) {
 		const disabled =
 			admin.isActive === false ||
 			String(admin.status ?? "").toLowerCase() === "disabled";
+		const isGlobal =
+			admin.staffRole == null ||
+			admin.staffRole === "admin" ||
+			admin.allBranches === true;
+		if (isGlobal) {
+			return cacheWrite(`staff:${id}`, {
+				id,
+				scope: "global",
+				branchIds: [],
+				disabled,
+			});
+		}
 		return cacheWrite(`staff:${id}`, {
 			id,
-			scope: "global",
-			branchIds: [],
+			scope: "branch",
+			branchIds: toIdStrings(admin.branchIds),
 			disabled,
 		});
 	}

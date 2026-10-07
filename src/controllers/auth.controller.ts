@@ -116,6 +116,10 @@ const matchAccount = async (
 	// that distinguishes it. Without this, `nutritionist` and `sports_scientist`
 	// were roles that every RBAC allow-list accepted and no login could ever
 	// produce, so the self-service availability routes were unreachable.
+	//
+	// For an *Admin* account the API role stays "admin" (the server authorizes it
+	// exactly as any admin); its `staffRole` is carried separately so only the web
+	// app's workspace routing narrows it (FX-31 branch manager / sales consoles).
 	const effectiveRole: AppRole =
 		role === "user" && account.staffRole
 			? (account.staffRole as AppRole)
@@ -125,19 +129,28 @@ const matchAccount = async (
 		id: account._id.toString(),
 		email: account.email ?? "",
 		role: effectiveRole,
+		staffRole: account.staffRole ?? null,
 	} as const;
 };
 
 const buildLoginUserPayload = (
-	matchedAccount: { id: string; email: string; role: AppRole },
+	matchedAccount: {
+		id: string;
+		email: string;
+		role: AppRole;
+		staffRole?: string | null;
+	},
 	userAccount: AuthDocument | null,
 ): LoginUserPayload => {
+	// The matched account carries the authoritative sub-role (Admin.staffRole for
+	// admin-family logins, User.staffRole for experts); `userAccount` is null for
+	// Admin/Trainer logins, so it must NOT be the source of staffRole here.
 	if (matchedAccount.role !== "user") {
 		return {
 			id: matchedAccount.id,
 			email: matchedAccount.email,
 			role: matchedAccount.role,
-			staffRole: userAccount?.staffRole ?? null,
+			staffRole: matchedAccount.staffRole ?? null,
 		};
 	}
 
@@ -145,7 +158,7 @@ const buildLoginUserPayload = (
 		id: matchedAccount.id,
 		email: matchedAccount.email,
 		role: matchedAccount.role,
-		staffRole: userAccount?.staffRole ?? null,
+		staffRole: matchedAccount.staffRole ?? userAccount?.staffRole ?? null,
 		onboarded: Boolean(userAccount?.onboarded),
 		onboardingStatus: userAccount?.onboardingStatus ?? null,
 	};
@@ -303,8 +316,38 @@ export const login: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// FX-32.3 — a disabled Admin account is refused at sign-in and can never
+		// get a token. (The matched account is an Admin when its id is the admin
+		// doc's id; user/trainer accounts are not gated here.)
+		const matchedAdmin =
+			admin && matchedAccount.id === admin._id.toString() ? admin : null;
+		if (matchedAdmin && String(matchedAdmin.status ?? "").toLowerCase() === "disabled") {
+			console.log("[AUTH][LOGIN] Disabled admin refused", {
+				email: maskEmail(email),
+			});
+			res.status(403).json({
+				message: "This account has been disabled. Contact an administrator.",
+			});
+			return;
+		}
+
 		clearLoginFailures(email);
 		req.user = matchedAccount;
+
+		// FX-32 — record the sign-in (shown in the staff table) and promote any
+		// stray invited account that somehow has a password to active.
+		if (matchedAdmin) {
+			matchedAdmin.lastLoginAt = new Date();
+			if (matchedAdmin.status === "invited") {
+				matchedAdmin.status = "active";
+			}
+			try {
+				await matchedAdmin.save();
+			} catch (err) {
+				// Non-fatal: a failed lastLoginAt write must not block a valid login.
+				console.error("[AUTH][LOGIN] Failed to record admin lastLoginAt", err);
+			}
+		}
 
 		const jwtConfig = getJwtConfig();
 		if (!jwtConfig) {

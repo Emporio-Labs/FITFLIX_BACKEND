@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { setPassword, verifyInvite } from "../controllers/admin.controller";
 import {
 	login,
 	logout,
@@ -15,6 +16,11 @@ authRouter.post("/signup", authRateLimit, signup);
 authRouter.post("/login", authRateLimit, login);
 authRouter.post("/refresh", authRateLimit, refreshAccessToken);
 authRouter.post("/logout", authRateLimit, authenticateToken, logout);
+
+// FX-32.4 — public set-password flow for an invited/reset staff account. No auth
+// guard: the person is setting their first password and is not signed in yet.
+authRouter.get("/invite/:token", authRateLimit, verifyInvite);
+authRouter.post("/set-password", authRateLimit, setPassword);
 
 // Phone + OTP auth (user app) — Firebase ID token in, backend JWT out.
 authRouter.post("/phone/verify", authRateLimit, verifyPhone);

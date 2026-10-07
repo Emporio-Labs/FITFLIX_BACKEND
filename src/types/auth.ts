@@ -19,4 +19,9 @@ export type AuthenticatedUser = {
 	id: string;
 	email: string;
 	role: AppUserRole;
+	// FX-31 — the scoped-console sub-role carried alongside the API role. For an
+	// Admin-family account the API `role` stays "admin" while this holds e.g.
+	// "manager" or "sales" so the staff web app can route to the right workspace.
+	// null/absent = no sub-role (full admin, or an ordinary account).
+	staffRole?: string | null;
 };

@@ -108,6 +108,9 @@ export const signAuthToken = (
 		sub: user.id,
 		email: user.email,
 		role: user.role,
+		// FX-31 — signed sub-role claim the staff web app reads for workspace
+		// routing. Only emitted when set, so ordinary tokens are unchanged.
+		...(user.staffRole ? { staffRole: user.staffRole } : {}),
 	};
 
 	return jwt.sign(payload, config.secret, buildSignOptions(config));
@@ -134,6 +137,9 @@ export const signAdminToken = (
 		email: user.email,
 		role: user.role,
 		scope: "admin",
+		// FX-31 — branch-manager / sales accounts are admin-family and take this
+		// (short-lived, scoped) token; carry their sub-role for workspace routing.
+		...(user.staffRole ? { staffRole: user.staffRole } : {}),
 	};
 	return jwt.sign(
 		payload,
@@ -223,9 +229,10 @@ export const verifyAuthToken = (
 		return null;
 	}
 
-	const { sub, email, role } = payload as JwtPayload & {
+	const { sub, email, role, staffRole } = payload as JwtPayload & {
 		email?: unknown;
 		role?: unknown;
+		staffRole?: unknown;
 	};
 
 	if (typeof sub !== "string" || typeof email !== "string") {
@@ -240,6 +247,9 @@ export const verifyAuthToken = (
 		id: sub,
 		email,
 		role,
+		// FX-31 — pass the sub-role through when present (free-form; not an API
+		// role, so it is not validated against the AppUserRole union).
+		staffRole: typeof staffRole === "string" ? staffRole : null,
 	};
 };
 
