@@ -75,12 +75,14 @@ import {
 	listNutritionTemplates,
 	updateNutritionTemplate,
 } from "../controllers/nutrition-template.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const nutritionRouter = Router();
 
 nutritionRouter.use(authenticateToken);
+nutritionRouter.use(...staffGuard);
 
 const STAFF = authorize(["nutritionist", "admin"]);
 const USER = authorize(["user"]);

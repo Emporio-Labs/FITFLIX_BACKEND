@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
+import { clearStaffContextCache } from "../services/staffContext.service";
 import {
 	assertTrainerOwnsMember,
 	getRosterUserIds,
@@ -184,6 +185,10 @@ export const updateTrainerById: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Trainer not found" });
 			return;
 		}
+
+		// FX-17.5 — a branch or active-state change must take effect now, not
+		// after the 60s context cache would otherwise expire.
+		clearStaffContextCache(id);
 
 		res
 			.status(200)

@@ -17,12 +17,14 @@ import {
 	updateMyPassword,
 	updateUserById,
 } from "../controllers/user.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const userRouter = Router();
 
 userRouter.use(authenticateToken);
+userRouter.use(...staffGuard);
 userRouter.post("/", authorize(["admin"]), createUser);
 userRouter.get(
 	"/",

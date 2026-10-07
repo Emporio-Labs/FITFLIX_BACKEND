@@ -9,12 +9,14 @@ import {
 	resumeMembershipHandler,
 	updateMembershipById,
 } from "../controllers/membership.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const membershipRouter = Router();
 
 membershipRouter.use(authenticateToken);
+membershipRouter.use(...staffGuard);
 
 membershipRouter.post("/", authorize(["admin"]), createMembership);
 membershipRouter.get("/", authorize(["admin", "frontdesk"]), getAllMemberships);

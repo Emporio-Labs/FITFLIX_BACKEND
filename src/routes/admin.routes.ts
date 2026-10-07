@@ -10,12 +10,14 @@ import {
 	getDeletionRequests,
 	updateDeletionRequestStatus,
 } from "../controllers/delete-account.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const adminRouter = Router();
 
 adminRouter.use(authenticateToken);
+adminRouter.use(...staffGuard);
 adminRouter.post("/", authorize(["admin"]), createAdmin);
 adminRouter.get("/", authorize(["admin"]), getAllAdmins);
 

@@ -10,6 +10,7 @@ import {
 	updateLeadById,
 } from "../controllers/lead.controller";
 import { verifyLeadCaptcha } from "../middleware/captcha.middleware";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { publicLeadCaptureRateLimit } from "../middleware/public-rate-limit.middleware";
 import { authorize } from "../middleware/rbac.middleware";
@@ -24,6 +25,7 @@ leadRouter.post(
 );
 
 leadRouter.use(authenticateToken);
+leadRouter.use(...staffGuard);
 
 leadRouter.post(
 	"/",

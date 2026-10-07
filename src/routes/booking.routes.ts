@@ -14,12 +14,14 @@ import {
 	recordAttendance,
 	updateBookingById,
 } from "../controllers/booking.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const bookingRouter = Router();
 
 bookingRouter.use(authenticateToken);
+bookingRouter.use(...staffGuard);
 
 // FX-12 Class Waitlist Routes (must be registered before /:id)
 bookingRouter.post("/waitlist", authorize(["admin", "user"]), joinWaitlistHandler);

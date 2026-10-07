@@ -1,8 +1,16 @@
 import type { RequestHandler } from "express";
 import type { AppUserRole } from "../types/auth";
+import { isStaffRbacEnforced } from "../utils/staff-rbac";
 
 export function normalizeRole(role: AppUserRole): string {
-	if (role === "admin" || role === "ROLE_FRONT_DESK_STAFF") return "admin";
+	// FX-17.7 — the ROLE_FRONT_DESK_STAFF alias historically collapsed to
+	// "admin", so front-desk staff passed every authorize(["admin"]) guard.
+	// Under enforcement they become plain "frontdesk" and are refused admin-only
+	// routes by the server. Flag off keeps the legacy behaviour (rollback).
+	if (role === "ROLE_FRONT_DESK_STAFF") {
+		return isStaffRbacEnforced() ? "frontdesk" : "admin";
+	}
+	if (role === "admin") return "admin";
 	if (role === "frontdesk" || role === "staff" || role === "ROLE_FRONT_END_STAFF")
 		return "frontdesk";
 	if (role === "user" || role === "ROLE_MEMBER") return "user";

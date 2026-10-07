@@ -19,12 +19,20 @@ const trainerSchema = new mongoose.Schema(
 			default: null,
 			index: true,
 		},
+		// FX-17 — branches this coach may act on. The branch-scope guard reads
+		// this; when empty it falls back to [locationId] so legacy single-branch
+		// records keep working until they are backfilled.
+		branchIds: {
+			type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Location" }],
+			default: [],
+		},
 		isActive: { type: Boolean, default: true },
 	},
 	{ timestamps: true },
 );
 
 trainerSchema.index({ locationId: 1, isActive: 1 });
+trainerSchema.index({ branchIds: 1 });
 
 export default (mongoose.models.Trainer as mongoose.Model<any>) ||
 	mongoose.model("Trainer", trainerSchema);

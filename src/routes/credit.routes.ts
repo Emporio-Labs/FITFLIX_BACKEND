@@ -9,12 +9,14 @@ import {
 	grantGraceToUserById,
 	topUpUserCreditsById,
 } from "../controllers/credit.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const creditRouter = Router();
 
 creditRouter.use(authenticateToken);
+creditRouter.use(...staffGuard);
 
 creditRouter.get("/balance", authorize(["user", "admin"]), getCreditsBalance);
 creditRouter.get("/ledger", authorize(["user", "admin"]), getCreditsLedger);

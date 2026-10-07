@@ -36,6 +36,15 @@ const userSchema = new mongoose.Schema(
 			default: null,
 			index: true,
 		},
+		// FX-17 — for staff Users (staffRole set), the branches they may act on.
+		// The branch-scope guard reads this; when empty it falls back to
+		// [homeLocationId]. Ignored for ordinary members, whose routes are not
+		// branch-gated by the staff guard.
+		branchIds: {
+			type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Location" }],
+			default: [],
+			index: true,
+		},
 		dateOfBirth: { type: Date, default: undefined },
 		// DPDP Act 2023 consent, granular and separate on purpose. This is NOT
 		// onboardingStatus.consentCompleted — that one covers health onboarding,

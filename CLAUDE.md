@@ -419,6 +419,7 @@ There is no `/onboarding/appointments`, `/onboarding/sports-scientist`, or
 | `ACTIVEX_BASE_URL` | No | `https://api.activex.ai/external/bca` | ActiveX BCA endpoint |
 | `ACTIVEX_BCA_LOOKBACK_DAYS` | No | `365` | Lookback window for the sync `Date` filter |
 | `BUSINESS_TIMEZONE` | No | `Asia/Kolkata` | IANA zone that a session's `"HH:mm"` is read in. Set it wrong and every class shifts by the offset — the startup check in `index.ts` warns when it does not resolve to +05:30. A branch's own `Location.timezone` overrides it per class. |
+| `STAFF_RBAC_ENFORCE` | No | `false` | FX-17 master switch. When `true`, each staff request is checked against the caller's **live** role + branches (DB, not the JWT): a staffer acting on a branch they don't work at gets 403 `NOT_YOUR_BRANCH`, an invalid/deactivated branch gets 400/404 `LOCATION_*`, and front-desk staff stop normalizing to `admin`. Admins stay global. Off = legacy behaviour; flipping back to `false` is the complete rollback. Read via `isStaffRbacEnforced()` in `src/utils/staff-rbac.ts`. |
 
 ---
 

@@ -124,6 +124,49 @@ export const buildLocationFilter = (
 	return { [field]: new mongoose.Types.ObjectId(explicitId) };
 };
 
+/**
+ * FX-17 read-side scoping. Narrows a list query to the branches a staff caller
+ * may see, combining their allowed set with any explicit `locationId`.
+ *
+ * - `allowedBranchIds == null` (global admin, or enforcement off) → behaves
+ *   exactly like `buildLocationFilter`: `{}` for all branches, or the one id.
+ * - branch-scoped caller → `{ locationId: { $in: [...] } }`. An explicit id is
+ *   honoured only when it is within the allowed set; an out-of-scope id yields a
+ *   filter that matches nothing, so a staffer cannot read another branch's rows
+ *   by passing its id.
+ */
+export const scopedLocationFilter = (
+	allowedBranchIds: string[] | null | undefined,
+	explicitId?: string | null,
+	field = "locationId",
+): Record<string, unknown> => {
+	if (allowedBranchIds == null) {
+		return buildLocationFilter(explicitId ?? undefined, field);
+	}
+
+	if (explicitId) {
+		if (!mongoose.Types.ObjectId.isValid(explicitId)) {
+			throw new LocationError(
+				"INVALID_LOCATION_ID",
+				`"${explicitId}" is not a valid location id`,
+			);
+		}
+		const inScope = allowedBranchIds.includes(String(explicitId));
+		// Out-of-scope explicit id → match nothing rather than leak other branches.
+		return {
+			[field]: inScope
+				? new mongoose.Types.ObjectId(explicitId)
+				: { $in: [] as mongoose.Types.ObjectId[] },
+		};
+	}
+
+	return {
+		[field]: {
+			$in: allowedBranchIds.map((id) => new mongoose.Types.ObjectId(id)),
+		},
+	};
+};
+
 /** Full location document, for settings-driven behaviour (tax, windows, caps). */
 export const getLocationOrThrow = async (
 	locationId: string | mongoose.Types.ObjectId,

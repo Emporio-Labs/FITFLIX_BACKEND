@@ -1,4 +1,12 @@
+import mongoose from "mongoose";
 import z from "zod";
+
+// FX-17 — a Location id. Accepts any 24-char ObjectId string.
+const objectIdString = z
+	.string()
+	.refine((v) => mongoose.Types.ObjectId.isValid(v), {
+		message: "Invalid location id",
+	});
 
 export const createTrainerBodySchema = z.object({
 	trainerName: z.string().min(1),
@@ -10,6 +18,10 @@ export const createTrainerBodySchema = z.object({
 	imageUrl: z.string().optional().default(""),
 	keySentence: z.string().optional().default(""),
 	isActive: z.boolean().optional().default(true),
+	// Branch this coach works out of, and the full set of branches they may act
+	// on (FX-17). `locationId` stays for back-compat; `branchIds` is the scope.
+	locationId: objectIdString.optional(),
+	branchIds: z.array(objectIdString).optional(),
 });
 
 export const updateTrainerBodySchema = createTrainerBodySchema

@@ -7,6 +7,7 @@ import {
 	LocationError,
 	mapLocationError,
 	resolveLocationId,
+	scopedLocationFilter,
 } from "../utils/location.resolver";
 import { getJwtConfig, signGymQrToken, verifyGymQrToken } from "../utils/jwt";
 import { computeStreaks, toISTDateString } from "../utils/streaks";
@@ -313,11 +314,16 @@ export const listVisits: RequestHandler = async (req, res, next) => {
 		if (isValidObjectId(userId)) {
 			filter.userId = new mongoose.Types.ObjectId(userId);
 		}
-		// Branch scoping. Omitted means "all branches", which is what a
-		// multi-club report wants; the admin UI passes the selected branch.
-		if (isValidObjectId(locationId)) {
-			filter.locationId = new mongoose.Types.ObjectId(locationId as string);
-		}
+		// Branch scoping (FX-17). A global admin omitting locationId sees all
+		// branches; a branch-scoped staffer is confined to req.allowedBranchIds,
+		// and an out-of-scope explicit id matches nothing instead of leaking.
+		Object.assign(
+			filter,
+			scopedLocationFilter(
+				req.allowedBranchIds,
+				isValidObjectId(locationId) ? (locationId as string) : undefined,
+			),
+		);
 		if (typeof visitType === "string" && VISIT_TYPES.includes(visitType as VisitType)) {
 			filter.visitType = visitType;
 		}
@@ -369,10 +375,15 @@ export const listCurrentlyIn: RequestHandler = async (req, res, next) => {
 		const { locationId } = req.query;
 		const filter: Record<string, unknown> = { checkOutAt: null };
 		// "Who is in the building" is inherently a per-branch question once
-		// there is more than one building.
-		if (isValidObjectId(locationId)) {
-			filter.locationId = new mongoose.Types.ObjectId(locationId as string);
-		}
+		// there is more than one building. Branch-scoped staff only see their
+		// own branches (FX-17); a global admin sees all, or the one they pick.
+		Object.assign(
+			filter,
+			scopedLocationFilter(
+				req.allowedBranchIds,
+				isValidObjectId(locationId) ? (locationId as string) : undefined,
+			),
+		);
 
 		const items = await GymVisit.find(filter).sort({ checkInAt: -1 }).lean();
 

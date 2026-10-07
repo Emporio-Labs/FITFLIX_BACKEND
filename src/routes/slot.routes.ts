@@ -7,12 +7,14 @@ import {
 	getSlotById,
 	updateSlotById,
 } from "../controllers/slot.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const slotRouter = Router();
 
 slotRouter.use(authenticateToken);
+slotRouter.use(...staffGuard);
 slotRouter.get(
 	"/",
 	authorize(["admin", "trainer", "nutritionist", "sports_scientist", "frontdesk", "user"]),

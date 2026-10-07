@@ -6,12 +6,14 @@ import {
 	listInvoicesHandler,
 	updateInvoiceStatusHandler,
 } from "../controllers/invoice.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const invoiceRouter = Router();
 
 invoiceRouter.use(authenticateToken);
+invoiceRouter.use(...staffGuard);
 
 invoiceRouter.post(
 	"/",
