@@ -46,6 +46,7 @@ import workoutRouter from "./routes/workout.routes";
 import workoutPlanRouter from "./routes/workout-plan.routes";
 import zegoRouter from "./routes/zego.routes";
 import settingsRouter from "./routes/settings.routes";
+import recordingRouter, { adminRecordingRouter } from "./routes/recording.routes";
 import { getApp } from "./services/fcm.service";
 import {
 	isErrorVerboseEnabled,
@@ -279,6 +280,10 @@ app.use("/api/v1", classScheduleRouter);
 app.use("/api/v1", classRouter);
 app.use("/api/v1/zego", zegoRouter);
 app.use("/api/v1/admin/settings", settingsRouter);
+app.use("/api/v1/recordings", apiRateLimit, recordingRouter);
+app.use("/recordings", apiRateLimit, recordingRouter);
+app.use("/api/v1/admin/recordings", apiRateLimit, adminRecordingRouter);
+app.use("/admin/recordings", apiRateLimit, adminRecordingRouter);
 app.use("/membership-plans", membershipPlanRouter);
 app.use("/onboarding", onboardingRouter);
 app.use(nutritionistBookingRouter);

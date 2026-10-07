@@ -3,6 +3,7 @@ import Booking from "../models/Bookings";
 import ScheduledSession from "../models/ScheduledSession";
 import { nonCancelledBookingStatusFilter, resolveSessionRoomId } from "../utils/zego-room";
 import { forceDisconnectRoom } from "./zego-server-api.service";
+import { stopRoomRecording } from "./zego-recording.service";
 
 export type FinalizeResult = {
 	attendanceMarked: number;
@@ -80,6 +81,9 @@ export async function finalizeSession(
 			}
 		}
 	}
+
+	// FX-23.1 & FX-23.2: Stop cloud recording and mark READY for member replay
+	void stopRoomRecording(session, opts.endedAt ?? new Date());
 
 	return { attendanceMarked: attendanceResult.modifiedCount, kicked, kickErrors };
 }

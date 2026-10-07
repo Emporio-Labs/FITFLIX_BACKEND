@@ -15,6 +15,7 @@ import {
 	listRoomMessagesQuerySchema,
 } from "../validators/zego.validator";
 import { autoResolveOperationalAlerts } from "./operational-alert.controller";
+import { startRoomRecording } from "../services/zego-recording.service";
 
 /// Login-room + publish-stream, granted to hosts and to every member of a
 /// group video call. A live-stream *member* (audience) gets login only —
@@ -469,6 +470,9 @@ export const reportHostPresence: RequestHandler = async (req, res, next) => {
 			String(access.session._id),
 			"Trainer joined live class",
 		);
+
+		// FX-23.1: Record livestream from the moment host goes live
+		void startRoomRecording(access.session, access.klass);
 
 		res.status(200).json({ hostLiveAt: access.session.hostLiveAt.toISOString() });
 	} catch (error) {
