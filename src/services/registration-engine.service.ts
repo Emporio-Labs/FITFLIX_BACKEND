@@ -259,6 +259,11 @@ export async function registerGroupClassBooking(params: {
 	//    if the write fails, so a Mongo error can't leave the member out of
 	//    pocket with nothing to show for it.
 	try {
+		// FX-18 — stamp the branch so branch-scoped staff can be confined to their
+		// branches' bookings. A class session carries the branch directly, falling
+		// back to the class; null is tolerated (backfill derives it later).
+		const bookingLocationId =
+			session.locationId ?? (targetClass as any)?.locationId ?? null;
 		const booking = await Bookings.create({
 			user: userObjId,
 			sessionId: resolvedSessionId,
@@ -269,6 +274,7 @@ export async function registerGroupClassBooking(params: {
 			status: "Confirmed",
 			creditCostSnapshot: creditCost,
 			creditsBypassed: false,
+			...(bookingLocationId ? { locationId: bookingLocationId } : {}),
 		});
 
 		await ClassWaitlist.updateMany(

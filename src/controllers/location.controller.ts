@@ -45,7 +45,21 @@ export const getAllLocations: RequestHandler = async (req, res, next) => {
 			String(req.query.includeInactive ?? "") === "true" &&
 			(req.user?.role === "admin" || req.user?.role === "frontdesk");
 
-		const filter = includeInactive ? {} : { isActive: true };
+		const filter: Record<string, unknown> = includeInactive
+			? {}
+			: { isActive: true };
+
+		// FX-18.1 — a branch-scoped staffer only sees the branches they work at, so
+		// the branch switcher can't even offer another branch. Global admins and
+		// members (allowedBranchIds == null) see every branch, unchanged.
+		if (req.allowedBranchIds != null) {
+			filter._id = {
+				$in: req.allowedBranchIds.map(
+					(id) => new mongoose.Types.ObjectId(id),
+				),
+			};
+		}
+
 		const locations = await Location.find(filter).sort({ name: 1 });
 
 		res.status(200).json({ locations, count: locations.length });

@@ -408,7 +408,7 @@ export const listCurrentlyIn: RequestHandler = async (req, res, next) => {
 /** Admin analytics — visits/day, unique members/day, avg duration. */
 export const getVisitAnalytics: RequestHandler = async (req, res, next) => {
 	try {
-		const { from, to } = req.query;
+		const { from, to, locationId } = req.query;
 
 		const fromDate =
 			parseDate(from) ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -417,6 +417,15 @@ export const getVisitAnalytics: RequestHandler = async (req, res, next) => {
 		const match: Record<string, unknown> = {
 			checkInAt: { $gte: fromDate, $lte: toDate },
 		};
+		// FX-18.1 — scope analytics to the caller's branches (no-op for a global
+		// admin / when enforcement is off), matching the listVisits endpoint above.
+		Object.assign(
+			match,
+			scopedLocationFilter(
+				req.allowedBranchIds,
+				isValidObjectId(locationId) ? (locationId as string) : undefined,
+			),
+		);
 
 		const byDay = await GymVisit.aggregate([
 			{ $match: match },

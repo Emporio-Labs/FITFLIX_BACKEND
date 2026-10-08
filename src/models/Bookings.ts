@@ -36,6 +36,16 @@ const bookingSchema = new mongoose.Schema(
 			ref: "Class",
 			default: null,
 		},
+		// FX-18 — the branch this booking belongs to. Legacy bookings predate this
+		// field; it is stamped on create (derived from slot/class) and backfilled by
+		// scripts/backfill-booking-location.ts, so branch-scoped staff can be
+		// confined to their branches' bookings. Null until backfilled.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+			index: true,
+		},
 		report: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "MedicalReport",

@@ -13,6 +13,7 @@ import type {
 	ListInvoicesQuery,
 } from "../validators/invoice.validator";
 import { generateInvoiceNumber } from "./invoice-number";
+import { scopedLocationFilter } from "./location.resolver";
 
 export const createInvoice = async (
 	data: CreateInvoiceBody,
@@ -51,8 +52,21 @@ export const createInvoice = async (
 	return invoice;
 };
 
-export const listInvoices = async (query: ListInvoicesQuery) => {
+export const listInvoices = async (
+	query: ListInvoicesQuery,
+	allowedBranchIds?: string[] | null,
+	explicitLocationId?: string,
+) => {
 	const filter: Record<string, unknown> = {};
+
+	// FX-18.1 — branch scope on `locationId`. `allowedBranchIds` undefined/null
+	// (global admin, or enforcement off) leaves listing unchanged except for an
+	// explicit id; a branch-scoped staffer is confined to their branches and
+	// pre-branch rows with a null locationId stay hidden (FX-18 decision 2).
+	Object.assign(
+		filter,
+		scopedLocationFilter(allowedBranchIds ?? null, explicitLocationId),
+	);
 
 	if (query.paymentStatus) {
 		filter.paymentStatus = query.paymentStatus;

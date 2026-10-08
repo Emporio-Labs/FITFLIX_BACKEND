@@ -21,6 +21,7 @@ import {
 	verifyPassword,
 } from "../utils/password";
 import type { AppUserRole } from "../types/auth";
+import { resolveStaffContext } from "../services/staffContext.service";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import {
 	loginBodySchema,
@@ -91,6 +92,12 @@ type LoginUserPayload = {
 	staffRole?: string | null;
 	onboarded?: boolean;
 	onboardingStatus?: unknown;
+	// FX-18 — the caller's branch scope, so the web app can restrict the branch
+	// switcher. `scope: "branch"` with `allBranches: false` means "only these
+	// branchIds"; a global admin is `scope: "global"` / `allBranches: true`.
+	scope?: "global" | "branch";
+	branchIds?: string[];
+	allBranches?: boolean;
 };
 
 const matchAccount = async (
@@ -367,6 +374,25 @@ export const login: RequestHandler = async (req, res, next) => {
 			: null;
 
 		const userPayload = buildLoginUserPayload(matchedAccount, user);
+
+		// FX-18 — attach the caller's branch scope so the admin console can limit
+		// the branch switcher to the branches a scoped staffer works at. Members
+		// never see the switcher, so only compute it for staff/admin accounts; a
+		// lookup failure degrades to "unrestricted" rather than blocking login.
+		if (userPayload.role !== "user") {
+			try {
+				const ctx = await resolveStaffContext({
+					id: matchedAccount.id,
+					email: matchedAccount.email,
+					role: matchedAccount.role,
+				});
+				userPayload.scope = ctx.scope;
+				userPayload.branchIds = ctx.branchIds;
+				userPayload.allBranches = ctx.scope === "global";
+			} catch (err) {
+				console.error("[AUTH][LOGIN] staff-scope resolve failed", err);
+			}
+		}
 
 		console.log("[AUTH][LOGIN] Login successful", {
 			email: maskEmail(email),

@@ -592,6 +592,14 @@ export async function promoteNextFromWaitlist(
 				status: "Confirmed",
 				creditCostSnapshot: creditCost,
 				creditsBypassed: false,
+				// FX-18 — stamp the branch (from the class) for staff scoping.
+				...((session as any).locationId ?? (targetClass as any)?.locationId
+					? {
+							locationId:
+								(session as any).locationId ??
+								(targetClass as any)?.locationId,
+						}
+					: {}),
 			});
 
 			candidate.status = WaitlistStatus.Promoted;

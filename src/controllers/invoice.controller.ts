@@ -17,6 +17,7 @@ import {
 	updateInvoiceStatusBodySchema,
 } from "../validators/invoice.validator";
 import {
+	isBranchInScope,
 	LocationError,
 	mapLocationError,
 	resolveLocationId,
@@ -146,7 +147,18 @@ export const listInvoicesHandler: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const invoices = await listInvoices(parsed.data);
+		// FX-18.1 — pass the caller's branch scope (and any explicit X-Location-Id /
+		// ?locationId) so a branch-scoped staffer only lists their branches' invoices.
+		const explicitLocationId =
+			typeof req.query.locationId === "string" &&
+			mongoose.Types.ObjectId.isValid(req.query.locationId)
+				? req.query.locationId
+				: undefined;
+		const invoices = await listInvoices(
+			parsed.data,
+			req.allowedBranchIds,
+			explicitLocationId,
+		);
 		res.status(200).json({ invoices });
 	} catch (error) {
 		next(error);
@@ -163,6 +175,12 @@ export const getInvoiceByIdHandler: RequestHandler = async (req, res, next) => {
 	try {
 		const invoice = await getInvoiceById(id);
 		if (!invoice) {
+			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
+			return;
+		}
+		// FX-18.2 — another branch's invoice reads as "not found" (same 404, never a
+		// 403) so a branch-scoped staffer can't confirm it exists.
+		if (!isBranchInScope(req.allowedBranchIds, invoice.locationId)) {
 			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
 			return;
 		}
@@ -203,6 +221,13 @@ export const updateInvoiceStatusHandler: RequestHandler = async (
 	try {
 		const existing = await getInvoiceById(id);
 		if (!existing) {
+			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		// FX-18.2 — don't let a branch-scoped staffer mutate (or even detect)
+		// another branch's invoice; present it as not found.
+		if (!isBranchInScope(req.allowedBranchIds, existing.locationId)) {
 			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
 			return;
 		}
@@ -263,6 +288,11 @@ export const getInvoicePdfHandler: RequestHandler = async (req, res, next) => {
 	try {
 		const invoice = await getInvoiceForPdf(id);
 		if (!invoice) {
+			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
+			return;
+		}
+		// FX-18.2 — another branch's invoice PDF reads as not found.
+		if (!isBranchInScope(req.allowedBranchIds, (invoice as any).locationId)) {
 			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
 			return;
 		}

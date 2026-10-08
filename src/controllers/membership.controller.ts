@@ -11,9 +11,11 @@ import {
 	resumeMembership,
 } from "../services/membership-lifecycle.service";
 import {
+	isBranchInScope,
 	LocationError,
 	mapLocationError,
 	resolveLocationId,
+	scopedLocationFilter,
 } from "../utils/location.resolver";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
@@ -147,6 +149,18 @@ export const getAllMemberships: RequestHandler = async (req, res, next) => {
 			}
 			filter.user = userId;
 		}
+		// FX-18.1 — branch scope on `locationId`. No-op for a global admin / when
+		// enforcement is off; a branch-scoped staffer is confined to their branches,
+		// and pre-branch rows with a null locationId stay hidden (FX-18 decision 2).
+		const explicitLocationId =
+			typeof req.query.locationId === "string" &&
+			mongoose.Types.ObjectId.isValid(req.query.locationId)
+				? req.query.locationId
+				: undefined;
+		Object.assign(
+			filter,
+			scopedLocationFilter(req.allowedBranchIds, explicitLocationId),
+		);
 		const memberships = await Membership.find(filter);
 		res.status(200).json({ memberships });
 	} catch (error) {
@@ -166,6 +180,13 @@ export const getMembershipById: RequestHandler = async (req, res, next) => {
 		const membership = await Membership.findById(id);
 
 		if (!membership) {
+			res.status(404).json({ message: "Membership not found" });
+			return;
+		}
+
+		// FX-18.2 — another branch's membership reads as "not found" for a
+		// branch-scoped staffer (same 404, never a 403, so existence can't leak).
+		if (!isBranchInScope(req.allowedBranchIds, membership.locationId)) {
 			res.status(404).json({ message: "Membership not found" });
 			return;
 		}

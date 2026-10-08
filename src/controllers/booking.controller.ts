@@ -21,6 +21,10 @@ import {
 	resolveConcreteSlotForBooking,
 } from "../services/slot-reservation.service";
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
+import {
+	isBranchInScope,
+	scopedLocationFilter,
+} from "../utils/location.resolver";
 import { getActiveMembership } from "../utils/membership.guard";
 import { withOptionalTransaction } from "../utils/transaction";
 import { combineSessionWindow, resolveSessionRoomId } from "../utils/zego-room";
@@ -178,7 +182,7 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 		}
 
 		const requestedSlot = await Slot.findById(slotId).select(
-			"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate",
+			"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate locationId",
 		);
 
 		if (
@@ -221,6 +225,11 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 			creditCostSnapshot: creditCost,
 			creditsBypassed: bypassCredits,
 			...(reportId ? { report: reportId } : {}),
+			// FX-18 — stamp the branch from the slot so branch-scoped staff can be
+			// confined to their branches' bookings (see getAllBookings below).
+			...(requestedSlot.locationId
+				? { locationId: requestedSlot.locationId }
+				: {}),
 		});
 
 		if (!bypassCredits) {
@@ -289,6 +298,20 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			filter.status = new RegExp(`^${status.trim()}$`, "i");
 		}
 
+		// FX-18.1 — branch scope on the stamped `locationId`. No-op for a global
+		// admin / when enforcement is off; a branch-scoped staffer is confined to
+		// their branches, and any legacy booking still missing a locationId (not yet
+		// backfilled) stays hidden from branch staff (FX-18 decision 2).
+		const explicitLocationId =
+			typeof req.query.locationId === "string" &&
+			mongoose.Types.ObjectId.isValid(req.query.locationId)
+				? req.query.locationId
+				: undefined;
+		Object.assign(
+			filter,
+			scopedLocationFilter(req.allowedBranchIds, explicitLocationId),
+		);
+
 		let bookings = await Booking.find(filter)
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
@@ -350,6 +373,14 @@ export const getBookingById: RequestHandler = async (req, res, next) => {
 			((booking.user as any)._id?.toString() || booking.user.toString()) !== req.user.id
 		) {
 			res.status(403).json({ message: "Forbidden" });
+			return;
+		}
+
+		// FX-18.2 — a branch-scoped staffer opening another branch's booking by its
+		// direct address gets the same 404 as a missing record (never a 403, which
+		// would confirm it exists). Members are unscoped and pass straight through.
+		if (!isBranchInScope(req.allowedBranchIds, (booking as any).locationId)) {
+			res.status(404).json({ message: "Booking not found" });
 			return;
 		}
 

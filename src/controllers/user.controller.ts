@@ -11,6 +11,10 @@ import {
 	SPORTS_SCIENTIST_BOOKING_FILTER,
 } from "../utils/sports-scientist-booking.dto";
 import {
+	isBranchInScope,
+	scopedLocationFilter,
+} from "../utils/location.resolver";
+import {
 	ExpertType,
 	type Gender,
 	OnboardingStep,
@@ -217,6 +221,25 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 				{ phone: { $regex: searchRegex } },
 			];
 		}
+
+		// FX-18.1 — branch scope. A member belongs to a branch via `homeLocationId`
+		// (members carry no `locationId`). With enforcement off or for a global
+		// admin, allowedBranchIds is null and this contributes nothing; a
+		// branch-scoped staffer is narrowed to their branches, and members with no
+		// home club (null) fall outside a branch `$in` (FX-18 decision 2).
+		const explicitLocationId =
+			typeof req.query.locationId === "string" &&
+			mongoose.Types.ObjectId.isValid(req.query.locationId)
+				? req.query.locationId
+				: undefined;
+		Object.assign(
+			filter,
+			scopedLocationFilter(
+				req.allowedBranchIds,
+				explicitLocationId,
+				"homeLocationId",
+			),
+		);
 
 		const sortOrder = order === "asc" ? 1 : -1;
 		const sortField = sort;
@@ -532,6 +555,17 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 					requestingUser: req.user?.id,
 				});
 			}
+			res.status(404).json({
+				error: "User not found",
+				code: "NOT_FOUND",
+			});
+			return;
+		}
+
+		// FX-18.2 — a branch-scoped staffer opening another branch's member by its
+		// direct address gets the same 404 as a missing record, never a 403: a 403
+		// would confirm the member exists at a branch they can't see.
+		if (!isBranchInScope(req.allowedBranchIds, user.homeLocationId)) {
 			res.status(404).json({
 				error: "User not found",
 				code: "NOT_FOUND",

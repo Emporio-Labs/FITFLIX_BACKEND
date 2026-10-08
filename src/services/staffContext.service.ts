@@ -29,6 +29,13 @@ export interface StaffContext {
 	branchIds: string[];
 	/** True when the account is deactivated/disabled — the guard refuses it. */
 	disabled: boolean;
+	/**
+	 * The caller's scoped sub-role (FX-31/FX-32: "manager" | "sales" | "frontdesk"
+	 * | expert roles), re-derived from the DB rather than trusted from the JWT.
+	 * null = a full admin / trainer / plain member. FX-33 uses it to decide what a
+	 * caller sees in the branch lead queue (sales: unclaimed + own; manager: all).
+	 */
+	staffRole: string | null;
 }
 
 export type BranchScopeErrorCode =
@@ -153,6 +160,7 @@ export const resolveStaffContext = async (
 				scope: "global",
 				branchIds: [],
 				disabled,
+				staffRole: admin.staffRole ?? null,
 			});
 		}
 		return cacheWrite(`staff:${id}`, {
@@ -160,6 +168,7 @@ export const resolveStaffContext = async (
 			scope: "branch",
 			branchIds: toIdStrings(admin.branchIds),
 			disabled,
+			staffRole: admin.staffRole ?? null,
 		});
 	}
 
@@ -180,6 +189,7 @@ export const resolveStaffContext = async (
 			scope: "branch",
 			branchIds,
 			disabled: trainer.isActive === false,
+			staffRole: "trainer",
 		});
 	}
 
@@ -209,6 +219,7 @@ export const resolveStaffContext = async (
 			scope: "branch",
 			branchIds,
 			disabled,
+			staffRole: user.staffRole ?? null,
 		});
 	}
 
@@ -218,5 +229,6 @@ export const resolveStaffContext = async (
 		scope: "branch",
 		branchIds: [],
 		disabled: false,
+		staffRole: null,
 	});
 };

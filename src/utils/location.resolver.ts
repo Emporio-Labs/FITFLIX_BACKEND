@@ -167,6 +167,30 @@ export const scopedLocationFilter = (
 	};
 };
 
+/**
+ * FX-18 by-id scope check. Answers "may a caller with this allowed set see a
+ * record that belongs to `branchId`?" — the read-side counterpart used by the
+ * get-by-id handlers to decide between returning the record and a 404.
+ *
+ * - `allowedBranchIds == null` (global admin, or enforcement off) → always true.
+ * - branch-scoped caller → true only when the record carries a branch that is in
+ *   the allowed set. A record with no branch (null/empty `locationId`, e.g. a
+ *   pre-branch legacy row) is OUT of scope for branch staff — matching the list
+ *   side, where a `$in` filter never returns null-branch rows (FX-18 decision 2).
+ *
+ * Callers respond with the same 404 the missing-record path uses rather than a
+ * 403, so a branch staffer cannot even confirm that another branch's record
+ * exists (FX-18.2).
+ */
+export const isBranchInScope = (
+	allowedBranchIds: string[] | null | undefined,
+	branchId: unknown,
+): boolean => {
+	if (allowedBranchIds == null) return true;
+	if (!branchId) return false;
+	return allowedBranchIds.includes(String(branchId));
+};
+
 /** Full location document, for settings-driven behaviour (tax, windows, caps). */
 export const getLocationOrThrow = async (
 	locationId: string | mongoose.Types.ObjectId,
