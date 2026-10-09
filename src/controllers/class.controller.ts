@@ -6,6 +6,10 @@ import ScheduledSession from "../models/ScheduledSession";
 import Booking from "../models/Bookings";
 import { normalizeDeliveryType } from "../utils/delivery-type";
 import {
+	readExplicitLocationId,
+	scopedLocationFilter,
+} from "../utils/location.resolver";
+import {
 	createClassBodySchema,
 	eventFieldsSchema,
 	pickEventFields,
@@ -385,13 +389,17 @@ export const createClass: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllClassesForAdmin: RequestHandler = async (
-	_req,
-	res,
-	next,
-) => {
+export const getAllClassesForAdmin: RequestHandler = async (req, res, next) => {
 	try {
-		const classes = await Class.find().sort({ createdAt: -1 });
+		// FX-19 — follow the branch selected in the X-Location-Id header (or
+		// ?locationId). These routes don't mount the staff-scope guard, so
+		// allowedBranchIds is unset and this behaves as "all branches unless a
+		// branch is explicitly picked" — which is exactly the admin picker's intent.
+		const filter = scopedLocationFilter(
+			req.allowedBranchIds,
+			readExplicitLocationId(req),
+		);
+		const classes = await Class.find(filter).sort({ createdAt: -1 });
 		res.status(200).json({ classes });
 	} catch (error) {
 		next(error);

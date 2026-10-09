@@ -23,6 +23,7 @@ import {
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
 import {
 	isBranchInScope,
+	readExplicitLocationId,
 	scopedLocationFilter,
 } from "../utils/location.resolver";
 import { getActiveMembership } from "../utils/membership.guard";
@@ -302,11 +303,9 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 		// admin / when enforcement is off; a branch-scoped staffer is confined to
 		// their branches, and any legacy booking still missing a locationId (not yet
 		// backfilled) stays hidden from branch staff (FX-18 decision 2).
-		const explicitLocationId =
-			typeof req.query.locationId === "string" &&
-			mongoose.Types.ObjectId.isValid(req.query.locationId)
-				? req.query.locationId
-				: undefined;
+		// FX-19 — honour the selected branch from the X-Location-Id header (or
+		// ?locationId), so a global admin's list follows the header picker too.
+		const explicitLocationId = readExplicitLocationId(req);
 		Object.assign(
 			filter,
 			scopedLocationFilter(req.allowedBranchIds, explicitLocationId),

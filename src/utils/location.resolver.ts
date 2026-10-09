@@ -1,3 +1,4 @@
+import type { Request } from "express";
 import mongoose from "mongoose";
 import Location from "../models/Location";
 import User from "../models/User";
@@ -99,6 +100,28 @@ export const resolveLocationId = async (
 		"LOCATION_REQUIRED",
 		"Multiple active locations exist — locationId is required for this operation",
 	);
+};
+
+/**
+ * FX-19 — the branch a read request is asking to be scoped to.
+ *
+ * The front desk sends the selected branch on every request as the
+ * `X-Location-Id` header (see the web app's api-client). A few callers also pass
+ * it as `?locationId`. This reads whichever is present (query wins, header next)
+ * and returns it only when it is a syntactically valid id, so a stray value
+ * narrows nothing rather than throwing on a list read.
+ *
+ * Returns `undefined` when neither is present or the value is malformed — which
+ * `scopedLocationFilter` treats as "all branches the caller may see".
+ */
+export const readExplicitLocationId = (req: Request): string | undefined => {
+	const fromQuery =
+		typeof req.query?.locationId === "string" ? req.query.locationId : undefined;
+	const fromHeader = req.header("x-location-id")?.trim() || undefined;
+	const candidate = fromQuery || fromHeader;
+	return candidate && mongoose.Types.ObjectId.isValid(candidate)
+		? candidate
+		: undefined;
 };
 
 /**

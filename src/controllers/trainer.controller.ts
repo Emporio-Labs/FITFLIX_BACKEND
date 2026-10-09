@@ -10,6 +10,10 @@ import {
 import { hashPassword } from "../utils/password";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import {
+	readExplicitLocationId,
+	scopedLocationFilter,
+} from "../utils/location.resolver";
+import {
 	createTrainerBodySchema,
 	updateTrainerBodySchema,
 } from "../validators/trainer.validator";
@@ -76,9 +80,18 @@ export const createTrainer: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllTrainers: RequestHandler = async (_req, res, next) => {
+export const getAllTrainers: RequestHandler = async (req, res, next) => {
 	try {
-		const trainers = await Trainer.find();
+		// FX-19 — a coach's home branch is `locationId`, so scoping on it partitions
+		// the roster cleanly (each trainer counts toward exactly one branch, which is
+		// what makes the per-branch dashboard totals add up to the all-branches one).
+		// A global admin picking "all" (no header) sees everyone; a branch-scoped
+		// staffer is confined to their branches.
+		const filter = scopedLocationFilter(
+			req.allowedBranchIds,
+			readExplicitLocationId(req),
+		);
+		const trainers = await Trainer.find(filter);
 		res.status(200).json({ trainers });
 	} catch (error) {
 		next(error);

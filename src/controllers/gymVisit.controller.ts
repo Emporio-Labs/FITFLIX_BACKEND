@@ -6,6 +6,7 @@ import { getActiveMembership } from "../utils/membership.guard";
 import {
 	LocationError,
 	mapLocationError,
+	readExplicitLocationId,
 	resolveLocationId,
 	scopedLocationFilter,
 } from "../utils/location.resolver";
@@ -306,7 +307,7 @@ export const checkOutVisit: RequestHandler = async (req, res, next) => {
 /** Admin — list visits with filters. */
 export const listVisits: RequestHandler = async (req, res, next) => {
 	try {
-		const { userId, visitType, from, to, status, locationId } = req.query;
+		const { userId, visitType, from, to, status } = req.query;
 		const limit = parseLimit(req.query.limit);
 		const offset = Math.max(0, Number(req.query.offset) || 0);
 
@@ -314,15 +315,13 @@ export const listVisits: RequestHandler = async (req, res, next) => {
 		if (isValidObjectId(userId)) {
 			filter.userId = new mongoose.Types.ObjectId(userId);
 		}
-		// Branch scoping (FX-17). A global admin omitting locationId sees all
-		// branches; a branch-scoped staffer is confined to req.allowedBranchIds,
+		// Branch scoping (FX-17 / FX-19). A global admin omitting a branch sees all
+		// branches; the selected branch arrives on the X-Location-Id header (or
+		// ?locationId). A branch-scoped staffer is confined to req.allowedBranchIds,
 		// and an out-of-scope explicit id matches nothing instead of leaking.
 		Object.assign(
 			filter,
-			scopedLocationFilter(
-				req.allowedBranchIds,
-				isValidObjectId(locationId) ? (locationId as string) : undefined,
-			),
+			scopedLocationFilter(req.allowedBranchIds, readExplicitLocationId(req)),
 		);
 		if (typeof visitType === "string" && VISIT_TYPES.includes(visitType as VisitType)) {
 			filter.visitType = visitType;
@@ -372,17 +371,14 @@ export const listVisits: RequestHandler = async (req, res, next) => {
 /** Members currently inside the gym (open visits), most-recent first. */
 export const listCurrentlyIn: RequestHandler = async (req, res, next) => {
 	try {
-		const { locationId } = req.query;
 		const filter: Record<string, unknown> = { checkOutAt: null };
 		// "Who is in the building" is inherently a per-branch question once
 		// there is more than one building. Branch-scoped staff only see their
-		// own branches (FX-17); a global admin sees all, or the one they pick.
+		// own branches (FX-17); a global admin sees all, or the one selected in
+		// the X-Location-Id header / ?locationId (FX-19).
 		Object.assign(
 			filter,
-			scopedLocationFilter(
-				req.allowedBranchIds,
-				isValidObjectId(locationId) ? (locationId as string) : undefined,
-			),
+			scopedLocationFilter(req.allowedBranchIds, readExplicitLocationId(req)),
 		);
 
 		const items = await GymVisit.find(filter).sort({ checkInAt: -1 }).lean();
@@ -408,7 +404,7 @@ export const listCurrentlyIn: RequestHandler = async (req, res, next) => {
 /** Admin analytics — visits/day, unique members/day, avg duration. */
 export const getVisitAnalytics: RequestHandler = async (req, res, next) => {
 	try {
-		const { from, to, locationId } = req.query;
+		const { from, to } = req.query;
 
 		const fromDate =
 			parseDate(from) ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -417,14 +413,12 @@ export const getVisitAnalytics: RequestHandler = async (req, res, next) => {
 		const match: Record<string, unknown> = {
 			checkInAt: { $gte: fromDate, $lte: toDate },
 		};
-		// FX-18.1 — scope analytics to the caller's branches (no-op for a global
-		// admin / when enforcement is off), matching the listVisits endpoint above.
+		// FX-18.1 / FX-19 — scope analytics to the caller's branches, or the branch
+		// selected in the X-Location-Id header / ?locationId (no-op for a global
+		// admin picking "all"), matching the listVisits endpoint above.
 		Object.assign(
 			match,
-			scopedLocationFilter(
-				req.allowedBranchIds,
-				isValidObjectId(locationId) ? (locationId as string) : undefined,
-			),
+			scopedLocationFilter(req.allowedBranchIds, readExplicitLocationId(req)),
 		);
 
 		const byDay = await GymVisit.aggregate([

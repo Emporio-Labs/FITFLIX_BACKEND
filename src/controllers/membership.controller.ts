@@ -14,6 +14,7 @@ import {
 	isBranchInScope,
 	LocationError,
 	mapLocationError,
+	readExplicitLocationId,
 	resolveLocationId,
 	scopedLocationFilter,
 } from "../utils/location.resolver";
@@ -152,11 +153,9 @@ export const getAllMemberships: RequestHandler = async (req, res, next) => {
 		// FX-18.1 — branch scope on `locationId`. No-op for a global admin / when
 		// enforcement is off; a branch-scoped staffer is confined to their branches,
 		// and pre-branch rows with a null locationId stay hidden (FX-18 decision 2).
-		const explicitLocationId =
-			typeof req.query.locationId === "string" &&
-			mongoose.Types.ObjectId.isValid(req.query.locationId)
-				? req.query.locationId
-				: undefined;
+		// FX-19 — honour the branch selected in the X-Location-Id header (or
+		// ?locationId) so the memberships list follows the header picker.
+		const explicitLocationId = readExplicitLocationId(req);
 		Object.assign(
 			filter,
 			scopedLocationFilter(req.allowedBranchIds, explicitLocationId),

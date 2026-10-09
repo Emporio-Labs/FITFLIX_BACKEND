@@ -20,6 +20,7 @@ import {
 	isBranchInScope,
 	LocationError,
 	mapLocationError,
+	readExplicitLocationId,
 	resolveLocationId,
 } from "../utils/location.resolver";
 
@@ -147,13 +148,10 @@ export const listInvoicesHandler: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		// FX-18.1 — pass the caller's branch scope (and any explicit X-Location-Id /
-		// ?locationId) so a branch-scoped staffer only lists their branches' invoices.
-		const explicitLocationId =
-			typeof req.query.locationId === "string" &&
-			mongoose.Types.ObjectId.isValid(req.query.locationId)
-				? req.query.locationId
-				: undefined;
+		// FX-18.1 / FX-19 — pass the caller's branch scope and the selected branch
+		// from the X-Location-Id header (or ?locationId) so a global admin's list
+		// follows the picker and a branch-scoped staffer only lists their branches.
+		const explicitLocationId = readExplicitLocationId(req);
 		const invoices = await listInvoices(
 			parsed.data,
 			req.allowedBranchIds,

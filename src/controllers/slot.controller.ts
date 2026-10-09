@@ -9,6 +9,7 @@ import {
 import {
 	LocationError,
 	mapLocationError,
+	readExplicitLocationId,
 	resolveLocationId,
 	scopedLocationFilter,
 } from "../utils/location.resolver";
@@ -341,14 +342,11 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 
 export const getAllSlots: RequestHandler = async (req, res, next) => {
 	try {
-		// FX-17 — branch-scoped staff see only their branches' slots; a global
-		// admin sees all, or just the branch they pass as ?locationId. A
-		// malformed id is ignored (not a 400) so flag-off behaviour is unchanged.
-		const rawLocationId =
-			typeof req.query.locationId === "string" &&
-			mongoose.Types.ObjectId.isValid(req.query.locationId)
-				? req.query.locationId
-				: undefined;
+		// FX-17 / FX-19 — branch-scoped staff see only their branches' slots; a
+		// global admin sees all, or just the branch selected in the X-Location-Id
+		// header (or ?locationId). A malformed id is ignored (not a 400) so
+		// flag-off behaviour is unchanged.
+		const rawLocationId = readExplicitLocationId(req);
 		const filter = scopedLocationFilter(req.allowedBranchIds, rawLocationId);
 		const slots = await Slot.find(filter);
 		res.status(200).json({ slots });

@@ -12,6 +12,7 @@ import {
 } from "../utils/sports-scientist-booking.dto";
 import {
 	isBranchInScope,
+	readExplicitLocationId,
 	scopedLocationFilter,
 } from "../utils/location.resolver";
 import {
@@ -227,11 +228,9 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 		// admin, allowedBranchIds is null and this contributes nothing; a
 		// branch-scoped staffer is narrowed to their branches, and members with no
 		// home club (null) fall outside a branch `$in` (FX-18 decision 2).
-		const explicitLocationId =
-			typeof req.query.locationId === "string" &&
-			mongoose.Types.ObjectId.isValid(req.query.locationId)
-				? req.query.locationId
-				: undefined;
+		// FX-19 — honour the branch selected in the X-Location-Id header (or
+		// ?locationId) so a global admin's members list follows the picker.
+		const explicitLocationId = readExplicitLocationId(req);
 		Object.assign(
 			filter,
 			scopedLocationFilter(
