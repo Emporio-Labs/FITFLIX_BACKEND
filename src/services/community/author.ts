@@ -10,6 +10,15 @@ import {
 
 export type AuthorBadgeRole = "member" | "trainer" | "admin";
 
+/** Filter out raw MongoDB ObjectIds from display names so internal IDs do not leak as usernames. */
+export function sanitizeAuthorName(name: string | null | undefined): string | null {
+	if (!name) return null;
+	const trimmed = name.trim();
+	if (!trimmed) return null;
+	if (/^[0-9a-fA-F]{24}$/.test(trimmed)) return null;
+	return trimmed;
+}
+
 export interface CommunityAuthor {
 	id: string;
 	name: string | null;
@@ -77,7 +86,7 @@ export async function resolveCommunityAuthors(
 	for (const u of users)
 		map.set(String(u._id), {
 			id: String(u._id),
-			name: profiles.get(String(u._id))?.displayName || u.username || null,
+			name: sanitizeAuthorName(profiles.get(String(u._id))?.displayName || u.username),
 			role: "member",
 			avatarUrl: null,
 		});

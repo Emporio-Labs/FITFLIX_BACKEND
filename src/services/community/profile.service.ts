@@ -7,7 +7,7 @@ import Post from "../../models/Post";
 import Trainer from "../../models/Trainer";
 import User from "../../models/User";
 import { deleteFromS3, generateSignedUrl } from "../../utils/s3.service";
-import type { AuthorBadgeRole } from "./author";
+import { type AuthorBadgeRole, sanitizeAuthorName } from "./author";
 import { getBlockedUserIds } from "./block.service";
 import { type FeedCursor, encodeCursor } from "./cursor";
 
@@ -155,7 +155,7 @@ async function identifyOwner(id: string): Promise<OwnerIdentity | null> {
 			id,
 			type: "user",
 			role: "member",
-			name: user.username ?? null,
+			name: sanitizeAuthorName(user.username),
 			fallbackBio: "",
 			fallbackAvatar: "",
 			createdAt: user.createdAt ?? null,
@@ -481,7 +481,7 @@ export async function searchPeople(
 			const profile = profileMap.get(id);
 			return {
 				id,
-				name: profile?.displayName || r.username || null,
+				name: sanitizeAuthorName(profile?.displayName || r.username),
 				role: "member" as const,
 				avatarThumbUrl: await resolveAvatarUrl(profile?.avatarThumbKey),
 				bio: "",
