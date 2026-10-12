@@ -4,8 +4,13 @@ import ClassModel from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
 import { buildWaitlistMetadataBySessionId } from "../services/waitlist-engine.service";
+import { normalizeRole } from "../middleware/rbac.middleware";
+import { isClassVisibleToMember } from "../utils/class-visibility";
 import { normalizeDeliveryType } from "../utils/delivery-type";
-import { resolveTimeZone } from "../utils/location.resolver";
+import {
+	getMemberHomeLocationId,
+	resolveTimeZone,
+} from "../utils/location.resolver";
 import {
 	combineSessionWindow,
 	deriveRoomId,
@@ -351,6 +356,15 @@ export const getSchedulesForMembers: RequestHandler = async (
 			.sort({ sessionDate: 1, startTime: 1 })
 			.lean();
 
+		// FX-20.2 — a member only sees sessions of classes visible to them: their
+		// home club's in-person classes plus every online/livestream class. Resolved
+		// from the member's own record (authoritative), and skipped for staff and for
+		// members with no home club, so a single-branch chain is unchanged (FX-20.4).
+		const homeLocationId =
+			req.user?.role && normalizeRole(req.user.role) === "user"
+				? await getMemberHomeLocationId(req.user?.id)
+				: null;
+
 		// Retiring a class (softDeleteClassById) sets Class.status = INACTIVE but
 		// deliberately keeps sessions that already have bookings, and those rows stay
 		// SCHEDULED/isPublished — so the session-level filter above is not enough. The
@@ -360,7 +374,8 @@ export const getSchedulesForMembers: RequestHandler = async (
 			(s: any) =>
 				s.classId &&
 				s.classId.status !== "INACTIVE" &&
-				s.classId.isPublished !== false,
+				s.classId.isPublished !== false &&
+				isClassVisibleToMember(s.classId, homeLocationId),
 		);
 
 		const zonesByClassId = await resolveZonesByClassId(activeSessions);

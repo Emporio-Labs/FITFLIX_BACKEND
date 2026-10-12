@@ -225,6 +225,8 @@ export enum NotificationKind {
 	// FX-12 Class Waitlist notifications
 	WaitlistPromoted = "waitlist_promoted",
 	WaitlistSkippedInsufficientCredits = "waitlist_skipped_insufficient_credits",
+	// FX-20.3 Club-wide member broadcast (announcements composer)
+	ClubAnnouncement = "club_announcement",
 }
 
 export enum WaitlistStatus {

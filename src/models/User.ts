@@ -200,6 +200,16 @@ userSchema.index(
 // anything added to this schema leaks into every existing response.
 userSchema.index({ username: 1 });
 
+// FX-20.1 — the staff console reads the member's home club as `homeClubId`
+// (see frontdesk-fitflix user.service.ts normalizeUser). `homeLocationId` is
+// the canonical field used everywhere server-side; this virtual exposes the
+// same value under the console's name on every toJSON response. The members
+// list builds its own alias in the aggregate `$project` (virtuals don't run
+// through aggregation).
+userSchema.virtual("homeClubId").get(function (this: { homeLocationId?: unknown }) {
+	return this.homeLocationId ? String(this.homeLocationId) : null;
+});
+
 applyIdTransform(userSchema);
 
 type UserDocument = mongoose.InferSchemaType<typeof userSchema>;

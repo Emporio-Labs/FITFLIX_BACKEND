@@ -71,6 +71,12 @@ const bookingSchema = new mongoose.Schema(
 );
 
 bookingSchema.index({ user: 1, sessionId: 1 });
+// FX-26 — the busiest front-desk screen (GET /bookings) scopes by branch and
+// sorts newest-first. Without these the scoped list is a collection scan + an
+// in-memory sort that slows down linearly as bookings accumulate.
+bookingSchema.index({ locationId: 1, createdAt: -1 });
+bookingSchema.index({ user: 1, createdAt: -1 });
+bookingSchema.index({ status: 1, createdAt: -1 });
 
 type BookingDocument = mongoose.InferSchemaType<typeof bookingSchema>;
 

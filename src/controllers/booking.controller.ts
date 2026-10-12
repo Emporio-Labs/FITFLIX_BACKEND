@@ -4,6 +4,7 @@ import Booking from "../models/Bookings";
 import { BookingStatus, CreditTransactionSource } from "../models/Enums";
 import Service from "../models/Service";
 import Slot from "../models/Slots";
+import User from "../models/User";
 
 import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
@@ -34,6 +35,23 @@ import {
 	createBookingBodySchema,
 	updateBookingBodySchema,
 } from "../validators/booking.validator";
+
+// User-supplied text goes into a RegExp below; escape it so a member searching
+// for "a+b" can't inject a pattern (or a ReDoS) into the query.
+const escapeRegExp = (value: string): string =>
+	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Parse an optional positive-integer query param, clamped to [min, max].
+const parseIntParam = (
+	raw: unknown,
+	fallback: number,
+	min: number,
+	max: number,
+): number => {
+	const n = typeof raw === "string" ? Number.parseInt(raw, 10) : NaN;
+	if (!Number.isFinite(n)) return fallback;
+	return Math.min(max, Math.max(min, n));
+};
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -299,6 +317,40 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			filter.status = new RegExp(`^${status.trim()}$`, "i");
 		}
 
+		// FX-26 — resolve a member search into ids with an indexed User lookup and
+		// push it into the query, instead of fetching every booking and filtering
+		// the populated user fields in memory (the old path read the whole
+		// collection on every search). Matching nothing short-circuits to empty.
+		if (typeof search === "string" && search.trim().length > 0) {
+			const rx = new RegExp(escapeRegExp(search.trim()), "i");
+			const matchedUserIds = await User.find({
+				$or: [{ username: rx }, { email: rx }, { phone: rx }],
+			}).distinct("_id");
+
+			if (matchedUserIds.length === 0) {
+				res.status(200).json({
+					bookings: [],
+					pagination: { page: 1, limit: 0, total: 0, totalPages: 0 },
+				});
+				return;
+			}
+
+			if (filter.user) {
+				// An explicit ?userId was also given — keep it only if it matches.
+				const explicit = String(filter.user);
+				const inSearch = matchedUserIds.some((id) => String(id) === explicit);
+				if (!inSearch) {
+					res.status(200).json({
+						bookings: [],
+						pagination: { page: 1, limit: 0, total: 0, totalPages: 0 },
+					});
+					return;
+				}
+			} else {
+				filter.user = { $in: matchedUserIds };
+			}
+		}
+
 		// FX-18.1 — branch scope on the stamped `locationId`. No-op for a global
 		// admin / when enforcement is off; a branch-scoped staffer is confined to
 		// their branches, and any legacy booking still missing a locationId (not yet
@@ -311,7 +363,16 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			scopedLocationFilter(req.allowedBranchIds, explicitLocationId),
 		);
 
-		let bookings = await Booking.find(filter)
+		// FX-26 — pagination is opt-in: the staff console still fetches the full
+		// (branch-scoped) list by default, but a caller that sends `limit` gets a
+		// bounded page (hard cap 200) so the screen can scale as data grows. The
+		// `locationId`/`user`/`status` + createdAt indexes keep the sort off a scan
+		// either way. `total` is always reported so a client can page.
+		const paginate = typeof req.query.limit === "string";
+		const page = parseIntParam(req.query.page, 1, 1, Number.MAX_SAFE_INTEGER);
+		const limit = parseIntParam(req.query.limit, 0, 1, 200);
+
+		const query = Booking.find(filter)
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
 			.populate("slot", "date startTime endTime")
@@ -320,14 +381,14 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			.populate("report", "subject hasPdf")
 			.sort({ createdAt: -1 });
 
-		if (typeof search === "string" && search.trim().length > 0) {
-			const q = search.trim().toLowerCase();
-			bookings = bookings.filter((b: any) => {
-				const username = b.user?.username?.toLowerCase() || "";
-				const email = b.user?.email?.toLowerCase() || "";
-				return username.includes(q) || email.includes(q);
-			});
+		if (paginate) {
+			query.skip((page - 1) * limit).limit(limit);
 		}
+
+		const [bookings, total] = await Promise.all([
+			query.exec(),
+			Booking.countDocuments(filter),
+		]);
 
 		const mappedBookings = bookings.map((b: any) => {
 			const obj = b.toObject ? b.toObject() : b;
@@ -341,7 +402,15 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			};
 		});
 
-		res.status(200).json({ bookings: mappedBookings });
+		res.status(200).json({
+			bookings: mappedBookings,
+			pagination: {
+				page: paginate ? page : 1,
+				limit: paginate ? limit : total,
+				total,
+				totalPages: paginate ? Math.max(1, Math.ceil(total / limit)) : 1,
+			},
+		});
 	} catch (error) {
 		next(error);
 	}

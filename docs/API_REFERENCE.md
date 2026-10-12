@@ -197,7 +197,7 @@ Authoritative source: [src/models/Enums.ts](../src/models/Enums.ts). Numeric enu
 | `AppointmentSource` | `USER_APP`, `ADMIN`, `CAL_DASHBOARD` |
 | `WebhookEventStatus` | `RECEIVED`, `PROCESSING`, `PROCESSED`, `FAILED`, `DLQ` |
 | `NotificationChannel` | `INAPP`, `PUSH`, `SOCKET` |
-| `NotificationKind` | `appointment_booked`, `appointment_rescheduled`, `appointment_cancelled`, `appointment_reminder`, `onboarding_step_updated`, `membership_expiry_reminder` |
+| `NotificationKind` | `appointment_booked`, `appointment_rescheduled`, `appointment_cancelled`, `appointment_reminder`, `onboarding_step_updated`, `membership_expiry_reminder`, `community_post_liked`, `community_post_commented`, `community_comment_replied`, `waitlist_promoted`, `waitlist_skipped_insufficient_credits`, `club_announcement` |
 | `ReminderKind` | `T_MINUS_24H`, `T_MINUS_1H`, `T_MINUS_15M` |
 | `ReminderStatus` | `SCHEDULED`, `FIRED`, `CANCELLED` |
 | `PlanGoal` *(workout)* | `Strength`, `Hypertrophy`, `Endurance`, `WeightLoss`, `Maintenance`, `Custom` |
@@ -676,6 +676,16 @@ Also mounted at `/api/v1`.
 | PATCH | `/notifications/read-all` | JWT | — | `markAllRead` |
 | PATCH | `/notifications/:id/read` | JWT | — | `markNotificationRead` |
 | POST | `/notifications/fcm-token` | JWT | — | `registerToken` |
+
+#### `/member-notifications` → [member-notification.routes.ts](../src/routes/member-notification.routes.ts)
+
+FX-20.3 — club-wide member broadcasts (staff "Announcements"). Branch-scoped
+via `staffGuard`. Also mounted at `/api/v1/member-notifications`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/member-notifications` | JWT | admin, frontdesk | `listMemberNotifications` |
+| POST | `/member-notifications` | JWT | admin, frontdesk | `sendMemberNotification` |
 
 #### `/internal` → [internal.routes.ts](../src/routes/internal.routes.ts)
 

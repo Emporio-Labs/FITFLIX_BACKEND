@@ -103,6 +103,21 @@ export const resolveLocationId = async (
 };
 
 /**
+ * FX-20.2 — a member's home club id as a string, or null when they have none.
+ *
+ * Authoritative: read from the member's own User record, never from a
+ * client-supplied value, so the classes/offers a member sees can't be widened
+ * by spoofing a header. Not cached — one indexed `_id` lookup per member read.
+ */
+export const getMemberHomeLocationId = async (
+	userId?: string | mongoose.Types.ObjectId | null,
+): Promise<string | null> => {
+	if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) return null;
+	const user = await User.findById(userId).select("homeLocationId").lean();
+	return user?.homeLocationId ? String(user.homeLocationId) : null;
+};
+
+/**
  * FX-19 — the branch a read request is asking to be scoped to.
  *
  * The front desk sends the selected branch on every request as the
