@@ -275,8 +275,11 @@ export const resumeMembership = async (params: {
 	actorId?: string;
 	actorRole?: string;
 	now?: Date;
+	resumedAt?: Date;
+	reason?: string;
 }) => {
 	const now = params.now || new Date();
+	const effectiveResumeDate = params.resumedAt || now;
 
 	if (!mongoose.Types.ObjectId.isValid(params.membershipId)) {
 		throw new MembershipLifecycleError(
@@ -301,6 +304,7 @@ export const resumeMembership = async (params: {
 		pausedAt: Date;
 		resumedAt: Date | null;
 		days: number;
+		reason?: string;
 	}>;
 
 	const openIndex = intervals.findIndex((i) => !i.resumedAt);
@@ -333,10 +337,25 @@ export const resumeMembership = async (params: {
 	const openInterval = intervals[openIndex];
 	const pausedAt = new Date(openInterval!.pausedAt);
 
+	if (effectiveResumeDate.getTime() < pausedAt.getTime()) {
+		throw new MembershipLifecycleError(
+			"INVALID_ARGUMENT",
+			`Resume date cannot be earlier than pause date (${pausedAt.toISOString().slice(0, 10)})`,
+		);
+	}
+
+	// Buffer future dates slightly (e.g. end-of-day for today)
+	if (effectiveResumeDate.getTime() > now.getTime() + 86400000) {
+		throw new MembershipLifecycleError(
+			"INVALID_ARGUMENT",
+			"Resume date cannot be in the future",
+		);
+	}
+
 	// Round up: any part-day of freeze is credited back in the member's favour.
 	const rawDays = Math.max(
 		0,
-		Math.ceil((now.getTime() - pausedAt.getTime()) / DAY_MS),
+		Math.ceil((effectiveResumeDate.getTime() - pausedAt.getTime()) / DAY_MS),
 	);
 
 	let cap = 30;
@@ -357,9 +376,15 @@ export const resumeMembership = async (params: {
 
 	const setOps: Record<string, unknown> = {
 		status: MembershipStatus.Active,
-		[`pauseIntervals.${openIndex}.resumedAt`]: now,
+		[`pauseIntervals.${openIndex}.resumedAt`]: effectiveResumeDate,
 		[`pauseIntervals.${openIndex}.days`]: creditableDays,
 	};
+
+	if (params.reason) {
+		setOps[`pauseIntervals.${openIndex}.reason`] = openInterval?.reason
+			? `${openInterval.reason} | Resumed: ${params.reason}`
+			: params.reason;
+	}
 
 	// An open-ended membership (no endDate) has nothing to extend.
 	if (newEnd) {

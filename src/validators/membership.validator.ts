@@ -16,6 +16,10 @@ export const createMembershipBodySchema = z.object({
 	notes: z.string().trim().optional(),
 	/** The branch this membership is issued at. Resolved by resolveLocationId. */
 	locationId: z.string().trim().optional(),
+	/** Optional effective resume date (e.g. backdated return date) when transitioning Paused -> Active */
+	resumedAt: z.string().trim().optional(),
+	/** Optional reason / note for freeze or resume */
+	reason: z.string().trim().optional(),
 });
 
 export const updateMembershipBodySchema = createMembershipBodySchema
@@ -24,5 +28,11 @@ export const updateMembershipBodySchema = createMembershipBodySchema
 		message: "At least one field is required",
 	});
 
+export const resumeMembershipBodySchema = z.object({
+	resumedAt: z.string().trim().optional(),
+	reason: z.string().trim().optional(),
+});
+
 export type CreateMembershipBody = z.infer<typeof createMembershipBodySchema>;
 export type UpdateMembershipBody = z.infer<typeof updateMembershipBodySchema>;
+export type ResumeMembershipBody = z.infer<typeof resumeMembershipBodySchema>;

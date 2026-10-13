@@ -3166,6 +3166,50 @@ curl -X PATCH "https://api.example.com/memberships/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 **Success (200):** `{ "message": "Membership updated", "membership": { /* ... */ } }`
 
+### POST /memberships/:id/pause
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+Freeze an active membership. Unused days are credited back on resume.
+
+```bash
+curl -X POST "https://api.example.com/memberships/5f1a2b3c4d5e6f7a8b9c0d1e/pause" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "reason": "Medical leave" }'
+```
+
+**Success (200):** `{ "message": "Membership frozen...", "membership": { /* ... */ }, "daysRemainingInAllowance": 30 }`
+
+### POST /memberships/:id/resume
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+Resume a frozen membership and push `endDate` out by creditable frozen days. Supports backdating `resumedAt` when a member returned earlier than the admin recorded it.
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `resumedAt` | ISO date string | no | Effective return date (default: today; must be ≥ pausedAt and ≤ now) |
+| `reason` | string | no | Optional reason or note |
+
+```bash
+curl -X POST "https://api.example.com/memberships/5f1a2b3c4d5e6f7a8b9c0d1e/resume" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "resumedAt": "2026-10-06T00:00:00.000Z", "reason": "Member returned last week on 6th Oct" }'
+```
+
+**Success (200):**
+```json
+{
+  "message": "Membership resumed. 52 frozen days credited back.",
+  "membership": { /* ... */ },
+  "pausedDays": 52,
+  "creditedDays": 30,
+  "cappedBy": 30,
+  "previousEndDate": "2026-12-14T00:00:00.000Z",
+  "newEndDate": "2027-01-13T00:00:00.000Z"
+}
+```
+
 ### DELETE /memberships/:id
 
 **Auth:** Bearer (`admin`)

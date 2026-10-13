@@ -1,9 +1,11 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Membership from "../models/Membership";
+import { MembershipStatus } from "../models/Enums";
 import {
 	createMembershipBodySchema,
 	updateMembershipBodySchema,
+	resumeMembershipBodySchema,
 } from "../validators/membership.validator";
 import {
 	MembershipLifecycleError,
@@ -238,11 +240,79 @@ export const updateMembershipById: RequestHandler = async (req, res, next) => {
 
 	try {
 		const existingMembership = await Membership.findById(id).select(
-			"_id creditsIncluded creditsRemaining",
+			"_id status endDate creditsIncluded creditsRemaining",
 		);
 
 		if (!existingMembership) {
 			res.status(404).json({ message: "Membership not found" });
+			return;
+		}
+
+		// If transitioning from Paused to Active, execute the resume lifecycle
+		if (
+			existingMembership.status === MembershipStatus.Paused &&
+			rest.status === MembershipStatus.Active
+		) {
+			const resumedAtDate =
+				typeof rest.resumedAt === "string"
+					? parseDateOrNull(rest.resumedAt)
+					: undefined;
+
+			const resumeResult = await resumeMembership({
+				membershipId: id,
+				actorId: req.user?.id,
+				actorRole: req.user?.role,
+				resumedAt: resumedAtDate ?? undefined,
+				reason: typeof rest.reason === "string" ? rest.reason : undefined,
+			});
+
+			const updatePayload: Record<string, unknown> = {
+				...(userId ? { user: userId } : {}),
+				...(startDateValue ? { startDate: startDateValue } : {}),
+				...rest,
+			};
+			delete updatePayload.status;
+			delete updatePayload.resumedAt;
+			delete updatePayload.reason;
+
+			// Do not let a stale/unchanged endDate overwrite the calculated newEndDate
+			if (
+				endDateValue &&
+				existingMembership.endDate &&
+				endDateValue.getTime() === existingMembership.endDate.getTime()
+			) {
+				delete updatePayload.endDate;
+			}
+
+			if (typeof creditsIncluded === "number") {
+				const includedDelta =
+					creditsIncluded - (existingMembership.creditsIncluded ?? 0);
+				updatePayload.creditsIncluded = creditsIncluded;
+				updatePayload.creditsRemaining = Math.max(
+					0,
+					(existingMembership.creditsRemaining ?? 0) + includedDelta,
+				);
+			}
+
+			const updatedMembership =
+				Object.keys(updatePayload).length > 0
+					? await Membership.findByIdAndUpdate(id, updatePayload, {
+							returnDocument: "after",
+							runValidators: true,
+						})
+					: resumeResult.membership;
+
+			res.status(200).json({
+				message: resumeResult.cappedBy
+					? `Membership resumed. ${resumeResult.creditedDays} of ${resumeResult.pausedDays} frozen days credited (capped at the ${resumeResult.cappedBy}-day allowance).`
+					: `Membership resumed. ${resumeResult.creditedDays} frozen days credited back.`,
+				membership: updatedMembership,
+				pausedDays: resumeResult.pausedDays,
+				creditedDays: resumeResult.creditedDays,
+				cappedBy: resumeResult.cappedBy,
+				previousEndDate: resumeResult.previousEndDate,
+				newEndDate: resumeResult.newEndDate,
+			});
 			return;
 		}
 
@@ -252,6 +322,7 @@ export const updateMembershipById: RequestHandler = async (req, res, next) => {
 			...(endDateValue ? { endDate: endDateValue } : {}),
 			...rest,
 		};
+		delete updatePayload.resumedAt;
 
 		if (typeof creditsIncluded === "number") {
 			const includedDelta =
@@ -278,6 +349,16 @@ export const updateMembershipById: RequestHandler = async (req, res, next) => {
 			.status(200)
 			.json({ message: "Membership updated", membership: updatedMembership });
 	} catch (error) {
+		if (error instanceof MembershipLifecycleError) {
+			const status =
+				error.code === "NOT_FOUND"
+					? 404
+					: error.code === "PAUSE_LIMIT_REACHED"
+						? 409
+						: 400;
+			res.status(status).json({ message: error.message, code: error.code });
+			return;
+		}
 		next(error);
 	}
 };
@@ -353,10 +434,18 @@ export const resumeMembershipHandler: RequestHandler = async (req, res, next) =>
 			return;
 		}
 
+		const parsedBody = resumeMembershipBodySchema.safeParse(req.body ?? {});
+		const resumedAtDate =
+			parsedBody.success && parsedBody.data.resumedAt
+				? parseDateOrNull(parsedBody.data.resumedAt)
+				: undefined;
+
 		const result = await resumeMembership({
 			membershipId: id,
 			actorId: req.user?.id,
 			actorRole: req.user?.role,
+			resumedAt: resumedAtDate ?? undefined,
+			reason: parsedBody.success ? parsedBody.data.reason : undefined,
 		});
 
 		// Surface the shortfall explicitly so the desk can explain it rather
