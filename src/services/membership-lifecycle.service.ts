@@ -214,8 +214,13 @@ export const pauseMembership = async (params: {
 		);
 	}
 
-	const { settings } = await getLocationSettings(membership.locationId);
-	const cap = Number(settings?.pauseMaxDaysPerTerm ?? 30);
+	let cap = 30;
+	try {
+		const { settings } = await getLocationSettings(membership.locationId);
+		cap = Number(settings?.pauseMaxDaysPerTerm ?? 30);
+	} catch {
+		cap = 30;
+	}
 	const alreadyUsed = Number(membership.totalPausedDays ?? 0);
 
 	if (cap > 0 && alreadyUsed >= cap) {
@@ -300,10 +305,29 @@ export const resumeMembership = async (params: {
 
 	const openIndex = intervals.findIndex((i) => !i.resumedAt);
 	if (openIndex === -1) {
-		throw new MembershipLifecycleError(
-			"INVALID_STATE",
-			"Membership is paused but has no open pause interval to close",
+		// If paused without an open interval (e.g. edited directly or migrated),
+		// resume gracefully without extending endDate.
+		const updated = await Membership.findOneAndUpdate(
+			{ _id: membership._id, status: MembershipStatus.Paused },
+			{ $set: { status: MembershipStatus.Active } },
+			{ new: true },
 		);
+
+		if (!updated) {
+			throw new MembershipLifecycleError(
+				"INVALID_STATE",
+				"Membership was modified concurrently; try again",
+			);
+		}
+
+		return {
+			membership: updated,
+			pausedDays: 0,
+			creditedDays: 0,
+			cappedBy: null,
+			previousEndDate: membership.endDate ? new Date(membership.endDate) : null,
+			newEndDate: membership.endDate ? new Date(membership.endDate) : null,
+		};
 	}
 
 	const openInterval = intervals[openIndex];
@@ -315,8 +339,13 @@ export const resumeMembership = async (params: {
 		Math.ceil((now.getTime() - pausedAt.getTime()) / DAY_MS),
 	);
 
-	const { settings } = await getLocationSettings(membership.locationId);
-	const cap = Number(settings?.pauseMaxDaysPerTerm ?? 30);
+	let cap = 30;
+	try {
+		const { settings } = await getLocationSettings(membership.locationId);
+		cap = Number(settings?.pauseMaxDaysPerTerm ?? 30);
+	} catch {
+		cap = 30;
+	}
 	const alreadyUsed = Number(membership.totalPausedDays ?? 0);
 	const creditableDays =
 		cap > 0 ? Math.max(0, Math.min(rawDays, cap - alreadyUsed)) : rawDays;
