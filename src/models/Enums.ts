@@ -522,3 +522,13 @@ export enum ModerationActionType {
 export enum BlockTargetType {
 	User = "user",
 }
+
+export enum MedicalReportCategory {
+	Medical = "medical",
+	Dna = "dna",
+}
+
+export enum MedicalReportSource {
+	Client = "client",
+	Frontdesk = "frontdesk",
+}
