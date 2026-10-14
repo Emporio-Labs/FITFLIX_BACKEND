@@ -32,6 +32,7 @@ export const listMemberReplays: RequestHandler = async (req, res, next) => {
 			status: "READY",
 			isHidden: false,
 			isDeleted: false,
+			sessionType: "live_stream",
 		})
 			.sort({ startedAt: -1 })
 			.limit(100)
@@ -40,6 +41,7 @@ export const listMemberReplays: RequestHandler = async (req, res, next) => {
 		const mapped = replays.map((r) => ({
 			id: String(r._id),
 			title: r.title,
+			sessionType: r.sessionType || "live_stream",
 			instructorName: r.instructorName,
 			durationSeconds: r.durationSeconds,
 			durationMinutes: Math.ceil((r.durationSeconds || 0) / 60),

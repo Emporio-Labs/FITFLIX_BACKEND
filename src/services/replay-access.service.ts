@@ -32,8 +32,16 @@ export async function checkReplayAccess(
 
 	// 3. Check if the parent class has open access (bookingRequirement: "NONE" or access: "ALL")
 	const klass = await ClassModel.findById(recording.classId)
-		.select("access bookingRequirement isSystem")
+		.select("access bookingRequirement isSystem sessionType")
 		.lean();
+
+	if (klass && klass.sessionType && klass.sessionType !== "live_stream") {
+		return {
+			allowed: false,
+			code: "NOT_A_LIVESTREAM",
+			message: "Replays are only available for online live stream workouts, not in-studio group classes.",
+		};
+	}
 
 	const isOpenToAll =
 		klass?.access === "ALL" ||

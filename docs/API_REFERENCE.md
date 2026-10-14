@@ -710,6 +710,19 @@ Also mounted at `/api/v1/alerts`. Rate limit: `apiRateLimit`.
 | PATCH | `/alerts/:id/acknowledge` | JWT | admin, frontdesk, trainer | `acknowledgeOperationalAlert` |
 | PATCH | `/alerts/:id/resolve` | JWT | admin, frontdesk | `resolveOperationalAlert` |
 
+#### `/recordings` → [recording.routes.ts](../src/routes/recording.routes.ts)
+
+Also mounted at `/api/v1/recordings`. Admin endpoints also mounted at `/admin/recordings` and `/api/v1/admin/recordings`. Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/recordings/replays` | JWT | user | `listMemberReplays` |
+| GET | `/recordings/:id/playback` | JWT | user | `getReplayPlayback` |
+| GET | `/recordings/:id/stream` | Public (Signed token query) | — | `streamReplay` |
+| GET | `/admin/recordings` | JWT | admin, frontdesk | `listAdminRecordings` |
+| PATCH | `/admin/recordings/:id/visibility` | JWT | admin, frontdesk | `updateRecordingVisibility` |
+| DELETE | `/admin/recordings/:id` | JWT | admin, frontdesk | `deleteRecording` |
+
 #### Declared inline in [src/app.ts](../src/app.ts)
 
 | Method | Path | Auth | Roles | Handler |
@@ -717,7 +730,7 @@ Also mounted at `/api/v1/alerts`. Rate limit: `apiRateLimit`.
 | GET | `/health` | Public | — | inline |
 | POST | `/test/firebase` | Public | — | inline |
 
-<!-- generated: 248 route declarations across 29 route files -->
+<!-- generated: 254 route declarations across 30 route files -->
 
 ---
 

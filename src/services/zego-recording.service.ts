@@ -38,8 +38,8 @@ export async function startRoomRecording(
 				.lean();
 		}
 
-		// Only record live streams (or sessions flagged with live_stream type)
-		if (klass?.sessionType && klass.sessionType !== "live_stream" && klass.sessionType !== "group_class") {
+		// FX-23: Only record live streams — never record in-studio group classes
+		if (!klass || klass.sessionType !== "live_stream") {
 			return null;
 		}
 
@@ -69,6 +69,7 @@ export async function startRoomRecording(
 		const recording = await Recording.create({
 			sessionId,
 			classId: String(session.classId || ""),
+			sessionType: "live_stream",
 			title,
 			instructorName,
 			instructorUserId,

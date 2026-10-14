@@ -22,6 +22,12 @@ const recordingSchema = new mongoose.Schema(
 			required: true,
 			index: true,
 		},
+		sessionType: {
+			type: String,
+			enum: ["live_stream"],
+			default: "live_stream",
+			index: true,
+		},
 		title: {
 			type: String,
 			required: true,
