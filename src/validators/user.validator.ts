@@ -170,6 +170,7 @@ export const updateUserBodySchema = z
 		}, z.string().email().optional().nullable()),
 		age: optionalAgeNumber,
 		gender: optionalGenderString,
+		healthGoals: z.array(z.string()).optional(),
 		dateOfBirth: optionalDate,
 		emergencyContact: optionalString,
 		address: optionalString,
