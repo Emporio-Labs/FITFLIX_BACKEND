@@ -723,6 +723,29 @@ Also mounted at `/api/v1/recordings`. Admin endpoints also mounted at `/admin/re
 | PATCH | `/admin/recordings/:id/visibility` | JWT | admin, frontdesk | `updateRecordingVisibility` |
 | DELETE | `/admin/recordings/:id` | JWT | admin, frontdesk | `deleteRecording` |
 
+#### `/pt` → [personal-training.routes.ts](../src/routes/personal-training.routes.ts)
+
+Also mounted at `/api/v1/pt`. Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/pt/trainers` | Public | — | `getTrainers` |
+| GET | `/pt/trainers/:id/availability` | Public | — | `getTrainerAvailability` |
+| GET | `/pt/trainers/:id/schedule` | Public | — | `getTrainerSchedule` |
+| PUT | `/pt/trainers/:id/schedule` | JWT | admin, frontdesk, trainer | `updateTrainerScheduleHandler` |
+| GET | `/pt/my-package` | JWT | user | `getMyPtPackage` |
+| POST | `/pt/bookings` | JWT | user | `bookPersonalTraining` |
+| GET | `/pt/my-bookings` | JWT | user | `getMyBookings` |
+| GET | `/pt/bookings/:id` | JWT | user | `getBookingById` |
+| POST | `/pt/bookings/:id/cancel` | JWT | user | `cancelBookingHandler` |
+| POST, PATCH | `/pt/bookings/:id/reschedule` | JWT | user | `rescheduleBookingHandler` |
+| POST | `/pt/trainer-change-request` | JWT | user | `submitTrainerChangeRequest` |
+| GET | `/pt/admin/bookings` | JWT | admin, frontdesk, staff, trainer | `getAllBookingsAdmin` |
+| POST | `/pt/admin/bookings/:id/complete` | JWT | admin, frontdesk, staff, trainer | `completeBookingAdmin` |
+| POST | `/pt/admin/bookings/:id/no-show` | JWT | admin, frontdesk, staff, trainer | `markNoShowAdmin` |
+| GET | `/pt/admin/trainer-change-requests` | JWT | admin, frontdesk, staff | `getTrainerChangeRequestsAdmin` |
+| POST | `/pt/admin/trainer-change-requests/:id/resolve` | JWT | admin, frontdesk, staff | `resolveTrainerChangeRequestAdmin` |
+
 #### Declared inline in [src/app.ts](../src/app.ts)
 
 | Method | Path | Auth | Roles | Handler |

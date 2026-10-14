@@ -1,9 +1,21 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Booking from "../models/Bookings";
-import { BookingStatus, CreditTransactionSource } from "../models/Enums";
+import {
+	AlertSeverity,
+	AlertStatus,
+	AlertType,
+	BookingStatus,
+	CreditTransactionSource,
+} from "../models/Enums";
+import Location from "../models/Location";
+import OperationalAlert from "../models/OperationalAlert";
 import Service from "../models/Service";
 import Slot from "../models/Slots";
+import User from "../models/User";
+import { autoResolveOperationalAlerts } from "./operational-alert.controller";
+import { getEffectiveAlertRule } from "../utils/default-alert-rules";
+import { emitOperationalAlert } from "../services/realtime.service";
 
 import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
@@ -751,6 +763,9 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 				status: number;
 				body: Record<string, unknown>;
 			};
+			if (status === 200) {
+				void autoResolveOperationalAlerts("booking", id, "Booking deleted / cancelled");
+			}
 			res.status(status).json(body);
 			return;
 		}
@@ -915,6 +930,55 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		if (
+			String(parsedBody.data.status).toLowerCase() === "unattended" ||
+			parsedBody.data.status === BookingStatus.Unattended
+		) {
+			try {
+				const userDoc = await User.findById(booking.user)
+					.select("username phone")
+					.lean<{ username?: string; phone?: string } | null>();
+				const memberName = userDoc?.username || "Member";
+				const memberPhone = userDoc?.phone || "";
+				const loc = await Location.findOne().select("_id").lean();
+				const branchId = (loc?._id as mongoose.Types.ObjectId) || new mongoose.Types.ObjectId();
+				const rule = await getEffectiveAlertRule(AlertType.MemberNoShow);
+				const alert = await OperationalAlert.create({
+					type: AlertType.MemberNoShow,
+					severity: rule.severity || AlertSeverity.Warning,
+					status: AlertStatus.Open,
+					title: `Member No-Show: ${memberName}`,
+					message: `Staff recorded no-show for member ${memberName} on class booking.`,
+					branchId,
+					targetRoles: rule.firstResponderRole
+						? [rule.firstResponderRole, "frontdesk", "admin"]
+						: ["frontdesk", "admin"],
+					sound: rule.sound || "chime",
+					escalationLadder: rule.escalationLadder || [],
+					relatedEntity: {
+						entityType: "booking",
+						entityId: String(booking._id),
+						summary: `${memberName} | Class Booking | ${memberPhone || "No Phone"}`,
+						metadata: {
+							bookingId: String(booking._id),
+							memberName,
+							memberPhone,
+							deepLinkUrl: `/admin/bookings?bookingId=${booking._id}&action=rebook`,
+						},
+					},
+					autoResolveKey: `booking:${booking._id}`,
+				});
+				emitOperationalAlert(alert.toObject());
+			} catch (err) {
+				console.error("[booking.controller] Failed to raise MemberNoShow alert", err);
+			}
+		} else if (
+			parsedBody.data.status === "Attended" ||
+			parsedBody.data.status === BookingStatus.Attended
+		) {
+			void autoResolveOperationalAlerts("booking", id, "Booking marked attended");
+		}
+
 		res.status(200).json({
 			message: "Booking status changed",
 			booking,
@@ -942,6 +1006,8 @@ export const cancelBookingHandler: RequestHandler = async (req, res, next) => {
 			requesterRole: requester.role,
 			adminOverride,
 		});
+
+		void autoResolveOperationalAlerts("booking", id, "Booking cancelled");
 
 		res.status(result.statusCode || 200).json(result);
 	} catch (error) {
@@ -984,6 +1050,8 @@ export const recordAttendance: RequestHandler = async (req, res, next) => {
 		booking.stayDurationMinutes = Math.max(booking.stayDurationMinutes || 0, stayDurationMinutes);
 
 		await booking.save();
+
+		void autoResolveOperationalAlerts("booking", id, "Booking attended");
 
 		res.status(200).json({
 			message: "Attendance recorded successfully",

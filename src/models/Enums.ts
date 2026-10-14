@@ -150,6 +150,7 @@ export enum UnifiedBookingStatus {
 	CANCELLED = "CANCELLED",
 	COMPLETED = "COMPLETED",
 	HOST_NO_SHOW = "HOST_NO_SHOW",
+	MEMBER_NO_SHOW = "MEMBER_NO_SHOW",
 	EXPIRED = "EXPIRED",
 	RESCHEDULE_REQUIRED = "RESCHEDULE_REQUIRED",
 }
@@ -544,4 +545,6 @@ export enum AlertType {
 	EmergencyCall = "emergency_call",
 	OperationalDisruption = "operational_disruption",
 	ManualStaffAlert = "manual_staff_alert",
+	MemberNoShow = "member_no_show",
+	ExpertUnavailable = "expert_unavailable",
 }

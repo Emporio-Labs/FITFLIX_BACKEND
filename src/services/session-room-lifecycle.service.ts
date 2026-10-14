@@ -10,6 +10,7 @@ import {
 	AlertStatus,
 	AlertType,
 	AppointmentMode,
+	MeetingStatus,
 	UnifiedBookingStatus,
 } from "../models/Enums";
 import { autoResolveOperationalAlerts } from "../controllers/operational-alert.controller";
@@ -381,11 +382,11 @@ export async function checkTrainerNoShowSessions(
 	const rule = await getEffectiveAlertRule(AlertType.SessionStartingNoHost);
 	const graceMinutes = rule.gracePeriodMinutes ?? 2;
 
-	// 2. Query candidates: only active live/hybrid sessions scheduled within the candidate window
+	// 2. Query candidates: active sessions (online, hybrid, and in-person) scheduled within candidate window (FX-41.2)
 	// FX-40.5: CANCELLED and COMPLETED sessions are strictly excluded.
 	const candidates = await ScheduledSession.find({
 		status: { $in: ["SCHEDULED", "FULL"] },
-		deliveryType: { $in: ["ONLINE", "HYBRID"] },
+		roomStatus: { $ne: "IN_PROGRESS" },
 		hostLiveAt: null,
 		sessionDate: {
 			$gte: new Date(now.getTime() - CANDIDATE_WINDOW_MS),
@@ -548,11 +549,12 @@ export async function checkTrainerNoShowSessions(
 		}
 	}
 
-	// Also check 1-on-1 online personal training / consultation sessions
+	// Also check 1-on-1 personal training / consultation sessions (online and in-person) (FX-41.2)
 	try {
 		const candidate1on1 = await UnifiedBooking.find({
 			status: UnifiedBookingStatus.CONFIRMED,
-			appointmentMode: AppointmentMode.ONLINE,
+			meetingStatus: { $ne: MeetingStatus.IN_PROGRESS },
+			completedAt: null,
 			hostLiveAt: null,
 			bookingDate: {
 				$gte: new Date(now.getTime() - CANDIDATE_WINDOW_MS),
@@ -561,6 +563,7 @@ export async function checkTrainerNoShowSessions(
 		} as any)
 			.limit(BATCH_LIMIT)
 			.populate("expertId", "trainerName name username")
+			.populate("userId", "username email phone")
 			.lean();
 
 		for (const booking of candidate1on1) {
@@ -579,7 +582,7 @@ export async function checkTrainerNoShowSessions(
 			const existingAlert = await OperationalAlert.findOne({
 				"relatedEntity.entityType": "booking",
 				"relatedEntity.entityId": String(booking._id),
-				type: AlertType.SessionStartingNoHost,
+				type: { $in: [AlertType.TrainerMissing, AlertType.SessionStartingNoHost] },
 				status: { $in: [AlertStatus.Open, AlertStatus.Acknowledged] },
 			});
 			if (existingAlert) continue;
@@ -594,12 +597,20 @@ export async function checkTrainerNoShowSessions(
 			const sessionTitle = `${booking.serviceSubtype || "1-on-1"} Session`;
 			const branchId = booking.locationId || (await resolveLocationId());
 
+			const isInPerson = booking.appointmentMode === AppointmentMode.IN_PERSON;
+			const modeLabel = isInPerson ? "In-person" : "Online";
+			const memberName =
+				(booking.userId as any)?.username ||
+				(booking.userId as any)?.name ||
+				"Member";
+			const memberPhone = (booking.userId as any)?.phone || "";
+
 			const alert = await OperationalAlert.create({
-				type: AlertType.SessionStartingNoHost,
+				type: AlertType.TrainerMissing,
 				severity: rule.severity || AlertSeverity.Critical,
 				status: AlertStatus.Open,
-				title: `Trainer Missing: ${sessionTitle}`,
-				message: `Online 1-on-1 session scheduled for ${booking.startTime} with ${expertName} reached start time (+${graceMinutes}m grace), but host has not joined. Member is waiting.`,
+				title: `Trainer Missing: ${modeLabel} ${sessionTitle}`,
+				message: `${modeLabel} 1-on-1 session scheduled for ${booking.startTime} with ${expertName} reached start time (+${graceMinutes}m grace), but trainer has not started the session. Member ${memberName} is waiting.`,
 				branchId,
 				targetRoles: rule.firstResponderRole
 					? [rule.firstResponderRole, "frontdesk", "admin"]
@@ -609,7 +620,15 @@ export async function checkTrainerNoShowSessions(
 				relatedEntity: {
 					entityType: "booking",
 					entityId: String(booking._id),
-					summary: `${sessionTitle} | Host: ${expertName} | ${booking.startTime} | 1 member waiting`,
+					summary: `${modeLabel} ${sessionTitle} | Trainer: ${expertName} | ${booking.startTime} | Member: ${memberName} (${memberPhone || "No Phone"})`,
+					metadata: {
+						bookingId: String(booking._id),
+						memberName,
+						memberPhone,
+						startTime: booking.startTime,
+						endTime: booking.endTime,
+						deepLinkUrl: `/admin/personal-training?highlight=${booking._id}&action=rebook`,
+					},
 				},
 				autoResolveKey: `booking:${booking._id}`,
 			});

@@ -14,6 +14,7 @@ import {
 import Slot from "../models/Slots";
 import UnifiedBooking from "../models/UnifiedBooking";
 import User from "../models/User";
+import { autoResolveOperationalAlerts } from "./operational-alert.controller";
 import { notify } from "../services/notification.service";
 import { pickExpertForSlot } from "../services/expert-schedule.service";
 import {
@@ -510,6 +511,11 @@ export const acceptBooking: RequestHandler = async (req, res, next) => {
 
 		try {
 			await booking.save();
+			void autoResolveOperationalAlerts(
+				"booking",
+				String(booking._id),
+				"Booking confirmed / rescheduled",
+			);
 		} catch (err) {
 			// Assigning this nutritionist would double-book them — the unique
 			// index is the authority, not a prior availability read.
@@ -611,6 +617,12 @@ export const completeBooking: RequestHandler = async (req, res, next) => {
 		booking.meetingStatus = MeetingStatus.COMPLETED;
 		booking.completedAt = new Date();
 		await booking.save();
+
+		void autoResolveOperationalAlerts(
+			"booking",
+			String(booking._id),
+			"Consultation completed and attended",
+		);
 
 		res.status(200).json({
 			message: "Nutritionist consultation marked complete",
@@ -815,6 +827,11 @@ export const rescheduleMyBooking: RequestHandler = async (req, res, next) => {
 
 		try {
 			await booking.save();
+			void autoResolveOperationalAlerts(
+				"booking",
+				String(booking._id),
+				"Consultation rescheduled",
+			);
 		} catch (err) {
 			if ((err as { code?: number }).code === 11000) {
 				if (newSlotId) {
@@ -1004,6 +1021,12 @@ export const cancelMyBooking: RequestHandler = async (req, res, next) => {
 		booking.cancelledBy = "user";
 		booking.cancellationReason = parsed.data.reason ?? null;
 		await booking.save();
+
+		void autoResolveOperationalAlerts(
+			"booking",
+			String(booking._id),
+			"Consultation cancelled",
+		);
 
 		// FX-25 · tell the assigned nutritionist their slot is free again.
 		if (booking.expertId && booking.expertModel === "User") {

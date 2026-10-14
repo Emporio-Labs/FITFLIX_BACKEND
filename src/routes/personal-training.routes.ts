@@ -12,6 +12,7 @@ import {
 	getTrainerChangeRequestsAdmin,
 	getTrainers,
 	getTrainerSchedule,
+	markNoShowAdmin,
 	resolveTrainerChangeRequestAdmin,
 	submitTrainerChangeRequest,
 	updateTrainerScheduleHandler,
@@ -60,6 +61,12 @@ router.post(
 	authenticateToken,
 	authorize(["admin", "frontdesk", "staff", "trainer"]),
 	completeBookingAdmin,
+);
+router.post(
+	"/admin/bookings/:id/no-show",
+	authenticateToken,
+	authorize(["admin", "frontdesk", "staff", "trainer"]),
+	markNoShowAdmin,
 );
 router.get(
 	"/admin/trainer-change-requests",

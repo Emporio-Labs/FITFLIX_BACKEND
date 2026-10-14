@@ -81,6 +81,10 @@ const operationalAlertSchema = new mongoose.Schema(
 				type: String,
 				default: undefined,
 			},
+			metadata: {
+				type: mongoose.Schema.Types.Mixed,
+				default: undefined,
+			},
 		},
 		acknowledgedBy: {
 			userId: {

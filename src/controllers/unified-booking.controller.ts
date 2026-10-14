@@ -27,6 +27,7 @@ import {
 	completeUnifiedBooking,
 	createPersonalTrainingBooking,
 	createTrainerChangeRequest,
+	markUnifiedBookingNoShow,
 	resolveTrainerChangeRequest,
 } from "../services/unified-booking.service";
 
@@ -484,6 +485,23 @@ export const completeBookingAdmin: RequestHandler = async (req, res, next) => {
 		});
 	} catch (error: any) {
 		res.status(400).json({ message: error.message || "Failed to complete session" });
+	}
+};
+
+export const markNoShowAdmin: RequestHandler = async (req, res, next) => {
+	try {
+		const { id } = req.params;
+		const { reason } = req.body || {};
+
+		const result = await markUnifiedBookingNoShow(
+			id,
+			reason,
+			req.user?.id,
+		);
+
+		res.status(200).json(result);
+	} catch (error: any) {
+		res.status(400).json({ message: error.message || "Failed to mark no-show" });
 	}
 };
 

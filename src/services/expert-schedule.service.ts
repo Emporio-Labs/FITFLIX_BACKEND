@@ -1,13 +1,20 @@
 import mongoose from "mongoose";
 import {
+	AlertSeverity,
+	AlertStatus,
+	AlertType,
 	AppointmentMode,
 	ExpertType,
 	UnifiedBookingStatus,
 } from "../models/Enums";
 import ExpertSchedule from "../models/ExpertSchedule";
+import Location from "../models/Location";
+import OperationalAlert from "../models/OperationalAlert";
 import Trainer from "../models/Trainer";
 import UnifiedBooking from "../models/UnifiedBooking";
 import User from "../models/User";
+import { getEffectiveAlertRule } from "../utils/default-alert-rules";
+import { emitOperationalAlert } from "./realtime.service";
 import {
 	type CanonicalAppointmentMode,
 	normalizeAppointmentMode,
@@ -158,8 +165,140 @@ export const updateExpertSchedule = async (
 		},
 		{ new: true, upsert: true, setDefaultsOnInsert: true },
 	);
+
+	// FX-41.3: Check if expert schedule change affects any confirmed member bookings
+	try {
+		const startOfToday = new Date();
+		startOfToday.setHours(0, 0, 0, 0);
+
+		const confirmedBookings = await UnifiedBooking.find({
+			expertId: expertObjId,
+			status: UnifiedBookingStatus.CONFIRMED,
+			bookingDate: { $gte: startOfToday },
+		}).populate("userId", "username email phone");
+
+		if (confirmedBookings.length > 0 && schedule) {
+			let expertName = "Expert";
+			if (expertType === ExpertType.Trainer) {
+				const t = await Trainer.findById(expertObjId).select("trainerName").lean();
+				if (t) expertName = t.trainerName;
+			} else {
+				const u = await User.findById(expertObjId).select("name username").lean();
+				if (u) expertName = (u as any).name || u.username;
+			}
+
+			const blackoutDayStrings = new Set(
+				(schedule.blackoutDates || []).map((d: Date) =>
+					new Date(d).toISOString().slice(0, 10),
+				),
+			);
+
+			const slotsByDay = new Map<number, any>();
+			for (const ws of schedule.weeklySlots || []) {
+				slotsByDay.set(ws.dayOfWeek, ws);
+			}
+
+			for (const booking of confirmedBookings) {
+				const bookingDateStr = new Date(booking.bookingDate).toISOString().slice(0, 10);
+				const dayOfWeek = new Date(booking.bookingDate).getDay();
+				const bStartMin = parseTimeToMinutes(booking.startTime);
+				const bEndMin = parseTimeToMinutes(booking.endTime);
+
+				let isUnavailable = false;
+				let reason = "";
+
+				if (schedule.isActive === false) {
+					isUnavailable = true;
+					reason = "Expert marked unavailable / inactive";
+				} else if (blackoutDayStrings.has(bookingDateStr)) {
+					isUnavailable = true;
+					reason = `Expert marked blackout date on ${bookingDateStr}`;
+				} else {
+					const dayConfig = slotsByDay.get(dayOfWeek);
+					if (!dayConfig || !dayConfig.isAvailable) {
+						isUnavailable = true;
+						reason = `Expert marked day ${dayOfWeek} unavailable`;
+					} else {
+						const shifts: Array<{ startTime: string; endTime: string }> = [];
+						if (Array.isArray(dayConfig.shifts) && dayConfig.shifts.length > 0) {
+							shifts.push(...dayConfig.shifts);
+						} else if (dayConfig.startTime && dayConfig.endTime) {
+							shifts.push({ startTime: dayConfig.startTime, endTime: dayConfig.endTime });
+						}
+
+						const covered = shifts.some((s) => {
+							const sMin = parseTimeToMinutes(s.startTime);
+							const eMin = parseTimeToMinutes(s.endTime);
+							return bStartMin >= sMin && bEndMin <= eMin;
+						});
+
+						if (!covered) {
+							isUnavailable = true;
+							reason = `Slot ${booking.startTime}–${booking.endTime} is outside updated expert working shifts`;
+						}
+					}
+				}
+
+				if (isUnavailable) {
+					booking.status = UnifiedBookingStatus.RESCHEDULE_REQUIRED;
+					await booking.save();
+
+					const memberName =
+						(booking.userId as any)?.username ||
+						(booking.userId as any)?.name ||
+						"Member";
+					const memberPhone = (booking.userId as any)?.phone || "";
+					const branchId = booking.locationId || (await resolveLocationId());
+
+					const rule = await getEffectiveAlertRule(AlertType.ExpertUnavailable);
+					const alert = await OperationalAlert.create({
+						type: AlertType.ExpertUnavailable,
+						severity: rule.severity || AlertSeverity.Critical,
+						status: AlertStatus.Open,
+						title: `Expert Unavailable: ${expertName}`,
+						message: `${expertName} became unavailable for booked slot on ${bookingDateStr} (${booking.startTime}–${booking.endTime}) with member ${memberName}. Reason: ${reason}. Please call member to rebook.`,
+						branchId,
+						targetRoles: rule.firstResponderRole
+							? [rule.firstResponderRole, "frontdesk", "admin"]
+							: ["frontdesk", "admin"],
+						sound: rule.sound || "siren",
+						escalationLadder: rule.escalationLadder || [],
+						relatedEntity: {
+							entityType: "booking",
+							entityId: String(booking._id),
+							summary: `${memberName} | ${bookingDateStr} ${booking.startTime} | Expert: ${expertName} (${memberPhone || "No Phone"})`,
+							metadata: {
+								bookingId: String(booking._id),
+								memberName,
+								memberPhone,
+								startTime: booking.startTime,
+								endTime: booking.endTime,
+								date: bookingDateStr,
+								deepLinkUrl: `/admin/personal-training?highlight=${booking._id}&action=rebook`,
+							},
+						},
+						autoResolveKey: `booking:${booking._id}`,
+					});
+
+					emitOperationalAlert(alert.toObject());
+				}
+			}
+		}
+	} catch (err) {
+		console.error(
+			"[expert-schedule] Failed to check confirmed bookings for expert unavailability",
+			err,
+		);
+	}
+
 	return schedule;
 };
+
+async function resolveLocationId(): Promise<mongoose.Types.ObjectId> {
+	const loc = await Location.findOne().select("_id").lean();
+	if (loc?._id) return loc._id as mongoose.Types.ObjectId;
+	return new mongoose.Types.ObjectId();
+}
 
 const parseTimeToMinutes = (timeStr: string): number => {
 	const [h, m] = String(timeStr).split(":").map(Number);

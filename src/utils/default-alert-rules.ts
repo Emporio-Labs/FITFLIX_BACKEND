@@ -112,6 +112,29 @@ export const DEFAULT_ALERT_RULES: Record<AlertType, DefaultAlertRuleConfig> = {
 		],
 		sound: "bell",
 	},
+	[AlertType.MemberNoShow]: {
+		alertType: AlertType.MemberNoShow,
+		title: "Member No-Show",
+		description: "A trainer reported a member no-show for a scheduled session.",
+		severity: AlertSeverity.Warning,
+		firstResponderRole: "frontdesk",
+		escalationLadder: [
+			{ role: "branch_manager", afterMinutes: 10 },
+		],
+		sound: "chime",
+	},
+	[AlertType.ExpertUnavailable]: {
+		alertType: AlertType.ExpertUnavailable,
+		title: "Expert Unavailable for Booked Slot",
+		description: "An expert's schedule changed and affects one or more confirmed member bookings.",
+		severity: AlertSeverity.Critical,
+		firstResponderRole: "frontdesk",
+		escalationLadder: [
+			{ role: "branch_manager", afterMinutes: 5 },
+			{ role: "admin", afterMinutes: 15 },
+		],
+		sound: "siren",
+	},
 };
 
 /**

@@ -1,5 +1,8 @@
 import mongoose from "mongoose";
 import {
+	AlertSeverity,
+	AlertStatus,
+	AlertType,
 	AppointmentMode,
 	CreditTransactionSource,
 	CreditTransactionType,
@@ -14,12 +17,17 @@ import {
 } from "../models/Enums";
 import CreditTransaction from "../models/CreditTransaction";
 import Invoice from "../models/Invoice";
+import Location from "../models/Location";
 import Membership from "../models/Membership";
+import OperationalAlert from "../models/OperationalAlert";
 import Trainer from "../models/Trainer";
 import TrainerChangeRequest from "../models/TrainerChangeRequest";
 import UnifiedBooking from "../models/UnifiedBooking";
 import User from "../models/User";
 import { notify } from "./notification.service";
+import { autoResolveOperationalAlerts } from "../controllers/operational-alert.controller";
+import { getEffectiveAlertRule } from "../utils/default-alert-rules";
+import { emitOperationalAlert } from "./realtime.service";
 import { resolveTrainerUserId } from "../utils/expert-user.resolver";
 import { executeInTransaction } from "../utils/transaction.util";
 import {
@@ -356,6 +364,13 @@ export const cancelUnifiedBooking = async (params: {
 			creditRefunded,
 		};
 	}).then(async (result) => {
+		// FX-41.5: Auto-resolve any operational alert for this booking on cancellation
+		void autoResolveOperationalAlerts(
+			"booking",
+			String(result.booking._id),
+			"Booking cancelled",
+		);
+
 		// FX-25 · notify the trainer that their 1-on-1 was cancelled.
 		try {
 			const booking = result.booking;
@@ -424,6 +439,13 @@ export const reschedulePersonalTrainingBooking = async (params: {
 	booking.endTime = endTime;
 	await booking.save();
 
+	// FX-41.5: Auto-resolve any operational alert for this booking on reschedule
+	void autoResolveOperationalAlerts(
+		"booking",
+		String(booking._id),
+		"Booking rescheduled",
+	);
+
 	// FX-25 · notify the trainer that this 1-on-1 was rescheduled
 	try {
 		const trainerUserId = await resolveTrainerUserId(String(booking.expertId));
@@ -485,7 +507,93 @@ export const completeUnifiedBooking = async (
 		},
 		{ new: true },
 	);
+
+	// FX-41.5: Auto-resolve any operational alert for this booking on attendance / completion
+	if (booking) {
+		void autoResolveOperationalAlerts(
+			"booking",
+			String(booking._id),
+			"Booking attended and completed",
+		);
+	}
+
 	return booking;
+};
+
+export const markUnifiedBookingNoShow = async (
+	bookingId: string,
+	reason?: string,
+	actorId?: string,
+) => {
+	const booking = await UnifiedBooking.findById(bookingId).populate(
+		"userId",
+		"username email phone",
+	);
+	if (!booking) {
+		throw new Error("Booking not found");
+	}
+
+	booking.status = UnifiedBookingStatus.MEMBER_NO_SHOW;
+	booking.meetingStatus = MeetingStatus.COMPLETED;
+	booking.completedAt = new Date();
+	if (reason) {
+		booking.sessionNotes = booking.sessionNotes || {};
+		booking.sessionNotes.workoutNotes = reason;
+	}
+	await booking.save();
+
+	// FX-41.1: Fire an operational alert for member no-show
+	try {
+		const memberName =
+			(booking.userId as any)?.username ||
+			(booking.userId as any)?.name ||
+			"Member";
+		const memberPhone = (booking.userId as any)?.phone || "";
+		let branchId = booking.locationId;
+		if (!branchId) {
+			const loc = await Location.findOne().select("_id").lean();
+			branchId = loc?._id as mongoose.Types.ObjectId;
+		}
+
+		const rule = await getEffectiveAlertRule(AlertType.MemberNoShow);
+		const alert = await OperationalAlert.create({
+			type: AlertType.MemberNoShow,
+			severity: rule.severity || AlertSeverity.Warning,
+			status: AlertStatus.Open,
+			title: `Member No-Show: ${memberName}`,
+			message: `Trainer recorded no-show for ${memberName} (${booking.startTime}${booking.endTime ? `–${booking.endTime}` : ""})${reason ? `. Reason: ${reason}` : ""}`,
+			branchId: branchId || new mongoose.Types.ObjectId(),
+			targetRoles: rule.firstResponderRole
+				? [rule.firstResponderRole, "frontdesk", "admin"]
+				: ["frontdesk", "admin"],
+			sound: rule.sound || "chime",
+			escalationLadder: rule.escalationLadder || [],
+			relatedEntity: {
+				entityType: "booking",
+				entityId: String(booking._id),
+				summary: `${memberName} | ${booking.startTime} | ${memberPhone || "No Phone"}`,
+				metadata: {
+					bookingId: String(booking._id),
+					memberName,
+					memberPhone,
+					startTime: booking.startTime,
+					endTime: booking.endTime,
+					deepLinkUrl: `/admin/personal-training?highlight=${booking._id}&action=rebook`,
+				},
+			},
+			autoResolveKey: `booking:${booking._id}`,
+		});
+
+		emitOperationalAlert(alert.toObject());
+	} catch (alertErr) {
+		console.error("[unified-booking] Failed to emit MemberNoShow alert", alertErr);
+	}
+
+	return {
+		booking,
+		credits: { consumed: 1, refunded: 0, bypassed: false },
+		message: "Session marked as no-show and operational alert raised",
+	};
 };
 
 export const createTrainerChangeRequest = async (params: {
