@@ -639,6 +639,8 @@ Also mounted at `/api/v1`.
 | GET | `/workout-plans/assignments/mine/days/:dayNumber` | JWT | user | `getAssignedWorkoutForDay` |
 | POST | `/workout-plans/assignments/mine/complete-day` | JWT | user | `completePlanDay` |
 | PATCH | `/workout-plans/assignments/mine/days/:dayNumber` | JWT | user | `updateMyDayExercises` |
+| GET | `/workout-plans/import/template` | JWT | admin, trainer | `downloadWorkoutPlanTemplate` |
+| POST | `/workout-plans/import` | JWT | admin, trainer | `importWorkoutPlan` |
 | GET | `/workout-plans` | JWT | admin, trainer | `listPlans` |
 | POST | `/workout-plans` | JWT | admin, trainer | `createPlan` |
 | GET | `/workout-plans/:id` | JWT | admin, trainer | `getPlan` |
@@ -3947,6 +3949,20 @@ These endpoints require role `user`.
 | PATCH | `/workout-plans/:id` | Update plan |
 | DELETE | `/workout-plans/:id` | Delete plan |
 | POST | `/workout-plans/:id/assign` | Assign plan to users |
+
+### Excel import (admin/trainer)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/workout-plans/import/template` | Download the `.xlsx` template (includes the requester's exercise library) |
+| POST | `/workout-plans/import` | Upload a filled template (multipart field `file`, `.xlsx`, ≤ 5 MB). `?dryRun=true` validates only |
+
+Sheet format, column rules and examples: [WORKOUT_PLAN_EXCEL_IMPORT.md](WORKOUT_PLAN_EXCEL_IMPORT.md).
+
+- **Dry run** → `200 { valid, plan, errors, warnings, summary }`. `plan` is the parsed plan with each exercise's resolved `exerciseId` and `exerciseName`; `summary` is `{ days, trainingDays, restDays, exercises }`.
+- **Import** → `201 { message, plan, warnings, summary }` (the created `WorkoutPlan`, `createdBy` = requester).
+- **File problems** → `400 VALIDATION_ERROR` with `details: { errors, warnings }`. Each issue is `{ sheet, row?, column?, message }` with the 1-based Excel row and column letter.
+- Wrong file type → `415`; over 5 MB → `413`.
 
 ### Self-assign
 
