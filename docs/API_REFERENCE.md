@@ -707,6 +707,8 @@ Also mounted at `/api/v1/alerts`. Rate limit: `apiRateLimit`.
 | Method | Path | Auth | Roles | Handler |
 |---|---|---|---|---|
 | GET | `/alerts` | JWT | admin, frontdesk, trainer | `getOperationalAlerts` |
+| GET | `/alerts/reports` | JWT | admin, frontdesk | `getAlertSlaReportHandler` |
+| GET | `/alerts/reports/export` | JWT | admin, frontdesk | `exportAlertReportCsvHandler` |
 | POST | `/alerts` | JWT | admin, frontdesk | `createOperationalAlert` |
 | PATCH | `/alerts/:id/acknowledge` | JWT | admin, frontdesk, trainer | `acknowledgeOperationalAlert` |
 | PATCH | `/alerts/:id/resolve` | JWT | admin, frontdesk | `resolveOperationalAlert` |

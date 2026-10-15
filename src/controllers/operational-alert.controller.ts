@@ -2,7 +2,13 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import OperationalAlert from "../models/OperationalAlert";
 import Location from "../models/Location";
+import User from "../models/User";
 import { AlertStatus } from "../models/Enums";
+import { normalizeRole } from "../middleware/rbac.middleware";
+import {
+	generateAlertReportCsv,
+	getAlertSlaReport,
+} from "../services/alert-report.service";
 import {
 	emitAlertAcknowledged,
 	emitAlertResolved,
@@ -307,3 +313,93 @@ export async function autoResolveOperationalAlerts(
 		return 0;
 	}
 }
+
+/**
+ * GET /api/v1/alerts/reports
+ * FX-44.1, FX-44.2, FX-44.3: Generates Alert SLA and Accountability Report.
+ */
+export const getAlertSlaReportHandler: RequestHandler = async (req, res, next) => {
+	if (!req.user) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
+	try {
+		const userRole = normalizeRole(req.user.role);
+		let targetBranchId: string | undefined;
+
+		if (userRole === "admin") {
+			const reqBranch = req.query.branchId;
+			if (typeof reqBranch === "string" && mongoose.Types.ObjectId.isValid(reqBranch)) {
+				targetBranchId = reqBranch;
+			}
+		} else if (userRole === "frontdesk") {
+			const dbUser = await User.findById(req.user.id).select("homeLocationId").lean();
+			targetBranchId = dbUser?.homeLocationId?.toString();
+		} else {
+			res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+			return;
+		}
+
+		const startDate = typeof req.query.startDate === "string" ? req.query.startDate : undefined;
+		const endDate = typeof req.query.endDate === "string" ? req.query.endDate : undefined;
+
+		const report = await getAlertSlaReport({
+			startDate,
+			endDate,
+			branchId: targetBranchId,
+		});
+
+		res.status(200).json(report);
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * GET /api/v1/alerts/reports/export
+ * FX-44.4: Exports Alert SLA report as a CSV spreadsheet.
+ */
+export const exportAlertReportCsvHandler: RequestHandler = async (req, res, next) => {
+	if (!req.user) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
+	try {
+		const userRole = normalizeRole(req.user.role);
+		let targetBranchId: string | undefined;
+
+		if (userRole === "admin") {
+			const reqBranch = req.query.branchId;
+			if (typeof reqBranch === "string" && mongoose.Types.ObjectId.isValid(reqBranch)) {
+				targetBranchId = reqBranch;
+			}
+		} else if (userRole === "frontdesk") {
+			const dbUser = await User.findById(req.user.id).select("homeLocationId").lean();
+			targetBranchId = dbUser?.homeLocationId?.toString();
+		} else {
+			res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+			return;
+		}
+
+		const startDate = typeof req.query.startDate === "string" ? req.query.startDate : undefined;
+		const endDate = typeof req.query.endDate === "string" ? req.query.endDate : undefined;
+
+		const report = await getAlertSlaReport({
+			startDate,
+			endDate,
+			branchId: targetBranchId,
+		});
+
+		const csvContent = generateAlertReportCsv(report);
+		const filename = `alert-sla-report-${Date.now()}.csv`;
+
+		res.setHeader("Content-Type", "text/csv; charset=utf-8");
+		res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+		res.status(200).send(csvContent);
+	} catch (error) {
+		next(error);
+	}
+};
+
