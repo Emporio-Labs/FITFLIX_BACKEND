@@ -1,9 +1,13 @@
 import type { RequestHandler } from "express";
+import mongoose from "mongoose";
+import { normalizeRole } from "../middleware/rbac.middleware";
 import { MembershipStatus } from "../models/Enums";
 import Invoice from "../models/Invoice";
 import Lead from "../models/Lead";
+import Location from "../models/Location";
 import Membership from "../models/Membership";
 import User from "../models/User";
+import { getBranchBoardData } from "../services/branch-board.service";
 
 export const getDashboardMetrics: RequestHandler = async (_req, res, next) => {
 	try {
@@ -82,18 +86,19 @@ export const getBranchBoardMetricsHandler: RequestHandler = async (
 			return;
 		}
 
-		let branchIds: Array<string | import("mongoose").Types.ObjectId> | undefined;
+		let branchIds: Array<string | mongoose.Types.ObjectId> | undefined;
+		const userRole = normalizeRole(user.role);
 
-		if (user.role === "admin") {
+		if (userRole === "admin") {
 			// Admin can view all branches, or filter by ?branchId=
 			const requestedBranchId = req.query.branchId;
 			if (
 				typeof requestedBranchId === "string" &&
-				import("mongoose").Types.ObjectId.isValid(requestedBranchId)
+				mongoose.Types.ObjectId.isValid(requestedBranchId)
 			) {
 				branchIds = [requestedBranchId];
 			}
-		} else if (user.role === "frontdesk" || user.role === "staff") {
+		} else if (userRole === "frontdesk") {
 			// FX-43.4: Managers get the view for their own branch only
 			const dbUser = await User.findById(user.id).select("homeLocationId").lean();
 			const managerBranchId = dbUser?.homeLocationId;
@@ -101,8 +106,7 @@ export const getBranchBoardMetricsHandler: RequestHandler = async (
 			if (managerBranchId) {
 				branchIds = [managerBranchId];
 			} else {
-				const LocationModel = (await import("../models/Location")).default;
-				const defaultBranch = await LocationModel.findOne({ isActive: true })
+				const defaultBranch = await Location.findOne({ isActive: true })
 					.select("_id")
 					.lean();
 				if (defaultBranch) {
@@ -117,9 +121,6 @@ export const getBranchBoardMetricsHandler: RequestHandler = async (
 			return;
 		}
 
-		const { getBranchBoardData } = await import(
-			"../services/branch-board.service"
-		);
 		const data = await getBranchBoardData(branchIds);
 		res.status(200).json(data);
 	} catch (error) {
