@@ -42,6 +42,11 @@ import { buildApiErrorEnvelope } from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import { generateSignedUrl } from "../utils/s3.service";
+import {
+	categoryFilter,
+	serializeMemberReport,
+} from "../utils/medical-report.util";
+import { listReportsQuerySchema } from "../validators/medical-report.validator";
 import { assertTrainerOwnsMember } from "../services/trainerRoster.service";
 import { assertNutritionistOwnsMember } from "../services/nutritionistRoster.service";
 import {
@@ -1079,54 +1084,31 @@ export const getMyUserReports: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	const parsedQuery = listReportsQuerySchema.safeParse(req.query);
+	if (!parsedQuery.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsedQuery.error.issues),
+		});
+		return;
+	}
+
 	try {
+		// Members' own uploads and front-desk DNA reports share this feed;
+		// `?category=dna` is what the app's DNA hub reads.
 		const medicalReports = await MedicalReport.find({
 			userId: req.user.id,
+			...categoryFilter(parsedQuery.data.category),
 		}).sort({ uploadedAt: -1 });
 
-		// Format Medical Reports (including DNA, Blood Test, etc.)
-		const formattedMedical = await Promise.all(
-			medicalReports.map(async (report) => {
-				const reportId = report._id.toString();
-				let reportUrl: string | undefined;
-				if (report.s3Key) {
-					try {
-						reportUrl = await generateSignedUrl(
-							report.s3Key,
-							900,
-							report.mimeType,
-						);
-					} catch (err) {
-						console.error(
-							`[S3_SIGNING_ERROR] Failed to generate signed URL for key ${report.s3Key} in getMyUserReports:`,
-							err,
-						);
-						reportUrl = undefined;
-					}
-				}
-
-				return {
-					id: reportId,
-					title: report.reportName,
-					type: report.reportType, // E.g., "DNA", "Blood Test"
-					summary: `Uploaded ${report.reportType} report`,
-					suggestions: [],
-					recommendations: [],
-					insights: [],
-					generated_date: (report.uploadedAt ?? report.createdAt).toISOString(),
-					pdf_url: reportUrl,
-				};
-			}),
+		const reports = await Promise.all(
+			medicalReports.map((report) =>
+				serializeMemberReport(report, "getMyUserReports"),
+			),
 		);
 
-		// Sort by date descending
-		const allReports = [...formattedMedical].sort(
-			(a, b) =>
-				new Date(b.generated_date).getTime() -
-				new Date(a.generated_date).getTime(),
-		);
-
-		res.status(200).json({ reports: allReports });
+		res.status(200).json({ reports });
 	} catch (error) {
 		next(error);
 	}

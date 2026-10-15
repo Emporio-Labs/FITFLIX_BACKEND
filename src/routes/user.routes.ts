@@ -17,8 +17,18 @@ import {
 	updateMyPassword,
 	updateUserById,
 } from "../controllers/user.controller";
+import {
+	deleteDnaReportForUser,
+	listUserReports,
+	uploadDnaReportForUser,
+	uploadMyReport,
+} from "../controllers/medical-report.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
+import {
+	uploadMiddleware,
+	uploadRateLimiter,
+} from "../middleware/upload.middleware";
 
 const userRouter = Router();
 
@@ -31,6 +41,13 @@ userRouter.get(
 );
 userRouter.get("/me", authorize(["user"]), getMyUser);
 userRouter.get("/me/reports", authorize(["user"]), getMyUserReports);
+userRouter.post(
+	"/me/reports",
+	authorize(["user"]),
+	uploadRateLimiter,
+	uploadMiddleware.single("file"),
+	uploadMyReport,
+);
 userRouter.get("/me/medical-reports", authorize(["user"]), getMyMedicalReports);
 userRouter.get("/me/bca-metrics", authorize(["user"]), getMyUserBcaMetrics);
 userRouter.post(
@@ -48,6 +65,24 @@ userRouter.get(
 	"/:id/onboarding-profile",
 	authorize(["admin", "doctor", "nutritionist", "sports_scientist", "trainer", "frontdesk", "user"]),
 	getOnboardingProfile,
+);
+userRouter.get(
+	"/:id/reports",
+	authorize(["admin", "doctor", "nutritionist", "sports_scientist", "trainer", "frontdesk"]),
+	listUserReports,
+);
+// DNA reports are filed by the front desk only — never by the member or an expert.
+userRouter.post(
+	"/:id/dna-reports",
+	authorize(["admin", "frontdesk"]),
+	uploadRateLimiter,
+	uploadMiddleware.single("file"),
+	uploadDnaReportForUser,
+);
+userRouter.delete(
+	"/:id/dna-reports/:reportId",
+	authorize(["admin", "frontdesk"]),
+	deleteDnaReportForUser,
 );
 userRouter.get(
 	"/:id/reports/:reportId/url",

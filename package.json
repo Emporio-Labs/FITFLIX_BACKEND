@@ -52,6 +52,7 @@
 		"test:feature-006": "bun run tests/feature-006-manage-class-capacity.test.ts",
 		"test:feature-007": "bun run tests/feature-007-publish-unpublish-class.test.ts",
 		"test:nutritionist-cancel-reschedule": "bun run tests/nutritionist-booking-cancel-reschedule.test.ts",
+		"test:dna-reports": "bun run tests/dna-reports.test.ts",
 		"test:onboarding-step-skip": "bun run tests/onboarding-step-skip.test.ts",
 		"test:class-all": "bun run tests/run-all-tests.ts",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts",

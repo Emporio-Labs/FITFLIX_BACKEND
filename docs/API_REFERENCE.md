@@ -323,6 +323,7 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 | GET | `/users` | JWT | admin, nutritionist | `getAllUsers` |
 | GET | `/users/me` | JWT | user | `getMyUser` |
 | GET | `/users/me/reports` | JWT | user | `getMyUserReports` |
+| POST | `/users/me/reports` | JWT | user | `uploadMyReport` |
 | GET | `/users/me/medical-reports` | JWT | user | `getMyMedicalReports` |
 | GET | `/users/me/hpod-metrics` | JWT | user | `getMyUserHpodMetrics` |
 | POST | `/users/me/hpod-metrics` | JWT | user | `uploadHpodMetrics` |
@@ -330,6 +331,9 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 | PATCH | `/users/me/password` | JWT | user | `updateMyPassword` |
 | GET | `/users/:id` | JWT | admin, nutritionist, user | `getUserById` |
 | GET | `/users/:id/onboarding-profile` | JWT | admin, nutritionist, user | `getOnboardingProfile` |
+| GET | `/users/:id/reports` | JWT | admin, frontdesk, doctor, nutritionist, sports_scientist, trainer | `listUserReports` |
+| POST | `/users/:id/dna-reports` | JWT | admin, frontdesk | `uploadDnaReportForUser` |
+| DELETE | `/users/:id/dna-reports/:reportId` | JWT | admin, frontdesk | `deleteDnaReportForUser` |
 | GET | `/users/:id/reports/:reportId/url` | JWT | admin, nutritionist | `getReportSignedUrl` |
 | PATCH | `/users/:id/onboard` | JWT | admin, user | `onboardUser` |
 | PATCH | `/users/:id` | JWT | admin, user | `updateUserById` |
@@ -1354,9 +1358,14 @@ const { data } = await axios.get("https://api.example.com/users/me", {
 
 ### GET /users/me/reports
 
-List the authenticated user's uploaded medical/DNA reports (unified feed, summary form).
+List the authenticated user's reports (unified feed, summary form): their own
+uploads and the DNA reports the front desk filed for them.
 
 **Auth:** Bearer (`user`)
+
+**Query:** `category` (optional) — `dna` for front-desk DNA reports only (what
+the app's DNA hub reads), `medical` for everything else. Reports saved before
+the field existed count as `medical`.
 
 ```bash
 curl "https://api.example.com/users/me/reports" -H "Authorization: Bearer $TOKEN"
@@ -1371,6 +1380,8 @@ curl "https://api.example.com/users/me/reports" -H "Authorization: Bearer $TOKEN
       "id": "5f1a2b3c4d5e6f7a8b9c0d1e",
       "title": "Blood Panel April 2026",
       "type": "Blood Test",
+      "category": "medical",
+      "source": "client",
       "summary": "Uploaded Blood Test report",
       "suggestions": [],
       "recommendations": [],
@@ -1494,6 +1505,62 @@ curl "https://api.example.com/users/5f1a2b3c4d5e6f7a8b9c0d1e/onboarding-profile"
 ```
 
 **Success (200):** `{ "user": { /* ... */ }, "healthMarkers": { /* ... */ }, "healthGoals": { /* ... */ } }`
+
+### POST /users/me/reports
+
+A member uploads their own report for experts to read. Stored as
+`category: "medical"`, `source: "client"`.
+
+**Auth:** Bearer (`user`) · `multipart/form-data`
+
+| Field | Required | Notes |
+|---|---|---|
+| `file` | Yes | PDF only; contents are checked, not just the extension |
+| `reportName` | Yes | max 200 chars |
+| `reportType` | Yes | e.g. `Blood Test`. A DNA / genetic type is refused with 403 — only the front desk files DNA reports |
+
+**Success (201):** `{ "message": "Report uploaded", "report": { /* same shape as GET /users/me/reports */ } }`
+
+**Errors:** 400 `VALIDATION_ERROR` (missing/blank field, missing or non-PDF file), 403 `FORBIDDEN` (DNA report type).
+
+### GET /users/:id/reports
+
+Every report on a member's file, with short-lived signed URLs. Any staff role
+may list any member's reports.
+
+**Auth:** Bearer (`admin`, `frontdesk`, `doctor`, `nutritionist`, `sports_scientist`, `trainer`)
+
+**Query:** `category` (optional) — `dna` or `medical`.
+
+**Success (200):** `{ "reports": [ { "_id", "userId", "reportName", "reportType", "category", "source", "uploadedBy", "uploadedByRole", "mimeType", "fileSize", "uploadedAt", "reportUrl" } ] }`
+
+**Errors:** 400 `VALIDATION_ERROR`, 404 `NOT_FOUND` (no such user).
+
+### POST /users/:id/dna-reports
+
+The front desk files a member's DNA report. Stored as `category: "dna"`,
+`source: "frontdesk"`, `reportType: "DNA"`, with the uploader recorded. This is
+the only way a DNA report is created.
+
+**Auth:** Bearer (`admin`, `frontdesk`) · `multipart/form-data`
+
+| Field | Required | Notes |
+|---|---|---|
+| `file` | Yes | PDF only |
+| `reportName` | Yes | max 200 chars |
+
+**Success (201):** `{ "message": "DNA report uploaded", "report": { /* MedicalReport + signed reportUrl */ } }`
+
+**Errors:** 400 `VALIDATION_ERROR`, 403 `FORBIDDEN`, 404 `NOT_FOUND` (no such user).
+
+### DELETE /users/:id/dna-reports/:reportId
+
+Withdraw a front-desk DNA report (wrong member, wrong file). Removes the record
+and the stored file. A member's own upload cannot be deleted here (404).
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+**Success (200):** `{ "message": "DNA report deleted" }`
 
 ### GET /users/:id/reports/:reportId/url
 
