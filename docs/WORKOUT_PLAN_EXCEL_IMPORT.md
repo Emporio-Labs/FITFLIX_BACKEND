@@ -7,9 +7,17 @@ edited, duplicated and assigned like any other.
 
 - Template: `GET /workout-plans/import/template`
 - Upload: `POST /workout-plans/import` (`?dryRun=true` to preview)
-- Code: `src/utils/workout-plan-excel.ts` (format + parser),
+- Export an existing plan in the same format: `GET /workout-plans/:id/export`
+  (FrontDesk: **Export to Excel** on the plan page). Edit it and import it back
+  as a new plan.
+- Code: `src/utils/workout-plan-excel.ts` (format, parser, export),
+  `src/utils/xlsx-enhance.ts` (drop-downs, frozen header, styles),
   `src/controllers/workout-plan-import.controller.ts`
 - Tests: `bun run test:workout-plan-excel`
+- Sample files: `bun run generate:workout-plan-samples [outDir]` writes the
+  blank template plus three filled plans (beginner full body 1 week, push/pull/legs
+  2 weeks, fat-loss circuit 4 weeks) built from the seeded library. Each one is
+  re-imported before it's written.
 
 Always start from the downloaded template. It holds the current exercise
 library, so names copied from it match.
@@ -27,7 +35,20 @@ library, so names copied from it match.
 | Exercise Library | no | Every exercise you can use (system + your own), with muscle groups, equipment, sections |
 | Allowed Values | no | Lists for every drop-down-style field |
 
-Sheet names are matched case-insensitively. The other sheets can be deleted.
+Sheet names are matched case-insensitively. The other sheets can be deleted,
+except *Exercise Library* and *Allowed Values*, which feed the drop-downs.
+
+### Built-in helpers
+
+- **Drop-downs** for Difficulty, Goal, Split Type, Save as Template, Status,
+  Rest Day, Section and **Exercise** (the whole library).
+- **Number and length rules** on Day, Sets, Reps, Weight, Rest, Duration and the
+  text fields. Excel refuses out-of-range values as they're typed.
+- **A tip pops up** when a cell is selected.
+- **Header rows are frozen.** Required fields/columns are yellow, optional ones grey.
+
+These guard typing only. Pasted values skip Excel's checks, so the upload
+validates everything again.
 
 ---
 
@@ -91,12 +112,12 @@ section. Empty rows are skipped.
 | Day | Day Name | Rest Day | Section | Exercise | Sets | Reps | Weight (kg) | Rest (sec) | Duration (sec) | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | Full Body A | | Warmup | Jumping Jacks | 2 | | | 30 | 45 | |
-| 1 | | | Workout | Bodyweight Squat | 3 | 15 | 0 | 60 | | Knees track over toes |
-| 1 | | | Workout | Push-Up | 3 | 10 | 0 | 60 | | Drop to knees if needed |
-| 1 | | | Workout | Plank | 3 | | | 45 | 30 | |
+| 1 | | | Workout | Bodyweight Squats | 3 | 15 | 0 | 60 | | Knees track over toes |
+| 1 | | | Workout | Push Ups | 3 | 10 | 0 | 60 | | Drop to knees if needed |
+| 1 | | | Workout | Plank Hold | 3 | | | 45 | 30 | |
 | 1 | | | Stretching | Hamstring Stretch | 1 | | | 0 | 60 | |
 | 2 | Rest | Yes | | | | | | | | |
-| 3 | Full Body B | | Workout | Dumbbell Row | 3 | 12 | 10 | 60 | | |
+| 3 | Full Body B | | Workout | Single Arm Dumbbell Row | 3 | 12 | 10 | 60 | | |
 
 ---
 
@@ -124,3 +145,14 @@ Limits: `.xlsx` only, 5 MB, 2000 exercise rows, 366 days.
 
 Exercise matching uses the same visibility as the exercise picker: system
 exercises plus the uploader's own, never soft-deleted ones.
+
+## Export
+
+`GET /workout-plans/:id/export` writes a plan into the same template:
+
+- Timed exercises (duration set, reps 1) export with blank Reps.
+- Paused/Completed/Archived plans export as `Active`, since the import accepts
+  only Draft or Active.
+- A training day with no exercises exports as a named rest day.
+- An exercise that has since been removed from the library exports by its old
+  name and must be swapped before re-importing. The upload error says so.

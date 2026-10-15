@@ -29,6 +29,11 @@ import {
 	PlanStatus,
 	SplitType,
 } from "../models/Enums";
+import {
+	type CellStyle,
+	type DataValidation,
+	enhanceXlsx,
+} from "./xlsx-enhance";
 
 export const PLAN_SHEET = "Plan Details";
 export const WORKOUT_SHEET = "Workout";
@@ -234,7 +239,7 @@ export const WORKOUT_COLUMNS: ColumnSpec[] = [
 		header: "Exercise*",
 		aliases: ["exercise", "exercisename"],
 		required: true,
-		help: 'Exact name from the "Exercise Library" sheet (capitals and punctuation are ignored).',
+		help: 'Pick from the drop-down (the "Exercise Library" sheet). Typed names must match a library name; capitals and punctuation are ignored.',
 	},
 	{
 		id: "sets",
@@ -280,7 +285,7 @@ export const WORKOUT_COLUMNS: ColumnSpec[] = [
 	},
 ];
 
-type PlanField =
+export type PlanField =
 	| "name"
 	| "description"
 	| "difficulty"
@@ -367,8 +372,9 @@ export const PLAN_FIELDS: PlanFieldSpec[] = [
 
 // ─── Template ─────────────────────────────────────────────────────────────────
 
-type Row = (string | number | null)[];
+export type Row = (string | number | null)[];
 
+// Names are from the seeded system library (scripts/seed-exercises.ts).
 const EXAMPLE_ROWS: Row[] = [
 	[
 		1,
@@ -388,7 +394,7 @@ const EXAMPLE_ROWS: Row[] = [
 		null,
 		null,
 		"Workout",
-		"Bodyweight Squat",
+		"Bodyweight Squats",
 		3,
 		15,
 		0,
@@ -401,7 +407,7 @@ const EXAMPLE_ROWS: Row[] = [
 		null,
 		null,
 		"Workout",
-		"Push-Up",
+		"Push Ups",
 		3,
 		10,
 		0,
@@ -409,7 +415,7 @@ const EXAMPLE_ROWS: Row[] = [
 		null,
 		"Drop to knees if needed",
 	],
-	[1, null, null, "Workout", "Plank", 3, null, null, 45, 30, null],
+	[1, null, null, "Workout", "Plank Hold", 3, null, null, 45, 30, null],
 	[
 		1,
 		null,
@@ -429,7 +435,7 @@ const EXAMPLE_ROWS: Row[] = [
 		"Full Body B",
 		null,
 		"Workout",
-		"Dumbbell Row",
+		"Single Arm Dumbbell Row",
 		3,
 		12,
 		10,
@@ -437,7 +443,19 @@ const EXAMPLE_ROWS: Row[] = [
 		null,
 		null,
 	],
-	[3, null, null, "Workout", "Lunge", 3, 10, 0, 60, null, "10 reps each leg"],
+	[
+		3,
+		null,
+		null,
+		"Workout",
+		"Bodyweight Lunges",
+		3,
+		10,
+		0,
+		60,
+		null,
+		"10 reps each leg",
+	],
 ];
 
 const sheetFromRows = (rows: Row[], widths: number[]): XLSX.WorkSheet => {
@@ -449,12 +467,113 @@ const sheetFromRows = (rows: Row[], widths: number[]): XLSX.WorkSheet => {
 const workoutHeader = (): Row => WORKOUT_COLUMNS.map((c) => c.header);
 const WORKOUT_WIDTHS = [6, 18, 9, 12, 32, 6, 6, 11, 10, 14, 36];
 
+/** Values written into a template: used for sample files and plan export. */
+export interface TemplatePrefill {
+	details: Partial<Record<PlanField, string | number>>;
+	/** Workout rows in WORKOUT_COLUMNS order. */
+	rows: Row[];
+}
+
+const SECTION_LABEL_BY_VALUE: Record<string, string> = {
+	[ExerciseSection.Warmup]: "Warmup",
+	[ExerciseSection.Workout]: "Workout",
+	[ExerciseSection.Stretching]: "Stretching",
+};
+
+export interface ExportablePlan {
+	name: string;
+	description?: string | null;
+	difficulty: string;
+	duration: number;
+	goal: string;
+	splitType?: string | null;
+	status?: string | null;
+	isTemplate?: boolean | null;
+	templateCategory?: string | null;
+	days: Array<{
+		dayNumber: number;
+		name: string;
+		isRestDay?: boolean | null;
+		exercises: Array<{
+			exerciseName: string;
+			orderIndex: number;
+			section?: string | null;
+			targetSets: number;
+			targetReps: number;
+			targetWeightKg?: number | null;
+			restSeconds?: number | null;
+			durationSeconds?: number | null;
+			notes?: string | null;
+		}>;
+	}>;
+}
+
+/**
+ * Turn a stored plan back into sheet values, so an exported file re-imports
+ * to the same plan. Timed exercises (duration set, reps 1) export blank reps.
+ * Paused/Completed/Archived statuses export as Active — the import only
+ * accepts Draft or Active.
+ */
+export function planToPrefill(plan: ExportablePlan): TemplatePrefill {
+	const rows: Row[] = [];
+	for (const day of [...plan.days].sort((a, b) => a.dayNumber - b.dayNumber)) {
+		if (day.isRestDay) {
+			rows.push([day.dayNumber, day.name, "Yes"]);
+			continue;
+		}
+		const exercises = [...day.exercises].sort(
+			(a, b) => a.orderIndex - b.orderIndex,
+		);
+		if (exercises.length === 0) {
+			// The builder allows an empty training day; it can't be expressed
+			// as a row without an exercise, so it exports as a named rest day.
+			rows.push([day.dayNumber, day.name, "Yes"]);
+			continue;
+		}
+		exercises.forEach((ex, i) => {
+			const timed = Boolean(ex.durationSeconds) && ex.targetReps === 1;
+			rows.push([
+				day.dayNumber,
+				i === 0 ? day.name : null,
+				null,
+				SECTION_LABEL_BY_VALUE[ex.section ?? ExerciseSection.Workout] ??
+					"Workout",
+				ex.exerciseName,
+				ex.targetSets,
+				timed ? null : ex.targetReps,
+				ex.targetWeightKg ? ex.targetWeightKg : null,
+				ex.restSeconds ?? 60,
+				ex.durationSeconds ? ex.durationSeconds : null,
+				ex.notes ? ex.notes : null,
+			]);
+		});
+	}
+	return {
+		details: {
+			name: plan.name,
+			description: plan.description ?? "",
+			difficulty: plan.difficulty,
+			duration: plan.duration,
+			goal: plan.goal,
+			splitType: plan.splitType ?? SplitType.Custom,
+			isTemplate: plan.isTemplate === false ? "No" : "Yes",
+			templateCategory: plan.templateCategory ?? "",
+			status:
+				plan.status === PlanStatus.Draft ? PlanStatus.Draft : PlanStatus.Active,
+		},
+		rows,
+	};
+}
+
 /**
  * Build the downloadable template. `exercises` is the requester's visible
  * exercise library (system + their own) and is written into the workbook so a
  * trainer can copy exact names.
  */
-export function buildWorkoutPlanTemplate(exercises: LibraryExercise[]): Buffer {
+export function buildWorkoutPlanTemplate(
+	exercises: LibraryExercise[],
+	prefill?: TemplatePrefill,
+): Buffer {
 	const wb = XLSX.utils.book_new();
 
 	const instructions: Row[] = [
@@ -462,11 +581,11 @@ export function buildWorkoutPlanTemplate(exercises: LibraryExercise[]): Buffer {
 		[],
 		[
 			"1.",
-			`Fill in the "${PLAN_SHEET}" sheet (column B). Fields marked * are required.`,
+			`Fill in the "${PLAN_SHEET}" sheet (column B). Yellow fields (marked *) are required; most cells have a drop-down.`,
 		],
 		[
 			"2.",
-			`Fill in the "${WORKOUT_SHEET}" sheet — one row per exercise. Keep the header row as it is.`,
+			`Fill in the "${WORKOUT_SHEET}" sheet — one row per exercise. Keep the header row as it is. Yellow columns are required.`,
 		],
 		[
 			"3.",
@@ -478,7 +597,7 @@ export function buildWorkoutPlanTemplate(exercises: LibraryExercise[]): Buffer {
 		],
 		[
 			"5.",
-			`Copy exercise names from the "${LIBRARY_SHEET}" sheet. Unknown names are rejected with suggestions.`,
+			`Pick the Exercise from the cell's drop-down (the list is the "${LIBRARY_SHEET}" sheet — filter it by muscle group or equipment there). Pasted names that are not in the library are rejected on upload with suggestions.`,
 		],
 		[
 			"6.",
@@ -504,7 +623,14 @@ export function buildWorkoutPlanTemplate(exercises: LibraryExercise[]): Buffer {
 
 	const planRows: Row[] = [
 		["Field", "Value", "Allowed values / rules"],
-		...PLAN_FIELDS.map((f) => [f.label, null, f.help]),
+		...PLAN_FIELDS.map((f) => {
+			const value = prefill?.details[f.id];
+			return [
+				f.label,
+				value === undefined || value === "" ? null : value,
+				f.help,
+			];
+		}),
 	];
 	XLSX.utils.book_append_sheet(
 		wb,
@@ -514,7 +640,7 @@ export function buildWorkoutPlanTemplate(exercises: LibraryExercise[]): Buffer {
 
 	XLSX.utils.book_append_sheet(
 		wb,
-		sheetFromRows([workoutHeader()], WORKOUT_WIDTHS),
+		sheetFromRows([workoutHeader(), ...(prefill?.rows ?? [])], WORKOUT_WIDTHS),
 		WORKOUT_SHEET,
 	);
 
@@ -571,8 +697,267 @@ export function buildWorkoutPlanTemplate(exercises: LibraryExercise[]): Buffer {
 		VALUES_SHEET,
 	);
 
-	return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+	const raw = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+
+	// Sheet positions follow the append order above.
+	return enhanceXlsx(raw, {
+		1: {
+			styles: {
+				A1: "title",
+				[`A${instructions.length - WORKOUT_COLUMNS.length}`]: "header",
+				[`B${instructions.length - WORKOUT_COLUMNS.length}`]: "header",
+			},
+		},
+		2: {
+			freezeRows: 1,
+			styles: {
+				A1: "header",
+				B1: "header",
+				C1: "header",
+				...Object.fromEntries(
+					PLAN_FIELDS.map((f, i): [string, CellStyle] => [
+						`A${i + 2}`,
+						f.label.endsWith("*") ? "required" : "header",
+					]),
+				),
+			},
+			validations: planValidations(lists),
+		},
+		3: {
+			freezeRows: 1,
+			styles: headerStyles(),
+			validations: workoutValidations(lists, exercises.length),
+		},
+		4: {
+			styles: {
+				A1: "title",
+				...headerStyles(PLAN_FIELDS.length + 3),
+			},
+		},
+		5: {
+			freezeRows: 1,
+			styles: {
+				A1: "header",
+				B1: "header",
+				C1: "header",
+				D1: "header",
+				E1: "header",
+			},
+		},
+		6: {
+			freezeRows: 1,
+			styles: {
+				A1: "header",
+				B1: "header",
+				C1: "header",
+				D1: "header",
+				E1: "header",
+				F1: "header",
+			},
+		},
+	});
 }
+
+// ─── Template drop-downs and cell rules ───────────────────────────────────────
+
+/** Order of the columns on the "Allowed Values" sheet. */
+const VALUE_COLUMN = {
+	difficulty: 0,
+	goal: 1,
+	split: 2,
+	section: 3,
+	status: 4,
+	yesNo: 5,
+} as const;
+
+/** Rows covered by the Workout sheet's validations (header + max rows). */
+const LAST_WORKOUT_ROW = MAX_WORKOUT_ROWS + 1;
+
+const listSource = (lists: string[][], column: number): string => {
+	const col = XLSX.utils.encode_col(column);
+	return `'${VALUES_SHEET}'!$${col}$2:$${col}$${(lists[column]?.length ?? 0) + 1}`;
+};
+
+const pickFrom = (
+	sqref: string,
+	formula1: string,
+	title: string,
+	prompt: string,
+): DataValidation => ({
+	sqref,
+	type: "list",
+	formula1,
+	promptTitle: title,
+	prompt,
+	errorTitle: `Invalid ${title}`,
+	error: `Choose a value from the drop-down. ${prompt}`,
+});
+
+const numberRule = (
+	sqref: string,
+	type: "whole" | "decimal",
+	min: number,
+	max: number,
+	title: string,
+	prompt: string,
+): DataValidation => ({
+	sqref,
+	type,
+	operator: "between",
+	formula1: String(min),
+	formula2: String(max),
+	promptTitle: title,
+	prompt,
+	errorTitle: `Invalid ${title}`,
+	error: prompt,
+});
+
+const lengthRule = (
+	sqref: string,
+	max: number,
+	title: string,
+	prompt: string,
+): DataValidation => ({
+	sqref,
+	type: "textLength",
+	operator: "lessThanOrEqual",
+	formula1: String(max),
+	promptTitle: title,
+	prompt,
+	errorTitle: `${title} too long`,
+	error: `Keep it to ${max} characters or fewer.`,
+});
+
+function planValidations(lists: string[][]): DataValidation[] {
+	const cell = (id: PlanField) =>
+		`B${PLAN_FIELDS.findIndex((f) => f.id === id) + 2}`;
+	const help = (id: PlanField) =>
+		PLAN_FIELDS.find((f) => f.id === id)?.help ?? "";
+	return [
+		lengthRule(
+			cell("name"),
+			200,
+			"Plan Name",
+			"Required. Up to 200 characters.",
+		),
+		lengthRule(cell("description"), 2000, "Description", help("description")),
+		pickFrom(
+			cell("difficulty"),
+			listSource(lists, VALUE_COLUMN.difficulty),
+			"Difficulty",
+			"Required.",
+		),
+		numberRule(
+			cell("duration"),
+			"whole",
+			1,
+			52,
+			"Duration (weeks)",
+			"Required. Whole number 1–52. A label only — the schedule length is the number of Days.",
+		),
+		pickFrom(
+			cell("goal"),
+			listSource(lists, VALUE_COLUMN.goal),
+			"Goal",
+			"Required.",
+		),
+		pickFrom(
+			cell("splitType"),
+			listSource(lists, VALUE_COLUMN.split),
+			"Split Type",
+			"Blank = Custom.",
+		),
+		pickFrom(
+			cell("isTemplate"),
+			listSource(lists, VALUE_COLUMN.yesNo),
+			"Save as Template",
+			"Blank = Yes (listed under Workout Templates).",
+		),
+		lengthRule(
+			cell("templateCategory"),
+			100,
+			"Template Category",
+			help("templateCategory"),
+		),
+		pickFrom(
+			cell("status"),
+			listSource(lists, VALUE_COLUMN.status),
+			"Status",
+			"Blank = Active.",
+		),
+	];
+}
+
+function workoutValidations(
+	lists: string[][],
+	libraryCount: number,
+): DataValidation[] {
+	const range = (id: WorkoutColumn) => {
+		const col = XLSX.utils.encode_col(
+			WORKOUT_COLUMNS.findIndex((c) => c.id === id),
+		);
+		return `${col}2:${col}${LAST_WORKOUT_ROW}`;
+	};
+	const help = (id: WorkoutColumn) =>
+		WORKOUT_COLUMNS.find((c) => c.id === id)?.help ?? "";
+
+	const rules: DataValidation[] = [
+		numberRule(range("day"), "whole", 1, MAX_PLAN_DAYS, "Day", help("day")),
+		lengthRule(range("dayName"), 100, "Day Name", help("dayName")),
+		pickFrom(
+			range("restDay"),
+			listSource(lists, VALUE_COLUMN.yesNo),
+			"Rest Day",
+			help("restDay"),
+		),
+		pickFrom(
+			range("section"),
+			listSource(lists, VALUE_COLUMN.section),
+			"Section",
+			help("section"),
+		),
+		numberRule(range("sets"), "whole", 1, 50, "Sets", help("sets")),
+		numberRule(range("reps"), "whole", 1, 100, "Reps", help("reps")),
+		numberRule(
+			range("weight"),
+			"decimal",
+			0,
+			999.99,
+			"Weight (kg)",
+			help("weight"),
+		),
+		numberRule(range("rest"), "whole", 0, 600, "Rest (sec)", help("rest")),
+		numberRule(
+			range("duration"),
+			"whole",
+			1,
+			86400,
+			"Duration (sec)",
+			help("duration"),
+		),
+		lengthRule(range("notes"), 1000, "Notes", help("notes")),
+	];
+	if (libraryCount > 0) {
+		rules.push(
+			pickFrom(
+				range("exercise"),
+				`'${LIBRARY_SHEET}'!$A$2:$A$${libraryCount + 1}`,
+				"Exercise",
+				"Pick from the list (the Exercise Library sheet). Missing one? Add it in FrontDesk and download a fresh template.",
+			),
+		);
+	}
+	return rules;
+}
+
+/** Workout header cells at `row`: yellow when required, grey otherwise. */
+const headerStyles = (row = 1): Record<string, CellStyle> =>
+	Object.fromEntries(
+		WORKOUT_COLUMNS.map((c, i): [string, CellStyle] => [
+			`${XLSX.utils.encode_col(i)}${row}`,
+			c.header.endsWith("*") ? "required" : "header",
+		]),
+	);
 
 // ─── Exercise matching ────────────────────────────────────────────────────────
 

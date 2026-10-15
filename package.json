@@ -18,6 +18,7 @@
 		"backfill:class-sessions": "bun run scripts/backfill-class-sessions.ts",
 		"backfill:session-room-ids": "bun run scripts/backfill-session-room-ids.ts",
 		"seed:exercises": "bun run scripts/seed-exercises.ts",
+		"generate:workout-plan-samples": "bun run scripts/generate-workout-plan-samples.ts",
 		"seed:exercises:freedb": "bun run scripts/seed-exercises-from-free-db.ts",
 		"upload:exercise-images": "bun run scripts/upload-exercise-images.ts",
 		"backfill:exercise-image-keys": "bun run scripts/backfill-exercise-image-keys.ts",

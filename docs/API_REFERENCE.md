@@ -647,6 +647,7 @@ Also mounted at `/api/v1`.
 | PATCH | `/workout-plans/:id` | JWT | admin, trainer | `updatePlan` |
 | DELETE | `/workout-plans/:id` | JWT | admin, trainer | `deletePlan` |
 | POST | `/workout-plans/:id/assign` | JWT | admin, trainer | `assignUsers` |
+| GET | `/workout-plans/:id/export` | JWT | admin, trainer | `exportWorkoutPlan` |
 | POST | `/workout-plans/:planId/assign-to-me` | JWT | user, trainer, admin | `assignPlan` |
 
 #### `/workouts` → [workout.routes.ts](../src/routes/workout.routes.ts)
@@ -3956,6 +3957,7 @@ These endpoints require role `user`.
 |---|---|---|
 | GET | `/workout-plans/import/template` | Download the `.xlsx` template (includes the requester's exercise library) |
 | POST | `/workout-plans/import` | Upload a filled template (multipart field `file`, `.xlsx`, ≤ 5 MB). `?dryRun=true` validates only |
+| GET | `/workout-plans/:id/export` | The plan as a filled template (re-imports as a new plan). Same visibility as `GET /workout-plans/:id` |
 
 Sheet format, column rules and examples: [WORKOUT_PLAN_EXCEL_IMPORT.md](WORKOUT_PLAN_EXCEL_IMPORT.md).
 

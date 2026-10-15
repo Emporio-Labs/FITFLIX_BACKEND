@@ -12,10 +12,12 @@ import type { AuthenticatedUser } from "../types/auth";
 import { actorModelForRole } from "../utils/actor-model";
 import {
 	buildWorkoutPlanTemplate,
+	type ExportablePlan,
 	type ImportIssue,
 	type LibraryExercise,
 	type ParsedPlan,
 	parseWorkoutPlanWorkbook,
+	planToPrefill,
 	WORKOUT_SHEET,
 } from "../utils/workout-plan-excel";
 import { createPlanBodySchema } from "../validators/workout-plan.validator";
@@ -60,6 +62,26 @@ const summarize = (plan: ParsedPlan) => ({
 	exercises: plan.days.reduce((n, d) => n + d.exercises.length, 0),
 });
 
+const XLSX_MIME =
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+const sendWorkbook = (
+	res: Parameters<RequestHandler>[1],
+	buffer: Buffer,
+	filename: string,
+) => {
+	res.setHeader("Content-Type", XLSX_MIME);
+	res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+	res.send(buffer);
+};
+
+const fileSlug = (name: string) =>
+	name
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 60) || "workout-plan";
+
 export const downloadWorkoutPlanTemplate: RequestHandler = async (
 	req,
 	res,
@@ -73,15 +95,7 @@ export const downloadWorkoutPlanTemplate: RequestHandler = async (
 		const buffer = buildWorkoutPlanTemplate(
 			await loadVisibleExercises(req.user),
 		);
-		res.setHeader(
-			"Content-Type",
-			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-		);
-		res.setHeader(
-			"Content-Disposition",
-			'attachment; filename="workout-plan-template.xlsx"',
-		);
-		res.send(buffer);
+		sendWorkbook(res, buffer, "workout-plan-template.xlsx");
 	} catch (error) {
 		next(error);
 	}
@@ -169,6 +183,63 @@ export const importWorkoutPlan: RequestHandler = async (req, res, next) => {
 			warnings,
 			summary,
 		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * GET /workout-plans/:id/export — the plan as a filled import template, so a
+ * trainer can copy/tweak it in Excel and import it back as a new plan. Same
+ * visibility as GET /workout-plans/:id.
+ */
+export const exportWorkoutPlan: RequestHandler = async (req, res, next) => {
+	try {
+		const requester = req.user;
+		if (!requester) {
+			res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+			return;
+		}
+		const id = req.params.id;
+		if (typeof id !== "string" || !mongoose.Types.ObjectId.isValid(id)) {
+			res
+				.status(400)
+				.json({ error: "Invalid plan ID", code: "VALIDATION_ERROR" });
+			return;
+		}
+
+		const plan = await WorkoutPlan.findById(id)
+			.populate("days.exercises.exerciseId", "name")
+			.lean();
+		if (
+			!plan ||
+			(requester.role === "trainer" &&
+				!plan.isTemplate &&
+				plan.createdBy?.toString() !== requester.id)
+		) {
+			res.status(404).json({ error: "Plan not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		const exportable: ExportablePlan = {
+			...plan,
+			days: plan.days.map((day) => ({
+				...day,
+				exercises: day.exercises.map((ex) => {
+					const ref = ex.exerciseId as unknown as { name?: string } | null;
+					return {
+						...ex,
+						exerciseName: ref?.name ?? "(deleted exercise)",
+					};
+				}),
+			})),
+		};
+
+		const buffer = buildWorkoutPlanTemplate(
+			await loadVisibleExercises(requester),
+			planToPrefill(exportable),
+		);
+		sendWorkbook(res, buffer, `${fileSlug(plan.name)}.xlsx`);
 	} catch (error) {
 		next(error);
 	}

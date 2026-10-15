@@ -6,6 +6,7 @@
 import XLSX from "xlsx";
 import {
 	buildWorkoutPlanTemplate,
+	planToPrefill,
 	type LibraryExercise,
 	parseWorkoutPlanWorkbook,
 } from "../src/utils/workout-plan-excel";
@@ -424,6 +425,144 @@ function runUnitTests() {
 		assert(
 			filled.plan?.name === "Upper Body" && filled.plan.duration === 6,
 			"plan details read from column B",
+		);
+	}
+
+	console.log(
+		"\n🔎 The template carries drop-downs, a frozen header and styles",
+	);
+	{
+		const zip = XLSX.CFB.read(buildWorkoutPlanTemplate(LIBRARY), {
+			type: "buffer",
+		});
+		const xml = (p: string) =>
+			Buffer.from(
+				XLSX.CFB.find(zip, `/xl/worksheets/${p}`)?.content as Uint8Array,
+			).toString("utf8");
+		const workout = xml("sheet3.xml");
+		assert(
+			workout.includes('<dataValidations count="11">'),
+			"11 validations on the Workout sheet",
+		);
+		assert(
+			workout.includes(
+				`<formula1>'Exercise Library'!$A$2:$A$${LIBRARY.length + 1}</formula1>`,
+			),
+			"Exercise drop-down points at the whole library",
+		);
+		assert(
+			workout.indexOf("<dataValidations") > workout.indexOf("</sheetData>") &&
+				workout.indexOf("<dataValidations") < workout.indexOf("<ignoredErrors"),
+			"validations sit where the OOXML schema requires (or Excel 'repairs' the file)",
+		);
+		assert(workout.includes('state="frozen"'), "header row frozen");
+		assert(/<c r="E1" s="2"/.test(workout), "required header styled");
+		assert(
+			xml("sheet2.xml").includes('<dataValidations count="9">'),
+			"9 validations on Plan Details",
+		);
+
+		const empty = XLSX.CFB.read(buildWorkoutPlanTemplate([]), {
+			type: "buffer",
+		});
+		const emptyWorkout = Buffer.from(
+			XLSX.CFB.find(empty, "/xl/worksheets/sheet3.xml")?.content as Uint8Array,
+		).toString("utf8");
+		assert(
+			emptyWorkout.includes('<dataValidations count="10">'),
+			"no exercise drop-down for an empty library",
+		);
+	}
+
+	console.log("\n🔎 An exported plan re-imports to the same plan");
+	{
+		const original = {
+			name: "Round Trip",
+			description: "desc",
+			difficulty: "Advanced",
+			duration: 3,
+			goal: "Strength",
+			splitType: "UpperLower",
+			status: "Archived",
+			isTemplate: false,
+			templateCategory: null,
+			days: [
+				{
+					dayNumber: 2,
+					name: "Rest",
+					isRestDay: true,
+					exercises: [],
+				},
+				{
+					dayNumber: 1,
+					name: "Upper",
+					isRestDay: false,
+					exercises: [
+						{
+							exerciseName: "Plank",
+							orderIndex: 1,
+							section: "workout",
+							targetSets: 3,
+							targetReps: 1,
+							durationSeconds: 40,
+							restSeconds: 30,
+						},
+						{
+							exerciseName: "Jumping Jacks",
+							orderIndex: 0,
+							section: "warmup",
+							targetSets: 2,
+							targetReps: 20,
+							restSeconds: 15,
+						},
+						{
+							exerciseName: "Barbell Bench Press",
+							orderIndex: 2,
+							section: "workout",
+							targetSets: 5,
+							targetReps: 5,
+							targetWeightKg: 82.5,
+							restSeconds: 180,
+							notes: "Pause",
+						},
+					],
+				},
+				{ dayNumber: 3, name: "Empty", isRestDay: false, exercises: [] },
+			],
+		};
+		const { plan, errors } = parseWorkoutPlanWorkbook(
+			buildWorkoutPlanTemplate(LIBRARY, planToPrefill(original)),
+			LIBRARY,
+		);
+		assert(
+			errors.length === 0,
+			`export re-imports (got ${JSON.stringify(errors)})`,
+		);
+		assert(plan?.status === "Active", "Archived exports as Active");
+		assert(
+			plan?.isTemplate === false && plan.splitType === "UpperLower",
+			"flags kept",
+		);
+		const d1 = plan?.days[0];
+		assert(
+			d1?.exercises.map((e) => e.exerciseName).join(",") ===
+				"Jumping Jacks,Plank,Barbell Bench Press",
+			"exercise order kept",
+		);
+		assert(
+			d1?.exercises[1]?.durationSeconds === 40 &&
+				d1.exercises[1].targetReps === 1,
+			"timed exercise kept",
+		);
+		assert(
+			d1?.exercises[2]?.targetWeightKg === 82.5 &&
+				d1.exercises[2].notes === "Pause",
+			"weight + notes kept",
+		);
+		assert(plan?.days[1]?.isRestDay === true, "rest day kept");
+		assert(
+			plan?.days[2]?.isRestDay === true && plan.days[2].name === "Empty",
+			"empty training day becomes a named rest day",
 		);
 	}
 

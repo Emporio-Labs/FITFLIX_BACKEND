@@ -13,6 +13,7 @@ import {
 } from "../controllers/workout-assignment.controller";
 import {
 	downloadWorkoutPlanTemplate,
+	exportWorkoutPlan,
 	importWorkoutPlan,
 } from "../controllers/workout-plan-import.controller";
 import {
@@ -143,6 +144,11 @@ workoutPlanRouter.post(
 	"/:id/assign",
 	authorize(["admin", "trainer"]),
 	assignUsers,
+);
+workoutPlanRouter.get(
+	"/:id/export",
+	authorize(["admin", "trainer"]),
+	exportWorkoutPlan,
 );
 workoutPlanRouter.post(
 	"/:id/duplicate",
