@@ -158,6 +158,7 @@ export function emitOperationalAlert(alert: any): void {
 		io.to(branchRoom).emit("operational_alert:new", alert);
 	}
 	io.to("frontdesk").emit("operational_alert:new", alert);
+	emitBranchBoardRefresh(alert.branchId?.toString());
 }
 
 export function emitAlertAcknowledged(alert: any): void {
@@ -170,6 +171,7 @@ export function emitAlertAcknowledged(alert: any): void {
 		io.to(branchRoom).emit("operational_alert:acknowledged", alert);
 	}
 	io.to("frontdesk").emit("operational_alert:acknowledged", alert);
+	emitBranchBoardRefresh(alert.branchId?.toString());
 }
 
 export function emitAlertResolved(alert: any): void {
@@ -182,9 +184,22 @@ export function emitAlertResolved(alert: any): void {
 		io.to(branchRoom).emit("operational_alert:resolved", alert);
 	}
 	io.to("frontdesk").emit("operational_alert:resolved", alert);
+	emitBranchBoardRefresh(alert.branchId?.toString());
+}
+
+/**
+ * FX-43.2: Broadcasts live operations board refresh to branch rooms & admin/frontdesk.
+ */
+export function emitBranchBoardRefresh(branchId?: string): void {
+	if (!io) return;
+	if (branchId) {
+		io.to(`branch:${branchId}`).emit("branch_board:refresh", { branchId });
+	}
+	io.to("frontdesk").emit("branch_board:refresh", { branchId });
 }
 
 export function getIO(): SocketIOServer | null {
 	return io;
 }
+
 

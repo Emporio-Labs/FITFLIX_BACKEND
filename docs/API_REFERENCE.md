@@ -621,6 +621,7 @@ Also mounted at `/api/v1`.
 | Method | Path | Auth | Roles | Handler |
 |---|---|---|---|---|
 | GET | `/dashboard/metrics` | JWT | admin, frontdesk | `getDashboardMetrics` |
+| GET | `/dashboard/branch-board` | JWT | admin, frontdesk | `getBranchBoardMetricsHandler` |
 
 #### `/webhook` → [webhook.route.ts](../src/routes/webhook.route.ts)
 
@@ -4233,6 +4234,89 @@ curl "https://api.example.com/dashboard/metrics" -H "Authorization: Bearer $TOKE
 
 Statuses with no matching documents are **absent** from the maps rather than
 present with `0`. A null status is bucketed under the key `"unknown"`.
+
+### GET /dashboard/branch-board
+
+Multi-branch real-time operations board (FX-43.1 & FX-43.4). Returns live metrics per branch:
+live and upcoming group sessions, today's member check-ins, staff on duty, open operational alerts,
+and today's revenue.
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+* **Admin:** returns all active branches across the business (or filtered by optional query param `?branchId=`).
+* **Branch Manager / Frontdesk:** automatically scoped to return only their own assigned branch (`user.homeLocationId`).
+
+```bash
+curl "https://api.example.com/dashboard/branch-board" -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200)**
+
+```json
+{
+  "asOf": "2026-10-15T13:45:00.000Z",
+  "branches": [
+    {
+      "branch": {
+        "id": "67049c6fb73d42001e389012",
+        "name": "Sainikpuri Club",
+        "code": "sainikpuri",
+        "timezone": "Asia/Kolkata",
+        "isActive": true
+      },
+      "sessions": {
+        "liveCount": 1,
+        "upcomingCount": 4,
+        "totalToday": 5,
+        "items": [
+          {
+            "id": "sess_123",
+            "className": "HIIT Protocol",
+            "instructorName": "Rahul Trainer",
+            "startTime": "17:00",
+            "endTime": "17:45",
+            "status": "SCHEDULED",
+            "roomStatus": "IN_PROGRESS",
+            "isLive": true,
+            "capacity": 20,
+            "bookingCount": 18
+          }
+        ]
+      },
+      "checkIns": {
+        "todayCount": 48,
+        "currentlyInGym": 14
+      },
+      "staffOnDuty": {
+        "count": 2,
+        "members": [
+          { "id": "user_456", "name": "Sarah Frontdesk", "role": "frontdesk", "isOnline": true }
+        ]
+      },
+      "alerts": {
+        "openCount": 1,
+        "criticalCount": 0,
+        "warningCount": 1,
+        "recentAlerts": [
+          {
+            "id": "alert_789",
+            "type": "lead_unclaimed",
+            "severity": "warning",
+            "status": "open",
+            "title": "Unclaimed Lead: John Doe",
+            "message": "Lead unclaimed for >15 minutes.",
+            "createdAt": "2026-10-15T13:30:00.000Z"
+          }
+        ]
+      },
+      "revenue": {
+        "todayTotal": 24500,
+        "currency": "INR",
+        "invoiceCount": 3
+      }
+    }
+  ]
+}
+```
 
 ---
 
