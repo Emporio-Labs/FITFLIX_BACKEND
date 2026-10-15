@@ -94,7 +94,7 @@ const start = async () => {
 	if (!isServerless) {
 		startReminderPoller(60_000); // every 60 seconds
 		setInterval(runHostNoShowSweep, 5 * 60_000); // every 5 minutes
-		setInterval(runCallbackEscalationSweep, 2 * 60_000); // every 2 minutes
+		setInterval(runCallbackEscalationSweep, 60_000); // every 60 seconds (FX-42 lead & callback SLA)
 	}
 
 	httpServer.listen(port, "0.0.0.0", () => {

@@ -9,6 +9,7 @@ import Location from "../models/Location";
 import { emitOperationalAlert } from "../services/realtime.service";
 import { autoResolveOperationalAlerts } from "./operational-alert.controller";
 import { getEffectiveAlertRule } from "../utils/default-alert-rules";
+import { isSalesStaffOnDuty } from "../services/staff-presence.service";
 import { calculateHealthScore } from "../utils/health-score";
 import { hashPassword } from "../utils/password";
 import {
@@ -268,16 +269,30 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 				const defaultBranch = await Location.findOne({ isActive: true }).select("_id");
 				if (defaultBranch) {
 					const rule = await getEffectiveAlertRule(AlertType.LeadUnclaimed);
+					const salesOnDuty = await isSalesStaffOnDuty(defaultBranch._id);
+					const targetRoles = salesOnDuty
+						? [rule.firstResponderRole]
+						: ["branch_manager", "admin"];
+					const escalationLadder = salesOnDuty
+						? rule.escalationLadder
+						: [{ role: "admin", afterMinutes: 15 }];
+					const title = salesOnDuty
+						? `Urgent Callback Lead: ${resolvedLeadName}`
+						: `[Direct to Manager] Urgent Callback Lead: ${resolvedLeadName}`;
+					const message = salesOnDuty
+						? `New high-intent lead requires callback (${resolvedPhone || resolvedEmail || "Phone pending"}). First responder: ${rule.firstResponderRole}.`
+						: `New high-intent lead requires callback with no sales staff on duty at branch (${resolvedPhone || resolvedEmail || "Phone pending"}). Escalated directly to Branch Manager.`;
+
 					const alert = await OperationalAlert.create({
 						type: AlertType.LeadUnclaimed,
 						severity: rule.severity,
 						status: AlertStatus.Open,
-						title: `Urgent Callback Lead: ${resolvedLeadName}`,
-						message: `New high-intent lead requires callback (${resolvedPhone || resolvedEmail || "Phone pending"}). First responder: ${rule.firstResponderRole}.`,
+						title,
+						message,
 						branchId: defaultBranch._id,
-						targetRoles: [rule.firstResponderRole],
+						targetRoles,
 						sound: rule.sound,
-						escalationLadder: rule.escalationLadder,
+						escalationLadder,
 						relatedEntity: {
 							entityType: "lead",
 							entityId: lead._id.toString(),
@@ -498,6 +513,9 @@ export const deleteLeadById: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Lead not found" });
 			return;
 		}
+
+		// FX-42.4: Auto-resolve alerts on lead deletion
+		void autoResolveOperationalAlerts("lead", id, "Lead deleted");
 
 		res.status(200).json({ message: "Lead deleted" });
 	} catch (error) {
