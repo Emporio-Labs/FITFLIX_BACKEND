@@ -688,6 +688,18 @@ Also mounted at `/api/v1`.
 | POST | `/internal/sessions/lifecycle/tick` | Public | — | `(inline)` |
 | POST | `/internal/leads/followup` | Public | — | `(inline)` |
 
+#### `/dna` → [dna.routes.ts](../src/routes/dna.routes.ts)
+
+Also mounted at `/api/v1/dna`. Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/dna/reports` | JWT | user | `getMyDnaReports` |
+| GET | `/dna/tests` | JWT | admin, frontdesk, doctor, nutritionist | `getAllDnaTests` |
+| POST | `/dna/tests` | JWT | admin, frontdesk, doctor, nutritionist | `createDnaTest` |
+| PATCH | `/dna/tests/:id` | JWT | admin, frontdesk, doctor, nutritionist | `updateDnaTest` |
+| DELETE | `/dna/tests/:id` | JWT | admin, frontdesk | `deleteDnaTest` |
+
 #### Declared inline in [src/app.ts](../src/app.ts)
 
 | Method | Path | Auth | Roles | Handler |
@@ -695,7 +707,7 @@ Also mounted at `/api/v1`.
 | GET | `/health` | Public | — | inline |
 | POST | `/test/firebase` | Public | — | inline |
 
-<!-- generated: 248 route declarations across 29 route files -->
+<!-- generated: 253 route declarations across 30 route files -->
 
 ---
 
