@@ -14,6 +14,13 @@ const medicalReportSchema = new mongoose.Schema(
 		s3Key: { type: String, default: undefined },
 		mimeType: { type: String, default: undefined },
 		fileSize: { type: Number, default: undefined },
+		status: {
+			type: String,
+			enum: ["not-started", "in-progress", "completed"],
+			default: "completed",
+		},
+		notes: { type: String, default: undefined },
+		testDate: { type: Date, default: () => new Date() },
 		uploadedAt: { type: Date, default: () => new Date() },
 	},
 	{ timestamps: true },
