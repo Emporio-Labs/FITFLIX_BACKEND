@@ -4308,9 +4308,10 @@ and today's revenue.
 **Auth:** Bearer (`admin`, `frontdesk`)
 * **Admin:** returns all active branches across the business (or filtered by optional query param `?branchId=`).
 * **Branch Manager / Frontdesk:** automatically scoped to return only their own assigned branch (`user.homeLocationId`).
+* **Timeframe:** optional query param `?timeframe=today` (default, intraday metrics) or `?timeframe=all` (all-time totals).
 
 ```bash
-curl "https://api.example.com/dashboard/branch-board" -H "Authorization: Bearer $TOKEN"
+curl "https://api.example.com/dashboard/branch-board?timeframe=today" -H "Authorization: Bearer $TOKEN"
 ```
 
 **Success (200)**

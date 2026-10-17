@@ -121,7 +121,12 @@ export const getBranchBoardMetricsHandler: RequestHandler = async (
 			return;
 		}
 
-		const data = await getBranchBoardData(branchIds);
+		const requestedTimeframe = req.query.timeframe === "all" ? "all" : "today";
+		const data = await getBranchBoardData(
+			branchIds,
+			new Date(),
+			requestedTimeframe,
+		);
 		res.status(200).json(data);
 	} catch (error) {
 		next(error);

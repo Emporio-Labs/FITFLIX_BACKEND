@@ -81,8 +81,11 @@ export interface BranchBoardItem {
 	};
 }
 
+export type BranchBoardTimeframe = "today" | "all";
+
 export interface BranchBoardResponse {
 	asOf: string;
+	timeframe: BranchBoardTimeframe;
 	branches: BranchBoardItem[];
 }
 
@@ -90,10 +93,12 @@ export interface BranchBoardResponse {
  * FX-43.1: Calculates live operational metrics for branches.
  * For each branch: live & upcoming sessions, today's check-ins, staff on duty,
  * open alerts, and today's revenue.
+ * Supports "today" (default) or "all" (all-time totals).
  */
 export async function getBranchBoardData(
 	branchIds?: Array<string | mongoose.Types.ObjectId>,
 	now: Date = new Date(),
+	timeframe: BranchBoardTimeframe = "today",
 ): Promise<BranchBoardResponse> {
 	const query: Record<string, unknown> = { isActive: true };
 	if (Array.isArray(branchIds) && branchIds.length > 0) {
@@ -115,15 +120,19 @@ export async function getBranchBoardData(
 		const endOfDay = zonedDateTimeToInstant(todayStr, "23:59", tz);
 
 		// 1. Sessions: Live & Upcoming
-		const todaySessions = await ScheduledSession.find({
-			sessionDate: {
+		const sessionFilter: Record<string, unknown> = {
+			status: { $ne: "CANCELLED" },
+		};
+		if (timeframe === "today") {
+			sessionFilter.sessionDate = {
 				$gte: new Date(startOfDay.getTime() - 24 * 60 * 60 * 1000),
 				$lte: new Date(endOfDay.getTime() + 24 * 60 * 60 * 1000),
-			},
-			status: { $ne: "CANCELLED" },
-		})
+			};
+		}
+
+		const todaySessions = await ScheduledSession.find(sessionFilter)
 			.lean()
-			.limit(100);
+			.limit(200);
 
 		// Filter for this branch via class lookup or direct locationId
 		const classIds = todaySessions.map((s) => s.classId);
@@ -176,15 +185,18 @@ export async function getBranchBoardData(
 			return a.startTime.localeCompare(b.startTime);
 		});
 
-		// 2. Check-ins: Today's check-ins & active in gym
+		// 2. Check-ins: Today's check-ins (or all-time) & active in gym
+		const checkInFilter: Record<string, unknown> = {
+			locationId: branch._id,
+		};
+		if (timeframe === "today") {
+			checkInFilter.checkInAt = { $gte: startOfDay, $lte: endOfDay };
+		}
+
 		const [todayCheckIns, activeCheckIns] = await Promise.all([
+			GymVisit.countDocuments(checkInFilter),
 			GymVisit.countDocuments({
 				locationId: branch._id,
-				checkInAt: { $gte: startOfDay, $lte: endOfDay },
-			}),
-			GymVisit.countDocuments({
-				locationId: branch._id,
-				checkInAt: { $gte: startOfDay, $lte: endOfDay },
 				checkOutAt: null,
 			}),
 		]);
@@ -276,11 +288,15 @@ export async function getBranchBoardData(
 		}));
 
 		// 5. Today's Revenue (paid invoices)
-		const paidInvoices = await Invoice.find({
+		const revenueFilter: Record<string, unknown> = {
 			locationId: branch._id,
 			paymentStatus: "PAID",
-			createdAt: { $gte: startOfDay, $lte: endOfDay },
-		})
+		};
+		if (timeframe === "today") {
+			revenueFilter.createdAt = { $gte: startOfDay, $lte: endOfDay };
+		}
+
+		const paidInvoices = await Invoice.find(revenueFilter)
 			.select("total")
 			.lean();
 
@@ -326,6 +342,7 @@ export async function getBranchBoardData(
 
 	return {
 		asOf: now.toISOString(),
+		timeframe,
 		branches: boardItems,
 	};
 }
