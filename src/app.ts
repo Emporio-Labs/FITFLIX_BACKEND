@@ -36,6 +36,7 @@ import expertAppointmentRouter from "./routes/expert-appointment.routes";
 import expertScheduleRouter from "./routes/expert-schedule.routes";
 
 import onboardingRouter from "./routes/onboarding.routes";
+import dnaRouter from "./routes/dna.routes";
 import scheduleRouter from "./routes/schedule.routes";
 import serviceRouter from "./routes/service.routes";
 import slotRouter from "./routes/slot.routes";
@@ -242,6 +243,7 @@ app.get("/favicon.png", (_req, res) => {
 	res.status(204).end();
 });
 
+app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 app.use("/auth", authRouter);
 app.use("/api/v1/auth", authRouter);
 app.use("/delete-account", deleteAccountRouter);
@@ -286,6 +288,8 @@ app.use("/api/v1/admin/recordings", apiRateLimit, adminRecordingRouter);
 app.use("/admin/recordings", apiRateLimit, adminRecordingRouter);
 app.use("/membership-plans", membershipPlanRouter);
 app.use("/onboarding", onboardingRouter);
+app.use("/dna", apiRateLimit, dnaRouter);
+app.use("/api/v1/dna", apiRateLimit, dnaRouter);
 app.use(nutritionistBookingRouter);
 app.use("/api/v1", nutritionistBookingRouter);
 app.use(expertAppointmentRouter);

@@ -752,6 +752,18 @@ Also mounted at `/api/v1/pt`. Rate limit: `apiRateLimit`.
 | GET | `/pt/admin/trainer-change-requests` | JWT | admin, frontdesk, staff | `getTrainerChangeRequestsAdmin` |
 | POST | `/pt/admin/trainer-change-requests/:id/resolve` | JWT | admin, frontdesk, staff | `resolveTrainerChangeRequestAdmin` |
 
+#### `/dna` → [dna.routes.ts](../src/routes/dna.routes.ts)
+
+Also mounted at `/api/v1/dna`. Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/dna/reports` | JWT | user | `getMyDnaReports` |
+| GET | `/dna/tests` | JWT | admin, frontdesk, doctor, nutritionist | `getAllDnaTests` |
+| POST | `/dna/tests` | JWT | admin, frontdesk, doctor, nutritionist | `createDnaTest` |
+| PATCH | `/dna/tests/:id` | JWT | admin, frontdesk, doctor, nutritionist | `updateDnaTest` |
+| DELETE | `/dna/tests/:id` | JWT | admin, frontdesk | `deleteDnaTest` |
+
 #### Declared inline in [src/app.ts](../src/app.ts)
 
 | Method | Path | Auth | Roles | Handler |
@@ -759,7 +771,7 @@ Also mounted at `/api/v1/pt`. Rate limit: `apiRateLimit`.
 | GET | `/health` | Public | — | inline |
 | POST | `/test/firebase` | Public | — | inline |
 
-<!-- generated: 254 route declarations across 30 route files -->
+<!-- generated: 259 route declarations across 31 route files -->
 
 ---
 
