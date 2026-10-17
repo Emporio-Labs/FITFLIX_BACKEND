@@ -643,12 +643,15 @@ Also mounted at `/api/v1`.
 | GET | `/workout-plans/assignments/mine/days/:dayNumber` | JWT | user | `getAssignedWorkoutForDay` |
 | POST | `/workout-plans/assignments/mine/complete-day` | JWT | user | `completePlanDay` |
 | PATCH | `/workout-plans/assignments/mine/days/:dayNumber` | JWT | user | `updateMyDayExercises` |
+| GET | `/workout-plans/import/template` | JWT | admin, trainer | `downloadWorkoutPlanTemplate` |
+| POST | `/workout-plans/import` | JWT | admin, trainer | `importWorkoutPlan` |
 | GET | `/workout-plans` | JWT | admin, trainer | `listPlans` |
 | POST | `/workout-plans` | JWT | admin, trainer | `createPlan` |
 | GET | `/workout-plans/:id` | JWT | admin, trainer | `getPlan` |
 | PATCH | `/workout-plans/:id` | JWT | admin, trainer | `updatePlan` |
 | DELETE | `/workout-plans/:id` | JWT | admin, trainer | `deletePlan` |
 | POST | `/workout-plans/:id/assign` | JWT | admin, trainer | `assignUsers` |
+| GET | `/workout-plans/:id/export` | JWT | admin, trainer | `exportWorkoutPlan` |
 | POST | `/workout-plans/:planId/assign-to-me` | JWT | user, trainer, admin | `assignPlan` |
 
 #### `/workouts` → [workout.routes.ts](../src/routes/workout.routes.ts)
@@ -3230,6 +3233,50 @@ curl -X PATCH "https://api.example.com/memberships/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 **Success (200):** `{ "message": "Membership updated", "membership": { /* ... */ } }`
 
+### POST /memberships/:id/pause
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+Freeze an active membership. Unused days are credited back on resume.
+
+```bash
+curl -X POST "https://api.example.com/memberships/5f1a2b3c4d5e6f7a8b9c0d1e/pause" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "reason": "Medical leave" }'
+```
+
+**Success (200):** `{ "message": "Membership frozen...", "membership": { /* ... */ }, "daysRemainingInAllowance": 30 }`
+
+### POST /memberships/:id/resume
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+Resume a frozen membership and push `endDate` out by creditable frozen days. Supports backdating `resumedAt` when a member returned earlier than the admin recorded it.
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `resumedAt` | ISO date string | no | Effective return date (default: today; must be ≥ pausedAt and ≤ now) |
+| `reason` | string | no | Optional reason or note |
+
+```bash
+curl -X POST "https://api.example.com/memberships/5f1a2b3c4d5e6f7a8b9c0d1e/resume" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "resumedAt": "2026-10-06T00:00:00.000Z", "reason": "Member returned last week on 6th Oct" }'
+```
+
+**Success (200):**
+```json
+{
+  "message": "Membership resumed. 52 frozen days credited back.",
+  "membership": { /* ... */ },
+  "pausedDays": 52,
+  "creditedDays": 30,
+  "cappedBy": 30,
+  "previousEndDate": "2026-12-14T00:00:00.000Z",
+  "newEndDate": "2027-01-13T00:00:00.000Z"
+}
+```
+
 ### DELETE /memberships/:id
 
 **Auth:** Bearer (`admin`)
@@ -3967,6 +4014,21 @@ These endpoints require role `user`.
 | PATCH | `/workout-plans/:id` | Update plan |
 | DELETE | `/workout-plans/:id` | Delete plan |
 | POST | `/workout-plans/:id/assign` | Assign plan to users |
+
+### Excel import (admin/trainer)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/workout-plans/import/template` | Download the `.xlsx` template (includes the requester's exercise library) |
+| POST | `/workout-plans/import` | Upload a filled template (multipart field `file`, `.xlsx`, ≤ 5 MB). `?dryRun=true` validates only |
+| GET | `/workout-plans/:id/export` | The plan as a filled template (re-imports as a new plan). Same visibility as `GET /workout-plans/:id` |
+
+Sheet format, column rules and examples: [WORKOUT_PLAN_EXCEL_IMPORT.md](WORKOUT_PLAN_EXCEL_IMPORT.md).
+
+- **Dry run** → `200 { valid, plan, errors, warnings, summary }`. `plan` is the parsed plan with each exercise's resolved `exerciseId` and `exerciseName`; `summary` is `{ days, trainingDays, restDays, exercises }`.
+- **Import** → `201 { message, plan, warnings, summary }` (the created `WorkoutPlan`, `createdBy` = requester).
+- **File problems** → `400 VALIDATION_ERROR` with `details: { errors, warnings }`. Each issue is `{ sheet, row?, column?, message }` with the 1-based Excel row and column letter.
+- Wrong file type → `415`; over 5 MB → `413`.
 
 ### Self-assign
 

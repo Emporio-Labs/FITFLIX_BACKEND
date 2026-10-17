@@ -214,8 +214,13 @@ export const pauseMembership = async (params: {
 		);
 	}
 
-	const { settings } = await getLocationSettings(membership.locationId);
-	const cap = Number(settings?.pauseMaxDaysPerTerm ?? 30);
+	let cap = 30;
+	try {
+		const { settings } = await getLocationSettings(membership.locationId);
+		cap = Number(settings?.pauseMaxDaysPerTerm ?? 30);
+	} catch {
+		cap = 30;
+	}
 	const alreadyUsed = Number(membership.totalPausedDays ?? 0);
 
 	if (cap > 0 && alreadyUsed >= cap) {
@@ -270,8 +275,11 @@ export const resumeMembership = async (params: {
 	actorId?: string;
 	actorRole?: string;
 	now?: Date;
+	resumedAt?: Date;
+	reason?: string;
 }) => {
 	const now = params.now || new Date();
+	const effectiveResumeDate = params.resumedAt || now;
 
 	if (!mongoose.Types.ObjectId.isValid(params.membershipId)) {
 		throw new MembershipLifecycleError(
@@ -296,27 +304,67 @@ export const resumeMembership = async (params: {
 		pausedAt: Date;
 		resumedAt: Date | null;
 		days: number;
+		reason?: string;
 	}>;
 
 	const openIndex = intervals.findIndex((i) => !i.resumedAt);
 	if (openIndex === -1) {
-		throw new MembershipLifecycleError(
-			"INVALID_STATE",
-			"Membership is paused but has no open pause interval to close",
+		// If paused without an open interval (e.g. edited directly or migrated),
+		// resume gracefully without extending endDate.
+		const updated = await Membership.findOneAndUpdate(
+			{ _id: membership._id, status: MembershipStatus.Paused },
+			{ $set: { status: MembershipStatus.Active } },
+			{ new: true },
 		);
+
+		if (!updated) {
+			throw new MembershipLifecycleError(
+				"INVALID_STATE",
+				"Membership was modified concurrently; try again",
+			);
+		}
+
+		return {
+			membership: updated,
+			pausedDays: 0,
+			creditedDays: 0,
+			cappedBy: null,
+			previousEndDate: membership.endDate ? new Date(membership.endDate) : null,
+			newEndDate: membership.endDate ? new Date(membership.endDate) : null,
+		};
 	}
 
 	const openInterval = intervals[openIndex];
 	const pausedAt = new Date(openInterval!.pausedAt);
 
+	if (effectiveResumeDate.getTime() < pausedAt.getTime()) {
+		throw new MembershipLifecycleError(
+			"INVALID_ARGUMENT",
+			`Resume date cannot be earlier than pause date (${pausedAt.toISOString().slice(0, 10)})`,
+		);
+	}
+
+	// Buffer future dates slightly (e.g. end-of-day for today)
+	if (effectiveResumeDate.getTime() > now.getTime() + 86400000) {
+		throw new MembershipLifecycleError(
+			"INVALID_ARGUMENT",
+			"Resume date cannot be in the future",
+		);
+	}
+
 	// Round up: any part-day of freeze is credited back in the member's favour.
 	const rawDays = Math.max(
 		0,
-		Math.ceil((now.getTime() - pausedAt.getTime()) / DAY_MS),
+		Math.ceil((effectiveResumeDate.getTime() - pausedAt.getTime()) / DAY_MS),
 	);
 
-	const { settings } = await getLocationSettings(membership.locationId);
-	const cap = Number(settings?.pauseMaxDaysPerTerm ?? 30);
+	let cap = 30;
+	try {
+		const { settings } = await getLocationSettings(membership.locationId);
+		cap = Number(settings?.pauseMaxDaysPerTerm ?? 30);
+	} catch {
+		cap = 30;
+	}
 	const alreadyUsed = Number(membership.totalPausedDays ?? 0);
 	const creditableDays =
 		cap > 0 ? Math.max(0, Math.min(rawDays, cap - alreadyUsed)) : rawDays;
@@ -328,9 +376,15 @@ export const resumeMembership = async (params: {
 
 	const setOps: Record<string, unknown> = {
 		status: MembershipStatus.Active,
-		[`pauseIntervals.${openIndex}.resumedAt`]: now,
+		[`pauseIntervals.${openIndex}.resumedAt`]: effectiveResumeDate,
 		[`pauseIntervals.${openIndex}.days`]: creditableDays,
 	};
+
+	if (params.reason) {
+		setOps[`pauseIntervals.${openIndex}.reason`] = openInterval?.reason
+			? `${openInterval.reason} | Resumed: ${params.reason}`
+			: params.reason;
+	}
 
 	// An open-ended membership (no endDate) has nothing to extend.
 	if (newEnd) {
