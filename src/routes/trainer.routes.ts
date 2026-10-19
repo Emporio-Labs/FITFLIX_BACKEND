@@ -10,6 +10,7 @@ import {
 	getTrainerById,
 	updateTrainerById,
 } from "../controllers/trainer.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 import { subjectIsMember } from "../middleware/workoutSubject.middleware";
@@ -21,6 +22,7 @@ trainerRouter.get("/public", getPublicTrainers);
 trainerRouter.get("/public/:id", getPublicTrainerById);
 
 trainerRouter.use(authenticateToken);
+trainerRouter.use(...staffGuard);
 trainerRouter.post("/", authorize(["admin"]), createTrainer);
 trainerRouter.get("/", authorize(["admin"]), getAllTrainers);
 

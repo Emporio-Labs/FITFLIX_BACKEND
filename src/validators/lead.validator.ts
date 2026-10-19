@@ -175,6 +175,28 @@ export const updateLeadBodySchema = createLeadBodySchema
 		message: "At least one field is required",
 	});
 
+// FX-33.5 — a free-text note recorded against the acting staff member.
+export const leadInteractionBodySchema = z.object({
+	note: z.string().trim().min(1),
+	type: z
+		.enum(["note", "call", "whatsapp", "email", "status-change", "system"])
+		.optional(),
+});
+
+// FX-33.5 — a logged contact attempt (call/whatsapp/email) against the lead.
+export const contactAttemptBodySchema = z.object({
+	channel: z.enum(["call", "whatsapp", "email"]).optional(),
+	note: z.string().trim().min(1).optional(),
+});
+
+// FX-34.1/.3 — reassign a lead to another staff member, or (assigneeId null /
+// omitted) release it back to the branch's unclaimed queue. A manager may do
+// either to any lead at their branch; a sales caller is limited by the
+// controller to releasing their own.
+export const reassignLeadBodySchema = z.object({
+	assigneeId: z.string().trim().min(1).nullish(),
+});
+
 export const convertLeadBodySchema = z.object({
 	username: z.string().trim().min(1).optional(),
 	phone: z.string().trim().min(1),
@@ -184,6 +206,9 @@ export const convertLeadBodySchema = z.object({
 	password: z.string().min(1).optional(),
 });
 
+export type LeadInteractionBody = z.infer<typeof leadInteractionBodySchema>;
+export type ContactAttemptBody = z.infer<typeof contactAttemptBodySchema>;
+export type ReassignLeadBody = z.infer<typeof reassignLeadBodySchema>;
 export type CreateLeadBody = z.infer<typeof createLeadBodySchema>;
 export type PublicLeadCaptureBody = z.infer<typeof publicLeadCaptureBodySchema>;
 export type UpdateLeadBody = z.infer<typeof updateLeadBodySchema>;

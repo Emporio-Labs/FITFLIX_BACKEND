@@ -16,6 +16,13 @@ import {
 	listInvoicesQuerySchema,
 	updateInvoiceStatusBodySchema,
 } from "../validators/invoice.validator";
+import {
+	isBranchInScope,
+	LocationError,
+	mapLocationError,
+	readExplicitLocationId,
+	resolveLocationId,
+} from "../utils/location.resolver";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -99,10 +106,30 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// Resolve the branch this invoice is issued at. With one active location
+	// the resolver supplies it automatically; with several the desk must be
+	// explicit — passing the header-selected locationId satisfies that.
+	const rawLocationId = parsed.data.locationId;
+	let resolvedLocationId: mongoose.Types.ObjectId | undefined;
+	try {
+		resolvedLocationId = await resolveLocationId(
+			typeof rawLocationId === "string" ? rawLocationId : undefined,
+		);
+	} catch (error) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+			return;
+		}
+		next(error);
+		return;
+	}
+
 	try {
 		const invoice = await createInvoice(
 			{ ...parsed.data, userId: resolvedUserId },
 			req.user?.id ?? "",
+			resolvedLocationId,
 		);
 		res.status(201).json({ message: "Invoice created", invoice });
 	} catch (error) {
@@ -121,7 +148,15 @@ export const listInvoicesHandler: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const invoices = await listInvoices(parsed.data);
+		// FX-18.1 / FX-19 — pass the caller's branch scope and the selected branch
+		// from the X-Location-Id header (or ?locationId) so a global admin's list
+		// follows the picker and a branch-scoped staffer only lists their branches.
+		const explicitLocationId = readExplicitLocationId(req);
+		const invoices = await listInvoices(
+			parsed.data,
+			req.allowedBranchIds,
+			explicitLocationId,
+		);
 		res.status(200).json({ invoices });
 	} catch (error) {
 		next(error);
@@ -138,6 +173,12 @@ export const getInvoiceByIdHandler: RequestHandler = async (req, res, next) => {
 	try {
 		const invoice = await getInvoiceById(id);
 		if (!invoice) {
+			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
+			return;
+		}
+		// FX-18.2 — another branch's invoice reads as "not found" (same 404, never a
+		// 403) so a branch-scoped staffer can't confirm it exists.
+		if (!isBranchInScope(req.allowedBranchIds, invoice.locationId)) {
 			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
 			return;
 		}
@@ -178,6 +219,13 @@ export const updateInvoiceStatusHandler: RequestHandler = async (
 	try {
 		const existing = await getInvoiceById(id);
 		if (!existing) {
+			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		// FX-18.2 — don't let a branch-scoped staffer mutate (or even detect)
+		// another branch's invoice; present it as not found.
+		if (!isBranchInScope(req.allowedBranchIds, existing.locationId)) {
 			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
 			return;
 		}
@@ -238,6 +286,11 @@ export const getInvoicePdfHandler: RequestHandler = async (req, res, next) => {
 	try {
 		const invoice = await getInvoiceForPdf(id);
 		if (!invoice) {
+			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
+			return;
+		}
+		// FX-18.2 — another branch's invoice PDF reads as not found.
+		if (!isBranchInScope(req.allowedBranchIds, (invoice as any).locationId)) {
 			res.status(404).json({ error: "Invoice not found", code: "NOT_FOUND" });
 			return;
 		}

@@ -21,6 +21,7 @@ import {
 	verifyPassword,
 } from "../utils/password";
 import type { AppUserRole } from "../types/auth";
+import { resolveStaffContext } from "../services/staffContext.service";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import {
 	loginBodySchema,
@@ -88,8 +89,15 @@ type LoginUserPayload = {
 	id: string;
 	email: string;
 	role: AppRole;
+	staffRole?: string | null;
 	onboarded?: boolean;
 	onboardingStatus?: unknown;
+	// FX-18 — the caller's branch scope, so the web app can restrict the branch
+	// switcher. `scope: "branch"` with `allBranches: false` means "only these
+	// branchIds"; a global admin is `scope: "global"` / `allBranches: true`.
+	scope?: "global" | "branch";
+	branchIds?: string[];
+	allBranches?: boolean;
 };
 
 const matchAccount = async (
@@ -115,6 +123,10 @@ const matchAccount = async (
 	// that distinguishes it. Without this, `nutritionist` and `sports_scientist`
 	// were roles that every RBAC allow-list accepted and no login could ever
 	// produce, so the self-service availability routes were unreachable.
+	//
+	// For an *Admin* account the API role stays "admin" (the server authorizes it
+	// exactly as any admin); its `staffRole` is carried separately so only the web
+	// app's workspace routing narrows it (FX-31 branch manager / sales consoles).
 	const effectiveRole: AppRole =
 		role === "user" && account.staffRole
 			? (account.staffRole as AppRole)
@@ -124,18 +136,28 @@ const matchAccount = async (
 		id: account._id.toString(),
 		email: account.email ?? "",
 		role: effectiveRole,
+		staffRole: account.staffRole ?? null,
 	} as const;
 };
 
 const buildLoginUserPayload = (
-	matchedAccount: { id: string; email: string; role: AppRole },
+	matchedAccount: {
+		id: string;
+		email: string;
+		role: AppRole;
+		staffRole?: string | null;
+	},
 	userAccount: AuthDocument | null,
 ): LoginUserPayload => {
+	// The matched account carries the authoritative sub-role (Admin.staffRole for
+	// admin-family logins, User.staffRole for experts); `userAccount` is null for
+	// Admin/Trainer logins, so it must NOT be the source of staffRole here.
 	if (matchedAccount.role !== "user") {
 		return {
 			id: matchedAccount.id,
 			email: matchedAccount.email,
 			role: matchedAccount.role,
+			staffRole: matchedAccount.staffRole ?? null,
 		};
 	}
 
@@ -143,6 +165,7 @@ const buildLoginUserPayload = (
 		id: matchedAccount.id,
 		email: matchedAccount.email,
 		role: matchedAccount.role,
+		staffRole: matchedAccount.staffRole ?? userAccount?.staffRole ?? null,
 		onboarded: Boolean(userAccount?.onboarded),
 		onboardingStatus: userAccount?.onboardingStatus ?? null,
 	};
@@ -300,8 +323,38 @@ export const login: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// FX-32.3 — a disabled Admin account is refused at sign-in and can never
+		// get a token. (The matched account is an Admin when its id is the admin
+		// doc's id; user/trainer accounts are not gated here.)
+		const matchedAdmin =
+			admin && matchedAccount.id === admin._id.toString() ? admin : null;
+		if (matchedAdmin && String(matchedAdmin.status ?? "").toLowerCase() === "disabled") {
+			console.log("[AUTH][LOGIN] Disabled admin refused", {
+				email: maskEmail(email),
+			});
+			res.status(403).json({
+				message: "This account has been disabled. Contact an administrator.",
+			});
+			return;
+		}
+
 		clearLoginFailures(email);
 		req.user = matchedAccount;
+
+		// FX-32 — record the sign-in (shown in the staff table) and promote any
+		// stray invited account that somehow has a password to active.
+		if (matchedAdmin) {
+			matchedAdmin.lastLoginAt = new Date();
+			if (matchedAdmin.status === "invited") {
+				matchedAdmin.status = "active";
+			}
+			try {
+				await matchedAdmin.save();
+			} catch (err) {
+				// Non-fatal: a failed lastLoginAt write must not block a valid login.
+				console.error("[AUTH][LOGIN] Failed to record admin lastLoginAt", err);
+			}
+		}
 
 		const jwtConfig = getJwtConfig();
 		if (!jwtConfig) {
@@ -321,6 +374,25 @@ export const login: RequestHandler = async (req, res, next) => {
 			: null;
 
 		const userPayload = buildLoginUserPayload(matchedAccount, user);
+
+		// FX-18 — attach the caller's branch scope so the admin console can limit
+		// the branch switcher to the branches a scoped staffer works at. Members
+		// never see the switcher, so only compute it for staff/admin accounts; a
+		// lookup failure degrades to "unrestricted" rather than blocking login.
+		if (userPayload.role !== "user") {
+			try {
+				const ctx = await resolveStaffContext({
+					id: matchedAccount.id,
+					email: matchedAccount.email,
+					role: matchedAccount.role,
+				});
+				userPayload.scope = ctx.scope;
+				userPayload.branchIds = ctx.branchIds;
+				userPayload.allBranches = ctx.scope === "global";
+			} catch (err) {
+				console.error("[AUTH][LOGIN] staff-scope resolve failed", err);
+			}
+		}
 
 		console.log("[AUTH][LOGIN] Login successful", {
 			email: maskEmail(email),
@@ -388,9 +460,18 @@ export const refreshAccessToken: RequestHandler = async (req, res, next) => {
 		const accessToken = isAdmin
 			? signAdminToken(user, jwtConfig)
 			: signAuthToken(user, jwtConfig);
+		// Rotate the member's refresh token on every refresh (sliding session).
+		// Without this the refresh token issued at login is never replaced, so
+		// every member is force-logged-out JWT_REFRESH_EXPIRES_IN after login
+		// no matter how active they are. Admins are not rotated, so their
+		// session still ends at the original refresh expiry.
+		const refreshToken = isAdmin
+			? undefined
+			: signRefreshToken(user, refreshConfig);
 		res.status(200).json({
 			message: "Token refreshed",
 			accessToken,
+			...(refreshToken ? { refreshToken } : {}),
 			tokenType: "Bearer",
 			expiresIn: isAdmin ? ADMIN_EXPIRES_IN : jwtConfig.expiresIn,
 		});
@@ -451,3 +532,5 @@ function parseExpiryMs(value: string): number {
 			return 12 * 60 * 60 * 1000;
 	}
 }
+
+

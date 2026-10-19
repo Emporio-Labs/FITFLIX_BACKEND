@@ -1,7 +1,8 @@
 import mongoose from "mongoose";
 import Bookings from "../models/Bookings";
 import Class from "../models/Class";
-import { CreditTransactionSource } from "../models/Enums";
+import ClassWaitlist from "../models/ClassWaitlist";
+import { CreditTransactionSource, WaitlistStatus } from "../models/Enums";
 import ScheduledSession from "../models/ScheduledSession";
 import {
 	CreditServiceError,
@@ -208,6 +209,11 @@ export async function registerGroupClassBooking(params: {
 			statusCode: 409,
 			message: "Session capacity is full",
 			reason: seatAllocation.reason,
+			details: {
+				enableWaitlist: Boolean((targetClass as any)?.enableWaitlist),
+				sessionId: resolvedSessionId,
+				classId: resolvedClassId,
+			},
 		};
 	}
 
@@ -253,6 +259,11 @@ export async function registerGroupClassBooking(params: {
 	//    if the write fails, so a Mongo error can't leave the member out of
 	//    pocket with nothing to show for it.
 	try {
+		// FX-18 — stamp the branch so branch-scoped staff can be confined to their
+		// branches' bookings. A class session carries the branch directly, falling
+		// back to the class; null is tolerated (backfill derives it later).
+		const bookingLocationId =
+			session.locationId ?? (targetClass as any)?.locationId ?? null;
 		const booking = await Bookings.create({
 			user: userObjId,
 			sessionId: resolvedSessionId,
@@ -263,7 +274,23 @@ export async function registerGroupClassBooking(params: {
 			status: "Confirmed",
 			creditCostSnapshot: creditCost,
 			creditsBypassed: false,
+			...(bookingLocationId ? { locationId: bookingLocationId } : {}),
 		});
+
+		await ClassWaitlist.updateMany(
+			{
+				sessionId: resolvedSessionId,
+				user: userObjId,
+				status: WaitlistStatus.Waiting,
+			},
+			{
+				$set: {
+					status: WaitlistStatus.Promoted,
+					promotedAt: new Date(),
+					promotedBookingId: booking._id,
+				},
+			},
+		).catch(() => null);
 
 		return {
 			success: true,

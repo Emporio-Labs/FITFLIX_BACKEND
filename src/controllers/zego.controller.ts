@@ -179,6 +179,10 @@ export const generateSessionToken: RequestHandler = async (req, res, next) => {
 		if (access.role === "member" && !access.booking && access.session) {
 			try {
 				const { default: Booking } = await import("../models/Bookings");
+				const autoBookingLocationId =
+					(access.session as any)?.locationId ??
+					(access.klass as any)?.locationId ??
+					null;
 				access.booking = await Booking.create({
 					user: user.id,
 					sessionId: String(access.session._id),
@@ -190,6 +194,10 @@ export const generateSessionToken: RequestHandler = async (req, res, next) => {
 					joinedAt: new Date(),
 					creditsBypassed: true,
 					creditCostSnapshot: 0,
+					// FX-18 — stamp the branch (from the class) for staff scoping.
+					...(autoBookingLocationId
+						? { locationId: autoBookingLocationId }
+						: {}),
 				});
 			} catch (err) {
 				console.error("[zego] Failed to auto-create open_to_all booking:", err);

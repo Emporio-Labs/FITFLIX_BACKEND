@@ -2,12 +2,17 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
+import { clearStaffContextCache } from "../services/staffContext.service";
 import {
 	assertTrainerOwnsMember,
 	getRosterUserIds,
 } from "../services/trainerRoster.service";
 import { hashPassword } from "../utils/password";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
+import {
+	readExplicitLocationId,
+	scopedLocationFilter,
+} from "../utils/location.resolver";
 import {
 	createTrainerBodySchema,
 	updateTrainerBodySchema,
@@ -75,9 +80,18 @@ export const createTrainer: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllTrainers: RequestHandler = async (_req, res, next) => {
+export const getAllTrainers: RequestHandler = async (req, res, next) => {
 	try {
-		const trainers = await Trainer.find();
+		// FX-19 — a coach's home branch is `locationId`, so scoping on it partitions
+		// the roster cleanly (each trainer counts toward exactly one branch, which is
+		// what makes the per-branch dashboard totals add up to the all-branches one).
+		// A global admin picking "all" (no header) sees everyone; a branch-scoped
+		// staffer is confined to their branches.
+		const filter = scopedLocationFilter(
+			req.allowedBranchIds,
+			readExplicitLocationId(req),
+		);
+		const trainers = await Trainer.find(filter);
 		res.status(200).json({ trainers });
 	} catch (error) {
 		next(error);
@@ -184,6 +198,10 @@ export const updateTrainerById: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Trainer not found" });
 			return;
 		}
+
+		// FX-17.5 — a branch or active-state change must take effect now, not
+		// after the 60s context cache would otherwise expire.
+		clearStaffContextCache(id);
 
 		res
 			.status(200)

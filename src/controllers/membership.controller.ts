@@ -10,6 +10,14 @@ import {
 	pauseMembership,
 	resumeMembership,
 } from "../services/membership-lifecycle.service";
+import {
+	isBranchInScope,
+	LocationError,
+	mapLocationError,
+	readExplicitLocationId,
+	resolveLocationId,
+	scopedLocationFilter,
+} from "../utils/location.resolver";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -61,7 +69,7 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { userId, startDate, endDate, creditsIncluded, ...rest } =
+	const { userId, startDate, endDate, creditsIncluded, locationId: rawLocationId, ...rest } =
 		parsedBody.data;
 
 	if (!userId) {
@@ -92,6 +100,24 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// Resolve the branch this membership is issued at. With one active location
+	// the resolver supplies it automatically; with several the desk must be
+	// explicit — passing the header-selected locationId satisfies that.
+	let resolvedLocationId: mongoose.Types.ObjectId;
+	try {
+		resolvedLocationId = await resolveLocationId(
+			typeof rawLocationId === "string" ? rawLocationId : undefined,
+		);
+	} catch (error) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res.status(mapped.status).json({ message: mapped.message, code: mapped.code });
+			return;
+		}
+		next(error);
+		return;
+	}
+
 	try {
 		const membership = await Membership.create({
 			...rest,
@@ -101,6 +127,7 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 			creditsIncluded,
 			creditsRemaining: creditsIncluded,
 			user: userId,
+			locationId: resolvedLocationId,
 			startDate: startDateValue,
 			...(endDateValue ? { endDate: endDateValue } : {}),
 		});
@@ -123,6 +150,16 @@ export const getAllMemberships: RequestHandler = async (req, res, next) => {
 			}
 			filter.user = userId;
 		}
+		// FX-18.1 — branch scope on `locationId`. No-op for a global admin / when
+		// enforcement is off; a branch-scoped staffer is confined to their branches,
+		// and pre-branch rows with a null locationId stay hidden (FX-18 decision 2).
+		// FX-19 — honour the branch selected in the X-Location-Id header (or
+		// ?locationId) so the memberships list follows the header picker.
+		const explicitLocationId = readExplicitLocationId(req);
+		Object.assign(
+			filter,
+			scopedLocationFilter(req.allowedBranchIds, explicitLocationId),
+		);
 		const memberships = await Membership.find(filter);
 		res.status(200).json({ memberships });
 	} catch (error) {
@@ -142,6 +179,13 @@ export const getMembershipById: RequestHandler = async (req, res, next) => {
 		const membership = await Membership.findById(id);
 
 		if (!membership) {
+			res.status(404).json({ message: "Membership not found" });
+			return;
+		}
+
+		// FX-18.2 — another branch's membership reads as "not found" for a
+		// branch-scoped staffer (same 404, never a 403, so existence can't leak).
+		if (!isBranchInScope(req.allowedBranchIds, membership.locationId)) {
 			res.status(404).json({ message: "Membership not found" });
 			return;
 		}

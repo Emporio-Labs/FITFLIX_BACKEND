@@ -1,3 +1,4 @@
+import type { Request } from "express";
 import mongoose from "mongoose";
 import Location from "../models/Location";
 import User from "../models/User";
@@ -102,6 +103,43 @@ export const resolveLocationId = async (
 };
 
 /**
+ * FX-20.2 — a member's home club id as a string, or null when they have none.
+ *
+ * Authoritative: read from the member's own User record, never from a
+ * client-supplied value, so the classes/offers a member sees can't be widened
+ * by spoofing a header. Not cached — one indexed `_id` lookup per member read.
+ */
+export const getMemberHomeLocationId = async (
+	userId?: string | mongoose.Types.ObjectId | null,
+): Promise<string | null> => {
+	if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) return null;
+	const user = await User.findById(userId).select("homeLocationId").lean();
+	return user?.homeLocationId ? String(user.homeLocationId) : null;
+};
+
+/**
+ * FX-19 — the branch a read request is asking to be scoped to.
+ *
+ * The front desk sends the selected branch on every request as the
+ * `X-Location-Id` header (see the web app's api-client). A few callers also pass
+ * it as `?locationId`. This reads whichever is present (query wins, header next)
+ * and returns it only when it is a syntactically valid id, so a stray value
+ * narrows nothing rather than throwing on a list read.
+ *
+ * Returns `undefined` when neither is present or the value is malformed — which
+ * `scopedLocationFilter` treats as "all branches the caller may see".
+ */
+export const readExplicitLocationId = (req: Request): string | undefined => {
+	const fromQuery =
+		typeof req.query?.locationId === "string" ? req.query.locationId : undefined;
+	const fromHeader = req.header("x-location-id")?.trim() || undefined;
+	const candidate = fromQuery || fromHeader;
+	return candidate && mongoose.Types.ObjectId.isValid(candidate)
+		? candidate
+		: undefined;
+};
+
+/**
  * Read-side counterpart. Returns a Mongo filter fragment that scopes a query to
  * a branch, or `{}` when no scoping is requested. Unlike resolveLocationId this
  * never throws on ambiguity: an admin listing across all branches is valid.
@@ -122,6 +160,73 @@ export const buildLocationFilter = (
 	}
 
 	return { [field]: new mongoose.Types.ObjectId(explicitId) };
+};
+
+/**
+ * FX-17 read-side scoping. Narrows a list query to the branches a staff caller
+ * may see, combining their allowed set with any explicit `locationId`.
+ *
+ * - `allowedBranchIds == null` (global admin, or enforcement off) → behaves
+ *   exactly like `buildLocationFilter`: `{}` for all branches, or the one id.
+ * - branch-scoped caller → `{ locationId: { $in: [...] } }`. An explicit id is
+ *   honoured only when it is within the allowed set; an out-of-scope id yields a
+ *   filter that matches nothing, so a staffer cannot read another branch's rows
+ *   by passing its id.
+ */
+export const scopedLocationFilter = (
+	allowedBranchIds: string[] | null | undefined,
+	explicitId?: string | null,
+	field = "locationId",
+): Record<string, unknown> => {
+	if (allowedBranchIds == null) {
+		return buildLocationFilter(explicitId ?? undefined, field);
+	}
+
+	if (explicitId) {
+		if (!mongoose.Types.ObjectId.isValid(explicitId)) {
+			throw new LocationError(
+				"INVALID_LOCATION_ID",
+				`"${explicitId}" is not a valid location id`,
+			);
+		}
+		const inScope = allowedBranchIds.includes(String(explicitId));
+		// Out-of-scope explicit id → match nothing rather than leak other branches.
+		return {
+			[field]: inScope
+				? new mongoose.Types.ObjectId(explicitId)
+				: { $in: [] as mongoose.Types.ObjectId[] },
+		};
+	}
+
+	return {
+		[field]: {
+			$in: allowedBranchIds.map((id) => new mongoose.Types.ObjectId(id)),
+		},
+	};
+};
+
+/**
+ * FX-18 by-id scope check. Answers "may a caller with this allowed set see a
+ * record that belongs to `branchId`?" — the read-side counterpart used by the
+ * get-by-id handlers to decide between returning the record and a 404.
+ *
+ * - `allowedBranchIds == null` (global admin, or enforcement off) → always true.
+ * - branch-scoped caller → true only when the record carries a branch that is in
+ *   the allowed set. A record with no branch (null/empty `locationId`, e.g. a
+ *   pre-branch legacy row) is OUT of scope for branch staff — matching the list
+ *   side, where a `$in` filter never returns null-branch rows (FX-18 decision 2).
+ *
+ * Callers respond with the same 404 the missing-record path uses rather than a
+ * 403, so a branch staffer cannot even confirm that another branch's record
+ * exists (FX-18.2).
+ */
+export const isBranchInScope = (
+	allowedBranchIds: string[] | null | undefined,
+	branchId: unknown,
+): boolean => {
+	if (allowedBranchIds == null) return true;
+	if (!branchId) return false;
+	return allowedBranchIds.includes(String(branchId));
 };
 
 /** Full location document, for settings-driven behaviour (tax, windows, caps). */

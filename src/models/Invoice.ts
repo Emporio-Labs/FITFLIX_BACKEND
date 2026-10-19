@@ -54,6 +54,11 @@ const invoiceSchema = new mongoose.Schema(
 		issuedAt: { type: Date, default: undefined },
 		paidAt: { type: Date, default: undefined },
 		createdBy: { type: mongoose.Schema.Types.ObjectId, default: undefined },
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: undefined,
+		},
 	},
 	{ timestamps: true },
 );
@@ -62,6 +67,7 @@ invoiceSchema.index({ userId: 1 });
 invoiceSchema.index({ leadId: 1 });
 invoiceSchema.index({ paymentStatus: 1 });
 invoiceSchema.index({ createdAt: -1 });
+invoiceSchema.index({ locationId: 1, createdAt: -1 });
 
 applyIdTransform(invoiceSchema);
 

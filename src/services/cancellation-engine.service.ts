@@ -3,6 +3,7 @@ import { CreditTransactionSource } from "../models/Enums";
 import ScheduledSession from "../models/ScheduledSession";
 import { refundCreditsBySource } from "../utils/credit.service";
 import { releaseSeatAtomic } from "./capacity-engine.service";
+import { promoteNextFromWaitlist } from "./waitlist-engine.service";
 
 export interface CancellationResult {
 	success: boolean;
@@ -12,6 +13,11 @@ export interface CancellationResult {
 	latePenaltyApplied?: boolean;
 	creditRefunded?: number;
 	booking?: any;
+	waitlistPromotion?: {
+		promoted: boolean;
+		promotedUserId?: string;
+		skippedCount: number;
+	};
 }
 
 export async function cancelBooking(params: {
@@ -81,8 +87,22 @@ export async function cancelBooking(params: {
 	booking.status = "Cancelled";
 	await booking.save();
 
+	let waitlistPromotion: CancellationResult["waitlistPromotion"];
 	if (booking.sessionId) {
 		await releaseSeatAtomic(booking.sessionId);
+		try {
+			const promo = await promoteNextFromWaitlist(booking.sessionId, now);
+			waitlistPromotion = {
+				promoted: promo.promoted,
+				promotedUserId: promo.promotedUserId,
+				skippedCount: promo.skippedCount,
+			};
+		} catch (promoErr) {
+			console.error(
+				"[cancelBooking] Waitlist auto-promotion failed:",
+				promoErr,
+			);
+		}
 	}
 
 	let creditRefunded = 0;
@@ -117,6 +137,7 @@ export async function cancelBooking(params: {
 		refunded: shouldRefundCredits,
 		latePenaltyApplied: !shouldRefundCredits,
 		creditRefunded,
+		waitlistPromotion,
 		booking: {
 			id: booking._id.toString(),
 			status: booking.status,

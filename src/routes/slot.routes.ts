@@ -7,25 +7,27 @@ import {
 	getSlotById,
 	updateSlotById,
 } from "../controllers/slot.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const slotRouter = Router();
 
 slotRouter.use(authenticateToken);
+slotRouter.use(...staffGuard);
 slotRouter.get(
 	"/",
-	authorize(["admin", "trainer", "user"]),
+	authorize(["admin", "trainer", "nutritionist", "sports_scientist", "frontdesk", "user"]),
 	getAllSlots,
 );
 slotRouter.get(
 	"/available",
-	authorize(["admin", "trainer", "user"]),
+	authorize(["admin", "trainer", "nutritionist", "sports_scientist", "frontdesk", "user"]),
 	getAvailableSlots,
 );
 slotRouter.get(
 	"/:id",
-	authorize(["admin", "trainer", "user"]),
+	authorize(["admin", "trainer", "nutritionist", "sports_scientist", "frontdesk", "user"]),
 	getSlotById,
 );
 slotRouter.post("/", authorize(["admin"]), createSlot);
@@ -33,3 +35,4 @@ slotRouter.patch("/:id", authorize(["admin"]), updateSlotById);
 slotRouter.delete("/:id", authorize(["admin"]), deleteSlotById);
 
 export default slotRouter;
+

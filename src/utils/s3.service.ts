@@ -100,6 +100,13 @@ export const uploadToS3 = async (
 	};
 };
 
+// Files up to this size are read into memory before upload. Under Bun, a
+// createReadStream body intermittently stalls or ends early mid-PutObject
+// (S3 RequestTimeout / IncompleteBody), and a stream body can't be retried by
+// the SDK. A Buffer body is retried automatically, so typical medical-report
+// PDFs go that way; only unusually large files still stream.
+const BUFFERED_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
+
 export const uploadStreamToS3 = async (
 	key: string,
 	filePath: string,
@@ -108,14 +115,17 @@ export const uploadStreamToS3 = async (
 ): Promise<{ s3Key: string }> => {
 	if (s3Client) {
 		try {
-			const fileStream = createReadStream(filePath);
+			const body =
+				fileSize <= BUFFERED_UPLOAD_MAX_BYTES
+					? await readFile(filePath)
+					: createReadStream(filePath);
 			await s3Client.send(
 				new PutObjectCommand({
 					Bucket: BUCKET,
 					Key: key,
-					Body: fileStream,
+					Body: body,
 					ContentType: contentType,
-					ContentLength: fileSize,
+					ContentLength: Buffer.isBuffer(body) ? body.length : fileSize,
 					ContentDisposition: "inline",
 					ServerSideEncryption: "AES256",
 				}),

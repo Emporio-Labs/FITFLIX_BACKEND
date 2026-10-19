@@ -36,6 +36,15 @@ const userSchema = new mongoose.Schema(
 			default: null,
 			index: true,
 		},
+		// FX-17 — for staff Users (staffRole set), the branches they may act on.
+		// The branch-scope guard reads this; when empty it falls back to
+		// [homeLocationId]. Ignored for ordinary members, whose routes are not
+		// branch-gated by the staff guard.
+		branchIds: {
+			type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Location" }],
+			default: [],
+			index: true,
+		},
 		dateOfBirth: { type: Date, default: undefined },
 		// DPDP Act 2023 consent, granular and separate on purpose. This is NOT
 		// onboardingStatus.consentCompleted — that one covers health onboarding,
@@ -107,6 +116,31 @@ const userSchema = new mongoose.Schema(
 			default: [],
 			select: false,
 		},
+		// FX-25 · Web Push (VAPID) subscriptions from the staff PWA. Same
+		// `select:false` guard as fcmTokens so ordinary user reads never leak
+		// device identifiers. Each entry is one browser/install; a single user
+		// may have several (phone Safari + desktop Chrome).
+		pushSubscriptions: {
+			type: [
+				{
+					endpoint: { type: String, required: true },
+					p256dh: { type: String, required: true },
+					auth: { type: String, required: true },
+					ua: { type: String, default: "" },
+					role: { type: String, default: "" },
+					preferences: {
+						oneOnOneEvents: { type: Boolean, default: true },
+						consultationEvents: { type: Boolean, default: true },
+						classReminder: { type: Boolean, default: true },
+					},
+					createdAt: { type: Date, default: Date.now },
+					lastSeenAt: { type: Date, default: Date.now },
+					lastNotifiedAt: { type: Date, default: null },
+				},
+			],
+			default: [],
+			select: false,
+		},
 		onboardingStatus: {
 			currentStep: {
 				type: String,
@@ -165,6 +199,16 @@ userSchema.index(
 // because `GET /users/me` and `/users/:id` serialize the whole document, so
 // anything added to this schema leaks into every existing response.
 userSchema.index({ username: 1 });
+
+// FX-20.1 — the staff console reads the member's home club as `homeClubId`
+// (see frontdesk-fitflix user.service.ts normalizeUser). `homeLocationId` is
+// the canonical field used everywhere server-side; this virtual exposes the
+// same value under the console's name on every toJSON response. The members
+// list builds its own alias in the aggregate `$project` (virtuals don't run
+// through aggregation).
+userSchema.virtual("homeClubId").get(function (this: { homeLocationId?: unknown }) {
+	return this.homeLocationId ? String(this.homeLocationId) : null;
+});
 
 applyIdTransform(userSchema);
 

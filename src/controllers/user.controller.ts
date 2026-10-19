@@ -11,6 +11,12 @@ import {
 	SPORTS_SCIENTIST_BOOKING_FILTER,
 } from "../utils/sports-scientist-booking.dto";
 import {
+	isBranchInScope,
+	readExplicitLocationId,
+	resolveLocationId,
+	scopedLocationFilter,
+} from "../utils/location.resolver";
+import {
 	ExpertType,
 	type Gender,
 	OnboardingStep,
@@ -34,6 +40,7 @@ import { normalizeRole } from "../middleware/rbac.middleware";
 import { buildActivePtMembershipFilter } from "../utils/membership-status.util";
 import {
 	ActiveXError,
+	autoPullBcaIfEmpty,
 	fetchBcaRecords,
 	upsertBcaRecordForUser,
 } from "../utils/activex.service";
@@ -41,6 +48,8 @@ import { buildApiErrorEnvelope } from "../utils/api-error";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import { generateSignedUrl } from "../utils/s3.service";
+import { assertTrainerOwnsMember } from "../services/trainerRoster.service";
+import { assertNutritionistOwnsMember } from "../services/nutritionistRoster.service";
 import {
 	assignTrainerBodySchema,
 	createUserBodySchema,
@@ -93,6 +102,30 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	return idParam;
 };
 
+/**
+ * FX-20.1 — resolve the member's home club for persistence.
+ *
+ * Accepts the canonical `homeLocationId` or the staff console's `homeClubId`
+ * alias (the two repos name the same field differently). Returns
+ * `{ set: false }` when neither key was sent (leave the field untouched),
+ * `{ set: true, value: null }` to clear it, or a validated, guaranteed-active
+ * Location id. Throws `LocationError` — mapped to 400/404 by the global error
+ * handler — when the id is malformed, unknown or inactive, so a member can
+ * never be pinned to a branch that doesn't exist or has been switched off.
+ */
+const resolveHomeLocationPatch = async (input: {
+	homeLocationId?: string | null;
+	homeClubId?: string | null;
+}): Promise<
+	{ set: false } | { set: true; value: mongoose.Types.ObjectId | null }
+> => {
+	const raw =
+		input.homeLocationId !== undefined ? input.homeLocationId : input.homeClubId;
+	if (raw === undefined) return { set: false };
+	if (raw === null) return { set: true, value: null };
+	return { set: true, value: await resolveLocationId(raw) };
+};
+
 export const createUser: RequestHandler = async (req, res, next) => {
 	const parsedBody = createUserBodySchema.safeParse(req.body);
 
@@ -111,10 +144,15 @@ export const createUser: RequestHandler = async (req, res, next) => {
 		email,
 		phone,
 		staffRole,
+		homeLocationId,
+		homeClubId,
 		...rest
 	} = parsedBody.data;
 
 	try {
+		// FX-20.1 — validate + resolve the home club before touching anything else,
+		// so a bad branch id fails the create cleanly rather than half-writing a user.
+		const homeClub = await resolveHomeLocationPatch({ homeLocationId, homeClubId });
 		const passwordHash = password ? await hashPassword(password) : undefined;
 		const sanitizedEmail =
 			email && typeof email === "string" && email.trim() !== ""
@@ -152,6 +190,7 @@ export const createUser: RequestHandler = async (req, res, next) => {
 			...(staffRole !== undefined
 				? { staffRole: staffRole as StaffRole }
 				: {}),
+			...(homeClub.set ? { homeLocationId: homeClub.value } : {}),
 			gender: rest.gender as Gender,
 			phone: last10,
 			email: sanitizedEmail,
@@ -214,6 +253,23 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 				{ phone: { $regex: searchRegex } },
 			];
 		}
+
+		// FX-18.1 — branch scope. A member belongs to a branch via `homeLocationId`
+		// (members carry no `locationId`). With enforcement off or for a global
+		// admin, allowedBranchIds is null and this contributes nothing; a
+		// branch-scoped staffer is narrowed to their branches, and members with no
+		// home club (null) fall outside a branch `$in` (FX-18 decision 2).
+		// FX-19 — honour the branch selected in the X-Location-Id header (or
+		// ?locationId) so a global admin's members list follows the picker.
+		const explicitLocationId = readExplicitLocationId(req);
+		Object.assign(
+			filter,
+			scopedLocationFilter(
+				req.allowedBranchIds,
+				explicitLocationId,
+				"homeLocationId",
+			),
+		);
 
 		const sortOrder = order === "asc" ? 1 : -1;
 		const sortField = sort;
@@ -350,6 +406,11 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					gender: 1,
 					createdAt: 1,
 					updatedAt: 1,
+					// FX-20.1 — the member's home club. `homeClubId` is the alias the
+					// staff console reads (virtuals don't run through aggregation, so
+					// the list builds it here explicitly).
+					homeLocationId: 1,
+					homeClubId: "$homeLocationId",
 					onboarded: {
 						$ifNull: ["$onboarded", "$onboardingStatus.onboardingCompleted"],
 					},
@@ -529,6 +590,17 @@ export const getUserById: RequestHandler = async (req, res, next) => {
 					requestingUser: req.user?.id,
 				});
 			}
+			res.status(404).json({
+				error: "User not found",
+				code: "NOT_FOUND",
+			});
+			return;
+		}
+
+		// FX-18.2 — a branch-scoped staffer opening another branch's member by its
+		// direct address gets the same 404 as a missing record, never a 403: a 403
+		// would confirm the member exists at a branch they can't see.
+		if (!isBranchInScope(req.allowedBranchIds, user.homeLocationId)) {
 			res.status(404).json({
 				error: "User not found",
 				code: "NOT_FOUND",
@@ -759,6 +831,32 @@ export const getReportSignedUrl: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// AC FX-07.3: A trainer or nutritionist can open reports only for members they look after
+	const requester = req.user;
+	if (requester?.role === "trainer") {
+		try {
+			await assertTrainerOwnsMember(requester.id, userId);
+		} catch (err) {
+			res.status(403).json({
+				error: "Forbidden",
+				code: "FORBIDDEN",
+				message: "As a trainer, you can only open medical reports for members you look after.",
+			});
+			return;
+		}
+	} else if (requester?.role === "nutritionist") {
+		try {
+			await assertNutritionistOwnsMember(requester.id, userId);
+		} catch (err) {
+			res.status(403).json({
+				error: "Forbidden",
+				code: "FORBIDDEN",
+				message: "As a nutritionist, you can only open medical reports for members you look after.",
+			});
+			return;
+		}
+	}
+
 	try {
 		const report = await MedicalReport.findOne({ _id: reportId, userId });
 
@@ -775,8 +873,9 @@ export const getReportSignedUrl: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const url = await generateSignedUrl(report.s3Key);
-		res.status(200).json({ url, expiresIn: 3600 });
+		// AC FX-07.4: Short-lived signed URL (15 minutes = 900 seconds)
+		const url = await generateSignedUrl(report.s3Key, 900, report.mimeType);
+		res.status(200).json({ url, expiresIn: 900 });
 	} catch (error) {
 		next(error);
 	}
@@ -825,7 +924,12 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const { password, email, phone, staffRole, ...rest } = parsedBody.data;
+		const { password, email, phone, staffRole, homeLocationId, homeClubId, ...rest } =
+			parsedBody.data;
+		// FX-20.1 — resolve/validate the home club change (if any). A member on the
+		// self-service PATCH path can move their own home club; the value is still
+		// validated against the live Location set.
+		const homeClub = await resolveHomeLocationPatch({ homeLocationId, homeClubId });
 		// PATCH /users/:id is reachable by the member themselves. `staffRole` is
 		// what makes an account a nutritionist / sports scientist, so letting it
 		// through on that path would be self-service privilege escalation —
@@ -872,6 +976,7 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 		const updatePayload = {
 			...rest,
 			...staffRolePatch,
+			...(homeClub.set ? { homeLocationId: homeClub.value } : {}),
 			email: sanitizedEmail,
 			...(normalizedPhone ? { phone: normalizedPhone } : {}),
 			...(hashedPassword ? { passwordHash: hashedPassword } : {}),
@@ -1157,6 +1262,7 @@ export const getMyUserBcaMetrics: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		await autoPullBcaIfEmpty(req.user.id);
 		const history = await BcaMetric.find({ userId: req.user.id })
 			.sort({ recordedAt: -1 })
 			.select("-userId -__v");

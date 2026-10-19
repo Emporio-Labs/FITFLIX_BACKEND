@@ -131,6 +131,21 @@ const unifiedBookingSchema = new mongoose.Schema(
 			required: true,
 			index: true,
 		},
+		// Derived slot-occupancy flag, maintained by the hooks below — NEVER set
+		// by application code directly. It is `true` exactly while this booking
+		// holds its expert's slot (status PENDING/CONFIRMED and an expert
+		// assigned) and absent otherwise. The unique index at the bottom filters
+		// on `{ slotHold: true }`: a plain equality expression, which every
+		// MongoDB version accepts in a partialFilterExpression. The previous
+		// filter used `status: { $in: [...] }` and `expertId: { $ne: null }` —
+		// operators MongoDB rejects at index-build time, so (with autoIndex
+		// swallowing the error) the double-booking guard silently never built.
+		slotHold: {
+			type: Boolean,
+			// `sparse`-friendly: the field is unset (not `false`) for freed slots,
+			// so terminal-state rows drop out of the partial index entirely and a
+			// cancelled slot becomes re-bookable.
+		},
 		meetingStatus: {
 			type: String,
 			enum: Object.values(MeetingStatus),
@@ -212,15 +227,87 @@ const unifiedBookingSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
+// ── slotHold maintenance ───────────────────────────────────────────────────
+// A booking "holds" its expert's slot while it is PENDING or CONFIRMED and has
+// an expert assigned. The flag is derived centrally here so the ~15 scattered
+// status-write sites (nutritionist / expert-appointment controllers, expiry and
+// no-show sweeps, cancellation, completion) never have to remember to touch it.
+const SLOT_HOLD_STATUSES: ReadonlyArray<string> = [
+	UnifiedBookingStatus.PENDING,
+	UnifiedBookingStatus.CONFIRMED,
+];
+
+function shouldHoldSlot(status: unknown, expertId: unknown): boolean {
+	return (
+		typeof status === "string" &&
+		SLOT_HOLD_STATUSES.includes(status) &&
+		expertId != null
+	);
+}
+
+// Document saves: `new UnifiedBooking(...).save()` and `Model.create(...)`.
+// Written as synchronous hooks (no `next` callback) — mongoose runs them to
+// completion before proceeding.
+unifiedBookingSchema.pre("save", function () {
+	if (shouldHoldSlot(this.status, this.expertId)) {
+		this.slotHold = true;
+	} else {
+		// Setting to `undefined` unsets the field on save, keeping terminal-state
+		// rows out of the partial unique index.
+		this.set("slotHold", undefined);
+	}
+});
+
+// Atomic updates that change status: findOneAndUpdate / updateOne / updateMany.
+unifiedBookingSchema.pre(
+	["findOneAndUpdate", "updateOne", "updateMany"],
+	function () {
+		const update = this.getUpdate() as Record<string, any> | null;
+		if (!update) {
+			return;
+		}
+
+		const set = update.$set ?? {};
+		// Only react when the update actually changes status; otherwise leave the
+		// existing slotHold untouched (an unrelated update must not clear it).
+		const nextStatus = set.status !== undefined ? set.status : update.status;
+		if (nextStatus === undefined) {
+			return;
+		}
+
+		// expertId is rarely part of a status-change update; fall back to "held
+		// unless it is being explicitly nulled", which matches every real flow
+		// (expert bookings always carry an expertId).
+		const nextExpertId =
+			set.expertId !== undefined
+				? set.expertId
+				: update.expertId !== undefined
+					? update.expertId
+					: // not in the update → assume present (expert sessions always set it)
+						"__present__";
+
+		if (shouldHoldSlot(nextStatus, nextExpertId)) {
+			update.$set = { ...set, slotHold: true };
+			if (update.$unset) delete update.$unset.slotHold;
+		} else {
+			update.$unset = { ...(update.$unset ?? {}), slotHold: "" };
+			if (update.$set) delete update.$set.slotHold;
+		}
+		this.setUpdate(update);
+	},
+);
+
 // ── Unique Index Constraint for 1-on-1 Sessions (Prevents Double-Booking) ──
+// Keyed on {expertId, bookingDate, startTime}; the partial filter is a single
+// equality (`slotHold: true`) so it is portable across MongoDB versions. Only
+// slot-holding (active) bookings participate, so exactly one PENDING/CONFIRMED
+// booking can exist per expert/date/start-time — the structural guarantee the
+// concurrent overlap check in unified-booking.service.ts cannot provide alone.
 unifiedBookingSchema.index(
 	{ expertId: 1, bookingDate: 1, startTime: 1 },
 	{
 		unique: true,
-		partialFilterExpression: {
-			status: { $in: [UnifiedBookingStatus.PENDING, UnifiedBookingStatus.CONFIRMED] },
-			expertId: { $exists: true, $ne: null },
-		},
+		partialFilterExpression: { slotHold: true },
 	},
 );
 

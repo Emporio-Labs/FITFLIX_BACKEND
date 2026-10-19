@@ -36,6 +36,16 @@ const bookingSchema = new mongoose.Schema(
 			ref: "Class",
 			default: null,
 		},
+		// FX-18 — the branch this booking belongs to. Legacy bookings predate this
+		// field; it is stamped on create (derived from slot/class) and backfilled by
+		// scripts/backfill-booking-location.ts, so branch-scoped staff can be
+		// confined to their branches' bookings. Null until backfilled.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+			index: true,
+		},
 		report: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "MedicalReport",
@@ -61,6 +71,12 @@ const bookingSchema = new mongoose.Schema(
 );
 
 bookingSchema.index({ user: 1, sessionId: 1 });
+// FX-26 — the busiest front-desk screen (GET /bookings) scopes by branch and
+// sorts newest-first. Without these the scoped list is a collection scan + an
+// in-memory sort that slows down linearly as bookings accumulate.
+bookingSchema.index({ locationId: 1, createdAt: -1 });
+bookingSchema.index({ user: 1, createdAt: -1 });
+bookingSchema.index({ status: 1, createdAt: -1 });
 
 type BookingDocument = mongoose.InferSchemaType<typeof bookingSchema>;
 

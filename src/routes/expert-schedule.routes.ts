@@ -5,12 +5,14 @@ import {
 	getPooledAvailability,
 	updateExpertScheduleHandler,
 } from "../controllers/expert-schedule.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const expertScheduleRouter = Router();
 
 expertScheduleRouter.use(authenticateToken);
+expertScheduleRouter.use(...staffGuard);
 
 // ── Discovery ────────────────────────────────────────────────────────────────
 // Any authenticated caller: the member app needs the pool to show times, the

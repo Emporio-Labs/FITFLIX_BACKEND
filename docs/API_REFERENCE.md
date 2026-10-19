@@ -197,7 +197,7 @@ Authoritative source: [src/models/Enums.ts](../src/models/Enums.ts). Numeric enu
 | `AppointmentSource` | `USER_APP`, `ADMIN`, `CAL_DASHBOARD` |
 | `WebhookEventStatus` | `RECEIVED`, `PROCESSING`, `PROCESSED`, `FAILED`, `DLQ` |
 | `NotificationChannel` | `INAPP`, `PUSH`, `SOCKET` |
-| `NotificationKind` | `appointment_booked`, `appointment_rescheduled`, `appointment_cancelled`, `appointment_reminder`, `onboarding_step_updated`, `membership_expiry_reminder` |
+| `NotificationKind` | `appointment_booked`, `appointment_rescheduled`, `appointment_cancelled`, `appointment_reminder`, `onboarding_step_updated`, `membership_expiry_reminder`, `community_post_liked`, `community_post_commented`, `community_comment_replied`, `waitlist_promoted`, `waitlist_skipped_insufficient_credits`, `club_announcement` |
 | `ReminderKind` | `T_MINUS_24H`, `T_MINUS_1H`, `T_MINUS_15M` |
 | `ReminderStatus` | `SCHEDULED`, `FIRED`, `CANCELLED` |
 | `PlanGoal` *(workout)* | `Strength`, `Hypertrophy`, `Endurance`, `WeightLoss`, `Maintenance`, `Custom` |
@@ -619,6 +619,22 @@ Also mounted at `/api/v1`.
 |---|---|---|---|---|
 | GET | `/dashboard/metrics` | JWT | admin, frontdesk | `getDashboardMetrics` |
 
+#### `/analytics` (+ `/api/v1/analytics`) → [analytics.routes.ts](../src/routes/analytics.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/analytics/me` | JWT | user | `getMyAnalytics` |
+| GET | `/analytics/funnels` | JWT + `X-Analytics-Key`¹ | admin, frontdesk | `getBranchFunnels` |
+
+¹ FX-27 — `/analytics/funnels` returns the Frontdesk Analytics page's sign-up and
+booking funnels for one branch. Branch-scoped via `staffGuard` + the
+`X-Location-Id` header / `?locationId` (a branch-scoped manager sees only their
+branches; a global admin sees all, or the one selected — FX-27.2). The
+`X-Analytics-Key` service-key header is required only when `ANALYTICS_API_KEY` is
+set on the server (FX-27.3); the Frontdesk server proxy sends it. Query: `from`,
+`to` (`YYYY-MM-DD`, default last 30 days), `locationId` (optional). Response:
+`{ branchId, range:{from,to}, funnels:[{ key, title, steps:[{ key, label, count }] }], generatedAt, configured }`.
+
 #### `/webhook` → [webhook.route.ts](../src/routes/webhook.route.ts)
 
 | Method | Path | Auth | Roles | Handler |
@@ -676,6 +692,16 @@ Also mounted at `/api/v1`.
 | PATCH | `/notifications/read-all` | JWT | — | `markAllRead` |
 | PATCH | `/notifications/:id/read` | JWT | — | `markNotificationRead` |
 | POST | `/notifications/fcm-token` | JWT | — | `registerToken` |
+
+#### `/member-notifications` → [member-notification.routes.ts](../src/routes/member-notification.routes.ts)
+
+FX-20.3 — club-wide member broadcasts (staff "Announcements"). Branch-scoped
+via `staffGuard`. Also mounted at `/api/v1/member-notifications`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/member-notifications` | JWT | admin, frontdesk | `listMemberNotifications` |
+| POST | `/member-notifications` | JWT | admin, frontdesk | `sendMemberNotification` |
 
 #### `/internal` → [internal.routes.ts](../src/routes/internal.routes.ts)
 

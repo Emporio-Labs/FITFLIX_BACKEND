@@ -1,8 +1,10 @@
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { ZodError } from "zod";
+import { BranchScopeError } from "../services/staffContext.service";
 import { TrainerRosterError } from "../services/trainerRoster.service";
 import { CreditServiceError } from "./credit.service";
+import { LocationError, mapLocationError } from "./location.resolver";
 
 export type ApiErrorCode =
 	| "VALIDATION_ERROR"
@@ -391,6 +393,25 @@ const mapError = (
 			};
 		}
 		return { status: 400, error: error.message };
+	}
+
+	// FX-17 branch-scope refusals. NOT_YOUR_BRANCH / ACCOUNT_DISABLED are 403s
+	// carrying their stable code so the frontdesk UI can show the exact message.
+	if (error instanceof BranchScopeError) {
+		if (
+			error.code === "NOT_YOUR_BRANCH" ||
+			error.code === "ACCOUNT_DISABLED"
+		) {
+			return { status: 403, error: error.message, code: error.code };
+		}
+		return { status: 400, error: error.message, code: error.code };
+	}
+
+	// FX-17.2 — an invalid or deactivated branch in a staff request surfaces a
+	// clear 400/404 with its code instead of a generic 500.
+	if (error instanceof LocationError) {
+		const mapped = mapLocationError(error);
+		return { status: mapped.status, error: mapped.message, code: mapped.code };
 	}
 
 	if (isJwtError(error)) {

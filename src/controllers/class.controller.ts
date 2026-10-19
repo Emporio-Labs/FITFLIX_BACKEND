@@ -4,7 +4,14 @@ import mongoose from "mongoose";
 import Class from "../models/Class";
 import ScheduledSession from "../models/ScheduledSession";
 import Booking from "../models/Bookings";
+import { normalizeRole } from "../middleware/rbac.middleware";
+import { memberClassVisibilityOr } from "../utils/class-visibility";
 import { normalizeDeliveryType } from "../utils/delivery-type";
+import {
+	getMemberHomeLocationId,
+	readExplicitLocationId,
+	scopedLocationFilter,
+} from "../utils/location.resolver";
 import {
 	createClassBodySchema,
 	eventFieldsSchema,
@@ -385,13 +392,17 @@ export const createClass: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllClassesForAdmin: RequestHandler = async (
-	_req,
-	res,
-	next,
-) => {
+export const getAllClassesForAdmin: RequestHandler = async (req, res, next) => {
 	try {
-		const classes = await Class.find().sort({ createdAt: -1 });
+		// FX-19 — follow the branch selected in the X-Location-Id header (or
+		// ?locationId). These routes don't mount the staff-scope guard, so
+		// allowedBranchIds is unset and this behaves as "all branches unless a
+		// branch is explicitly picked" — which is exactly the admin picker's intent.
+		const filter = scopedLocationFilter(
+			req.allowedBranchIds,
+			readExplicitLocationId(req),
+		);
+		const classes = await Class.find(filter).sort({ createdAt: -1 });
 		res.status(200).json({ classes });
 	} catch (error) {
 		next(error);
@@ -399,18 +410,31 @@ export const getAllClassesForAdmin: RequestHandler = async (
 };
 
 export const getActiveClassesForMembers: RequestHandler = async (
-	_req,
+	req,
 	res,
 	next,
 ) => {
 	try {
-		// Member-facing listing returns *only* active and published classes
-		const classes = await Class.find({
+		// Member-facing listing returns *only* active and published classes.
+		const filter: Record<string, unknown> = {
 			status: "ACTIVE",
 			isPublished: { $ne: false },
-		}).sort({
-			createdAt: -1,
-		});
+		};
+
+		// FX-20.2 — a member sees their home club's in-person classes plus every
+		// online/livestream class; another branch's in-person classes are hidden.
+		// Only members are scoped: admins/trainers reaching this endpoint manage the
+		// whole catalogue. A member with no home club (single-branch chain) is not
+		// scoped at all, so the feed looks exactly as it does today (FX-20.4).
+		if (req.user?.role && normalizeRole(req.user.role) === "user") {
+			const homeLocationId = await getMemberHomeLocationId(req.user?.id);
+			const visibilityOr = memberClassVisibilityOr(homeLocationId);
+			if (visibilityOr) {
+				filter.$or = visibilityOr;
+			}
+		}
+
+		const classes = await Class.find(filter).sort({ createdAt: -1 });
 		res.status(200).json({ classes });
 	} catch (error) {
 		next(error);

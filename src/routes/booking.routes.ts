@@ -4,18 +4,32 @@ import {
 	changeBookingStatus,
 	createBooking,
 	deleteBookingById,
+	getAdminWaitlistHandler,
 	getAllBookings,
 	getBookingById,
 	getMyBookings,
+	getMyWaitlistHandler,
+	joinWaitlistHandler,
+	leaveWaitlistHandler,
 	recordAttendance,
 	updateBookingById,
 } from "../controllers/booking.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const bookingRouter = Router();
 
 bookingRouter.use(authenticateToken);
+bookingRouter.use(...staffGuard);
+
+// FX-12 Class Waitlist Routes (must be registered before /:id)
+bookingRouter.post("/waitlist", authorize(["admin", "user"]), joinWaitlistHandler);
+bookingRouter.post("/waitlist/join", authorize(["admin", "user"]), joinWaitlistHandler);
+bookingRouter.get("/waitlist/me", authorize(["admin", "user"]), getMyWaitlistHandler);
+bookingRouter.get("/waitlist/admin", authorize(["admin"]), getAdminWaitlistHandler);
+bookingRouter.get("/waitlist", authorize(["admin"]), getAdminWaitlistHandler);
+bookingRouter.delete("/waitlist/:sessionId", authorize(["admin", "user"]), leaveWaitlistHandler);
 
 bookingRouter.post("/", authorize(["admin", "user"]), createBooking);
 bookingRouter.get("/", authorize(["admin"]), getAllBookings);

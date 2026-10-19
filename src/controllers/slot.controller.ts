@@ -6,6 +6,13 @@ import {
 	createSlotBodySchema,
 	updateSlotBodySchema,
 } from "../validators/slot.validator";
+import {
+	LocationError,
+	mapLocationError,
+	readExplicitLocationId,
+	resolveLocationId,
+	scopedLocationFilter,
+} from "../utils/location.resolver";
 
 /**
  * Expert types that no longer draw from Slot capacity. Trainers were never in
@@ -87,6 +94,23 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// Resolve the branch this slot belongs to. With one active location the
+	// resolver auto-supplies it; with several the desk must be explicit —
+	// passing the header-selected locationId satisfies that requirement.
+	const rawLocationId = typeof req.body?.locationId === "string" ? req.body.locationId : undefined;
+	let resolvedLocationId: mongoose.Types.ObjectId;
+	try {
+		resolvedLocationId = await resolveLocationId(rawLocationId);
+	} catch (error) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res.status(mapped.status).json({ message: mapped.message, code: mapped.code });
+			return;
+		}
+		next(error);
+		return;
+	}
+
 	try {
 		const derivedState = deriveSlotState(parsedBody.data);
 
@@ -127,13 +151,13 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 		}
 
 		if (derivedState.isDaily) {
-			// Scoped by expertType: a nutritionist and a sports-scientist template
-			// are allowed to occupy the same time window — they draw from
-			// separate capacity pools, so they are not duplicates of each other.
+			// Scoped by expertType AND locationId: two branches may validly share
+			// the same window, so the duplicate check must not cross branch lines.
 			const duplicate = await Slot.findOne({
 				isDaily: true,
 				parentTemplate: null,
 				expertType,
+				locationId: resolvedLocationId,
 				startTime: parsedBody.data.startTime,
 				endTime: parsedBody.data.endTime,
 			}).select("_id");
@@ -152,6 +176,7 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 			date: derivedState.date,
 			isDaily: derivedState.isDaily,
 			expertType,
+			locationId: resolvedLocationId,
 			startTime: parsedBody.data.startTime,
 			endTime: parsedBody.data.endTime,
 			capacity: derivedState.capacity,
@@ -315,10 +340,108 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllSlots: RequestHandler = async (_req, res, next) => {
+// Parse an optional positive-integer query param, clamped to [min, max].
+// Mirrors the helper in booking.controller.ts; kept local so the slot and
+// booking controllers stay decoupled.
+const parseIntParam = (
+	raw: unknown,
+	fallback: number,
+	min: number,
+	max: number,
+): number => {
+	const n = typeof raw === "string" ? Number.parseInt(raw, 10) : NaN;
+	if (!Number.isFinite(n)) return fallback;
+	return Math.min(max, Math.max(min, n));
+};
+
+// Coerce a YYYY-MM-DD (or ISO) string to a UTC day boundary — the same
+// convention class-schedule.controller.ts uses for date filters. Null if unparsable.
+const toUtcDayStart = (raw: string): Date | null => {
+	const d = new Date(raw);
+	if (Number.isNaN(d.getTime())) return null;
+	d.setUTCHours(0, 0, 0, 0);
+	return d;
+};
+const toUtcDayEnd = (raw: string): Date | null => {
+	const d = new Date(raw);
+	if (Number.isNaN(d.getTime())) return null;
+	d.setUTCHours(23, 59, 59, 999);
+	return d;
+};
+
+export const getAllSlots: RequestHandler = async (req, res, next) => {
 	try {
-		const slots = await Slot.find();
-		res.status(200).json({ slots });
+		// FX-17 / FX-19 — branch-scoped staff see only their branches' slots; a
+		// global admin sees all, or just the branch selected in the X-Location-Id
+		// header (or ?locationId). A malformed id is ignored (not a 400) so
+		// flag-off behaviour is unchanged.
+		const rawLocationId = readExplicitLocationId(req);
+		const filter: Record<string, unknown> = scopedLocationFilter(
+			req.allowedBranchIds,
+			rawLocationId,
+		);
+
+		// FX-26 — bound the default read. getAllSlots used to return the ENTIRE
+		// Slot collection, which grows without limit as per-date "concrete" slots
+		// are materialized on every booking (resolveConcreteSlotForBooking) — a
+		// whole-collection read on the front-desk bookings list and spot-booking
+		// screens. Those screens only need current inventory, so by default we drop
+		// historical dated slots (date before today) while ALWAYS keeping recurring
+		// templates (date null / isDaily), which are the inventory the booking UIs
+		// resolve against. Widen with ?from/?to, or restore the old unbounded read
+		// with ?includePast=1. Response stays { slots }, plus an opt-in `pagination`
+		// block for ?limit paging (hard cap 500). Any past booking's slot label is
+		// unaffected — getAllBookings already populates the slot onto each booking.
+		const includePast =
+			req.query.includePast === "1" || req.query.includePast === "true";
+		const fromRaw = typeof req.query.from === "string" ? req.query.from : "";
+		const toRaw = typeof req.query.to === "string" ? req.query.to : "";
+
+		const dateRange: Record<string, Date> = {};
+		if (fromRaw) {
+			const from = toUtcDayStart(fromRaw);
+			if (from) dateRange.$gte = from;
+		} else if (!includePast) {
+			const todayStart = new Date();
+			todayStart.setUTCHours(0, 0, 0, 0);
+			dateRange.$gte = todayStart;
+		}
+		if (toRaw) {
+			const to = toUtcDayEnd(toRaw);
+			if (to) dateRange.$lte = to;
+		}
+
+		if (Object.keys(dateRange).length > 0) {
+			// A recurring template carries no concrete date (date null / isDaily) and
+			// must survive the window — it is live inventory, not a historical row.
+			filter.$or = [{ date: null }, { isDaily: true }, { date: dateRange }];
+		}
+
+		const paginate = typeof req.query.limit === "string";
+		const page = parseIntParam(req.query.page, 1, 1, Number.MAX_SAFE_INTEGER);
+		const limit = parseIntParam(req.query.limit, 0, 1, 500);
+
+		const query = Slot.find(filter);
+		if (paginate) {
+			// A stable sort is only needed when paging; the default full read keeps
+			// its original (unsorted) shape so nothing downstream shifts.
+			query.sort({ date: 1, startTime: 1 }).skip((page - 1) * limit).limit(limit);
+		}
+
+		const [slots, total] = await Promise.all([
+			query.exec(),
+			Slot.countDocuments(filter),
+		]);
+
+		res.status(200).json({
+			slots,
+			pagination: {
+				page: paginate ? page : 1,
+				limit: paginate ? limit : total,
+				total,
+				totalPages: paginate ? Math.max(1, Math.ceil(total / limit)) : 1,
+			},
+		});
 	} catch (error) {
 		next(error);
 	}

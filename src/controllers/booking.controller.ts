@@ -4,23 +4,54 @@ import Booking from "../models/Bookings";
 import { BookingStatus, CreditTransactionSource } from "../models/Enums";
 import Service from "../models/Service";
 import Slot from "../models/Slots";
+import User from "../models/User";
 
 import { cancelBooking } from "../services/cancellation-engine.service";
 import { registerGroupClassBooking } from "../services/registration-engine.service";
 import { releaseSeatAtomic } from "../services/capacity-engine.service";
+import {
+	getMyWaitlistEntries,
+	getWaitlistForAdmin,
+	joinClassWaitlist,
+	leaveClassWaitlist,
+	promoteNextFromWaitlist,
+} from "../services/waitlist-engine.service";
 import {
 	releaseSlotCapacity,
 	reserveSlotCapacity,
 	resolveConcreteSlotForBooking,
 } from "../services/slot-reservation.service";
 import { consumeCredits, refundCreditsBySource } from "../utils/credit.service";
+import {
+	isBranchInScope,
+	readExplicitLocationId,
+	scopedLocationFilter,
+} from "../utils/location.resolver";
 import { getActiveMembership } from "../utils/membership.guard";
+import { withOptionalTransaction } from "../utils/transaction";
 import { combineSessionWindow, resolveSessionRoomId } from "../utils/zego-room";
 import {
 	changeBookingStatusBodySchema,
 	createBookingBodySchema,
 	updateBookingBodySchema,
 } from "../validators/booking.validator";
+
+// User-supplied text goes into a RegExp below; escape it so a member searching
+// for "a+b" can't inject a pattern (or a ReDoS) into the query.
+const escapeRegExp = (value: string): string =>
+	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Parse an optional positive-integer query param, clamped to [min, max].
+const parseIntParam = (
+	raw: unknown,
+	fallback: number,
+	min: number,
+	max: number,
+): number => {
+	const n = typeof raw === "string" ? Number.parseInt(raw, 10) : NaN;
+	if (!Number.isFinite(n)) return fallback;
+	return Math.min(max, Math.max(min, n));
+};
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -150,7 +181,7 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 
 	try {
 		const service = await Service.findById(serviceId).select(
-			"_id creditCost slots",
+			"_id creditCost slots isPaused",
 		);
 
 		if (!service) {
@@ -158,8 +189,19 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// 403, not 409: released member apps map every 409 to a fixed "slot
+		// unavailable" dialog, but show a 403's message as-is.
+		if (service.isPaused) {
+			res.status(403).json({
+				message:
+					"Service unavailable. This service is temporarily paused — please check back later.",
+				code: "SERVICE_PAUSED",
+			});
+			return;
+		}
+
 		const requestedSlot = await Slot.findById(slotId).select(
-			"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate",
+			"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate locationId",
 		);
 
 		if (
@@ -202,6 +244,11 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 			creditCostSnapshot: creditCost,
 			creditsBypassed: bypassCredits,
 			...(reportId ? { report: reportId } : {}),
+			// FX-18 — stamp the branch from the slot so branch-scoped staff can be
+			// confined to their branches' bookings (see getAllBookings below).
+			...(requestedSlot.locationId
+				? { locationId: requestedSlot.locationId }
+				: {}),
 		});
 
 		if (!bypassCredits) {
@@ -270,7 +317,62 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			filter.status = new RegExp(`^${status.trim()}$`, "i");
 		}
 
-		let bookings = await Booking.find(filter)
+		// FX-26 — resolve a member search into ids with an indexed User lookup and
+		// push it into the query, instead of fetching every booking and filtering
+		// the populated user fields in memory (the old path read the whole
+		// collection on every search). Matching nothing short-circuits to empty.
+		if (typeof search === "string" && search.trim().length > 0) {
+			const rx = new RegExp(escapeRegExp(search.trim()), "i");
+			const matchedUserIds = await User.find({
+				$or: [{ username: rx }, { email: rx }, { phone: rx }],
+			}).distinct("_id");
+
+			if (matchedUserIds.length === 0) {
+				res.status(200).json({
+					bookings: [],
+					pagination: { page: 1, limit: 0, total: 0, totalPages: 0 },
+				});
+				return;
+			}
+
+			if (filter.user) {
+				// An explicit ?userId was also given — keep it only if it matches.
+				const explicit = String(filter.user);
+				const inSearch = matchedUserIds.some((id) => String(id) === explicit);
+				if (!inSearch) {
+					res.status(200).json({
+						bookings: [],
+						pagination: { page: 1, limit: 0, total: 0, totalPages: 0 },
+					});
+					return;
+				}
+			} else {
+				filter.user = { $in: matchedUserIds };
+			}
+		}
+
+		// FX-18.1 — branch scope on the stamped `locationId`. No-op for a global
+		// admin / when enforcement is off; a branch-scoped staffer is confined to
+		// their branches, and any legacy booking still missing a locationId (not yet
+		// backfilled) stays hidden from branch staff (FX-18 decision 2).
+		// FX-19 — honour the selected branch from the X-Location-Id header (or
+		// ?locationId), so a global admin's list follows the header picker too.
+		const explicitLocationId = readExplicitLocationId(req);
+		Object.assign(
+			filter,
+			scopedLocationFilter(req.allowedBranchIds, explicitLocationId),
+		);
+
+		// FX-26 — pagination is opt-in: the staff console still fetches the full
+		// (branch-scoped) list by default, but a caller that sends `limit` gets a
+		// bounded page (hard cap 200) so the screen can scale as data grows. The
+		// `locationId`/`user`/`status` + createdAt indexes keep the sort off a scan
+		// either way. `total` is always reported so a client can page.
+		const paginate = typeof req.query.limit === "string";
+		const page = parseIntParam(req.query.page, 1, 1, Number.MAX_SAFE_INTEGER);
+		const limit = parseIntParam(req.query.limit, 0, 1, 200);
+
+		const query = Booking.find(filter)
 			.populate("user", "username email phone")
 			.populate("service", "serviceName serviceType creditCost")
 			.populate("slot", "date startTime endTime")
@@ -279,14 +381,14 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			.populate("report", "subject hasPdf")
 			.sort({ createdAt: -1 });
 
-		if (typeof search === "string" && search.trim().length > 0) {
-			const q = search.trim().toLowerCase();
-			bookings = bookings.filter((b: any) => {
-				const username = b.user?.username?.toLowerCase() || "";
-				const email = b.user?.email?.toLowerCase() || "";
-				return username.includes(q) || email.includes(q);
-			});
+		if (paginate) {
+			query.skip((page - 1) * limit).limit(limit);
 		}
+
+		const [bookings, total] = await Promise.all([
+			query.exec(),
+			Booking.countDocuments(filter),
+		]);
 
 		const mappedBookings = bookings.map((b: any) => {
 			const obj = b.toObject ? b.toObject() : b;
@@ -300,7 +402,15 @@ export const getAllBookings: RequestHandler = async (req, res, next) => {
 			};
 		});
 
-		res.status(200).json({ bookings: mappedBookings });
+		res.status(200).json({
+			bookings: mappedBookings,
+			pagination: {
+				page: paginate ? page : 1,
+				limit: paginate ? limit : total,
+				total,
+				totalPages: paginate ? Math.max(1, Math.ceil(total / limit)) : 1,
+			},
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -331,6 +441,14 @@ export const getBookingById: RequestHandler = async (req, res, next) => {
 			((booking.user as any)._id?.toString() || booking.user.toString()) !== req.user.id
 		) {
 			res.status(403).json({ message: "Forbidden" });
+			return;
+		}
+
+		// FX-18.2 — a branch-scoped staffer opening another branch's booking by its
+		// direct address gets the same 404 as a missing record (never a 403, which
+		// would confirm it exists). Members are unscoped and pass straight through.
+		if (!isBranchInScope(req.allowedBranchIds, (booking as any).locationId)) {
+			res.status(404).json({ message: "Booking not found" });
 			return;
 		}
 
@@ -640,90 +758,103 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const session = await mongoose.startSession();
-		try {
-			let response: { status: number; body: Record<string, unknown> } | null =
-				null;
+		let response: { status: number; body: Record<string, unknown> } | null =
+			null;
+		let releasedSessionId: string | null = null;
 
-			await session.withTransaction(async () => {
-				const existingBooking = await Booking.findById(id).session(session);
+		// withOptionalTransaction, not session.withTransaction: production
+		// runs a standalone mongod, where a raw transaction fails every
+		// cancel with "Transaction numbers are only allowed on a replica set".
+		await withOptionalTransaction(async (session) => {
+			const existingBooking = await Booking.findById(id).session(
+				session ?? null,
+			);
 
-				if (!existingBooking) {
-					response = {
-						status: 404,
-						body: { message: "Booking not found" },
-					};
-					return;
-				}
-
-				if (
-					requester.role === "user" &&
-					existingBooking.user.toString() !== requester.id
-				) {
-					response = {
-						status: 403,
-						body: { message: "Forbidden" },
-					};
-					return;
-				}
-
-				if (!isCancelledBookingStatus(existingBooking.status)) {
-					const transitionedBooking = await Booking.findOneAndUpdate(
-						{ _id: id, status: nonCancelledBookingStatusFilter },
-						{ status: BookingStatus.Cancelled },
-						{ returnDocument: "after", runValidators: true, session },
-					);
-
-					if (transitionedBooking) {
-						if (transitionedBooking.slot) {
-							await releaseSlotCapacity(
-								transitionedBooking.slot.toString(),
-								session,
-							);
-						} else if (transitionedBooking.sessionId) {
-							await releaseSeatAtomic(transitionedBooking.sessionId);
-						}
-
-						await refundCreditsBySource({
-							userId: transitionedBooking.user.toString(),
-							sourceType: CreditTransactionSource.Booking,
-							sourceId: transitionedBooking._id.toString(),
-							actorId: requester.id,
-							actorRole: requester.role,
-							reason: `Booking ${transitionedBooking._id.toString()} deleted`,
-							session,
-						});
-					}
-				}
-
-				const deletedBooking = await Booking.findByIdAndDelete(id, {
-					session,
-				});
-
-				if (!deletedBooking) {
-					response = {
-						status: 404,
-						body: { message: "Booking not found" },
-					};
-					return;
-				}
-
-				response = { status: 200, body: { message: "Booking deleted" } };
-			});
-
-			if (response) {
-				const { status, body } = response as {
-					status: number;
-					body: Record<string, unknown>;
+			if (!existingBooking) {
+				response = {
+					status: 404,
+					body: { message: "Booking not found" },
 				};
-				res.status(status).json(body);
 				return;
 			}
 
-			res.status(500).json({ message: "Booking delete failed" });
-		} finally {
-			session.endSession();
+			if (
+				requester.role === "user" &&
+				existingBooking.user.toString() !== requester.id
+			) {
+				response = {
+					status: 403,
+					body: { message: "Forbidden" },
+				};
+				return;
+			}
+
+			if (!isCancelledBookingStatus(existingBooking.status)) {
+				const transitionedBooking = await Booking.findOneAndUpdate(
+					{ _id: id, status: nonCancelledBookingStatusFilter },
+					{ status: BookingStatus.Cancelled },
+					{ returnDocument: "after", runValidators: true, session },
+				);
+
+				if (transitionedBooking) {
+					if (transitionedBooking.slot) {
+						await releaseSlotCapacity(
+							transitionedBooking.slot.toString(),
+							session,
+						);
+					} else if (transitionedBooking.sessionId) {
+						await releaseSeatAtomic(transitionedBooking.sessionId);
+						releasedSessionId = transitionedBooking.sessionId;
+					}
+
+					await refundCreditsBySource({
+						userId: transitionedBooking.user.toString(),
+						sourceType: CreditTransactionSource.Booking,
+						sourceId: transitionedBooking._id.toString(),
+						actorId: requester.id,
+						actorRole: requester.role,
+						reason: `Booking ${transitionedBooking._id.toString()} deleted`,
+						session,
+					});
+				}
+			}
+
+			const deletedBooking = await Booking.findByIdAndDelete(id, {
+				session,
+			});
+
+			if (!deletedBooking) {
+				response = {
+					status: 404,
+					body: { message: "Booking not found" },
+				};
+				return;
+			}
+
+			response = { status: 200, body: { message: "Booking deleted" } };
+		});
+
+		if (releasedSessionId) {
+			try {
+				await promoteNextFromWaitlist(releasedSessionId);
+			} catch (promoErr) {
+				console.error(
+					"[deleteBookingById] Waitlist auto-promotion failed:",
+					promoErr,
+				);
+			}
 		}
+
+		if (response) {
+			const { status, body } = response as {
+				status: number;
+				body: Record<string, unknown>;
+			};
+			res.status(status).json(body);
+			return;
+		}
+
+		res.status(500).json({ message: "Booking delete failed" });
 	} catch (error) {
 		next(error);
 	}
@@ -770,83 +901,92 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 			return;
 		}
 		if (isCancelledBookingStatus(parsedBody.data.status)) {
-			const session = await mongoose.startSession();
-			try {
-				let response: { status: number; body: Record<string, unknown> } | null =
-					null;
+			let response: { status: number; body: Record<string, unknown> } | null =
+				null;
+			let releasedSessionId: string | null = null;
 
-				await session.withTransaction(async () => {
-					const transitionedBooking = await Booking.findOneAndUpdate(
-						{ _id: id, status: nonCancelledBookingStatusFilter },
-						{ status: BookingStatus.Cancelled },
-						{ returnDocument: "after", runValidators: true, session },
-					);
+			// See deleteBookingById: a raw transaction fails on standalone mongod.
+			await withOptionalTransaction(async (session) => {
+				const transitionedBooking = await Booking.findOneAndUpdate(
+					{ _id: id, status: nonCancelledBookingStatusFilter },
+					{ status: BookingStatus.Cancelled },
+					{ returnDocument: "after", runValidators: true, session },
+				);
 
-					if (!transitionedBooking) {
-						const existingBooking = await Booking.findById(id).session(session);
+				if (!transitionedBooking) {
+					const existingBooking = await Booking.findById(id).session(session ?? null);
 
-						if (!existingBooking) {
-							response = {
-								status: 404,
-								body: { message: "Booking not found" },
-							};
-							return;
-						}
-
+					if (!existingBooking) {
 						response = {
-							status: 200,
-							body: {
-								message: "Booking status changed",
-								booking: existingBooking,
-								credits: { refunded: 0 },
-							},
+							status: 404,
+							body: { message: "Booking not found" },
 						};
 						return;
 					}
-
-					if (transitionedBooking.slot) {
-						await releaseSlotCapacity(
-							transitionedBooking.slot.toString(),
-							session,
-						);
-					} else if (transitionedBooking.sessionId) {
-						await releaseSeatAtomic(transitionedBooking.sessionId);
-					}
-
-					const refundResult = await refundCreditsBySource({
-						userId: transitionedBooking.user.toString(),
-						sourceType: CreditTransactionSource.Booking,
-						sourceId: transitionedBooking._id.toString(),
-						actorId: requester.id,
-						actorRole: requester.role,
-						reason: `Booking ${transitionedBooking._id.toString()} cancelled`,
-						session,
-					});
 
 					response = {
 						status: 200,
 						body: {
 							message: "Booking status changed",
-							booking: transitionedBooking,
-							credits: { refunded: refundResult.refunded },
+							booking: existingBooking,
+							credits: { refunded: 0 },
 						},
 					};
-				});
-
-				if (response) {
-					const { status, body } = response as {
-						status: number;
-						body: Record<string, unknown>;
-					};
-					res.status(status).json(body);
 					return;
 				}
 
-				res.status(500).json({ message: "Booking cancellation failed" });
-				return;
-			} finally {
-				session.endSession();
+				if (transitionedBooking.slot) {
+					await releaseSlotCapacity(
+						transitionedBooking.slot.toString(),
+						session,
+					);
+				} else if (transitionedBooking.sessionId) {
+					await releaseSeatAtomic(transitionedBooking.sessionId);
+					releasedSessionId = transitionedBooking.sessionId;
+				}
+
+				const refundResult = await refundCreditsBySource({
+					userId: transitionedBooking.user.toString(),
+					sourceType: CreditTransactionSource.Booking,
+					sourceId: transitionedBooking._id.toString(),
+					actorId: requester.id,
+					actorRole: requester.role,
+					reason: `Booking ${transitionedBooking._id.toString()} cancelled`,
+					session,
+				});
+
+				response = {
+					status: 200,
+					body: {
+						message: "Booking status changed",
+						booking: transitionedBooking,
+						credits: { refunded: refundResult.refunded },
+					},
+				};
+			});
+
+			if (releasedSessionId) {
+				try {
+					await promoteNextFromWaitlist(releasedSessionId);
+				} catch (promoErr) {
+					console.error(
+						"[changeBookingStatus] Waitlist auto-promotion failed:",
+						promoErr,
+					);
+				}
 			}
+
+			if (response) {
+				const { status, body } = response as {
+					status: number;
+					body: Record<string, unknown>;
+				};
+				res.status(status).json(body);
+				return;
+			}
+
+			res.status(500).json({ message: "Booking cancellation failed" });
+			return;
 		}
 
 		const booking = await Booking.findOneAndUpdate(
@@ -948,6 +1088,112 @@ export const recordAttendance: RequestHandler = async (req, res, next) => {
 			message: "Attendance recorded successfully",
 			booking,
 		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+// ─── FX-12 Class Waitlist Handlers ───────────────────────────────────────────
+
+export const joinWaitlistHandler: RequestHandler = async (req, res, next) => {
+	const requester = getRequiredAuthenticatedUser(req);
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	const targetUserId =
+		requester.role === "user" ? requester.id : req.body?.userId || requester.id;
+	const sessionId = req.body?.sessionId ? String(req.body.sessionId) : undefined;
+	const classId = req.body?.classId ? String(req.body.classId) : undefined;
+
+	if (!sessionId && !classId) {
+		res.status(400).json({
+			success: false,
+			message: "sessionId or classId is required to join waitlist",
+		});
+		return;
+	}
+
+	try {
+		const result = await joinClassWaitlist({
+			userId: targetUserId,
+			sessionId,
+			classId,
+		});
+
+		res.status(result.statusCode).json({
+			success: result.success,
+			message: result.message,
+			error: result.success ? undefined : result.message,
+			code: result.code,
+			position: result.position,
+			totalWaiting: result.totalWaiting,
+			waitlistEntry: result.waitlistEntry,
+			details: result.details,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const leaveWaitlistHandler: RequestHandler = async (req, res, next) => {
+	const requester = getRequiredAuthenticatedUser(req);
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	const targetUserId =
+		requester.role === "user"
+			? requester.id
+			: (req.query?.userId ? String(req.query.userId) : requester.id);
+	const rawParamSessionId = Array.isArray(req.params.sessionId)
+		? req.params.sessionId[0]
+		: req.params.sessionId;
+	const sessionId = rawParamSessionId || (req.body?.sessionId ? String(req.body.sessionId) : undefined);
+	const classId = req.query?.classId
+		? String(req.query.classId)
+		: (req.body?.classId ? String(req.body.classId) : undefined);
+
+	try {
+		const result = await leaveClassWaitlist({
+			userId: targetUserId,
+			sessionId,
+			classId,
+		});
+
+		res.status(result.statusCode).json(result);
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getMyWaitlistHandler: RequestHandler = async (req, res, next) => {
+	const requester = getRequiredAuthenticatedUser(req);
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	try {
+		const waitlist = await getMyWaitlistEntries(requester.id);
+		res.status(200).json({ waitlist });
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getAdminWaitlistHandler: RequestHandler = async (req, res, next) => {
+	try {
+		const { classId, sessionId, status, search } = req.query;
+		const waitlist = await getWaitlistForAdmin({
+			classId: typeof classId === "string" && classId ? classId : undefined,
+			sessionId: typeof sessionId === "string" && sessionId ? sessionId : undefined,
+			status: typeof status === "string" && status ? status : undefined,
+			search: typeof search === "string" && search ? search : undefined,
+		});
+		res.status(200).json({ waitlist, count: waitlist.length });
 	} catch (error) {
 		next(error);
 	}

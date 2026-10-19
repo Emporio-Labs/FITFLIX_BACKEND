@@ -29,6 +29,7 @@ import leadRouter from "./routes/lead.routes";
 import membershipRouter from "./routes/membership.routes";
 import membershipPlanRouter from "./routes/membershipPlan.routes";
 import notificationRouter from "./routes/notification.routes";
+import memberNotificationRouter from "./routes/member-notification.routes";
 import nutritionRouter from "./routes/nutrition.routes";
 import nutritionistBookingRouter from "./routes/nutritionist-booking.routes";
 import expertAppointmentRouter from "./routes/expert-appointment.routes";
@@ -145,7 +146,7 @@ app.use((req, res, next) => {
 	);
 	res.setHeader(
 		"Access-Control-Allow-Headers",
-		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token, ngrok-skip-browser-warning",
+		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token, ngrok-skip-browser-warning, X-Location-Id, x-location-id",
 	);
 	res.setHeader(
 		"Access-Control-Expose-Headers",
@@ -305,6 +306,9 @@ app.use("/pt", apiRateLimit, personalTrainingRouter);
 app.use("/api/v1/billing", apiRateLimit, billingRouter);
 app.use("/billing", apiRateLimit, billingRouter);
 app.use("/notifications", notificationRouter);
+// FX-20.3 — club-wide member broadcasts (staff "Announcements" composer).
+app.use("/member-notifications", apiRateLimit, memberNotificationRouter);
+app.use("/api/v1/member-notifications", apiRateLimit, memberNotificationRouter);
 // Admin moderation and the unauthenticated public surface must both be mounted
 // BEFORE the member router — that one authenticates every request, so anything
 // falling through to it answers 401 instead of reaching its own handler.

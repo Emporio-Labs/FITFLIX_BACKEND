@@ -130,6 +130,12 @@ const scheduledSessionSchema = new mongoose.Schema(
 			ref: "User",
 			default: null,
 		},
+		// FX-25 · tracks 15-minute start alert delivery to the class instructor
+		// so the minute-poller only fires the notification once per occurrence.
+		instructorNotifiedAt: {
+			type: Date,
+			default: null,
+		},
 	},
 	{ timestamps: true },
 );

@@ -10,12 +10,14 @@ import {
 	listVisits,
 	qrCheckIn,
 } from "../controllers/gymVisit.controller";
+import { staffGuard } from "../middleware/branch-scope.middleware";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const gymVisitRouter = Router();
 
 gymVisitRouter.use(authenticateToken);
+gymVisitRouter.use(...staffGuard);
 
 // Members read only their own history.
 gymVisitRouter.get("/me", getMyVisits);

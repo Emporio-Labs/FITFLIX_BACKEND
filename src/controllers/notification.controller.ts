@@ -2,6 +2,14 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Notification from "../models/Notification";
 import { isAllowedTopic, registerFcmToken, sendPushToTopic } from "../services/fcm.service";
+import {
+	getVapidPublicKey,
+	listPushSubscriptions,
+	registerPushSubscription,
+	sendWebPushToUser,
+	unregisterPushSubscription,
+	updatePushPreferences,
+} from "../services/webpush.service";
 import type { AuthenticatedUser } from "../types/auth";
 
 const getIdParam = (v: unknown): string | null => {
@@ -113,6 +121,157 @@ export const registerToken: RequestHandler = async (req, res, next) => {
 	try {
 		await registerFcmToken(user.id, token, platform as "ios" | "android");
 		res.status(200).json({ message: "FCM token registered" });
+	} catch (err) {
+		next(err);
+	}
+};
+
+// -----------------------------------------------------------------------------
+// FX-25 · Web Push (VAPID) endpoints for the staff PWA (frontdesk-fitflix).
+// -----------------------------------------------------------------------------
+
+export const getWebPushVapidKey: RequestHandler = (_req, res) => {
+	const publicKey = getVapidPublicKey();
+	if (!publicKey) {
+		res.status(503).json({
+			error: "Web Push not configured on this server",
+			code: "WEB_PUSH_DISABLED",
+		});
+		return;
+	}
+	res.status(200).json({ publicKey });
+};
+
+export const listMyWebPushSubscriptions: RequestHandler = async (req, res, next) => {
+	const user = req.user as AuthenticatedUser | undefined;
+	if (!user) {
+		res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+		return;
+	}
+	try {
+		const subs = await listPushSubscriptions(user.id);
+		const devices = subs.map((s) => ({
+			id: s.endpoint, // stable id — endpoint is unique per install
+			endpoint: s.endpoint,
+			deviceLabel: s.ua,
+			role: s.role,
+			createdAt: s.createdAt,
+			lastNotifiedAt: s.lastNotifiedAt,
+			preferences: s.preferences,
+		}));
+		res.status(200).json({ devices });
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const registerWebPushSubscription: RequestHandler = async (req, res, next) => {
+	const user = req.user as AuthenticatedUser | undefined;
+	if (!user) {
+		res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+		return;
+	}
+	const body = req.body as {
+		subscription?: {
+			endpoint?: string;
+			keys?: { p256dh?: string; auth?: string };
+		};
+		role?: string;
+		deviceLabel?: string;
+		preferences?: {
+			oneOnOneEvents?: boolean;
+			consultationEvents?: boolean;
+			classReminder?: boolean;
+		};
+	};
+
+	const endpoint = body?.subscription?.endpoint;
+	const p256dh = body?.subscription?.keys?.p256dh;
+	const auth = body?.subscription?.keys?.auth;
+	if (!endpoint || !p256dh || !auth) {
+		res.status(400).json({
+			error: "subscription.endpoint, subscription.keys.p256dh and subscription.keys.auth are required",
+			code: "VALIDATION_ERROR",
+		});
+		return;
+	}
+
+	try {
+		await registerPushSubscription(user.id, {
+			subscription: { endpoint, keys: { p256dh, auth } },
+			ua: body.deviceLabel,
+			role: body.role,
+			preferences: body.preferences,
+		});
+		res.status(200).json({
+			device: {
+				id: endpoint,
+				endpoint,
+				deviceLabel: body.deviceLabel,
+				role: body.role,
+				preferences: body.preferences,
+			},
+		});
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const removeWebPushSubscription: RequestHandler = async (req, res, next) => {
+	const user = req.user as AuthenticatedUser | undefined;
+	if (!user) {
+		res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+		return;
+	}
+	const endpoint =
+		typeof req.params.endpoint === "string"
+			? decodeURIComponent(req.params.endpoint)
+			: undefined;
+	if (!endpoint) {
+		res.status(400).json({ error: "endpoint required", code: "VALIDATION_ERROR" });
+		return;
+	}
+	try {
+		await unregisterPushSubscription(user.id, endpoint);
+		res.status(200).json({ message: "Subscription removed" });
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const updateWebPushPreferences: RequestHandler = async (req, res, next) => {
+	const user = req.user as AuthenticatedUser | undefined;
+	if (!user) {
+		res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+		return;
+	}
+	const body = req.body as {
+		oneOnOneEvents?: boolean;
+		consultationEvents?: boolean;
+		classReminder?: boolean;
+	};
+	try {
+		const preferences = await updatePushPreferences(user.id, body || {});
+		res.status(200).json({ preferences });
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const sendWebPushTest: RequestHandler = async (req, res, next) => {
+	const user = req.user as AuthenticatedUser | undefined;
+	if (!user) {
+		res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+		return;
+	}
+	try {
+		await sendWebPushToUser(user.id, {
+			title: "Fitflix push is on",
+			body: "You'll see alerts here when something changes on your day.",
+			url: "/admin/me/notifications",
+			tag: "fitflix-test",
+		});
+		res.status(200).json({ message: "Test push sent" });
 	} catch (err) {
 		next(err);
 	}

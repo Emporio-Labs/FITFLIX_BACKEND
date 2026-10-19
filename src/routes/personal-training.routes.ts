@@ -2,6 +2,7 @@ import express from "express";
 import {
 	bookPersonalTraining,
 	cancelBookingHandler,
+	rescheduleBookingHandler,
 	completeBookingAdmin,
 	getAllBookingsAdmin,
 	getBookingById,
@@ -39,6 +40,8 @@ router.post("/bookings", authenticateToken, bookPersonalTraining);
 router.get("/my-bookings", authenticateToken, getMyBookings);
 router.get("/bookings/:id", authenticateToken, getBookingById);
 router.post("/bookings/:id/cancel", authenticateToken, cancelBookingHandler);
+router.post("/bookings/:id/reschedule", authenticateToken, rescheduleBookingHandler);
+router.patch("/bookings/:id/reschedule", authenticateToken, rescheduleBookingHandler);
 router.post(
 	"/trainer-change-request",
 	authenticateToken,
