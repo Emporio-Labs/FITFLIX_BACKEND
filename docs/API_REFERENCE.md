@@ -619,6 +619,22 @@ Also mounted at `/api/v1`.
 |---|---|---|---|---|
 | GET | `/dashboard/metrics` | JWT | admin, frontdesk | `getDashboardMetrics` |
 
+#### `/analytics` (+ `/api/v1/analytics`) → [analytics.routes.ts](../src/routes/analytics.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/analytics/me` | JWT | user | `getMyAnalytics` |
+| GET | `/analytics/funnels` | JWT + `X-Analytics-Key`¹ | admin, frontdesk | `getBranchFunnels` |
+
+¹ FX-27 — `/analytics/funnels` returns the Frontdesk Analytics page's sign-up and
+booking funnels for one branch. Branch-scoped via `staffGuard` + the
+`X-Location-Id` header / `?locationId` (a branch-scoped manager sees only their
+branches; a global admin sees all, or the one selected — FX-27.2). The
+`X-Analytics-Key` service-key header is required only when `ANALYTICS_API_KEY` is
+set on the server (FX-27.3); the Frontdesk server proxy sends it. Query: `from`,
+`to` (`YYYY-MM-DD`, default last 30 days), `locationId` (optional). Response:
+`{ branchId, range:{from,to}, funnels:[{ key, title, steps:[{ key, label, count }] }], generatedAt, configured }`.
+
 #### `/webhook` → [webhook.route.ts](../src/routes/webhook.route.ts)
 
 | Method | Path | Auth | Roles | Handler |
