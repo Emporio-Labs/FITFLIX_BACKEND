@@ -340,6 +340,35 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 	}
 };
 
+// Parse an optional positive-integer query param, clamped to [min, max].
+// Mirrors the helper in booking.controller.ts; kept local so the slot and
+// booking controllers stay decoupled.
+const parseIntParam = (
+	raw: unknown,
+	fallback: number,
+	min: number,
+	max: number,
+): number => {
+	const n = typeof raw === "string" ? Number.parseInt(raw, 10) : NaN;
+	if (!Number.isFinite(n)) return fallback;
+	return Math.min(max, Math.max(min, n));
+};
+
+// Coerce a YYYY-MM-DD (or ISO) string to a UTC day boundary — the same
+// convention class-schedule.controller.ts uses for date filters. Null if unparsable.
+const toUtcDayStart = (raw: string): Date | null => {
+	const d = new Date(raw);
+	if (Number.isNaN(d.getTime())) return null;
+	d.setUTCHours(0, 0, 0, 0);
+	return d;
+};
+const toUtcDayEnd = (raw: string): Date | null => {
+	const d = new Date(raw);
+	if (Number.isNaN(d.getTime())) return null;
+	d.setUTCHours(23, 59, 59, 999);
+	return d;
+};
+
 export const getAllSlots: RequestHandler = async (req, res, next) => {
 	try {
 		// FX-17 / FX-19 — branch-scoped staff see only their branches' slots; a
@@ -347,9 +376,72 @@ export const getAllSlots: RequestHandler = async (req, res, next) => {
 		// header (or ?locationId). A malformed id is ignored (not a 400) so
 		// flag-off behaviour is unchanged.
 		const rawLocationId = readExplicitLocationId(req);
-		const filter = scopedLocationFilter(req.allowedBranchIds, rawLocationId);
-		const slots = await Slot.find(filter);
-		res.status(200).json({ slots });
+		const filter: Record<string, unknown> = scopedLocationFilter(
+			req.allowedBranchIds,
+			rawLocationId,
+		);
+
+		// FX-26 — bound the default read. getAllSlots used to return the ENTIRE
+		// Slot collection, which grows without limit as per-date "concrete" slots
+		// are materialized on every booking (resolveConcreteSlotForBooking) — a
+		// whole-collection read on the front-desk bookings list and spot-booking
+		// screens. Those screens only need current inventory, so by default we drop
+		// historical dated slots (date before today) while ALWAYS keeping recurring
+		// templates (date null / isDaily), which are the inventory the booking UIs
+		// resolve against. Widen with ?from/?to, or restore the old unbounded read
+		// with ?includePast=1. Response stays { slots }, plus an opt-in `pagination`
+		// block for ?limit paging (hard cap 500). Any past booking's slot label is
+		// unaffected — getAllBookings already populates the slot onto each booking.
+		const includePast =
+			req.query.includePast === "1" || req.query.includePast === "true";
+		const fromRaw = typeof req.query.from === "string" ? req.query.from : "";
+		const toRaw = typeof req.query.to === "string" ? req.query.to : "";
+
+		const dateRange: Record<string, Date> = {};
+		if (fromRaw) {
+			const from = toUtcDayStart(fromRaw);
+			if (from) dateRange.$gte = from;
+		} else if (!includePast) {
+			const todayStart = new Date();
+			todayStart.setUTCHours(0, 0, 0, 0);
+			dateRange.$gte = todayStart;
+		}
+		if (toRaw) {
+			const to = toUtcDayEnd(toRaw);
+			if (to) dateRange.$lte = to;
+		}
+
+		if (Object.keys(dateRange).length > 0) {
+			// A recurring template carries no concrete date (date null / isDaily) and
+			// must survive the window — it is live inventory, not a historical row.
+			filter.$or = [{ date: null }, { isDaily: true }, { date: dateRange }];
+		}
+
+		const paginate = typeof req.query.limit === "string";
+		const page = parseIntParam(req.query.page, 1, 1, Number.MAX_SAFE_INTEGER);
+		const limit = parseIntParam(req.query.limit, 0, 1, 500);
+
+		const query = Slot.find(filter);
+		if (paginate) {
+			// A stable sort is only needed when paging; the default full read keeps
+			// its original (unsorted) shape so nothing downstream shifts.
+			query.sort({ date: 1, startTime: 1 }).skip((page - 1) * limit).limit(limit);
+		}
+
+		const [slots, total] = await Promise.all([
+			query.exec(),
+			Slot.countDocuments(filter),
+		]);
+
+		res.status(200).json({
+			slots,
+			pagination: {
+				page: paginate ? page : 1,
+				limit: paginate ? limit : total,
+				total,
+				totalPages: paginate ? Math.max(1, Math.ceil(total / limit)) : 1,
+			},
+		});
 	} catch (error) {
 		next(error);
 	}

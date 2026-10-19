@@ -8,7 +8,7 @@ and branches grow.
 |---|---|---|---|
 | `member-home.js` | Member home | `GET /api/v1/classes`, `GET /promotions`, `GET /notifications` | member |
 | `class-booking.js` | Class booking | `GET /api/v1/classes/schedule`, `GET /api/v1/classes` | member |
-| `frontdesk-bookings.js` | Front-desk bookings list | `GET /bookings` (full + `?page&limit`) | staff (admin/frontdesk) |
+| `frontdesk-bookings.js` | Front-desk bookings list | `GET /bookings` (full + `?page&limit`), `GET /slots` (bounded + `?includePast=1`) | staff (admin/frontdesk) |
 
 ## Prerequisites
 
@@ -16,6 +16,25 @@ and branches grow.
   binary — **not** an npm/bun dependency, so nothing to install in this repo).
 - A JWT for a member and for a staff user on the **target environment**.
   Optionally a `LOCATION_ID` (a `Location._id`) to scope to one branch.
+
+## Seeding a data set
+
+Against a fresh/empty DB the p95 numbers are meaningless. Inflate a realistic
+set — members, memberships, classes, past+future sessions, slots and ~20k
+bookings — with the seeder (from the repo root):
+
+```bash
+bun run seed:loadtest            # wipe prior load-test data, then seed
+bun run seed:loadtest -- --small # ~10x smaller, for a quick smoke
+bun run seed:loadtest:down       # remove exactly the load-test data
+```
+
+It prints a staff + member JWT (signed the same way `/auth/login` signs them)
+and a ready-to-run k6 command, so there is no separate token step. The seeder
+tags everything (a `loadtest` Location, `@loadtest.local` accounts, `[LOADTEST]`
+classes) and carries the **same production guard** as the harness, applied to
+`MONGODB_URL` — so it can never seed the live DB. Tunable via `LOADTEST_*` env
+vars (see `scripts/seed-loadtest.ts`).
 
 ## Running
 
@@ -59,9 +78,12 @@ Each endpoint has its own `Trend` metric, so k6's end-of-run summary prints the
 p95 per screen, e.g.:
 
 ```
-home_classes_ms...........: p(95)=180ms
-home_promotions_ms........: p(95)=120ms
-home_notifications_ms.....: p(95)=90ms
+home_classes_ms...............: p(95)=180ms
+home_promotions_ms............: p(95)=120ms
+home_notifications_ms.........: p(95)=90ms
+frontdesk_bookings_paged_ms...: p(95)=210ms
+frontdesk_slots_active_ms.....: p(95)=160ms   # bounded default (FX-26)
+frontdesk_slots_all_ms........: p(95)=900ms   # ?includePast=1, the old scan
 ```
 
 A `thresholds` block fails the run (non-zero exit) if any screen's p95 breaches

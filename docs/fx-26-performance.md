@@ -19,7 +19,10 @@ k6 scripts live in [`tests/load/`](../tests/load/README.md), one per screen:
 |---|---|---|
 | Member home | `member-home.js` | `GET /api/v1/classes`, `GET /promotions`, `GET /notifications` |
 | Class booking | `class-booking.js` | `GET /api/v1/classes/schedule`, `GET /api/v1/classes` |
-| Front-desk bookings | `frontdesk-bookings.js` | `GET /bookings` (full + paginated) |
+| Front-desk bookings | `frontdesk-bookings.js` | `GET /bookings` (full + paginated), `GET /slots` (bounded default + `?includePast=1`) |
+
+Seed a realistic data set first with `bun run seed:loadtest` (see §5) — the p95
+figures only mean something against grown-up data.
 
 Each endpoint records its own `Trend`, so the run summary prints a **per-screen
 p95** (FX-26.2), and a `thresholds` block fails the run if a screen breaches its
@@ -53,6 +56,7 @@ Every lookup behind the three screens, and whether it reads a whole collection.
 | **`GET /bookings` sort + branch scope** | The scoped list sorted by `createdAt` with no supporting index → collection scan + in-memory sort, growing linearly with total bookings. | Added `Bookings` indexes `{ locationId: 1, createdAt: -1 }`, `{ user: 1, createdAt: -1 }`, `{ status: 1, createdAt: -1 }`. The branch-scoped, newest-first list is now index-served. |
 | **`GET /bookings` unbounded result** | No limit — the response grew with the whole (branch-scoped) collection. | **Opt-in pagination**: a caller sending `limit` gets a bounded page (hard cap 200) with `{ pagination: { page, limit, total, totalPages } }`. Default stays the full list for staff-console compatibility — see "stays" below. |
 | **`GET /member-notifications` history** (FX-20.3, new) | A naive history read would be unbounded. | Paginated from day one (default 50, cap 200), index `{ locationId: 1, createdAt: -1 }`. |
+| **`GET /slots`** (`getAllSlots`, `slot.controller.ts`) | Returned the **entire** `Slot` collection (`Slot.find(filter)`, no bound). The collection grows without limit because a per-date "concrete" slot is materialized on every booking, so the read the Front-desk bookings list and spot-booking screens both make got slower with every booking ever taken. | Bound the default to **active inventory**: historical dated slots (date before today) are dropped, while recurring templates (`date: null` / `isDaily`) are always kept — they are the inventory the booking UIs resolve against. Widen with `?from`/`?to`, or restore the old read with `?includePast=1`; opt-in `?limit` paging (cap 500). Response stays `{ slots }` (+ `pagination`), and past bookings are unaffected because `getAllBookings` already populates the slot onto each booking. |
 
 ### Reads that stay, with the reason
 
@@ -68,7 +72,29 @@ Every lookup behind the three screens, and whether it reads a whole collection.
 
 - `src/models/Bookings.ts` — three list indexes.
 - `src/controllers/booking.controller.ts` — search push-down, opt-in pagination.
-- `tests/load/` — k6 harness (3 scripts + shared guard/helpers + README).
+- `src/controllers/slot.controller.ts` — `getAllSlots` default bounded to active
+  (today-forward) inventory + templates, with `?from`/`?to`/`?includePast` and
+  opt-in `?limit` paging.
+- `tests/load/` — k6 harness (3 scripts + shared guard/helpers + README);
+  `frontdesk-bookings.js` now also measures `GET /slots` (bounded vs `?includePast`).
+- `scripts/seed-loadtest.ts` (+ `seed:loadtest` / `seed:loadtest:down` in
+  `package.json`) — the load-test data seeder (§5).
+
+## 5. Seeding a load-test data set (FX-26.1)
+
+`bun run seed:loadtest` inflates the collections behind the three screens —
+members, memberships, classes, scheduled sessions (past + future), slots
+(templates + a large body of past/future concrete slots) and ~20k bookings —
+under a dedicated `loadtest` Location, `@loadtest.local` accounts and `[LOADTEST]`
+classes. It prints a staff + member JWT (signed exactly as `/auth/login` does) and
+a ready-to-run k6 command, so there is no separate token step. `--small` seeds
+~10× less for a quick smoke; every count is tunable via `LOADTEST_*` env vars.
+
+`bun run seed:loadtest:down` removes exactly that data and nothing else. The
+seeder carries the **same FX-26.4 production guard** as the harness, applied to
+`MONGODB_URL`: local/private hosts run freely, a production pattern is refused,
+and any other host needs `LOAD_TEST_CONFIRM=prod-copy` — so synthetic data can
+never land in the live DB.
 
 The FX-20.2 home-club visibility rule and the new `/member-notifications` routes
 are documented in [`fx-20-member-branch-separation.md`](./fx-20-member-branch-separation.md)

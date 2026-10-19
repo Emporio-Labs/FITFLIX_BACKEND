@@ -17,6 +17,11 @@ import { assertSafeTarget, P95_MS, timedGet } from "./lib/common.js";
 const STAFF_TOKEN = __ENV.STAFF_TOKEN || "";
 const fullList = new Trend("frontdesk_bookings_full_ms", true);
 const pagedList = new Trend("frontdesk_bookings_paged_ms", true);
+// The bookings list also resolves slot names from GET /slots. The default read is
+// now bounded to active (today-forward) inventory + recurring templates (FX-26);
+// ?includePast=1 is the old whole-collection read, kept to show what the bound saves.
+const slotsActive = new Trend("frontdesk_slots_active_ms", true);
+const slotsAll = new Trend("frontdesk_slots_all_ms", true);
 
 const VUS = Number(__ENV.VUS || 15);
 const PAGE_LIMIT = Number(__ENV.PAGE_LIMIT || 50);
@@ -38,6 +43,10 @@ export const options = {
 		// list is tracked for comparison and has a looser budget.
 		frontdesk_bookings_paged_ms: [`p(95)<${P95_MS}`],
 		frontdesk_bookings_full_ms: [`p(95)<${P95_MS * 4}`],
+		// The bounded default /slots read must stay fast; the ?includePast=1 scan is
+		// tracked for comparison with the same looser budget as the full booking list.
+		frontdesk_slots_active_ms: [`p(95)<${P95_MS}`],
+		frontdesk_slots_all_ms: [`p(95)<${P95_MS * 4}`],
 		http_req_failed: ["rate<0.01"],
 	},
 };
@@ -54,6 +63,9 @@ export default function (data) {
 			`${data.baseUrl}/bookings?page=1&limit=${PAGE_LIMIT}`,
 			STAFF_TOKEN,
 		);
+		// Slot name-resolution read: bounded default vs the old unbounded scan.
+		timedGet(slotsActive, `${data.baseUrl}/slots`, STAFF_TOKEN);
+		timedGet(slotsAll, `${data.baseUrl}/slots?includePast=1`, STAFF_TOKEN);
 	});
 	sleep(1);
 }
