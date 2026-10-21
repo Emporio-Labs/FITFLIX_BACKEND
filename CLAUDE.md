@@ -278,6 +278,7 @@ same commit whenever you change a route.
 | `/schedules` | `schedule.routes.ts` | admin, trainer, user |
 | `/exercises` | `exercise.routes.ts` | admin, user |
 | `/leads` | `lead.routes.ts` | Public capture + admin, frontdesk, trainer |
+| `/people` | `people.routes.ts` | admin, frontdesk (`GET /people/lookup`) |
 | `/dashboard` | `dashboard.routes.ts` | admin, frontdesk |
 | `/nutrition` | `nutrition.routes.ts` | nutritionist, admin, user |
 | `/notifications` | `notification.routes.ts` | any authenticated |

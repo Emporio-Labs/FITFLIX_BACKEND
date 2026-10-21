@@ -11,6 +11,7 @@ import { autoResolveOperationalAlerts } from "./operational-alert.controller";
 import { getEffectiveAlertRule } from "../utils/default-alert-rules";
 import { isSalesStaffOnDuty } from "../services/staff-presence.service";
 import { calculateHealthScore } from "../utils/health-score";
+import { pendingInvoiceIdsByLead } from "../utils/lead-pending-invoice";
 import { hashPassword } from "../utils/password";
 import {
 	buildLocationFilter,
@@ -32,6 +33,22 @@ import {
 	publicLeadCaptureBodySchema,
 	updateLeadBodySchema,
 } from "../validators/lead.validator";
+
+// A lead becomes Converted only when it turns into a member — its invoice is
+// paid, or POST /leads/:id/convert. Setting the status by hand would leave a
+// "converted" lead with no member behind it.
+const rejectDirectConversion = (
+	res: Parameters<RequestHandler>[1],
+	status: string | undefined,
+): boolean => {
+	if (status !== LeadStatus.Converted) return false;
+	res.status(400).json({
+		message:
+			"A lead can't be marked Converted directly. It converts when its invoice is paid, or via POST /leads/:id/convert.",
+		code: "LEAD_CONVERSION_NOT_ALLOWED",
+	});
+	return true;
+};
 
 const parseDateOrNull = (value: string | undefined) => {
 	if (!value) return null;
@@ -76,6 +93,8 @@ export const createLead: RequestHandler = async (req, res, next) => {
 		});
 		return;
 	}
+
+	if (rejectDirectConversion(res, parsedBody.data.status)) return;
 
 	const { ownerId, ...leadData } = parsedBody.data;
 
@@ -376,7 +395,13 @@ export const getAllLeads: RequestHandler = async (req, res, next) => {
 			"convertedUser",
 			"username email onboarded onboardingStatus",
 		);
-		res.status(200).json({ leads });
+		const pending = await pendingInvoiceIdsByLead(leads.map((l) => l._id));
+		res.status(200).json({
+			leads: leads.map((lead) => ({
+				...lead.toJSON(),
+				pendingInvoiceId: pending.get(String(lead._id)) ?? null,
+			})),
+		});
 	} catch (error) {
 		if (error instanceof LocationError) {
 			sendLocationError(res, error);
@@ -462,7 +487,13 @@ export const getLeadById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		res.status(200).json({ lead });
+		const pending = await pendingInvoiceIdsByLead([lead._id]);
+		res.status(200).json({
+			lead: {
+				...lead.toJSON(),
+				pendingInvoiceId: pending.get(String(lead._id)) ?? null,
+			},
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -485,6 +516,8 @@ export const updateLeadById: RequestHandler = async (req, res, next) => {
 		});
 		return;
 	}
+
+	if (rejectDirectConversion(res, parsedBody.data.status)) return;
 
 	const { ownerId, ...payload } = parsedBody.data;
 

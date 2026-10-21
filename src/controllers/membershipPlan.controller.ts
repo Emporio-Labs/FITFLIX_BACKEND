@@ -2,6 +2,12 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import MembershipPlan from "../models/MembershipPlan";
 import {
+	buildLocationFilter,
+	LocationError,
+	mapLocationError,
+	resolveLocationId,
+} from "../utils/location.resolver";
+import {
 	createMembershipPlanSchema,
 	updateMembershipPlanSchema,
 } from "../validators/membershipPlan.validator";
@@ -15,6 +21,15 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	}
 
 	return idParam;
+};
+
+// A plan's branch: null stays null (every branch); a value must be an active
+// branch. Throws LocationError.
+const resolvePlanLocation = async (
+	locationId: string | null | undefined,
+): Promise<{ locationId?: mongoose.Types.ObjectId | null }> => {
+	if (locationId === undefined) return {};
+	return { locationId: locationId ? await resolveLocationId(locationId) : null };
 };
 
 export const createMembershipPlan: RequestHandler = async (req, res, _next) => {
@@ -42,11 +57,22 @@ export const createMembershipPlan: RequestHandler = async (req, res, _next) => {
 			requestId,
 			body: { name: parsed.data.name, gymId: parsed.data.gymId },
 		});
-		const plan = await MembershipPlan.create(parsed.data);
+		const { locationId, ...fields } = parsed.data;
+		const plan = await MembershipPlan.create({
+			...fields,
+			...(await resolvePlanLocation(locationId)),
+		});
 		res
 			.status(201)
 			.json({ message: "Membership plan created", plan, requestId });
 	} catch (error: unknown) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res
+				.status(mapped.status)
+				.json({ message: mapped.message, code: mapped.code, requestId });
+			return;
+		}
 		const err = error as any;
 		if (err.name === "MongoServerError" && err.code === 11000) {
 			console.warn("createMembershipPlan duplicate key", {
@@ -74,15 +100,41 @@ export const createMembershipPlan: RequestHandler = async (req, res, _next) => {
 	}
 };
 
+/**
+ * `?locationId=X` → the plans sold at X plus the all-branch plans
+ * (locationId null). Plans past `availableUntil` are hidden unless
+ * `?includeExpired=true`.
+ */
 export const getAllMembershipPlans: RequestHandler = async (
-	_req,
+	req,
 	res,
 	next,
 ) => {
 	try {
-		const plans = await MembershipPlan.find();
+		const { locationId, includeExpired } = req.query;
+		const clauses: Record<string, unknown>[] = [];
+
+		if (typeof locationId === "string" && locationId) {
+			const branch = buildLocationFilter(locationId);
+			// `locationId: null` also matches plans saved before the field existed.
+			clauses.push({ $or: [branch, { locationId: null }] });
+		}
+		if (includeExpired !== "true") {
+			clauses.push({
+				$or: [{ availableUntil: null }, { availableUntil: { $gt: new Date() } }],
+			});
+		}
+
+		const plans = await MembershipPlan.find(
+			clauses.length > 0 ? { $and: clauses } : {},
+		);
 		res.status(200).json({ plans });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res.status(mapped.status).json({ message: mapped.message, code: mapped.code });
+			return;
+		}
 		next(error);
 	}
 };
@@ -141,10 +193,12 @@ export const updateMembershipPlanById: RequestHandler = async (
 			id,
 			body: parsed.data,
 		});
-		const updated = await MembershipPlan.findByIdAndUpdate(id, parsed.data, {
-			returnDocument: "after",
-			runValidators: true,
-		});
+		const { locationId, ...fields } = parsed.data;
+		const updated = await MembershipPlan.findByIdAndUpdate(
+			id,
+			{ ...fields, ...(await resolvePlanLocation(locationId)) },
+			{ returnDocument: "after", runValidators: true },
+		);
 
 		if (!updated) {
 			res.status(404).json({ message: "Membership plan not found", requestId });
@@ -155,6 +209,13 @@ export const updateMembershipPlanById: RequestHandler = async (
 			.status(200)
 			.json({ message: "Membership plan updated", plan: updated, requestId });
 	} catch (error: unknown) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res
+				.status(mapped.status)
+				.json({ message: mapped.message, code: mapped.code, requestId });
+			return;
+		}
 		const err = error as any;
 		if (err.name === "MongoServerError" && err.code === 11000) {
 			console.warn("updateMembershipPlan duplicate key", {
