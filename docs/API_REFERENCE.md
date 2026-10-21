@@ -4279,7 +4279,7 @@ No membership is created. The member's plan comes from paying their invoice (`PA
 | `username` | string | no | defaults to lead name |
 | `phone` | string | yes | |
 | `age` | string | yes | numeric string |
-| `gender` | `Gender` | yes | `Male` \| `Female` \| `Other` |
+| `gender` | `Gender` | yes | `Male` \| `Female` \| `Other`; legacy `0`/`1`/`2` (number or string) are accepted and mapped in that order |
 | `password` | string | yes | |
 
 ```bash
