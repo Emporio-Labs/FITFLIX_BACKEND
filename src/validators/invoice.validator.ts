@@ -107,6 +107,13 @@ export const updateInvoiceStatusBodySchema = z.object({
 	paymentMethod: z.enum(paymentMethodValues).optional(),
 	/** UPI transaction id, card slip number, etc. */
 	paymentReference: optionalString,
+	// Only used on → PAID: overrides the invoice's startDate (legacy from
+	// #135; new sales set startDate on the invoice). Omitted, the invoice's
+	// startDate, else the day it is paid.
+	membershipStartDate: z.preprocess(
+		(v) => (v === "" || v === null ? undefined : v),
+		z.coerce.date().optional(),
+	),
 });
 
 export const idempotencyKeySchema = z.string().trim().min(1).max(200);

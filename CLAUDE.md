@@ -134,10 +134,17 @@ All error responses follow this envelope — the global middleware in `app.ts` n
 ```json
 {
   "error": "Human-readable message",
+  "message": "Same text as error",
   "code": "ERROR_CODE",
   "details": { "field": "error message" }
 }
 ```
+
+For `VALIDATION_ERROR`, a generic top-level message ("Validation failed",
+"Invalid lead payload", …) is replaced by the field messages themselves, so
+FrontDesk toasts show what to fix. Field messages for Zod schemas without their
+own message come from the global error map in `src/utils/validation-messages.ts`
+(installed in `app.ts`); writing a message on the schema still overrides it.
 
 Error codes: `VALIDATION_ERROR` | `BAD_REQUEST` | `UNAUTHORIZED` | `FORBIDDEN` | `NOT_FOUND` | `CONFLICT` | `NOT_IMPLEMENTED` | `INTERNAL_ERROR` | `API_ERROR`
 

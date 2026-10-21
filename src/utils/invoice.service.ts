@@ -17,6 +17,7 @@ import type {
 import { isEmailInUseAcrossSystem } from "./email-uniqueness";
 import { generateInvoiceNumber } from "./invoice-number";
 import { resolveTimeZone } from "./location.resolver";
+import { formatDateInZone } from "./timezone.util";
 import {
 	assertNoMembershipOverlap,
 	resolveMembershipTerm,
@@ -335,6 +336,11 @@ export const transitionInvoiceStatus = async (
 		paymentReference?: string;
 		/** Staff member recording the payment. */
 		recordedBy?: string;
+		/**
+		 * Overrides the invoice's startDate for the membership a PAID invoice
+		 * creates (kept from #135; new sales set startDate on the invoice).
+		 */
+		membershipStartDate?: Date;
 	} = {},
 ): Promise<{
 	invoice: unknown;
@@ -437,14 +443,19 @@ export const transitionInvoiceStatus = async (
 			includedCredits: number;
 		};
 
+		const timeZone = await resolveTimeZone({
+			locationId: invoice.locationId,
+			userId: membershipUserId,
+		});
+		// A presale can be paid well before the branch opens; the membership
+		// then starts on the chosen day instead of the payment date.
 		const term = resolveMembershipTerm({
-			startDay: invoice.startDate,
+			startDay: options.membershipStartDate
+				? formatDateInZone(options.membershipStartDate, timeZone)
+				: invoice.startDate,
 			durationMonths: invoice.durationMonths,
 			durationInDays: snap.durationInDays,
-			timeZone: await resolveTimeZone({
-				locationId: invoice.locationId,
-				userId: membershipUserId,
-			}),
+			timeZone,
 			now,
 		});
 

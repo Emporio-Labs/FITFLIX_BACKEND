@@ -285,6 +285,7 @@ export const updateInvoiceStatusHandler: RequestHandler = async (
 			{
 				paymentReference: parsed.data.paymentReference,
 				recordedBy: req.user?.id,
+				membershipStartDate: parsed.data.membershipStartDate,
 			},
 		);
 

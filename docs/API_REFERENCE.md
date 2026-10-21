@@ -153,11 +153,25 @@ Every error response follows this envelope (normalized by global middleware in `
 
 ```json
 {
-  "error": "Human-readable message",
+  "error": "Phone number is required; Email must be a valid email address",
+  "message": "Phone number is required; Email must be a valid email address",
   "code": "VALIDATION_ERROR",
-  "details": { "fieldName": "validation message" }
+  "details": {
+    "phone": "Phone number is required",
+    "email": "Email must be a valid email address"
+  }
 }
 ```
+
+`message` always carries the same text as `error`, for clients that read either.
+
+For a validation error, `error` is the field messages themselves (up to three,
+then `(and N more)`), not a generic "Validation failed". Each message names the
+field and the input it expects ("Status must be one of: New, Contacted, …",
+"Start date must be a date in YYYY-MM-DD format"). A schema's own message wins;
+fields without one get these from `src/utils/validation-messages.ts`. A
+controller's specific top-level message (e.g. the Excel import's "The file has 2
+problems …") is kept as-is.
 
 `details` is omitted for non-validation errors.
 
@@ -3566,6 +3580,7 @@ Move an invoice through the status machine.
 | `paymentStatus` | `InvoicePaymentStatus` | yes | Must be a legal transition from the current status |
 | `paymentMethod` | `InvoicePaymentMethod` | no | |
 | `paymentReference` | string | no | UPI transaction id, card slip number, etc. Stored on the invoice |
+| `membershipStartDate` | ISO date | no | `PAID` only. Overrides the invoice's `startDate` for the created membership (its calendar day in the branch's timezone). Prefer `startDate` on `POST /invoices` |
 
 > **Transitioning to `PAID` has side effects.** It converts the linked Lead and
 > creates the membership from the invoice, returning `lead` and `membership`
@@ -4322,6 +4337,8 @@ Convert a lead into a `User`. If a user with that email already exists, the exis
 
 **Branches:** a newly created member gets the lead's branch as their home club.
 
+No membership is created. The member's plan comes from paying their invoice (`PATCH /invoices/:id/status` → `PAID`) or from `POST /memberships`.
+
 **Auth:** Bearer (`admin`)
 
 **Request body**
@@ -4331,7 +4348,7 @@ Convert a lead into a `User`. If a user with that email already exists, the exis
 | `username` | string | no | defaults to lead name |
 | `phone` | string | yes | |
 | `age` | string | yes | numeric string |
-| `gender` | `Gender` | yes | `Male` \| `Female` \| `Other` |
+| `gender` | `Gender` | yes | `Male` \| `Female` \| `Other`; legacy `0`/`1`/`2` (number or string) are accepted and mapped in that order |
 | `password` | string | yes | |
 
 ```bash
