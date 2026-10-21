@@ -37,6 +37,24 @@ const membershipSchema = new mongoose.Schema(
 		},
 		grantedBy: { type: mongoose.Schema.Types.ObjectId, default: null },
 		grantReason: { type: String, default: "" },
+		// The plan and invoice this membership was sold from (New sale flow).
+		// Null for grants, migrations and manual admin entries.
+		planId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "MembershipPlan",
+			default: null,
+		},
+		invoiceId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Invoice",
+			default: null,
+			index: true,
+		},
+		// Set on memberships an admin created by hand via POST /memberships,
+		// which skips the invoice. The reason is mandatory so every such
+		// membership can be accounted for.
+		createdBy: { type: mongoose.Schema.Types.ObjectId, default: null },
+		manualReason: { type: String, default: "" },
 		// Branch that sold this membership. Consumption location is recorded
 		// separately on each CreditTransaction, since a member may train at a
 		// branch other than the one that sold them the package.

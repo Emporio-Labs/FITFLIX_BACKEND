@@ -181,7 +181,7 @@ Authoritative source: [src/models/Enums.ts](../src/models/Enums.ts). Numeric enu
 |---|---|
 | `Gender` | `Male`, `Female`, `Other` (legacy numeric inputs `0`/`1`/`2` are accepted on signup and normalized) |
 | `BookingStatus` *(numeric)* | `Booked` (0), `Confirmed` (1), `Cancelled` (2), `Attended` (3), `Unattended` (4) |
-| `MembershipStatus` | `Active`, `Paused`, `Cancelled`, `Expired` |
+| `MembershipStatus` | `Active`, `Upcoming`, `Paused`, `Cancelled`, `Expired` — `Upcoming` = sold, start date still ahead; not usable for bookings/credits until it flips to `Active` on its start day |
 | `TodoStatus` *(numeric)* | `Todo` (0), `Doing` (1), `Done` (2) |
 | `LeadStatus` | `New`, `Contacted`, `Qualified`, `Warm`, `Hot`, `Cold`, `Converted`, `Lost` |
 | `CreditTransactionType` | `Consume`, `Refund`, `AdminTopUp`, `Void` |
@@ -3192,7 +3192,11 @@ await axios.post(
 
 ### POST /memberships
 
-**Auth:** Bearer (`admin`)
+A membership created by hand, outside the invoice flow (sales go through
+`POST /invoices` → `PATCH /invoices/:id/status` `PAID`). The `reason` is stored
+on the membership as `manualReason`, with the admin as `createdBy`.
+
+**Auth:** Bearer (`admin` only)
 
 **Request body**
 
@@ -3201,13 +3205,15 @@ await axios.post(
 | `userId` | string | no | required when admin assigns to a specific user |
 | `planName` | string | yes | min 1 |
 | `creditsIncluded` | number | no | ≥ 0 integer, default 0 |
-| `status` | `MembershipStatus` | no | |
+| `status` | `MembershipStatus` | no | Omitted: `Upcoming` when `startDate` is in the future, else `Active` |
 | `price` | number | yes | ≥ 0 |
 | `currency` | string | no | default `"USD"` |
 | `startDate` | ISO date string | yes | min 1 |
 | `endDate` | ISO date string | no | |
 | `features` | string[] | no | default `[]` |
 | `notes` | string | no | |
+| `locationId` | ObjectId | conditional | Required when more than one branch is active |
+| `reason` | string | **yes** | Why this membership skips the invoice; stored as `manualReason` |
 
 ```bash
 curl -X POST "https://api.example.com/memberships" \
@@ -3218,17 +3224,29 @@ curl -X POST "https://api.example.com/memberships" \
     "creditsIncluded": 20,
     "price": 49.99,
     "startDate": "2026-06-01",
-    "endDate": "2026-07-01"
+    "endDate": "2026-07-01",
+    "reason": "Migrated from paper register"
   }'
 ```
 
 **Success (201):** `{ "message": "Membership created", "membership": { /* ... */ } }`
+
+**Errors**
+
+| Status | Code | When |
+|---|---|---|
+| 400 | — | Invalid payload (including missing `reason`) |
+| 403 | `FORBIDDEN` | Caller is not `admin` |
+| 409 | `MEMBERSHIP_OVERLAP` | The member already has an `Active`/`Paused`/`Upcoming` membership overlapping these dates — `details: { conflictingMembershipId, endDate }` |
 
 ### GET /memberships
 
 **Auth:** Bearer (`admin`)
 
 **Query params:** `userId`, and `locationId` — only memberships issued at that branch (malformed id → 400 `INVALID_LOCATION_ID`).
+
+`Upcoming` memberships whose start has arrived are flipped to `Active` before
+the list is read (also done every reminder tick), here and on `/memberships/me`.
 
 ```bash
 curl "https://api.example.com/memberships" -H "Authorization: Bearer $TOKEN"
@@ -3447,8 +3465,27 @@ listed is rejected with `409 CONFLICT`.
 
 ### POST /invoices
 
-Create an invoice. `subtotal` and `total` are computed server-side from `items`,
-`tax`, and `discount`; `invoiceNumber` is generated.
+Create an invoice for a sale. `subtotal` and `total` are computed server-side
+from `items`, `tax`, and `discount`; `invoiceNumber` is generated.
+
+**The person is resolved at creation**, so the response invoice always has
+`userId`:
+
+- `userId` — an existing member.
+- `leadId` — links the User whose phone matches the lead's (last 10 digits), or
+  creates one from the lead (name, phone, email unless already taken,
+  `homeLocationId` = invoice branch, no password — the app signs in by phone
+  OTP) and sets `lead.convertedUser`. No membership is granted; the lead's
+  status becomes `Converted` only when the invoice is paid.
+- `newLead` — a walk-in: reuses the lead with that phone, else creates one
+  (`source: "frontdesk-sale"`) at the invoice branch, then as `leadId`.
+
+When `startDate` is sent, the overlap guard runs here too, so a clash is
+refused before money is taken (see `PATCH /invoices/:id/status`).
+
+**Headers:** `Idempotency-Key` (optional, 1–200 chars). A repeat POST with the
+same key from the same staff member returns the invoice the first one created
+(`200`, `"Invoice already created"`) instead of a second invoice.
 
 **Auth:** Bearer (`admin`, `frontdesk`)
 
@@ -3458,10 +3495,16 @@ Create an invoice. `subtotal` and `total` are computed server-side from `items`,
 |---|---|---|---|---|
 | `items` | array | yes | — | min 1; each `{ name, price ≥ 0, quantity ≥ 1 }` |
 | `planSnapshot` | object | yes | — | `{ name, durationInDays ≥ 1, price ≥ 0, includedCredits ≥ 0 }` — frozen copy of the plan as sold |
-| `userId` | ObjectId | conditional | — | **`userId` or `leadId` is required** |
-| `leadId` | ObjectId | conditional | — | Must resolve to an existing Lead |
-| `tax` | number | no | `0` | ≥ 0 |
+| `userId` | ObjectId | conditional | — | **One of `userId`, `leadId`, `newLead` is required** |
+| `leadId` | ObjectId | conditional | — | Must resolve to an existing Lead with a phone |
+| `newLead` | object | conditional | — | `{ name, phone (≥ 10 digits), email? }`. Not combinable with `userId`/`leadId` |
+| `locationId` | ObjectId | conditional | resolved | Branch the sale is made at, honoured as sent. **Required when more than one branch is active** (`400 LOCATION_REQUIRED`) |
+| `planId` | ObjectId | no | — | The `MembershipPlan` sold; copied onto the membership |
+| `startDate` | `YYYY-MM-DD` | no | day paid | Day the membership starts, in the branch's timezone |
+| `durationMonths` | integer | no | — | 1–60. Membership runs this many calendar months; omitted, `planSnapshot.durationInDays` |
+| `tax` | number | no | computed | ≥ 0. Omitted: `(subtotal − discount) × Location.settings.taxRatePercent / 100`, rounded to the paisa |
 | `discount` | number | no | `0` | ≥ 0 |
+| `discountReason` | string | no | — | |
 | `paymentMethod` | `InvoicePaymentMethod` | no | `NONE` | |
 | `paymentStatus` | string | no | `DRAFT` | **On create, only `DRAFT` or `PENDING` are accepted** |
 | `issuedAt` | string | no | — | Parseable date |
@@ -3486,8 +3529,10 @@ curl -X POST "https://api.example.com/invoices" \
 | Status | Code | When |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Zod validation failed |
-| 400 | `BAD_REQUEST` | Invalid `userId`/`leadId`/`issuedAt`, or neither id supplied |
-| 404 | `NOT_FOUND` | `Lead not found` |
+| 400 | `BAD_REQUEST` | Invalid `userId`/`leadId`/`planId`/`issuedAt`/`Idempotency-Key`, no person supplied, `newLead` combined with an id, or the lead has no phone |
+| 400 | `LOCATION_REQUIRED` / `INVALID_LOCATION_ID` / `LOCATION_INACTIVE` | Branch missing with several active, malformed, or inactive |
+| 404 | `NOT_FOUND` | Lead, member, membership plan or location not found |
+| 409 | `MEMBERSHIP_OVERLAP` | `startDate` sent and the member already holds an overlapping membership — `details: { conflictingMembershipId, endDate }` |
 
 ### GET /invoices
 
@@ -3520,10 +3565,18 @@ Move an invoice through the status machine.
 |---|---|---|---|
 | `paymentStatus` | `InvoicePaymentStatus` | yes | Must be a legal transition from the current status |
 | `paymentMethod` | `InvoicePaymentMethod` | no | |
+| `paymentReference` | string | no | UPI transaction id, card slip number, etc. Stored on the invoice |
 
 > **Transitioning to `PAID` has side effects.** It converts the linked Lead and
-> activates the membership, returning `lead` and `membership` alongside the
-> invoice.
+> creates the membership from the invoice, returning `lead` and `membership`
+> alongside the invoice. The caller is stored as `recordedBy`.
+>
+> The membership starts on the invoice's `startDate` (branch midnight; default
+> today), ends `durationMonths` calendar months later (fallback
+> `planSnapshot.durationInDays`), carries the invoice's `locationId`, `planId`
+> and `invoiceId`, and is `Upcoming` when its start is still ahead. An older
+> invoice with only a `leadId` has its account resolved (or created) at this
+> point, so paying never needs a prior convert.
 
 **Success (200) — non-`PAID`:** `{ "message": "Invoice status updated to CANCELLED", "invoice": { /* ... */ } }`
 
@@ -3548,6 +3601,7 @@ Move an invoice through the status machine.
 | 400 | `BAD_REQUEST` / `VALIDATION_ERROR` | Invalid id or body |
 | 404 | `NOT_FOUND` | No such invoice |
 | 409 | `CONFLICT` | `Cannot transition invoice from X to Y`, or `Invoice was already marked as PAID` |
+| 409 | `MEMBERSHIP_OVERLAP` | `PAID` only: the member already has an `Active`/`Paused`/`Upcoming` membership overlapping the new dates — `details: { conflictingMembershipId, endDate }`. The invoice stays unpaid |
 
 ### GET /invoices/:id/pdf
 
