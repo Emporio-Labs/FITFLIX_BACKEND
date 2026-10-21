@@ -164,7 +164,8 @@ export const createSlot: RequestHandler = async (req, res, next) => {
 				res.status(409).json({
 					message: "A daily template already exists for this time window",
 					code: "DUPLICATE_TEMPLATE",
-					existingSlotId: duplicate._id,
+					existingSlotId: duplicate._id.toString(),
+					details: { existingSlotId: duplicate._id.toString() },
 				});
 				return;
 			}

@@ -339,6 +339,9 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 
 | Method | Path | Auth | Roles | Handler |
 |---|---|---|---|---|
+| GET | /memberships/migration/template | JWT | admin, frontdesk | downloadMigrationTemplate |
+| POST | /memberships/migration/preview | JWT | admin, frontdesk | previewMigration |
+| POST | /memberships/migration/execute | JWT | admin, frontdesk | executeMigration |
 | POST | `/memberships` | JWT | admin | `createMembership` |
 | GET | `/memberships` | JWT | admin, frontdesk | `getAllMemberships` |
 | GET | `/memberships/me` | JWT | user | `getMyMemberships` |
