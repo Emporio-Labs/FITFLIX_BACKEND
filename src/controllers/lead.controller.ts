@@ -13,6 +13,20 @@ import { isSalesStaffOnDuty } from "../services/staff-presence.service";
 import { calculateHealthScore } from "../utils/health-score";
 import { hashPassword } from "../utils/password";
 import {
+	buildLocationFilter,
+	LocationError,
+	mapLocationError,
+	resolveLocationId,
+} from "../utils/location.resolver";
+
+const sendLocationError = (
+	res: Parameters<RequestHandler>[1],
+	error: LocationError,
+) => {
+	const mapped = mapLocationError(error);
+	res.status(mapped.status).json({ message: mapped.message, code: mapped.code });
+};
+import {
 	convertLeadBodySchema,
 	createLeadBodySchema,
 	publicLeadCaptureBodySchema,
@@ -78,8 +92,13 @@ export const createLead: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		const { locationId, ...fields } = leadData;
 		const lead = await Lead.create({
-			...leadData,
+			...fields,
+			// Left out, the location-stamp plugin applies the default branch.
+			...(locationId !== undefined
+				? { locationId: locationId && (await resolveLocationId(locationId)) }
+				: {}),
 			status: leadData.status as
 				| import("../models/Enums").LeadStatus
 				| undefined,
@@ -89,6 +108,10 @@ export const createLead: RequestHandler = async (req, res, next) => {
 
 		res.status(201).json({ message: "Lead created", lead });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			sendLocationError(res, error);
+			return;
+		}
 		next(error);
 	}
 };
@@ -329,8 +352,10 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 
 export const getAllLeads: RequestHandler = async (req, res, next) => {
 	try {
-		const { source, status, tags } = req.query;
-		const filter: Record<string, unknown> = {};
+		const { source, status, tags, locationId } = req.query;
+		const filter: Record<string, unknown> = buildLocationFilter(
+			typeof locationId === "string" ? locationId : undefined,
+		);
 
 		if (typeof source === "string" && source) {
 			filter.source = source;
@@ -353,6 +378,10 @@ export const getAllLeads: RequestHandler = async (req, res, next) => {
 		);
 		res.status(200).json({ leads });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			sendLocationError(res, error);
+			return;
+		}
 		next(error);
 	}
 };
@@ -472,10 +501,14 @@ export const updateLeadById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		const { locationId, ...fields } = payload;
 		const updatedLead = await Lead.findByIdAndUpdate(
 			id,
 			{
-				...payload,
+				...fields,
+				...(locationId !== undefined
+					? { locationId: locationId && (await resolveLocationId(locationId)) }
+					: {}),
 				...(followUpDateValue !== null
 					? { followUpDate: followUpDateValue }
 					: {}),
@@ -494,6 +527,10 @@ export const updateLeadById: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({ message: "Lead updated", lead: updatedLead });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			sendLocationError(res, error);
+			return;
+		}
 		next(error);
 	}
 };
@@ -595,6 +632,9 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 				gender: gender as Gender,
 				healthGoals,
 				passwordHash,
+				// A converted lead joins the branch they enquired at; with no
+				// branch on the lead the plugin applies the default.
+				...(lead.locationId ? { homeLocationId: lead.locationId } : {}),
 			});
 
 			targetUserId = createdUser._id;

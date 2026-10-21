@@ -1968,6 +1968,8 @@ else needs a JWT.
 | PATCH | `/trainers/:id` | `admin`, `trainer` |
 | DELETE | `/trainers/:id` | `admin` |
 
+**Branches:** create and update take an optional `locationId` (the branch the trainer works at, an active Location; `""`/`null` clears it). On update only an admin can change it; a trainer editing their own profile has it ignored.
+
 **Request body (create)**
 
 | Field | Type | Required |
@@ -2022,6 +2024,8 @@ routes require a JWT.
 ### POST /api/v1/admin/classes
 
 Create a class template.
+
+**Branches:** `locationId` (optional) puts the class at a branch and must be an active Location; `null` makes it company-wide. Left out, online classes and live streams are company-wide, while an in-person class takes the sole active branch. With several active branches it is refused with 400 `LOCATION_REQUIRED`.
 
 **Auth:** Bearer (`admin`)
 
@@ -2091,6 +2095,8 @@ All classes regardless of status, newest first. No query filters.
 Update a class. Note **PUT**, not PATCH — but the body is a partial update and at
 least one field must be present.
 
+**Branches:** `locationId` moves the class to another branch (`null` = company-wide); omit it to keep the current one.
+
 **Auth:** Bearer (`admin`)
 
 **Path params:** `id` — class UUID.
@@ -2144,6 +2150,8 @@ Delete or retire a class. The behaviour depends on whether anyone has booked it:
 Member-facing catalogue: only classes with `status: "ACTIVE"` **and**
 `isPublished` not `false`, newest first.
 
+**Branches:** for a `user` with a home club, only in-person classes at that club plus company-wide, online and live-stream classes are returned. Members with no home club, and staff, see every class.
+
 **Auth:** Bearer (`admin`, `trainer`, `user`)
 
 **Success (200):** `{ "classes": [ /* ... */ ] }`
@@ -2151,6 +2159,8 @@ Member-facing catalogue: only classes with `status: "ACTIVE"` **and**
 ### GET /api/v1/classes/:id
 
 One class by UUID.
+
+**Branches:** a `user` asking for an in-person class at another branch gets the same 404 as a missing class.
 
 **Auth:** Bearer (`admin`, `trainer`, `user`)
 
@@ -2317,6 +2327,8 @@ reconciled.
 
 Member-facing feed. Returns sessions whose `status` is `SCHEDULED` **or**
 `FULL`.
+
+**Branches:** members only get sessions of classes they could see in `GET /api/v1/classes`; the session-by-id route 404s the rest.
 
 **Auth:** Bearer (`admin`, `trainer`, `user`)
 
@@ -2811,6 +2823,8 @@ Service / therapy bookings. Most actions trigger credit-ledger updates (consumpt
 
 Book a service. Users book for themselves; admins may book on behalf of any user via `userId`.
 
+**Branches:** a group-class booking for an in-person class at a branch other than the member's home club is refused with 403 (`This class runs at a different branch from the member's home club.`).
+
 **Auth:** Bearer (`admin`, `user`)
 
 **Request body**
@@ -3213,6 +3227,8 @@ curl -X POST "https://api.example.com/memberships" \
 ### GET /memberships
 
 **Auth:** Bearer (`admin`)
+
+**Query params:** `userId`, and `locationId` — only memberships issued at that branch (malformed id → 400 `INVALID_LOCATION_ID`).
 
 ```bash
 curl "https://api.example.com/memberships" -H "Authorization: Bearer $TOKEN"
@@ -4147,6 +4163,8 @@ await axios.post(
 
 Create a lead (back office).
 
+**Branches:** `locationId` (optional) is the branch the lead is for; it must be an active Location. `""`/`null` leaves it empty; omitted, the sole active branch is used.
+
 **Auth:** Bearer (`admin`, `frontdesk`, `trainer`)
 
 **Request body**
@@ -4175,6 +4193,8 @@ curl -X POST "https://api.example.com/leads" \
 ### GET /leads
 
 **Auth:** Bearer (`admin`)
+
+**Query params:** `source`, `status`, `tags`, and `locationId` — only leads for that branch.
 
 ```bash
 curl "https://api.example.com/leads" -H "Authorization: Bearer $TOKEN"
@@ -4219,6 +4239,8 @@ curl "https://api.example.com/leads/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 **Auth:** Bearer (`admin`, `frontdesk`, `trainer`)
 
+**Branches:** `locationId` moves the lead to another branch.
+
 **Request body:** any of POST fields.
 
 ```bash
@@ -4243,6 +4265,8 @@ curl -X DELETE "https://api.example.com/leads/5f1a2b3c4d5e6f7a8b9c0d1e" \
 ### POST /leads/:id/convert
 
 Convert a lead into a `User`. If a user with that email already exists, the existing user is linked (returns 200). Otherwise a new user is created (returns 201).
+
+**Branches:** a newly created member gets the lead's branch as their home club.
 
 **Auth:** Bearer (`admin`)
 

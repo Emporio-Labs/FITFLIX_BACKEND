@@ -11,6 +11,43 @@ import {
 	pickEventFields,
 	updateClassBodySchema,
 } from "../validators/class.validator";
+import {
+	getMemberHomeLocationId,
+	LocationError,
+	mapLocationError,
+	resolveLocationId,
+} from "../utils/location.resolver";
+import {
+	isBroadcastClass,
+	isClassVisibleToMember,
+	memberClassVisibilityOr,
+} from "../utils/class-visibility";
+
+/**
+ * The branch a new class is stamped with. An explicit id must be an active
+ * Location; explicit null means company-wide. Left out, an online class or
+ * live stream stays company-wide, while an in-person class takes the sole
+ * active branch — or, with several branches, is refused (LOCATION_REQUIRED)
+ * so it can't silently show at every branch.
+ */
+const resolveNewClassBranch = async (body: {
+	locationId?: string | null;
+	mode?: string | null;
+	sessionType?: string | null;
+}): Promise<mongoose.Types.ObjectId | null> => {
+	if (body.locationId === null) return null;
+	if (body.locationId) return resolveLocationId(body.locationId);
+	if (isBroadcastClass(body)) return null;
+	return resolveLocationId();
+};
+
+const sendLocationError = (
+	res: Parameters<RequestHandler>[1],
+	error: LocationError,
+) => {
+	const mapped = mapLocationError(error);
+	res.status(mapped.status).json({ message: mapped.message, code: mapped.code });
+};
 
 // Helper to validate UUID format
 const isValidUuid = (id: string | undefined): boolean => {
@@ -377,10 +414,15 @@ export const createClass: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const newClass = await Class.create(parsedBody.data);
+		const locationId = await resolveNewClassBranch(parsedBody.data);
+		const newClass = await Class.create({ ...parsedBody.data, locationId });
 		await syncSessionsForClass(newClass);
 		res.status(201).json({ message: "Class created", class: newClass });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			sendLocationError(res, error);
+			return;
+		}
 		next(error);
 	}
 };
@@ -399,16 +441,25 @@ export const getAllClassesForAdmin: RequestHandler = async (
 };
 
 export const getActiveClassesForMembers: RequestHandler = async (
-	_req,
+	req,
 	res,
 	next,
 ) => {
 	try {
-		// Member-facing listing returns *only* active and published classes
-		const classes = await Class.find({
+		// Member-facing listing returns *only* active and published classes.
+		// A member sees in-person classes at their home club (plus company-wide
+		// and online ones); staff see the whole catalogue.
+		const query: Record<string, unknown> = {
 			status: "ACTIVE",
 			isPublished: { $ne: false },
-		}).sort({
+		};
+		if (req.user?.role === "user") {
+			const visibility = memberClassVisibilityOr(
+				await getMemberHomeLocationId(req.user.id),
+			);
+			if (visibility) query.$or = visibility;
+		}
+		const classes = await Class.find(query).sort({
 			createdAt: -1,
 		});
 		res.status(200).json({ classes });
@@ -447,7 +498,11 @@ export const getClassById: RequestHandler = async (req, res, next) => {
 		if (
 			requesterRole === "user" &&
 			((classDetail as any).status === "INACTIVE" ||
-				(classDetail as any).isPublished === false)
+				(classDetail as any).isPublished === false ||
+				!isClassVisibleToMember(
+					classDetail as any,
+					await getMemberHomeLocationId(req.user?.id),
+				))
 		) {
 			res.status(404).json({
 				message:
@@ -506,7 +561,15 @@ export const updateClassById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const updatedClass = await Class.findByIdAndUpdate(id, parsedBody.data, {
+		// Moving a class to another branch: an id must be an active Location,
+		// null makes it company-wide, and leaving it out keeps the current one.
+		const { locationId, ...rest } = parsedBody.data;
+		const update: Record<string, unknown> = { ...rest };
+		if (locationId !== undefined) {
+			update.locationId = locationId === null ? null : await resolveLocationId(locationId);
+		}
+
+		const updatedClass = await Class.findByIdAndUpdate(id, update, {
 			returnDocument: "after",
 			runValidators: true,
 		});
@@ -519,6 +582,10 @@ export const updateClassById: RequestHandler = async (req, res, next) => {
 		await syncSessionsForClass(updatedClass);
 		res.status(200).json({ message: "Class updated", class: updatedClass });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			sendLocationError(res, error);
+			return;
+		}
 		next(error);
 	}
 };

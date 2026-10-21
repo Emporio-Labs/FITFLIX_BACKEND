@@ -5,7 +5,11 @@ import ScheduledSession from "../models/ScheduledSession";
 import { updateCapacityAdmin } from "../services/capacity-engine.service";
 import { buildWaitlistMetadataBySessionId } from "../services/waitlist-engine.service";
 import { normalizeDeliveryType } from "../utils/delivery-type";
-import { resolveTimeZone } from "../utils/location.resolver";
+import {
+	getMemberHomeLocationId,
+	resolveTimeZone,
+} from "../utils/location.resolver";
+import { isClassVisibleToMember } from "../utils/class-visibility";
 import {
 	combineSessionWindow,
 	deriveRoomId,
@@ -357,11 +361,17 @@ export const getSchedulesForMembers: RequestHandler = async (
 		// SCHEDULED/isPublished — so the session-level filter above is not enough. The
 		// class state, not the session date, is what decides member visibility: a
 		// retired class is hidden whether its session is today or in the future.
+		// A member also only sees in-person sessions at their home club.
+		const homeLocationId =
+			req.user?.role === "user"
+				? await getMemberHomeLocationId(req.user.id)
+				: null;
 		const activeSessions = sessions.filter(
 			(s: any) =>
 				s.classId &&
 				s.classId.status !== "INACTIVE" &&
-				s.classId.isPublished !== false,
+				s.classId.isPublished !== false &&
+				isClassVisibleToMember(s.classId, homeLocationId),
 		);
 
 		const zonesByClassId = await resolveZonesByClassId(activeSessions);
@@ -435,7 +445,12 @@ export const getScheduledSessionByIdForMembers: RequestHandler = async (
 		if (
 			!sessionClass ||
 			sessionClass.status === "INACTIVE" ||
-			sessionClass.isPublished === false
+			sessionClass.isPublished === false ||
+			(req.user?.role === "user" &&
+				!isClassVisibleToMember(
+					sessionClass,
+					await getMemberHomeLocationId(req.user.id),
+				))
 		) {
 			// A retired class's direct/deep-link session lookup must look identical
 			// to a missing session, not leak the fact that it was retired.
