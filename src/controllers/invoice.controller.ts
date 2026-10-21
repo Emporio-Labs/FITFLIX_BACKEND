@@ -229,6 +229,7 @@ export const updateInvoiceStatusHandler: RequestHandler = async (
 			parsed.data.paymentMethod as Parameters<
 				typeof transitionInvoiceStatus
 			>[2],
+			{ membershipStartDate: parsed.data.membershipStartDate },
 		);
 
 		if (!result.invoice) {

@@ -3520,10 +3520,11 @@ Move an invoice through the status machine.
 |---|---|---|---|
 | `paymentStatus` | `InvoicePaymentStatus` | yes | Must be a legal transition from the current status |
 | `paymentMethod` | `InvoicePaymentMethod` | no | |
+| `membershipStartDate` | ISO date | no | `PAID` only. The day the created membership starts (e.g. a branch's opening day for presales); it runs `planSnapshot.durationInDays` from there. Omitted, it starts on payment |
 
 > **Transitioning to `PAID` has side effects.** It converts the linked Lead and
 > activates the membership, returning `lead` and `membership` alongside the
-> invoice.
+> invoice. The membership is stamped with the invoice's branch.
 
 **Success (200) — non-`PAID`:** `{ "message": "Invoice status updated to CANCELLED", "invoice": { /* ... */ } }`
 

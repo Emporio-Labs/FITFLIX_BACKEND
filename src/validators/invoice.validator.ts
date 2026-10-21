@@ -63,6 +63,12 @@ export const createInvoiceBodySchema = z.object({
 export const updateInvoiceStatusBodySchema = z.object({
 	paymentStatus: z.enum(paymentStatusValues),
 	paymentMethod: z.enum(paymentMethodValues).optional(),
+	// Only used on → PAID: the day the created membership starts (e.g. a
+	// branch's opening day for presales). Omitted, it starts on payment.
+	membershipStartDate: z.preprocess(
+		(v) => (v === "" || v === null ? undefined : v),
+		z.coerce.date().optional(),
+	),
 });
 
 export const listInvoicesQuerySchema = z.object({
