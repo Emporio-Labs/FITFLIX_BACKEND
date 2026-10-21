@@ -4268,6 +4268,8 @@ Convert a lead into a `User`. If a user with that email already exists, the exis
 
 **Branches:** a newly created member gets the lead's branch as their home club.
 
+No membership is created. The member's plan comes from paying their invoice (`PATCH /invoices/:id/status` → `PAID`) or from `POST /memberships`.
+
 **Auth:** Bearer (`admin`)
 
 **Request body**
@@ -4277,7 +4279,7 @@ Convert a lead into a `User`. If a user with that email already exists, the exis
 | `username` | string | no | defaults to lead name |
 | `phone` | string | yes | |
 | `age` | string | yes | numeric string |
-| `gender` | `Gender` | yes | `Male` \| `Female` \| `Other` |
+| `gender` | `Gender` | yes | `Male` \| `Female` \| `Other`; legacy `0`/`1`/`2` (number or string) are accepted and mapped in that order |
 | `password` | string | yes | |
 
 ```bash
