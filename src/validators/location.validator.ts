@@ -71,6 +71,9 @@ export const createLocationSchema = z.object({
 			}
 		}, "Unknown IANA timezone"),
 	isActive: z.boolean().optional(),
+	// "YYYY-MM-DD" or ISO. `.nullable()` wraps the coercion so null clears it
+	// instead of being coerced to the epoch.
+	opensOn: z.coerce.date().nullable().optional(),
 	settings: locationSettingsSchema.optional(),
 });
 

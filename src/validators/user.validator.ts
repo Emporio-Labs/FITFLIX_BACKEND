@@ -48,23 +48,6 @@ const optionalString = z.preprocess((value) => {
 	return value;
 }, z.string().trim().min(1).optional());
 
-const requiredAgeNumber = z.preprocess((value) => {
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return value;
-	}
-
-	if (typeof value === "string") {
-		const normalized = value.trim();
-		if (!normalized) {
-			return value;
-		}
-
-		return Number(normalized);
-	}
-
-	return value;
-}, z.number().int().min(0).max(130));
-
 const optionalAgeNumber = z.preprocess((value) => {
 	if (value === undefined || value === null) {
 		return undefined;
@@ -161,7 +144,8 @@ export const createUserBodySchema = z.object({
 	username: requiredString,
 	phone: requiredString,
 	email: z.string().email().toLowerCase().optional(),
-	age: requiredAgeNumber,
+	// Staff create this account; the desk often doesn't know the age.
+	age: optionalAgeNumber,
 	gender: requiredGenderString,
 	password: strongPassword.optional(),
 	dateOfBirth: optionalDate,
