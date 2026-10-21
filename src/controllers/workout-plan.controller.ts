@@ -6,6 +6,7 @@ import Admin from "../models/Admin";
 import { PlanStatus } from "../models/Enums";
 import User from "../models/User";
 import WorkoutPlan from "../models/WorkoutPlan";
+import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import { createAssignmentForUser } from "../services/planAssignment.service";
 import { actorModelForRole } from "../utils/actor-model";
 import { withSignedImages } from "../utils/exercise-images";
@@ -343,15 +344,25 @@ export const deletePlan: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		// Templates can always be deleted (assignments hold their own copy of
-		// the days, so removing a template never breaks assigned users).
-		if (plan.status !== PlanStatus.Draft && !plan.isTemplate) {
-			res.status(400).json({
-				error: "Only draft plans or templates can be deleted",
-				code: "VALIDATION_ERROR",
+		// If caller is trainer, allow deletion only if they created the plan
+		if (
+			req.user?.role === "trainer" &&
+			!plan.isTemplate &&
+			(plan.createdBy as any)?._id?.toString() !== req.user.id &&
+			(plan.createdBy as any)?.toString() !== req.user.id
+		) {
+			res.status(403).json({
+				error: "Unauthorized to delete this plan",
+				code: "FORBIDDEN",
 			});
 			return;
 		}
+
+		// Soft-delete active assignments for this plan so member views don't point to a dangling plan
+		await WorkoutPlanAssignment.updateMany(
+			{ planId: id, isDeleted: { $ne: true } },
+			{ $set: { isDeleted: true, status: "abandoned" } },
+		);
 
 		await plan.deleteOne();
 		res.json({ message: "Plan deleted" });
