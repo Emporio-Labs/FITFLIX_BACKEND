@@ -153,11 +153,25 @@ Every error response follows this envelope (normalized by global middleware in `
 
 ```json
 {
-  "error": "Human-readable message",
+  "error": "Phone number is required; Email must be a valid email address",
+  "message": "Phone number is required; Email must be a valid email address",
   "code": "VALIDATION_ERROR",
-  "details": { "fieldName": "validation message" }
+  "details": {
+    "phone": "Phone number is required",
+    "email": "Email must be a valid email address"
+  }
 }
 ```
+
+`message` always carries the same text as `error`, for clients that read either.
+
+For a validation error, `error` is the field messages themselves (up to three,
+then `(and N more)`), not a generic "Validation failed". Each message names the
+field and the input it expects ("Status must be one of: New, Contacted, …",
+"Start date must be a date in YYYY-MM-DD format"). A schema's own message wins;
+fields without one get these from `src/utils/validation-messages.ts`. A
+controller's specific top-level message (e.g. the Excel import's "The file has 2
+problems …") is kept as-is.
 
 `details` is omitted for non-validation errors.
 
