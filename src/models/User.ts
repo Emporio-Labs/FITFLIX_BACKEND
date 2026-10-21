@@ -24,10 +24,11 @@ const userSchema = new mongoose.Schema(
 		phoneVerified: { type: Boolean, default: false },
 		// Email/password are no longer required for user-app (phone-auth) accounts.
 		email: { type: String, unique: true, sparse: true, default: undefined },
-		// Optional: staff-created accounts (desk sale, POST /users) may not know
-		// it. App signup still requires it — see auth.validator.ts.
+		// Age and gender are optional: an account created by staff (desk sale,
+		// POST /invoices from a lead, POST /users) may know only name, phone and
+		// email. App signup still requires both — see auth.validator.ts.
 		age: { type: Number, min: 0, default: undefined },
-		gender: { type: String, enum: Object.values(Gender), required: true },
+		gender: { type: String, enum: Object.values(Gender), default: undefined },
 		// Basic-profile goal collected at phone signup (distinct from onboarding healthGoals[]).
 		goal: { type: String, default: undefined },
 		healthGoals: { type: [String], default: [] },

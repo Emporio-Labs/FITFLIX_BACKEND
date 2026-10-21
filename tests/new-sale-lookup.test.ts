@@ -1,6 +1,6 @@
 /**
  * New sale, backend part 2: plans per branch (B6), the lead Converted guard
- * and pendingInvoiceId (B7), GET /people/lookup (B8), optional User.age (B9).
+ * and pendingInvoiceId (B7), GET /people/lookup (B8), optional User.age and gender (B9).
  *
  * Needs a throwaway MongoDB and refuses anything that isn't local:
  *   docker run -d --rm -p 127.0.0.1:27018:27017 mongo:7
@@ -328,18 +328,17 @@ async function run() {
 			assert(empty.status === 400, "a blank q is a 400");
 		}
 
-		console.log("\nB9 — User.age optional");
+		console.log("\nB9 — User.age and gender optional");
 		{
 			const user = new User({
 				username: "Desk sale",
 				phone: "9000000000",
-				gender: "Male",
 			});
 			const err = await user.validate().then(
 				() => null,
 				(e) => e,
 			);
-			assert(err === null, "a user validates without an age");
+			assert(err === null, "a user validates without an age or gender");
 		}
 
 		console.log("\n🎉 New sale lookup tests passed!");

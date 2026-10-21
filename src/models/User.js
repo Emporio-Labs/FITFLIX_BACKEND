@@ -10,7 +10,7 @@ var userSchema = new mongoose_1.default.Schema(
 		gender: {
 			type: String,
 			enum: Object.values(Enums_1.Gender),
-			required: true,
+			default: undefined,
 		},
 		healthGoals: { type: [String], default: [] },
 		dateOfBirth: { type: Date, default: undefined },
