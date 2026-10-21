@@ -143,6 +143,20 @@ const optionalStaffRole = z.preprocess(
 	z.enum(STAFF_ROLE_VALUES).nullable().optional(),
 );
 
+// The member's home club (a Location _id). Empty string / "none" clears it; a
+// concrete value must look like an ObjectId (existence + active state are
+// checked in the controller via resolveLocationId). Stored on
+// `homeLocationId`; `homeClubId` is the staff console's name for the same field.
+const optionalHomeLocationId = z.preprocess(
+	(v) => (v === "" || v === "none" ? null : v),
+	z
+		.string()
+		.trim()
+		.regex(/^[a-fA-F0-9]{24}$/, "Invalid home club id")
+		.nullable()
+		.optional(),
+);
+
 export const createUserBodySchema = z.object({
 	username: requiredString,
 	phone: requiredString,
@@ -155,6 +169,8 @@ export const createUserBodySchema = z.object({
 	address: optionalString,
 	onboarded: z.boolean().optional().default(false),
 	staffRole: optionalStaffRole,
+	homeLocationId: optionalHomeLocationId,
+	homeClubId: optionalHomeLocationId,
 });
 
 export const updateUserBodySchema = z
@@ -177,6 +193,8 @@ export const updateUserBodySchema = z
 		password: strongPassword.optional(),
 		onboarded: z.boolean().optional(),
 		staffRole: optionalStaffRole,
+		homeLocationId: optionalHomeLocationId,
+		homeClubId: optionalHomeLocationId,
 	})
 	.refine((payload) => Object.keys(payload).length > 0, {
 		message: "At least one field is required",
@@ -214,6 +232,8 @@ export const listUsersQuerySchema = z.object({
 		.enum(["username", "email", "phone", "createdAt"])
 		.default("createdAt"),
 	order: z.enum(["asc", "desc"]).default("desc"),
+	// Only members whose home club is this branch. Absent lists every branch.
+	locationId: z.string().trim().min(1).optional(),
 });
 
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;
