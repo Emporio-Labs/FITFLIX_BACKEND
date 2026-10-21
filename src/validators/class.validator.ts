@@ -5,6 +5,18 @@ const optionalDate = z.preprocess(
 	z.coerce.date().nullable(),
 );
 
+// "" / "none" / null = no branch. Existence and active state are checked in the
+// controller with resolveLocationId.
+const branchIdField = z.preprocess(
+	(v) => (v === "" || v === "none" ? null : v),
+	z
+		.string()
+		.trim()
+		.regex(/^[a-fA-F0-9]{24}$/, "Invalid location id")
+		.nullable()
+		.optional(),
+);
+
 /**
  * Event integrity, shared by create and update.
  *
@@ -137,6 +149,9 @@ export const createClassBodySchema = z.object({
 	endDate: optionalDate.optional().default(null),
 	enrollmentOpensAt: optionalDate.optional().default(null),
 	enrollmentClosesAt: optionalDate.optional().default(null),
+	// The branch an in-person class runs at. null = company-wide. Checked
+	// against the live Location set in the controller.
+	locationId: branchIdField,
 }).superRefine(refineEventFields);
 
 export const updateClassBodySchema = z
@@ -191,6 +206,7 @@ export const updateClassBodySchema = z
 		endDate: optionalDate.optional(),
 		enrollmentOpensAt: optionalDate.optional(),
 		enrollmentClosesAt: optionalDate.optional(),
+		locationId: branchIdField,
 	})
 	.refine(
 		(payload) => {

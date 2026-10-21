@@ -124,6 +124,19 @@ export const buildLocationFilter = (
 	return { [field]: new mongoose.Types.ObjectId(explicitId) };
 };
 
+/**
+ * The member's home branch as a string, or null when they have none (or the
+ * id isn't a member). Read live, not cached: it decides which classes and
+ * offers the member sees, so a desk move should apply on the next request.
+ */
+export const getMemberHomeLocationId = async (
+	userId?: string | mongoose.Types.ObjectId | null,
+): Promise<string | null> => {
+	if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) return null;
+	const user = await User.findById(userId).select("homeLocationId").lean();
+	return user?.homeLocationId ? String(user.homeLocationId) : null;
+};
+
 /** Full location document, for settings-driven behaviour (tax, windows, caps). */
 export const getLocationOrThrow = async (
 	locationId: string | mongoose.Types.ObjectId,

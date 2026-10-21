@@ -7,6 +7,20 @@ import {
 	getRosterUserIds,
 } from "../services/trainerRoster.service";
 import { hashPassword } from "../utils/password";
+import { normalizeRole } from "../middleware/rbac.middleware";
+import {
+	LocationError,
+	mapLocationError,
+	resolveLocationId,
+} from "../utils/location.resolver";
+
+const sendLocationError = (
+	res: Parameters<RequestHandler>[1],
+	error: LocationError,
+) => {
+	const mapped = mapLocationError(error);
+	res.status(mapped.status).json({ message: mapped.message, code: mapped.code });
+};
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import {
 	createTrainerBodySchema,
@@ -64,13 +78,22 @@ export const createTrainer: RequestHandler = async (req, res, next) => {
 			}
 		}
 
+		const { locationId, ...fields } = rest;
 		const passwordHash = await hashPassword(password);
 		const trainer = await Trainer.create({
-			...rest,
+			...fields,
+			// Left out, the location-stamp plugin applies the default branch.
+			...(locationId !== undefined
+				? { locationId: locationId && (await resolveLocationId(locationId)) }
+				: {}),
 			passwordHash,
 		});
 		res.status(201).json({ message: "Trainer created", trainer });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			sendLocationError(res, error);
+			return;
+		}
 		next(error);
 	}
 };
@@ -159,14 +182,24 @@ export const updateTrainerById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { password, ...rest } = parsedBody.data;
+	const { password, locationId, ...rest } = parsedBody.data;
 	const hashedPassword = password ? await hashPassword(password) : null;
-	const updatePayload = {
-		...rest,
-		...(hashedPassword ? { passwordHash: hashedPassword } : {}),
-	};
 
 	try {
+		// Which branch a trainer works at is an admin decision; a trainer
+		// editing their own profile can't move themselves.
+		const branchPatch =
+			locationId !== undefined &&
+			req.user &&
+			normalizeRole(req.user.role) === "admin"
+				? { locationId: locationId && (await resolveLocationId(locationId)) }
+				: {};
+		const updatePayload = {
+			...rest,
+			...branchPatch,
+			...(hashedPassword ? { passwordHash: hashedPassword } : {}),
+		};
+
 		if (rest.email) {
 			const emailCheck = await isEmailInUseAcrossSystem(rest.email, id);
 			if (emailCheck.exists) {
@@ -189,6 +222,10 @@ export const updateTrainerById: RequestHandler = async (req, res, next) => {
 			.status(200)
 			.json({ message: "Trainer updated", trainer: updatedTrainer });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			sendLocationError(res, error);
+			return;
+		}
 		next(error);
 	}
 };

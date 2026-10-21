@@ -129,6 +129,17 @@ export const createLeadBodySchema = z.object({
 	followUpDate: z.string().trim().min(1).optional(),
 	ownerId: z.string().trim().min(1).optional(),
 	status: z.enum(leadStatusValues).optional(),
+	// The branch the lead is for. "" / "none" / null = no branch; a value must
+	// be an active Location (checked in the controller).
+	locationId: z.preprocess(
+		(v) => (v === "" || v === "none" ? null : v),
+		z
+			.string()
+			.trim()
+			.regex(/^[a-fA-F0-9]{24}$/, "Invalid location id")
+			.nullable()
+			.optional(),
+	),
 });
 
 export const publicLeadCaptureBodySchema = z

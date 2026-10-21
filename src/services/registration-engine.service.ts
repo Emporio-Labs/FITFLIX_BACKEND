@@ -14,6 +14,8 @@ import { evaluateBookingRules, parseInTimezone } from "./booking-rules-engine.se
 import { allocateSeatAtomic, releaseSeatAtomic } from "./capacity-engine.service";
 
 import { syncSessionsForClass } from "../controllers/class.controller";
+import { isClassVisibleToMember } from "../utils/class-visibility";
+import { getMemberHomeLocationId } from "../utils/location.resolver";
 
 export interface GroupClassRegistrationResult {
 	success: boolean;
@@ -163,6 +165,23 @@ export async function registerGroupClassBooking(params: {
 		(targetClass as any)?.bookingRequirement === "free" ||
 		Number((targetClass as any)?.creditCost) === 0;
 	const creditCost = isFree ? 0 : Number((targetClass as any)?.creditCost) || 1;
+
+	// 1b. Branch: an in-person class only takes members whose home club runs
+	// it — the same rule that hides it from their schedule, so a deep link or
+	// an old session id can't book across branches.
+	if (
+		!isClassVisibleToMember(
+			targetClass as any,
+			await getMemberHomeLocationId(params.userId),
+		)
+	) {
+		return {
+			success: false,
+			statusCode: 403,
+			message: "This class runs at a different branch from the member's home club.",
+			reason: "NOT_HOME_BRANCH",
+		};
+	}
 
 	// 2. Booking Window Rule Evaluation (FEATURE-012 Engine)
 	const rulesEval = await evaluateBookingRules({

@@ -10,6 +10,17 @@ export const createTrainerBodySchema = z.object({
 	imageUrl: z.string().optional().default(""),
 	keySentence: z.string().optional().default(""),
 	isActive: z.boolean().optional().default(true),
+	// The branch the trainer works at. "" / "none" / null = no branch; a value
+	// must be an active Location (checked in the controller).
+	locationId: z.preprocess(
+		(v) => (v === "" || v === "none" ? null : v),
+		z
+			.string()
+			.trim()
+			.regex(/^[a-fA-F0-9]{24}$/, "Invalid location id")
+			.nullable()
+			.optional(),
+	),
 });
 
 export const updateTrainerBodySchema = createTrainerBodySchema

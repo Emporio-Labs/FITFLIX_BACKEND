@@ -13,6 +13,7 @@ import {
 	resumeMembership,
 } from "../services/membership-lifecycle.service";
 import {
+	buildLocationFilter,
 	LocationError,
 	mapLocationError,
 	resolveLocationId,
@@ -149,9 +150,22 @@ export const getAllMemberships: RequestHandler = async (req, res, next) => {
 			}
 			filter.user = userId;
 		}
+		// ?locationId= narrows to memberships issued at that branch.
+		const locationIdRaw = req.query.locationId;
+		Object.assign(
+			filter,
+			buildLocationFilter(
+				typeof locationIdRaw === "string" && locationIdRaw ? locationIdRaw : undefined,
+			),
+		);
 		const memberships = await Membership.find(filter);
 		res.status(200).json({ memberships });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+			return;
+		}
 		next(error);
 	}
 };

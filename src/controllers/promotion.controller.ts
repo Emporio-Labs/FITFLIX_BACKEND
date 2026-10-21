@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Promotion from "../models/Promotion";
 import { resolveMemberAudience } from "../utils/membership.guard";
+import { getMemberHomeLocationId } from "../utils/location.resolver";
 import {
 	buildPromotionFilter,
 	canSeeHiddenPromotions,
@@ -75,11 +76,19 @@ export const getAllPromotions: RequestHandler = async (req, res, next) => {
 				? null
 				: await resolveMemberAudience(req.user.id);
 
+		// A member sees their home club's offers plus company-wide ones. The app
+		// sends no branch, so it comes from their record; a member without a
+		// home club keeps seeing everything, as with a single branch.
+		const memberHome =
+			req.user?.role === "user"
+				? await getMemberHomeLocationId(req.user.id)
+				: null;
+
 		// Members only ever see live, in-window promotions; staff can ask for
 		// the full list to manage it.
 		const filter = buildPromotionFilter({
 			role: req.user?.role,
-			locationId: location.locationId,
+			locationId: memberHome ?? location.locationId,
 			includeInactive,
 			audience,
 		});
