@@ -54,8 +54,10 @@ import {
 	normalizeErrorResponse,
 	resolveErrorResponse,
 } from "./utils/api-error";
+import { installReadableValidationMessages } from "./utils/validation-messages";
 
 config();
+installReadableValidationMessages();
 
 const app = express();
 
