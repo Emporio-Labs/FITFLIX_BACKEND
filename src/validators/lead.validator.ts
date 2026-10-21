@@ -4,6 +4,7 @@ import {
 	assessmentQuestionIdsByVersion,
 	assessmentVersions,
 } from "../utils/health-score";
+import { normalizeGender } from "./user.validator";
 
 const leadStatusValues = Object.values(LeadStatus) as [string, ...string[]];
 const genderValues = Object.values(Gender).map(String);
@@ -190,7 +191,11 @@ export const convertLeadBodySchema = z.object({
 	username: z.string().trim().min(1).optional(),
 	phone: z.string().trim().min(1),
 	age: z.string().trim().min(1),
-	gender: z.enum(genderValues as [string, ...string[]]),
+	// FrontDesk's convert dialog still sends the legacy numeric gender (0/1/2).
+	gender: z.preprocess(
+		normalizeGender,
+		z.enum(genderValues as [string, ...string[]]),
+	),
 	healthGoals: z.array(z.string().trim().min(1)).default([]),
 	password: z.string().min(1).optional(),
 });

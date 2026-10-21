@@ -9,7 +9,7 @@ const legacyNumericGender: Record<string, string> = {
 	"2": Gender.Other,
 };
 
-const normalizeGender = (value: unknown): unknown => {
+export const normalizeGender = (value: unknown): unknown => {
 	if (typeof value === "number" && Number.isInteger(value)) {
 		return legacyNumericGender[String(value)] ?? value;
 	}

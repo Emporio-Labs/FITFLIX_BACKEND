@@ -99,6 +99,10 @@ export const transitionInvoiceStatus = async (
 	id: string,
 	newStatus: InvoicePaymentStatus,
 	paymentMethod?: InvoicePaymentMethod,
+	options: {
+		/** When the membership a PAID invoice creates starts. Defaults to now. */
+		membershipStartDate?: Date;
+	} = {},
 ): Promise<{
 	invoice: unknown;
 	lead?: unknown;
@@ -187,8 +191,10 @@ export const transitionInvoiceStatus = async (
 			includedCredits: number;
 		};
 
-		const startDate = now;
-		const endDate = new Date(now);
+		// A presale can be paid well before the branch opens; the desk then
+		// starts the membership on opening day instead of the payment date.
+		const startDate = options.membershipStartDate ?? now;
+		const endDate = new Date(startDate);
 		endDate.setDate(endDate.getDate() + snap.durationInDays);
 
 		const [membership] = await Membership.create(
@@ -203,6 +209,9 @@ export const transitionInvoiceStatus = async (
 					currency: "INR",
 					startDate,
 					endDate,
+					// Issued where the invoice was; without one the location-stamp
+					// plugin falls back to the member's home branch.
+					...(invoice.locationId ? { locationId: invoice.locationId } : {}),
 				},
 			],
 			{ session },
