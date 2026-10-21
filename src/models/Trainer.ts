@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { locationStampPlugin } from "../utils/location-stamp.plugin";
 
 const trainerSchema = new mongoose.Schema(
 	{
@@ -25,6 +26,8 @@ const trainerSchema = new mongoose.Schema(
 );
 
 trainerSchema.index({ locationId: 1, isActive: 1 });
+
+trainerSchema.plugin(locationStampPlugin, { model: "Trainer" });
 
 export default (mongoose.models.Trainer as mongoose.Model<any>) ||
 	mongoose.model("Trainer", trainerSchema);

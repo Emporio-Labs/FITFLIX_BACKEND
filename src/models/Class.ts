@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import mongoose from "mongoose";
+import { locationStampPlugin } from "../utils/location-stamp.plugin";
 
 const classSchema = new mongoose.Schema(
 	{
@@ -194,6 +195,8 @@ const classSchema = new mongoose.Schema(
 classSchema.index({ status: 1, isPublished: 1 });
 
 type ClassDocument = mongoose.InferSchemaType<typeof classSchema>;
+
+classSchema.plugin(locationStampPlugin, { model: "Class" });
 
 export default (mongoose.models.Class as mongoose.Model<ClassDocument>) ||
 	mongoose.model<ClassDocument>("Class", classSchema);

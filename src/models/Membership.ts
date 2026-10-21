@@ -1,4 +1,8 @@
 import mongoose from "mongoose";
+import {
+	homeBranchOf,
+	locationStampPlugin,
+} from "../utils/location-stamp.plugin";
 import { applyIdTransform } from "../utils/mongoose-serialization";
 import { MembershipStatus } from "./Enums";
 
@@ -87,6 +91,12 @@ membershipSchema.index({ status: 1, endDate: 1 });
 applyIdTransform(membershipSchema);
 
 type MembershipDocument = mongoose.InferSchemaType<typeof membershipSchema>;
+
+membershipSchema.plugin(locationStampPlugin, {
+	model: "Membership",
+	// A membership belongs to the member's home branch (FX-01.2).
+	derive: (doc) => homeBranchOf(doc.get("user")),
+});
 
 export default (mongoose.models
 	.Membership as mongoose.Model<MembershipDocument>) ||
