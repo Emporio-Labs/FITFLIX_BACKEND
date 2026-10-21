@@ -1,9 +1,8 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import { type Gender, AlertSeverity, AlertStatus, AlertType, LeadStatus, MembershipStatus } from "../models/Enums";
+import { type Gender, AlertSeverity, AlertStatus, AlertType, LeadStatus } from "../models/Enums";
 import Lead from "../models/Lead";
 import User from "../models/User";
-import Membership from "../models/Membership";
 import OperationalAlert from "../models/OperationalAlert";
 import Location from "../models/Location";
 import { emitOperationalAlert } from "../services/realtime.service";
@@ -645,17 +644,9 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			};
 		}
 
-		// Transactional Membership Allocation: Instantly create and save a new Membership document
-		await Membership.create({
-			user: targetUserId,
-			planName: "Standard Protocol Membership",
-			creditsIncluded: 10,
-			creditsRemaining: 10,
-			status: MembershipStatus.Active,
-			price: 0,
-			startDate: new Date(),
-			endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30-day default limits
-		});
+		// No membership is created here. The member's plan comes from the
+		// invoice they pay (Mark as Paid provisions it) or from the desk assigning
+		// one, so a converted lead never gets free credits they didn't buy.
 
 		// Audit Trail Update
 		lead.status = LeadStatus.Converted;

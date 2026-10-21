@@ -4268,6 +4268,8 @@ Convert a lead into a `User`. If a user with that email already exists, the exis
 
 **Branches:** a newly created member gets the lead's branch as their home club.
 
+No membership is created. The member's plan comes from paying their invoice (`PATCH /invoices/:id/status` → `PAID`) or from `POST /memberships`.
+
 **Auth:** Bearer (`admin`)
 
 **Request body**
