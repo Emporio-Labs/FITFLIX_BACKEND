@@ -22,6 +22,14 @@ export const createMembershipBodySchema = z.object({
 	reason: z.string().trim().optional(),
 });
 
+/**
+ * POST /memberships: an admin creating a membership by hand, outside the
+ * invoice flow. The reason is mandatory and stored on the membership.
+ */
+export const createManualMembershipBodySchema = createMembershipBodySchema.extend({
+	reason: z.string().trim().min(1, "reason is required for a manual membership"),
+});
+
 export const updateMembershipBodySchema = createMembershipBodySchema
 	.partial()
 	.refine((payload) => Object.keys(payload).length > 0, {

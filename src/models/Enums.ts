@@ -14,6 +14,10 @@ export enum BookingStatus {
 
 export enum MembershipStatus {
 	Active = "Active",
+	// Sold, but its start date is still ahead (e.g. a presale for a branch
+	// that hasn't opened). Not usable: every access/credit gate filters on
+	// Active. Flipped to Active by activateDueMemberships once it starts.
+	Upcoming = "Upcoming",
 	Paused = "Paused",
 	Cancelled = "Cancelled",
 	Expired = "Expired",
