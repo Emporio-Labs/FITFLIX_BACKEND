@@ -1333,6 +1333,7 @@ Create a user (admin-managed). Use `/auth/signup` for self-service signup.
 | `emergencyContact` | string | no | |
 | `address` | string | no | |
 | `onboarded` | boolean | no | default `false` |
+| `homeLocationId` (alias `homeClubId`) | string \| null | no | The member's home branch. Must be an active Location; `""`/`"none"`/`null` leaves it empty |
 
 **Example request**
 
@@ -1358,7 +1359,9 @@ const { data } = await axios.post(
 );
 ```
 
-**Success (201):** `{ "message": "User created", "user": { /* ... */ } }` — **Errors:** 400, 409.
+**Success (201):** `{ "message": "User created", "user": { /* ... */ } }` — **Errors:** 400 (incl. `INVALID_LOCATION_ID`, `LOCATION_INACTIVE`), 404 `LOCATION_NOT_FOUND`, 409.
+
+`user.homeClubId` mirrors `homeLocationId` on every user response.
 
 ### GET /users
 
@@ -1376,6 +1379,9 @@ List users with search, filter, pagination.
 | `limit` | number | no | 20 | 1–100 |
 | `sort` | enum | no | `createdAt` | `username` \| `email` \| `phone` \| `createdAt` |
 | `order` | enum | no | `desc` | `asc` \| `desc` |
+| `locationId` | string | no | — | Only members whose home branch is this Location. Malformed id → 400 `INVALID_LOCATION_ID` |
+
+Each row includes `homeLocationId` and its alias `homeClubId`.
 
 **Example request**
 
@@ -1624,6 +1630,8 @@ curl -X PATCH "https://api.example.com/users/5f1a2b3c4d5e6f7a8b9c0d1e" \
   -H "Content-Type: application/json" \
   -d '{ "phone": "+15555550199" }'
 ```
+
+`homeLocationId` (alias `homeClubId`) moves or clears the member's home branch. Admins only; a member sending it on their own record is ignored. Same branch errors as `POST /users`.
 
 **Success (200):** `{ "user": { /* ... */ } }`
 

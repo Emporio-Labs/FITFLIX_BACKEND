@@ -39,6 +39,12 @@ import {
 	upsertBcaRecordForUser,
 } from "../utils/activex.service";
 import { buildApiErrorEnvelope } from "../utils/api-error";
+import {
+	buildLocationFilter,
+	LocationError,
+	mapLocationError,
+	resolveLocationId,
+} from "../utils/location.resolver";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import { generateSignedUrl } from "../utils/s3.service";
@@ -96,6 +102,33 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	return idParam;
 };
 
+/**
+ * Resolve the member's home club for persistence. Accepts `homeLocationId` or
+ * the staff console's `homeClubId` alias. `{ set: false }` leaves the field
+ * untouched, `value: null` clears it, and a concrete id must name an active
+ * Location (throws LocationError otherwise).
+ */
+const resolveHomeLocationPatch = async (input: {
+	homeLocationId?: string | null;
+	homeClubId?: string | null;
+}): Promise<
+	{ set: false } | { set: true; value: mongoose.Types.ObjectId | null }
+> => {
+	const raw =
+		input.homeLocationId !== undefined ? input.homeLocationId : input.homeClubId;
+	if (raw === undefined) return { set: false };
+	if (raw === null) return { set: true, value: null };
+	return { set: true, value: await resolveLocationId(raw) };
+};
+
+const sendLocationError = (
+	res: Parameters<RequestHandler>[1],
+	error: LocationError,
+) => {
+	const mapped = mapLocationError(error);
+	res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+};
+
 export const createUser: RequestHandler = async (req, res, next) => {
 	const parsedBody = createUserBodySchema.safeParse(req.body);
 
@@ -114,10 +147,15 @@ export const createUser: RequestHandler = async (req, res, next) => {
 		email,
 		phone,
 		staffRole,
+		homeLocationId,
+		homeClubId,
 		...rest
 	} = parsedBody.data;
 
 	try {
+		// Resolve the home club first so a bad branch id fails the create
+		// cleanly rather than half-writing a user.
+		const homeClub = await resolveHomeLocationPatch({ homeLocationId, homeClubId });
 		const passwordHash = password ? await hashPassword(password) : undefined;
 		const sanitizedEmail =
 			email && typeof email === "string" && email.trim() !== ""
@@ -155,6 +193,7 @@ export const createUser: RequestHandler = async (req, res, next) => {
 			...(staffRole !== undefined
 				? { staffRole: staffRole as StaffRole }
 				: {}),
+			...(homeClub.set ? { homeLocationId: homeClub.value } : {}),
 			gender: rest.gender as Gender,
 			phone: last10,
 			email: sanitizedEmail,
@@ -189,6 +228,10 @@ export const createUser: RequestHandler = async (req, res, next) => {
 
 		res.status(201).json({ message: "User created", user });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			sendLocationError(res, error);
+			return;
+		}
 		console.error("[POST /users] Error creating user:", error);
 		next(error);
 	}
@@ -206,9 +249,14 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const { search, status, page, limit, sort, order } = parsed.data;
+		const { search, status, page, limit, sort, order, locationId } =
+			parsed.data;
 
-		const filter: Record<string, unknown> = {};
+		// Members belong to a branch through `homeLocationId`.
+		const filter: Record<string, unknown> = buildLocationFilter(
+			locationId,
+			"homeLocationId",
+		);
 		if (search) {
 			const searchRegex = new RegExp(search, "i");
 			filter.$or = [
@@ -353,6 +401,8 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 					gender: 1,
 					createdAt: 1,
 					updatedAt: 1,
+					homeLocationId: 1,
+					homeClubId: "$homeLocationId",
 					onboarded: {
 						$ifNull: ["$onboarded", "$onboardingStatus.onboardingCompleted"],
 					},
@@ -457,6 +507,10 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 			},
 		});
 	} catch (error) {
+		if (error instanceof LocationError) {
+			sendLocationError(res, error);
+			return;
+		}
 		next(error);
 	}
 };
@@ -855,15 +909,27 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const { password, email, phone, staffRole, ...rest } = parsedBody.data;
+		const {
+			password,
+			email,
+			phone,
+			staffRole,
+			homeLocationId,
+			homeClubId,
+			...rest
+		} = parsedBody.data;
 		// PATCH /users/:id is reachable by the member themselves. `staffRole` is
 		// what makes an account a nutritionist / sports scientist, so letting it
 		// through on that path would be self-service privilege escalation —
 		// admins only.
+		const isAdminCaller = normalizeRole(req.user.role) === "admin";
 		const staffRolePatch =
-			staffRole !== undefined && normalizeRole(req.user.role) === "admin"
-				? { staffRole }
-				: {};
+			staffRole !== undefined && isAdminCaller ? { staffRole } : {};
+		// The home club decides which branch's classes and offers a member sees,
+		// so moving it is the desk's call, not the member's.
+		const homeClub = isAdminCaller
+			? await resolveHomeLocationPatch({ homeLocationId, homeClubId })
+			: ({ set: false } as const);
 		const sanitizedEmail =
 			email && typeof email === "string" && email.trim() !== ""
 				? email.trim()
@@ -902,6 +968,7 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 		const updatePayload = {
 			...rest,
 			...staffRolePatch,
+			...(homeClub.set ? { homeLocationId: homeClub.value } : {}),
 			email: sanitizedEmail,
 			...(normalizedPhone ? { phone: normalizedPhone } : {}),
 			...(hashedPassword ? { passwordHash: hashedPassword } : {}),
@@ -922,6 +989,10 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 
 		res.status(200).json({ user: updatedUser });
 	} catch (error) {
+		if (error instanceof LocationError) {
+			sendLocationError(res, error);
+			return;
+		}
 		next(error);
 	}
 };

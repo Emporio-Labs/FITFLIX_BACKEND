@@ -191,6 +191,13 @@ userSchema.index(
 // anything added to this schema leaks into every existing response.
 userSchema.index({ username: 1 });
 
+// The staff console reads the member's home club as `homeClubId`;
+// `homeLocationId` stays the canonical field server-side. Virtuals don't run
+// through aggregation, so the members list projects the alias itself.
+userSchema.virtual("homeClubId").get(function (this: { homeLocationId?: unknown }) {
+	return this.homeLocationId ? String(this.homeLocationId) : null;
+});
+
 applyIdTransform(userSchema);
 
 type UserDocument = mongoose.InferSchemaType<typeof userSchema>;
