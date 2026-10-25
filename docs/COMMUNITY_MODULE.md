@@ -248,7 +248,7 @@ and unscoped callers, and that step-up is enforced. See
 
 ### 5.4 Deploy
 
-Backend deploys via `vercel.json` / `bun run build:vercel`; the front desk is a
+Backend deploys to the AWS EC2 instance (api.fitflix.in, reached via SSM); the front desk is a
 standard Next.js build. **Deploying to staging requires credentials this
 repository does not carry — that step is performed by the operator.**
 

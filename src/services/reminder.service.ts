@@ -207,8 +207,7 @@ export async function processReminders(): Promise<{
 	// Group-class / live-stream room lifecycle: stamp room IDs at (start -
 	// lead), tear rooms down at (end + grace). Piggybacking on this poller
 	// gives non-serverless deployments a minute-granularity tick for free,
-	// alongside the external caller that drives /internal/sessions/lifecycle/tick
-	// on Vercel (whose own cron only fires daily).
+	// alongside any external caller that drives /internal/sessions/lifecycle/tick.
 	try {
 		await prepareDueRooms(now);
 		await verifyHostPresence(now);
