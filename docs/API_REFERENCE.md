@@ -46,15 +46,16 @@ Single-source HTTP reference for the Fitflix Express + MongoDB backend that powe
 26. [Workouts — `/workouts`](#workouts--workouts)
 27. [Workout plans — `/workout-plans`](#workout-plans--workout-plans)
 28. [Leads — `/leads`](#leads--leads)
-29. [Dashboard — `/dashboard`](#dashboard--dashboard)
-30. [Nutrition — `/nutrition`](#nutrition--nutrition)
-31. [Nutritionist bookings — `/nutritionist`](#nutritionist-bookings--nutritionist)
-32. [Notifications — `/notifications`](#notifications--notifications)
-33. [Webhook — `/webhook`](#webhook--webhook)
-34. [Internal — `/internal`](#internal--internal)
-35. [Health & diagnostics](#health--diagnostics)
-36. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
-37. [Appendix B: Path aliases](#appendix-b-path-aliases)
+29. [People lookup — `/people`](#people-lookup--people)
+30. [Dashboard — `/dashboard`](#dashboard--dashboard)
+31. [Nutrition — `/nutrition`](#nutrition--nutrition)
+32. [Nutritionist bookings — `/nutritionist`](#nutritionist-bookings--nutritionist)
+33. [Notifications — `/notifications`](#notifications--notifications)
+34. [Webhook — `/webhook`](#webhook--webhook)
+35. [Internal — `/internal`](#internal--internal)
+36. [Health & diagnostics](#health--diagnostics)
+37. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
+38. [Appendix B: Path aliases](#appendix-b-path-aliases)
 
 ---
 
@@ -462,6 +463,14 @@ Rate limit: `apiRateLimit`.
 | PATCH | `/leads/:id` | JWT | admin, frontdesk, trainer | `updateLeadById` |
 | DELETE | `/leads/:id` | JWT | admin, frontdesk | `deleteLeadById` |
 | POST | `/leads/:id/convert` | JWT | admin, frontdesk | `convertLeadToUser` |
+
+#### `/people` → [people.routes.ts](../src/routes/people.routes.ts)
+
+Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/people/lookup` | JWT | admin, frontdesk | `lookupPeople` |
 
 #### `/invoices` → [invoice.routes.ts](../src/routes/invoice.routes.ts)
 
@@ -1342,7 +1351,9 @@ Create a user (admin-managed). Use `/auth/signup` for self-service signup.
 
 | Field | Type | Required | Constraints |
 |---|---|---|---|
-| `username`, `phone`, `email`, `password`, `age`, `gender` | — | yes | Same as `/auth/signup` |
+| `username`, `phone`, `gender` | — | yes | Same as `/auth/signup` |
+| `email`, `password` | — | no | Same rules as `/auth/signup` when given |
+| `age` | number | no | integer 0–130. Optional for staff-created accounts (app signup still requires it), so `age` may be absent on a member |
 | `dateOfBirth` | string/Date | no | ISO date |
 | `emergencyContact` | string | no | |
 | `address` | string | no | |
@@ -3348,15 +3359,29 @@ Admin-defined plan catalogue that `Membership` records are sold from. From
 > `GET /membership-plans` is declared **before** `router.use(authenticateToken)`,
 > making it the only public route in this file. Every other route requires a JWT.
 
+**Branches.** A plan has `locationId` — the branch it is sold at, or `null`
+for every branch. Plans are deliberately not stamped with the default branch
+on create, so leaving `locationId` out keeps a plan all-branch. `isFounding`
+marks founding-member (presale) pricing, and `availableUntil` is the last
+moment the plan can be sold (`null` = no cut-off). A branch's opening day is
+`Location.opensOn` (`null` = open), set through the existing
+`POST /locations` / `PATCH /locations/:id` body as `"YYYY-MM-DD"` or ISO.
+
 ### GET /membership-plans
 
-Full plan catalogue. Returns every plan, including `active: false` ones — there
-is no filtering or pagination.
+Plan catalogue, including `active: false` plans. No pagination.
 
 **Auth:** Public
 
+**Query params**
+
+| Param | Meaning |
+|---|---|
+| `locationId` | Only plans sold at that branch **plus** all-branch plans (`locationId: null`, including plans saved before the field existed). 400 `INVALID_LOCATION_ID` if malformed. |
+| `includeExpired` | `true` also returns plans past `availableUntil`. By default they are hidden. |
+
 ```bash
-curl "https://api.example.com/membership-plans"
+curl "https://api.example.com/membership-plans?locationId=6650f1a2b3c4d5e6f7a8b9c1"
 ```
 
 **Success (200)**
@@ -3375,7 +3400,10 @@ curl "https://api.example.com/membership-plans"
       "active": true,
       "gymId": "hsr-layout",
       "durationMonths": 3,
-      "benefits": {}
+      "benefits": {},
+      "locationId": null,
+      "isFounding": false,
+      "availableUntil": null
     }
   ]
 }
@@ -3407,6 +3435,9 @@ curl "https://api.example.com/membership-plans"
 | `active` | boolean | no | model default `true` | |
 | `durationMonths` | number | no | `1` | integer ≥ 1 |
 | `benefits` | object | no | `{}` | Arbitrary key/value map |
+| `locationId` | ObjectId \| null | no | `null` | Branch the plan is sold at; must be an active Location. `null`, `""` or `"all"` = every branch |
+| `isFounding` | boolean | no | `false` | Founding-member pricing |
+| `availableUntil` | date \| null | no | `null` | `"YYYY-MM-DD"` or ISO; `null` clears the cut-off |
 
 **Success (201):** `{ "message": "Membership plan created", "plan": { /* ... */ }, "requestId": "..." }`
 
@@ -3415,6 +3446,8 @@ curl "https://api.example.com/membership-plans"
 | Status | Code | When |
 |---|---|---|
 | 400 | `INVALID_PAYLOAD` | Zod validation failed |
+| 400 | `INVALID_LOCATION_ID` / `LOCATION_INACTIVE` | `locationId` malformed or not an active branch |
+| 404 | `LOCATION_NOT_FOUND` | `locationId` is not a branch |
 | 409 | `DUPLICATE_RESOURCE` | Plan already exists (duplicate key) |
 | 500 | `INTERNAL_ERROR` | `Failed to create membership plan` |
 
@@ -3426,7 +3459,7 @@ Partial update — at least one field required.
 
 **Success (200):** `{ "message": "Membership plan updated", "plan": { /* ... */ }, "requestId": "..." }`
 
-**Errors:** 400 `Invalid id`, 400 `INVALID_PAYLOAD`, 404, 409 `DUPLICATE_RESOURCE`.
+**Errors:** 400 `Invalid id`, 400 `INVALID_PAYLOAD`, the branch errors of POST, 404, 409 `DUPLICATE_RESOURCE`.
 
 ### DELETE /membership-plans/:id
 
@@ -4195,7 +4228,7 @@ Create a lead (back office).
 | `tags` | string[] | no |
 | `followUpDate` | ISO date | no |
 | `ownerId` | ObjectId | no |
-| `status` | `LeadStatus` | no |
+| `status` | `LeadStatus` | no — any but `Converted` |
 
 ```bash
 curl -X POST "https://api.example.com/leads" \
@@ -4204,6 +4237,8 @@ curl -X POST "https://api.example.com/leads" \
 ```
 
 **Success (201):** `{ "message": "Lead created", "lead": { /* ... */ } }`
+
+**Errors:** `400 LEAD_CONVERSION_NOT_ALLOWED` when `status` is `Converted` — see [PATCH /leads/:id](#patch-leadsid).
 
 ### GET /leads
 
@@ -4216,6 +4251,10 @@ curl "https://api.example.com/leads" -H "Authorization: Bearer $TOKEN"
 ```
 
 **Success (200):** `{ "leads": [ /* ... */ ] }`
+
+Each lead carries `pendingInvoiceId`: the id of its newest `DRAFT`/`PENDING`
+invoice, or `null`. Read in one query for the whole list. `GET /leads/:id`
+returns it too.
 
 ### GET /leads/stats
 
@@ -4266,6 +4305,10 @@ curl -X PATCH "https://api.example.com/leads/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 **Success (200):** `{ "message": "Lead updated", "lead": { /* ... */ } }`
 
+**Errors:** `400 { "code": "LEAD_CONVERSION_NOT_ALLOWED" }` when `status` is
+`Converted`. A lead converts only by becoming a member — its invoice is paid
+(`PATCH /invoices/:id/status` → `PAID`) or [`POST /leads/:id/convert`](#post-leadsidconvert).
+
 ### DELETE /leads/:id
 
 **Auth:** Bearer (`admin`)
@@ -4312,6 +4355,89 @@ curl -X POST "https://api.example.com/leads/5f1a2b3c4d5e6f7a8b9c0d1e/convert" \
   "user": { "id": "5f1a2b3c4d5e6f7a8b9c0d1e", "email": "user@example.com", "role": "user" }
 }
 ```
+
+---
+
+## People lookup — `/people`
+
+From [people.routes.ts](../src/routes/people.routes.ts). The first step of the
+desk's New sale flow: is this person already a member, a lead, or someone with
+an unpaid invoice?
+
+### GET /people/lookup
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+**Query params:** `q` (required, 2–100 chars).
+
+- Four or more digits (spaces, `+`, `-`, brackets allowed) is a **phone**
+  search on the last 10 digits: `+91 98765 43210`, `9876543210` and `98765`
+  all find `9876543210`, and separators in the stored phone are ignored.
+- Anything else is a case-insensitive **name or email** search (members by
+  `username`, leads by `leadName`). Regex characters match literally.
+
+Searches every branch. At most 10 members, 10 leads and 10 pending invoices,
+most recently updated/created first. Leads already `Converted` are left out —
+the member row stands for them.
+
+```bash
+curl "https://api.example.com/people/lookup?q=98765" -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200)**
+
+```json
+{
+  "members": [
+    {
+      "_id": "6650f1a2b3c4d5e6f7a8b9c0",
+      "username": "Ravi",
+      "phone": "9876543210",
+      "email": "ravi@example.com",
+      "homeLocationId": "6650f1a2b3c4d5e6f7a8b9c1",
+      "currentMembership": {
+        "_id": "6650f1a2b3c4d5e6f7a8b9c2",
+        "planId": null,
+        "planName": "Gold",
+        "status": "Active",
+        "startDate": "2026-06-01T00:00:00.000Z",
+        "endDate": "2026-12-31T00:00:00.000Z",
+        "locationId": "6650f1a2b3c4d5e6f7a8b9c1"
+      }
+    }
+  ],
+  "leads": [
+    {
+      "_id": "6650f1a2b3c4d5e6f7a8b9c3",
+      "name": "Ravi Kumar",
+      "phone": "+91 98765 43210",
+      "email": "",
+      "status": "Hot",
+      "locationId": "6650f1a2b3c4d5e6f7a8b9c1",
+      "interestedIn": "Gold",
+      "pendingInvoiceId": "6650f1a2b3c4d5e6f7a8b9c4"
+    }
+  ],
+  "pendingInvoices": [
+    {
+      "_id": "6650f1a2b3c4d5e6f7a8b9c4",
+      "invoiceNumber": "INV-2026-0042",
+      "total": 5899,
+      "userId": null,
+      "leadId": "6650f1a2b3c4d5e6f7a8b9c3",
+      "locationId": "6650f1a2b3c4d5e6f7a8b9c1"
+    }
+  ]
+}
+```
+
+- `currentMembership` is the member's `Active`, `Paused` or `Upcoming`
+  membership with the latest `endDate`, or `null`. `planId` is `null` on
+  memberships sold before memberships carried it.
+- `pendingInvoices` are the `DRAFT`/`PENDING` invoices of the members and
+  leads found.
+
+**Errors:** `400 VALIDATION_ERROR` when `q` is missing, blank or over 100 characters.
 
 ---
 

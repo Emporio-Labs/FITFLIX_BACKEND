@@ -36,6 +36,7 @@ import expertAppointmentRouter from "./routes/expert-appointment.routes";
 import expertScheduleRouter from "./routes/expert-schedule.routes";
 
 import onboardingRouter from "./routes/onboarding.routes";
+import peopleRouter from "./routes/people.routes";
 import dnaRouter from "./routes/dna.routes";
 import scheduleRouter from "./routes/schedule.routes";
 import serviceRouter from "./routes/service.routes";
@@ -264,6 +265,7 @@ app.use("/api/v1/credits", apiRateLimit, creditRouter);
 app.use("/schedules", apiRateLimit, scheduleRouter);
 app.use("/exercises", apiRateLimit, exerciseRouter);
 app.use("/leads", apiRateLimit, leadRouter);
+app.use("/people", apiRateLimit, peopleRouter);
 app.use("/gym-visits", apiRateLimit, gymVisitRouter);
 app.use("/invoices", apiRateLimit, invoiceRouter);
 app.use("/api/invoices", apiRateLimit, invoiceRouter);

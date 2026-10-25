@@ -95,6 +95,10 @@ const locationSchema = new mongoose.Schema(
 		// through here rather than the server's local clock.
 		timezone: { type: String, default: "Asia/Kolkata" },
 		isActive: { type: Boolean, default: true },
+		// The day the branch opens its doors. null = already open (or unknown).
+		// A branch in presale is active (it sells founding plans) but has a
+		// future opensOn, so memberships sold there start on or after it.
+		opensOn: { type: Date, default: null },
 		settings: { type: locationSettingsSchema, default: () => ({}) },
 	},
 	{ timestamps: true },

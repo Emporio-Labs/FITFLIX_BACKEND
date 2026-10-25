@@ -14,6 +14,20 @@ export const createMembershipPlanSchema = z.object({
 	// being coerced to 0 and failing `.positive()`. null clears a day-based duration.
 	durationDays: z.coerce.number().int().positive().nullable().optional(),
 	benefits: z.record(z.string(), z.any()).default({}),
+	// The branch the plan is sold at. Omitted, "", "all" or null = every
+	// branch. A value must be an active Location (checked in the controller).
+	locationId: z.preprocess(
+		(v) => (v === "" || v === "all" ? null : v),
+		z
+			.string()
+			.trim()
+			.regex(/^[a-fA-F0-9]{24}$/, "Invalid location id")
+			.nullable()
+			.optional(),
+	),
+	isFounding: z.boolean().optional(),
+	// "YYYY-MM-DD" or ISO; null clears the cut-off.
+	availableUntil: z.coerce.date().nullable().optional(),
 });
 
 export const updateMembershipPlanSchema = createMembershipPlanSchema
