@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Express.js + MongoDB backend for the **Fitflix Flutter app** and **FrontDesk Fitflix admin dashboard**. Deployed on Vercel via serverless function.
+Express.js + MongoDB backend for the **Fitflix Flutter app** and **FrontDesk Fitflix admin dashboard**. Deployed on an AWS EC2 t3.small instance (`FITFLIX_OFFICIAL_SERVER`, ap-south-1, api.fitflix.in). Access it via AWS SSM (no SSH) to read server/app logs.
 
 **Runtime:** Bun (also compatible with Node.js)
 **Language:** TypeScript (strict)
@@ -35,7 +35,6 @@ npx tsc --noEmit                     # TypeScript type check (no emit)
 ```
 FITFLIX_BACKEND/
 ├── index.ts                  # Entry point — connects DB, starts server
-├── api/index.ts              # Vercel serverless handler
 ├── src/
 │   ├── app.ts                # Express app, CORS, middleware, route mounting
 │   ├── models/               # Mongoose schemas
@@ -46,7 +45,7 @@ FITFLIX_BACKEND/
 │   ├── utils/                # Services and helpers
 │   └── types/                # TypeScript type augmentations
 ├── scripts/                  # One-off admin/migration scripts
-└── vercel.json               # Vercel deployment config
+└── (no vercel.json — Vercel is no longer used)
 ```
 
 ---

@@ -7,10 +7,9 @@
 [![Mongoose](https://img.shields.io/badge/Mongoose-880000?style=for-the-badge&logo=mongoose&logoColor=white)](https://mongoosejs.com/)
 [![Zod](https://img.shields.io/badge/zod-%233068b7.svg?style=for-the-badge&logo=zod&logoColor=white)](https://zod.dev/)
 [![Biome](https://img.shields.io/badge/Biome-%2360A5FA.svg?style=for-the-badge&logo=biome&logoColor=white)](https://biomejs.dev)
-[![Vercel](https://img.shields.io/badge/vercel-%23000000.svg?style=for-the-badge&logo=vercel&logoColor=white)](https://vercel.com)
 
 > **The high-performance, strictly typed engine powering the Fitflix ecosystem.**  
-> Serving the **Fitflix Flutter app** (for users) and the **FrontDesk Fitflix dashboard** (for admin/doctors/trainers). Deployed seamlessly on Vercel Serverless.
+> Serving the **Fitflix Flutter app** (for users) and the **FrontDesk Fitflix dashboard** (for admin/doctors/trainers). Deployed on an AWS EC2 t3.small instance (api.fitflix.in), accessed via AWS SSM.
 
 ---
 
@@ -30,8 +29,6 @@
 ```
 FITFLIX_BACKEND/
 ├── index.ts                  # Main entry point (db connection, HTTP & WebSocket initialization)
-├── api/
-│   └── index.ts              # Vercel serverless function wrapper
 ├── src/
 │   ├── app.ts                # Express setup, middleware chains, & API router mounts
 │   ├── models/               # Mongoose database schemas & TypeScript schema definitions
@@ -164,4 +161,4 @@ This project is private and proprietary. Unauthorized copying, distribution, or 
 For infrastructure access, deployment questions, or issues:
 - **Lead Developers**: Emporio Labs Engineering Team
 - **Issue Tracker**: GitHub Repository Issues page
-- **Deployment Endpoint**: [https://hybridhuman-backend.vercel.app](https://hybridhuman-backend.vercel.app)
+- **Deployment Endpoint**: [https://api.fitflix.in](https://api.fitflix.in) (AWS EC2)

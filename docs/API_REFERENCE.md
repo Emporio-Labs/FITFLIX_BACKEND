@@ -5627,7 +5627,7 @@ curl -X POST "https://api.example.com/internal/reminders/tick" \
 ### POST /internal/sessions/lifecycle/tick
 
 Drives the video-room lifecycle. Called **every minute** by an external
-scheduler — the Vercel Cron entry only runs daily, far too coarse for a
+scheduler — a daily cron would be far too coarse for a
 lead-time / expiry-grace room lifecycle.
 
 **Auth:** `X-Internal-Secret` (or `X-Webhook-Secret`)
