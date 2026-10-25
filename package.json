@@ -34,6 +34,7 @@
 		"test:content": "bun run tests/content-resolution.test.ts",
 		"test:activity-consent": "bun run tests/activity-consent.test.ts",
 		"test:timezone": "bun run tests/timezone-util.test.ts",
+		"test:realtime-expired-token": "bun run tests/realtime-expired-token.test.ts",
 		"test:workout-plan-excel": "bun run tests/workout-plan-excel.test.ts",
 		"test:analytics": "bun run tests/analytics-score-insights.test.ts",
 		"test:session-window": "bun run tests/session-window.test.ts",
