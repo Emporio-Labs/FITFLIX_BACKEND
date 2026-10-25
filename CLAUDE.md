@@ -224,7 +224,7 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 ```
 Gender              — Male, Female, Other (string; legacy numeric 0/1/2 normalized on input)
 BookingStatus       — Booked, Confirmed, Cancelled, Attended, Unattended (numeric)
-MembershipStatus    — Active, Paused, Cancelled, Expired
+MembershipStatus    — Active, Upcoming, Paused, Cancelled, Expired
 TodoStatus          — Todo, Doing, Done (numeric)
 LeadStatus          — New, Contacted, Qualified, Warm, Hot, Cold, Converted, Lost
 CreditTransactionType  — Consume, Refund, AdminTopUp, Void

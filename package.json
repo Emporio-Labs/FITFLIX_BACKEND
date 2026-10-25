@@ -63,6 +63,7 @@
 		"check:missing-branch": "bun run scripts/check-missing-branch.ts",
 		"backfill:branches": "bun run scripts/backfill-branches.ts",
 		"test:branch-backfill": "bun run tests/branch-backfill.test.ts",
+		"test:new-sale": "bun run tests/new-sale.test.ts",
 		"test:community": "bun run tests/community/community-foundation.test.ts",
 		"test:community-posts": "COMMUNITY_MAX_IMAGE_BYTES=10485760 bun run tests/community/posts-feed.test.ts",
 		"test:community-engagement": "bun run tests/community/engagement.test.ts",
