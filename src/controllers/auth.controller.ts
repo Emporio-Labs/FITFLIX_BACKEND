@@ -22,6 +22,7 @@ import {
 } from "../utils/password";
 import type { AppUserRole } from "../types/auth";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
+import { recordLoginEvent } from "../utils/login-event.service";
 import {
 	loginBodySchema,
 	refreshTokenBodySchema,
@@ -332,6 +333,24 @@ export const login: RequestHandler = async (req, res, next) => {
 			userPayloadRole: userPayload.role,
 			userPayloadOnboarded: userPayload.onboarded,
 		});
+
+		// Which document matched decides the name/branch snapshot. Not awaited:
+		// the audit write must never hold up or fail the login.
+		const matchedDoc =
+			[
+				{ kind: "user" as const, doc: user },
+				{ kind: "admin" as const, doc: admin },
+				{ kind: "trainer" as const, doc: trainer },
+			].find(({ doc }) => doc?._id.toString() === matchedAccount.id) ?? null;
+		if (matchedDoc?.doc) {
+			void recordLoginEvent({
+				req,
+				kind: matchedDoc.kind,
+				account: matchedDoc.doc,
+				role: matchedAccount.role,
+				email: matchedAccount.email,
+			});
+		}
 
 		res.status(200).json({
 			message: "Login successful",
