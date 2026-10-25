@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import Lead from "../models/Lead";
 import User from "../models/User";
+import { recordLoginEvent } from "../utils/login-event.service";
 import { defaultLocationId } from "../utils/location-stamp.plugin";
 import { Gender, LeadStatus, OnboardingStep } from "../models/Enums";
 import { MINOR_AGE_THRESHOLD } from "../utils/activity-consent";
@@ -24,6 +25,8 @@ import {
 type UserAuthDoc = {
 	_id: { toString(): string };
 	email?: string | null;
+	username?: string;
+	homeLocationId?: import("mongoose").Types.ObjectId | null;
 	onboarded?: boolean;
 	onboardingStatus?: unknown;
 };
@@ -76,6 +79,17 @@ const buildAuthResponse = (user: UserAuthDoc) => {
 			onboardingStatus: user.onboardingStatus ?? null,
 		},
 	};
+};
+
+/** Members sign in this way; the front desk report hides role "user" by default. */
+const trackPhoneLogin = (req: Parameters<RequestHandler>[0], user: UserAuthDoc) => {
+	void recordLoginEvent({
+		req,
+		kind: "user",
+		account: user,
+		role: "user",
+		email: user.email ?? "",
+	});
 };
 
 /** Map a FirebaseAuthError onto the proper HTTP response. */
@@ -131,12 +145,12 @@ export const verifyPhone: RequestHandler = async (req, res, next) => {
 		// Prefer the stable Firebase UID; fall back to phone to link pre-existing
 		// accounts created before phone auth existed.
 		let user = await User.findOne({ firebaseUid }).select(
-			"email onboarded onboardingStatus",
+			"email username homeLocationId onboarded onboardingStatus",
 		);
 
 		if (!user) {
 			user = await User.findOne({ phone: { $regex: new RegExp(last10 + "$") } }).select(
-				"email onboarded onboardingStatus firebaseUid",
+				"email username homeLocationId onboarded onboardingStatus firebaseUid",
 			);
 
 			// Backfill firebaseUid on a legacy account matched by phone.
@@ -162,6 +176,7 @@ export const verifyPhone: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		trackPhoneLogin(req, user);
 		res.status(200).json({
 			message: "Login successful",
 			isNewUser: false,
@@ -213,7 +228,7 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 		// instead of creating a duplicate.
 		const existing = await User.findOne({
 			$or: [{ firebaseUid }, { phone: { $regex: new RegExp(last10 + "$") } }],
-		}).select("email onboarded onboardingStatus");
+		}).select("email username homeLocationId onboarded onboardingStatus");
 
 		if (existing) {
 			const auth = buildAuthResponse(existing);
@@ -224,6 +239,7 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 				});
 				return;
 			}
+			trackPhoneLogin(req, existing);
 			res.status(200).json({ message: "Login successful", isNewUser: false, ...auth });
 			return;
 		}
@@ -252,10 +268,11 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 			if ((error as { code?: number }).code === 11000) {
 				const raced = await User.findOne({
 					$or: [{ firebaseUid }, { phone: { $regex: new RegExp(last10 + "$") } }],
-				}).select("email onboarded onboardingStatus");
+				}).select("email username homeLocationId onboarded onboardingStatus");
 				if (raced) {
 					const auth = buildAuthResponse(raced);
 					if (auth) {
+						trackPhoneLogin(req, raced);
 						res
 							.status(200)
 							.json({ message: "Login successful", isNewUser: false, ...auth });
