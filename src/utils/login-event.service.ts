@@ -32,6 +32,16 @@ const resolveLoginBranch = async (
 };
 
 /**
+ * `req.ip` is undefined when the socket has already gone away, even with
+ * `trust proxy` on. Same lookup as the captcha middleware: first
+ * x-forwarded-for hop, then req.ip.
+ */
+const getClientIp = (req: Request): string => {
+	const forwarded = req.header("x-forwarded-for")?.split(",")[0]?.trim();
+	return forwarded || req.ip || req.socket?.remoteAddress || "";
+};
+
+/**
  * Persist a successful login. Best-effort by design: an audit-write failure
  * must never fail or slow the login itself, so callers don't await this.
  */
@@ -56,7 +66,7 @@ export const recordLoginEvent = async ({
 			name: account.adminName ?? account.trainerName ?? account.username ?? "",
 			email,
 			locationId: await resolveLoginBranch(account),
-			ip: req.ip ?? "",
+			ip: getClientIp(req),
 			userAgent: (req.header("user-agent") ?? "").slice(0, 300),
 		});
 	} catch (error) {

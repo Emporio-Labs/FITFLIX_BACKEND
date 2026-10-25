@@ -298,6 +298,7 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 | POST | `/admins` | JWT | admin | `createAdmin` |
 | GET | `/admins` | JWT | admin | `getAllAdmins` |
 | GET | `/admins/deletion-requests` | JWT | admin | `getDeletionRequests` |
+| GET | `/admins/login-events` | JWT | admin | `listLoginEvents` |
 | PATCH | `/admins/deletion-requests/:id` | JWT | admin | `updateDeletionRequestStatus` |
 | GET | `/admins/:id` | JWT | admin | `getAdminById` |
 | PATCH | `/admins/:id` | JWT | admin | `updateAdminById` |
@@ -1157,6 +1158,30 @@ const { data } = await axios.get("https://api.example.com/admins", {
 ```
 
 **Success response (200):** `{ "admins": [{ "_id": "...", "adminName": "...", "email": "...", "phone": "..." }] }`
+
+### GET /admins/login-events
+
+Raw login rows behind the front desk **Login Activity** report. Every successful
+email/password login (admin, trainer, member) and phone/OTP login (member) is
+saved with name, role, branch and IP; the page does the daily and per-person
+rollups.
+
+> Declared **before** `/admins/:id` in
+> [admin.routes.ts](../src/routes/admin.routes.ts). Keep that ordering.
+
+**Query params**
+
+| Param | Type | Required | Notes |
+|---|---|---|---|
+| `from` | `YYYY-MM-DD` | yes | First IST calendar day (inclusive) |
+| `to` | `YYYY-MM-DD` | yes | Last IST calendar day (inclusive); not before `from` |
+| `role` | string | no | Exact role, e.g. `admin`, `trainer`, `user` |
+| `excludeRole` | string | no | Ignored when `role` is set. `user` gives a staff-only view |
+
+Range is capped at 92 days (400 otherwise).
+
+**Success response (200):** `{ "items": [{ "id", "accountId", "accountKind", "role", "name", "email", "locationId": { "id", "name" } | null, "ip", "createdAt" }], "truncated": false }`
+newest first, capped at 5000 (`truncated: true` when more existed).
 
 ### GET /admins/deletion-requests
 

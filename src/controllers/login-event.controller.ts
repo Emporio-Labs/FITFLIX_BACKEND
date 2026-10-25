@@ -7,7 +7,7 @@ const MAX_EVENTS = 5000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * GET /admins/login-events?from=YYYY-MM-DD&to=YYYY-MM-DD[&role=]
+ * GET /admins/login-events?from=YYYY-MM-DD&to=YYYY-MM-DD[&role=|&excludeRole=]
  *
  * Raw login rows for the front desk "Login Activity" report. `from`/`to` are
  * whole IST calendar days (inclusive); the page does the daily/per-person
@@ -23,7 +23,7 @@ export const listLoginEvents: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { from, to, role } = parsed.data;
+	const { from, to, role, excludeRole } = parsed.data;
 	const start = new Date(`${from}T00:00:00+05:30`);
 	const end = new Date(new Date(`${to}T00:00:00+05:30`).getTime() + DAY_MS);
 	if ((end.getTime() - start.getTime()) / DAY_MS > MAX_RANGE_DAYS) {
@@ -38,6 +38,7 @@ export const listLoginEvents: RequestHandler = async (req, res, next) => {
 			createdAt: { $gte: start, $lt: end },
 		};
 		if (role) filter.role = role;
+		else if (excludeRole) filter.role = { $ne: excludeRole };
 
 		const events = await LoginEvent.find(filter)
 			.select("-userAgent")

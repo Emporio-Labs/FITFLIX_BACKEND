@@ -382,6 +382,17 @@ GET /admins
 
 ---
 
+#### Get Login Events (admin)
+```
+GET /admins/login-events?from=YYYY-MM-DD&to=YYYY-MM-DD[&role=trainer|&excludeRole=user]
+```
+Admin only. `from`/`to` are inclusive IST days, max range 92 days. Returns
+`{ "items": [...], "truncated": false }` newest first (max 5000), each item with
+`role`, `name`, `email`, `locationId: { id, name }`, `ip`, `createdAt`.
+`excludeRole=user` hides member logins (staff-only view).
+
+---
+
 #### 3. Get Admin by ID
 ```
 GET /admins/:id
