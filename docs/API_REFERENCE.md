@@ -46,15 +46,16 @@ Single-source HTTP reference for the Fitflix Express + MongoDB backend that powe
 26. [Workouts — `/workouts`](#workouts--workouts)
 27. [Workout plans — `/workout-plans`](#workout-plans--workout-plans)
 28. [Leads — `/leads`](#leads--leads)
-29. [Dashboard — `/dashboard`](#dashboard--dashboard)
-30. [Nutrition — `/nutrition`](#nutrition--nutrition)
-31. [Nutritionist bookings — `/nutritionist`](#nutritionist-bookings--nutritionist)
-32. [Notifications — `/notifications`](#notifications--notifications)
-33. [Webhook — `/webhook`](#webhook--webhook)
-34. [Internal — `/internal`](#internal--internal)
-35. [Health & diagnostics](#health--diagnostics)
-36. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
-37. [Appendix B: Path aliases](#appendix-b-path-aliases)
+29. [Founders Club presales — `/presales/founders`](#founders-club-presales--presalesfounders)
+30. [Dashboard — `/dashboard`](#dashboard--dashboard)
+31. [Nutrition — `/nutrition`](#nutrition--nutrition)
+32. [Nutritionist bookings — `/nutritionist`](#nutritionist-bookings--nutritionist)
+33. [Notifications — `/notifications`](#notifications--notifications)
+34. [Webhook — `/webhook`](#webhook--webhook)
+35. [Internal — `/internal`](#internal--internal)
+36. [Health & diagnostics](#health--diagnostics)
+37. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
+38. [Appendix B: Path aliases](#appendix-b-path-aliases)
 
 ---
 
@@ -302,6 +303,23 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 | GET | `/admins/:id` | JWT | admin | `getAdminById` |
 | PATCH | `/admins/:id` | JWT | admin | `updateAdminById` |
 | DELETE | `/admins/:id` | JWT | admin | `deleteAdminById` |
+
+#### `/presales/founders` → [presale-founders.routes.ts](../src/routes/presale-founders.routes.ts)
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/presales/founders/settings` | Public | — | `getFounderSettings` |
+| GET | `/presales/founders/slots` | Public | — | `getFounderSlots` |
+| POST | `/presales/founders/submit` | Public | — | `submitFounderApplication` |
+| POST | `/presales/founders/lead` | Public, body credentials | — | `getPrivateFounderLead` |
+| POST | `/presales/founders/booking-config` | Public, body credentials | — | `getPrivateBookingConfig` |
+| POST | `/presales/founders/request-call` | Public, body credentials | — | `requestFounderCall` |
+| GET | `/presales/founders/admin/leads` | JWT | admin | `adminListFounderLeads` |
+| PATCH | `/presales/founders/admin/leads/:id/status` | JWT | admin | `adminUpdateFounderLeadStatus` |
+| GET | `/presales/founders/admin/settings` | JWT | admin | `adminGetFounderSettings` |
+| PATCH | `/presales/founders/admin/settings` | JWT | admin | `adminPatchFounderSettings` |
+| POST | `/presales/founders/admin/slots` | JWT | admin | `adminCreateFounderSlot` |
+| PATCH | `/presales/founders/admin/slots/:id/close` | JWT | admin | `adminCloseFounderSlot` |
 
 #### `/trainers` → [trainer.routes.ts](../src/routes/trainer.routes.ts)
 
@@ -4091,6 +4109,33 @@ curl -X POST "https://api.example.com/workout-plans/5f1a2b3c4d5e6f7a8b9c0d1e/ass
 ```
 
 > See [src/validators/workout-plan.validator.ts](../src/validators/workout-plan.validator.ts) for the full plan-body schema (uses `PlanGoal`, `PlanStatus`, `SplitType` enums).
+
+---
+
+## Founders Club presales — `/presales/founders`
+
+This isolated public surface stores the Kompally Founders Club questionnaire in the dedicated `PresaleFoundersApplication` collection. All responses send `Cache-Control: no-store`; there is no public lead listing. Public private-lead operations accept `{ id, token }` only in a POST body, never in a URL or query string. Submissions are limited to 256 KB, reject a non-empty `website` honeypot, require adult and service consent, and bind each UUID `requestId` to one canonical payload hash (a changed retry returns `409 CONFLICT`).
+
+### Public endpoints
+
+| Method | Path | Body / response |
+|---|---|---|
+| GET | `/presales/founders/settings` | Returns configured `CampaignSettings`; `bookingUrl` is always `null` publicly. |
+| GET | `/presales/founders/slots` | Returns only future owner-created open rows `{ idUUID, startAtISO, endAtISO }`; default is `[]`. |
+| POST | `/presales/founders/submit` | Body is the shared 16-choice `applicationSchema` (`requestId`, `answers`, `contact`, `attribution`, `website: ""`). Returns `ApplicationResult` with UUID `id`, one-time private token, `route`, `fitScore`, structured `summary`, `summaryMode: "structured"`, `answers`, and `bookingStatus`. |
+| POST | `/presales/founders/lead` | Body `{ id, token }`; returns the private `ApplicationResult`. |
+| POST | `/presales/founders/booking-config` | Body `{ id, token }`; returns `{ bookingUrl }` only for a founder-route application, otherwise `{ bookingUrl: null }`. |
+| POST | `/presales/founders/request-call` | Body `{ id, token, slotId?, preferredWindow?, kind: "call" | "tour" }`; returns `{ status: "requested", message }`. This records a pending request and never fabricates a meeting. |
+
+When slots exist, a requested slot is reserved atomically and can be used only once; unknown, closed, past, or concurrently claimed slots return a conflict. Applications outside the `founder` route cannot request a founder call. The campaign defaults to open with a cap of 100 confirmed members and no invented deadline/count.
+
+### Admin endpoints
+
+All admin endpoints require `Authorization: Bearer <JWT>` and the `admin` role. `GET/PATCH /presales/founders/admin/settings` reads or changes the actual open flag, confirmed count, deadline, founder name, note, Meta Pixel ID, public origin, and booking URL. `GET /presales/founders/admin/leads` is the protected review listing; `PATCH /presales/founders/admin/leads/:id/status` supports `new`, `contacted`, `qualified`, `confirmed`, and `closed`. `POST /presales/founders/admin/slots` creates a future one-person slot and `PATCH /presales/founders/admin/slots/:id/close` closes it. No production write, migration, seed, or test submission is performed by this integration.
+
+### Configuration
+
+The database is the native `MONGODB_URL` connection. Before an admin setting is persisted, defaults can be configured with `PRESALE_APPLICATION_OPEN`, `PRESALE_CAMPAIGN_DEADLINE`, `PRESALE_CONFIRMED_MEMBERS`, `PRESALE_FOUNDER_NAME`, `PRESALE_NOTE`, `PRESALE_META_PIXEL_ID`, `PRESALE_PUBLIC_ORIGIN`, and `PRESALE_BOOKING_URL`. `JWT_SECRET` is required to encrypt recoverable private tokens with AES-256-GCM and to run the existing JWT middleware. See [PRESALES_FOUNDERS_CLUB.md](PRESALES_FOUNDERS_CLUB.md) for setup and deploy notes.
 
 ---
 

@@ -48,6 +48,9 @@ import workoutPlanRouter from "./routes/workout-plan.routes";
 import zegoRouter from "./routes/zego.routes";
 import settingsRouter from "./routes/settings.routes";
 import recordingRouter, { adminRecordingRouter } from "./routes/recording.routes";
+import presaleFoundersRouter, {
+	presaleFoundersAdminRouter,
+} from "./routes/presale-founders.routes";
 import { getApp } from "./services/fcm.service";
 import {
 	isErrorVerboseEnabled,
@@ -189,7 +192,12 @@ app.use((req, res, next) => {
 	next();
 });
 
-// Body cap raised well past express's 100kb default: a post now carries an
+	// Founders presales uses its own 256 KB parser mounted before the general
+	// body parser below. Other application routes retain their existing cap.
+	app.use("/presales/founders/admin", express.json({ limit: "256kb" }), presaleFoundersAdminRouter);
+	app.use("/presales/founders", express.json({ limit: "256kb" }), presaleFoundersRouter);
+
+	// Body cap raised well past express's 100kb default: a post now carries an
 // unbounded number of image references, and each one is a handful of URLs.
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "25mb" }));
 app.use((_req, res, next) => {
