@@ -209,15 +209,23 @@ export const decodeTokenScope = (token: string): string | null => {
 	return null;
 };
 
+/**
+ * Verifies an access token; returns null for an expired, malformed or
+ * wrongly-signed token instead of throwing. Callers outside Express (the
+ * socket.io handshake) have no error path, so a throw here crashed the process.
+ */
 export const verifyAuthToken = (
 	token: string,
 	config: JwtConfig,
 ): AuthenticatedUser | null => {
-	const payload = jwt.verify(
-		token,
-		config.secret,
-		buildVerifyOptions(config),
-	) as JwtPayload | string;
+	let payload: JwtPayload | string;
+	try {
+		payload = jwt.verify(token, config.secret, buildVerifyOptions(config)) as
+			| JwtPayload
+			| string;
+	} catch {
+		return null;
+	}
 
 	if (!payload || typeof payload !== "object") {
 		return null;

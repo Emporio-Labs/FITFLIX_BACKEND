@@ -13,6 +13,16 @@ import {
 } from "./src/utils/timezone.util";
 import { BUSINESS_TIMEZONE } from "./src/utils/zego-room";
 
+// --- Last-resort crash guards ---
+// One bad request must not take the server down for every member and staff
+// user. These only log; the bug that reached here still needs fixing.
+process.on("unhandledRejection", (reason) => {
+	console.error("[PROCESS] Unhandled promise rejection:", reason);
+});
+process.on("uncaughtException", (error) => {
+	console.error("[PROCESS] Uncaught exception (server kept running):", error);
+});
+
 // --- Startup environment validation ---
 const REQUIRED_ENV_VARS = ["MONGODB_URL", "JWT_SECRET"] as const;
 const missingEnvVars = REQUIRED_ENV_VARS.filter((v) => !process.env[v]?.trim());
