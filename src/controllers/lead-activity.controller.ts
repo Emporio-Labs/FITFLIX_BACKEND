@@ -114,7 +114,7 @@ export const createLeadActivity: RequestHandler = async (req, res, next) => {
 				res.status(400).json({ message: "Write the note first", code: "NOTE_REQUIRED" });
 				return;
 			}
-			const lead = await Lead.findById(id).select("locationId");
+			const lead = await Lead.findById(id);
 			if (!lead) {
 				res.status(404).json({ message: "Lead not found" });
 				return;
@@ -347,7 +347,7 @@ export const getLeadAnalytics: RequestHandler = async (req, res, next) => {
 				{ stage: "Contacted", count: contacted.length },
 				{ stage: "Visit booked", count: reachedVisit.size },
 				{ stage: "Visited", count: visited.size },
-				{ stage: "Converted", count: converted.length },
+				{ stage: "Joined", count: converted.length },
 			],
 			outcomes: outcomes.map((o) => ({
 				outcome: o._id.outcome,

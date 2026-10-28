@@ -468,6 +468,7 @@ export const applyLeadOutcome = (
 		lastAttemptAt: now,
 		firstAttemptAt,
 		lastOutcome: def.key,
+		lastOutcomeLabel: def.key === "custom" ? customLabel : def.label,
 		followUpDate: isOpen ? nextFollowUpAt : null,
 		lostReason: isLost ? lostReason : "",
 	};

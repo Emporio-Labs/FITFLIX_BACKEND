@@ -56,6 +56,8 @@ const leadSchema = new mongoose.Schema(
 		firstContactedAt: { type: Date, default: null },
 		lastContactedAt: { type: Date, default: null },
 		lastOutcome: { type: String, default: "" },
+		// What the board shows for the last outcome; for "custom", staff's words.
+		lastOutcomeLabel: { type: String, default: "" },
 		lostReason: { type: String, default: "" },
 	},
 	{ timestamps: true },
