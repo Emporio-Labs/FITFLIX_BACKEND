@@ -64,6 +64,27 @@ const invoiceSchema = new mongoose.Schema(
 			enum: Object.values(InvoicePaymentMethod),
 			default: InvoicePaymentMethod.NONE,
 		},
+		// The sale this invoice carries (New sale flow). PAID builds the
+		// membership from these rather than from the payment date.
+		planId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "MembershipPlan",
+			default: undefined,
+		},
+		// Day the membership starts, "YYYY-MM-DD" in the branch's zone.
+		// Unset means the day the invoice is paid.
+		startDate: { type: String, default: undefined },
+		// Calendar months the membership runs. Unset falls back to
+		// planSnapshot.durationInDays.
+		durationMonths: { type: Number, default: undefined, min: 1 },
+		discountReason: { type: String, default: undefined },
+		// UPI transaction id, card slip number, etc., captured when paid.
+		paymentReference: { type: String, default: undefined },
+		// Staff member who marked the invoice paid.
+		recordedBy: { type: mongoose.Schema.Types.ObjectId, default: undefined },
+		// Idempotency-Key header of the POST that created this invoice, so a
+		// retried submit returns the same invoice instead of a second one.
+		idempotencyKey: { type: String, default: undefined },
 		issuedAt: { type: Date, default: undefined },
 		paidAt: { type: Date, default: undefined },
 		createdBy: { type: mongoose.Schema.Types.ObjectId, default: undefined },
@@ -76,6 +97,10 @@ invoiceSchema.index({ leadId: 1 });
 invoiceSchema.index({ paymentStatus: 1 });
 invoiceSchema.index({ createdAt: -1 });
 invoiceSchema.index({ locationId: 1, createdAt: -1 });
+invoiceSchema.index(
+	{ createdBy: 1, idempotencyKey: 1 },
+	{ unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } },
+);
 
 applyIdTransform(invoiceSchema);
 

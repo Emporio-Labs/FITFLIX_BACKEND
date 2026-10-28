@@ -20,7 +20,10 @@ import Notification from "../models/Notification";
 import { notify } from "./notification.service";
 import { expireStaleNutritionistBookings } from "./nutritionist-expiry.service";
 import { expireStaleSportsScientistBookings } from "./sports-scientist-expiry.service";
-import { expireMemberships } from "./membership-lifecycle.service";
+import {
+	activateDueMemberships,
+	expireMemberships,
+} from "./membership-lifecycle.service";
 import {
 	checkTrainerNoShowSessions,
 	expireDueRooms,
@@ -204,8 +207,7 @@ export async function processReminders(): Promise<{
 	// Group-class / live-stream room lifecycle: stamp room IDs at (start -
 	// lead), tear rooms down at (end + grace). Piggybacking on this poller
 	// gives non-serverless deployments a minute-granularity tick for free,
-	// alongside the external caller that drives /internal/sessions/lifecycle/tick
-	// on Vercel (whose own cron only fires daily).
+	// alongside any external caller that drives /internal/sessions/lifecycle/tick.
 	try {
 		await prepareDueRooms(now);
 		await verifyHostPresence(now);
@@ -221,6 +223,14 @@ export async function processReminders(): Promise<{
 		await sendClassStartReminders(now);
 	} catch (err) {
 		console.error("[reminder-poller] sendClassStartReminders failed", err);
+	}
+
+	// Presale memberships whose start day has arrived become usable. Every
+	// tick, not hourly: until it runs the member is refused at the door.
+	try {
+		await activateDueMemberships(now);
+	} catch (err) {
+		console.error("[reminder-poller] membership activation sweep failed", err);
 	}
 
 	// Membership expiry. Throttled to hourly rather than riding the 60s tick —

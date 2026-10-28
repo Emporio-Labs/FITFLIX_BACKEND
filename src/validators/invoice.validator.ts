@@ -31,9 +31,41 @@ export const isValidStatusTransition = (from: string, to: string): boolean => {
 	return (VALID_TRANSITIONS[from] ?? []).includes(to);
 };
 
+const optionalString = z.preprocess(
+	(v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+	z.string().trim().min(1).optional(),
+);
+
+/** A calendar day, "YYYY-MM-DD", that actually exists. */
+const calendarDay = z
+	.string()
+	.trim()
+	.regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+	.refine((v) => {
+		const d = new Date(`${v}T00:00:00Z`);
+		return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+	}, "Not a real date");
+
 export const createInvoiceBodySchema = z.object({
 	userId: z.string().trim().optional(),
 	leadId: z.string().trim().optional(),
+	/** A walk-in with no lead yet: a Lead is created, then the account resolved. */
+	newLead: z
+		.object({
+			name: z.string().trim().min(1),
+			phone: z
+				.string()
+				.trim()
+				.refine(
+					(v) => v.replace(/\D/g, "").length >= 10,
+					"Phone needs at least 10 digits",
+				),
+			email: z.preprocess(
+				(v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+				z.string().trim().email().optional(),
+			),
+		})
+		.optional(),
 	items: z
 		.array(
 			z.object({
@@ -43,8 +75,15 @@ export const createInvoiceBodySchema = z.object({
 			}),
 		)
 		.min(1, "At least one item is required"),
-	tax: z.number().nonnegative().default(0),
+	/** Omitted, it is computed from the branch's taxRatePercent. */
+	tax: z.number().nonnegative().optional(),
 	discount: z.number().nonnegative().default(0),
+	discountReason: optionalString,
+	planId: optionalString,
+	/** Day the membership starts; omitted, the day the invoice is paid. */
+	startDate: calendarDay.optional(),
+	/** Calendar months the membership runs; omitted, planSnapshot.durationInDays. */
+	durationMonths: z.number().int().min(1).max(60).optional(),
 	planSnapshot: z.object({
 		name: z.string().trim().min(1),
 		durationInDays: z.number().int().positive(),
@@ -56,14 +95,28 @@ export const createInvoiceBodySchema = z.object({
 		.enum(["DRAFT", "PENDING"] as [string, ...string[]])
 		.default(InvoicePaymentStatus.DRAFT),
 	issuedAt: z.string().trim().optional(),
-	/** The branch this invoice is issued at. Resolved by resolveLocationId in the controller. */
+	/**
+	 * The branch this invoice is issued at, honoured as sent. Required when
+	 * more than one branch is active (resolveLocationId in the controller).
+	 */
 	locationId: z.string().trim().optional(),
 });
 
 export const updateInvoiceStatusBodySchema = z.object({
 	paymentStatus: z.enum(paymentStatusValues),
 	paymentMethod: z.enum(paymentMethodValues).optional(),
+	/** UPI transaction id, card slip number, etc. */
+	paymentReference: optionalString,
+	// Only used on → PAID: overrides the invoice's startDate (legacy from
+	// #135; new sales set startDate on the invoice). Omitted, the invoice's
+	// startDate, else the day it is paid.
+	membershipStartDate: z.preprocess(
+		(v) => (v === "" || v === null ? undefined : v),
+		z.coerce.date().optional(),
+	),
 });
+
+export const idempotencyKeySchema = z.string().trim().min(1).max(200);
 
 export const listInvoicesQuerySchema = z.object({
 	paymentStatus: z.enum(paymentStatusValues).optional(),

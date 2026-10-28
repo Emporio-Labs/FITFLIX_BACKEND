@@ -3,11 +3,12 @@ import mongoose from "mongoose";
 import Membership from "../models/Membership";
 import { MembershipStatus } from "../models/Enums";
 import {
-	createMembershipBodySchema,
+	createManualMembershipBodySchema,
 	updateMembershipBodySchema,
 	resumeMembershipBodySchema,
 } from "../validators/membership.validator";
 import {
+	activateDueMemberships,
 	MembershipLifecycleError,
 	pauseMembership,
 	resumeMembership,
@@ -18,6 +19,11 @@ import {
 	mapLocationError,
 	resolveLocationId,
 } from "../utils/location.resolver";
+import {
+	assertNoMembershipOverlap,
+	MembershipOverlapError,
+	overlapErrorBody,
+} from "../utils/membership-term";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -47,7 +53,7 @@ const requireAuthenticatedUser = (
 };
 
 export const createMembership: RequestHandler = async (req, res, next) => {
-	const parsedBody = createMembershipBodySchema.safeParse(req.body);
+	const parsedBody = createManualMembershipBodySchema.safeParse(req.body);
 
 	if (!parsedBody.success) {
 		res.status(400).json({
@@ -69,8 +75,16 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { userId, startDate, endDate, creditsIncluded, locationId: rawLocationId, ...rest } =
-		parsedBody.data;
+	const {
+		userId,
+		startDate,
+		endDate,
+		creditsIncluded,
+		locationId: rawLocationId,
+		reason,
+		resumedAt: _resumedAt,
+		...rest
+	} = parsedBody.data;
 
 	if (!userId) {
 		res.status(400).json({ message: "userId is required" });
@@ -118,22 +132,48 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	// A membership that starts later waits as Upcoming unless the admin set
+	// a status explicitly.
+	const status =
+		(rest.status as MembershipStatus | undefined) ??
+		(startDateValue > new Date()
+			? MembershipStatus.Upcoming
+			: MembershipStatus.Active);
+
 	try {
+		const isLive = [
+			MembershipStatus.Active,
+			MembershipStatus.Paused,
+			MembershipStatus.Upcoming,
+		].includes(status);
+		if (isLive) {
+			await assertNoMembershipOverlap(userId, startDateValue, endDateValue);
+		}
+
 		const membership = await Membership.create({
 			...rest,
-			status: rest.status as
-				| import("../models/Enums").MembershipStatus
-				| undefined,
+			status,
 			creditsIncluded,
 			creditsRemaining: creditsIncluded,
 			user: userId,
 			locationId: resolvedLocationId,
 			startDate: startDateValue,
 			...(endDateValue ? { endDate: endDateValue } : {}),
+			createdBy: mongoose.Types.ObjectId.isValid(requester.id)
+				? requester.id
+				: null,
+			manualReason: reason,
 		});
 
+		console.info(
+			`[membership] manual create ${membership._id} for user ${userId} by admin ${requester.id}: ${reason}`,
+		);
 		res.status(201).json({ message: "Membership created", membership });
 	} catch (error) {
+		if (error instanceof MembershipOverlapError) {
+			res.status(409).json(overlapErrorBody(error));
+			return;
+		}
 		next(error);
 	}
 };
@@ -150,6 +190,10 @@ export const getAllMemberships: RequestHandler = async (req, res, next) => {
 			}
 			filter.user = userId;
 		}
+		await activateDueMemberships(
+			new Date(),
+			filter.user ? { user: new mongoose.Types.ObjectId(String(filter.user)) } : {},
+		);
 		// ?locationId= narrows to memberships issued at that branch.
 		const locationIdRaw = req.query.locationId;
 		Object.assign(
@@ -201,6 +245,9 @@ export const getMyMemberships: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		await activateDueMemberships(new Date(), {
+			user: new mongoose.Types.ObjectId(requester.id),
+		});
 		const memberships = await Membership.find({ user: requester.id });
 		res.status(200).json({ memberships });
 	} catch (error) {

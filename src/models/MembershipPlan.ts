@@ -25,11 +25,25 @@ const membershipPlanSchema = new mongoose.Schema(
 		// durationMonths permanently unreachable.
 		durationDays: { type: Number, default: null },
 		benefits: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
+		// The branch this plan is sold at. null = every branch, so a plan is
+		// deliberately NOT given locationStampPlugin: stamping the default
+		// branch would quietly turn an all-branch plan into a one-branch plan.
+		locationId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: "Location",
+			default: null,
+		},
+		// Founding-member (presale) pricing, e.g. a branch that hasn't opened.
+		isFounding: { type: Boolean, default: false },
+		// Last moment the plan can be sold. null = no cut-off. The list hides
+		// plans past this unless asked for them (`includeExpired=true`).
+		availableUntil: { type: Date, default: null },
 	},
 	{ timestamps: true },
 );
 
 membershipPlanSchema.index({ name: 1 });
+membershipPlanSchema.index({ locationId: 1, active: 1 });
 
 type MembershipPlanDocument = mongoose.InferSchemaType<
 	typeof membershipPlanSchema

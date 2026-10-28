@@ -1,10 +1,11 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import { InvoicePaymentStatus } from "../models/Enums";
-import Lead from "../models/Lead";
 import {
 	createInvoice,
+	findInvoiceByIdempotencyKey,
 	getInvoiceById,
+	InvoiceSaleError,
 	getInvoiceForPdf,
 	listInvoices,
 	transitionInvoiceStatus,
@@ -12,6 +13,7 @@ import {
 import { buildInvoicePdf } from "../utils/invoice-pdf";
 import {
 	createInvoiceBodySchema,
+	idempotencyKeySchema,
 	isValidStatusTransition,
 	listInvoicesQuerySchema,
 	updateInvoiceStatusBodySchema,
@@ -21,6 +23,26 @@ import {
 	mapLocationError,
 	resolveLocationId,
 } from "../utils/location.resolver";
+import {
+	MembershipOverlapError,
+	overlapErrorBody,
+} from "../utils/membership-term";
+
+/** Answers the sale's own refusals; false for anything else. */
+const sendSaleError = (
+	res: Parameters<RequestHandler>[1],
+	error: unknown,
+): boolean => {
+	if (error instanceof MembershipOverlapError) {
+		res.status(409).json(overlapErrorBody(error));
+		return true;
+	}
+	if (error instanceof InvoiceSaleError) {
+		res.status(error.status).json({ error: error.message, code: error.code });
+		return true;
+	}
+	return false;
+};
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -76,37 +98,64 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	// Resolve userId from leadId.convertedUser when not explicitly provided
-	let resolvedUserId = parsed.data.userId;
-	if (!resolvedUserId && parsed.data.leadId) {
+	const { userId, leadId, newLead } = parsed.data;
+	if ([userId, leadId, newLead].every((v) => v === undefined)) {
+		res.status(400).json({
+			error: "One of userId, leadId or newLead is required",
+			code: "BAD_REQUEST",
+		});
+		return;
+	}
+	if (newLead && (userId || leadId)) {
+		res.status(400).json({
+			error: "Send newLead on its own, without userId or leadId",
+			code: "BAD_REQUEST",
+		});
+		return;
+	}
+	if (
+		parsed.data.planId &&
+		!mongoose.Types.ObjectId.isValid(parsed.data.planId)
+	) {
+		res.status(400).json({ error: "Invalid planId", code: "BAD_REQUEST" });
+		return;
+	}
+
+	const rawKey = req.get("Idempotency-Key");
+	const parsedKey =
+		rawKey === undefined ? undefined : idempotencyKeySchema.safeParse(rawKey);
+	if (parsedKey && !parsedKey.success) {
+		res.status(400).json({
+			error: "Idempotency-Key must be 1–200 characters",
+			code: "BAD_REQUEST",
+		});
+		return;
+	}
+	const idempotencyKey = parsedKey?.data;
+	const actorId = req.user?.id ?? "";
+
+	// Same key from the same staff member: the first submit already created
+	// the invoice (and the account), so hand that back instead of a second one.
+	if (idempotencyKey) {
 		try {
-			const lead = await Lead.findById(parsed.data.leadId).select(
-				"convertedUser",
+			const existing = await findInvoiceByIdempotencyKey(
+				actorId,
+				idempotencyKey,
 			);
-			if (!lead) {
-				res.status(404).json({ error: "Lead not found", code: "NOT_FOUND" });
+			if (existing) {
+				res
+					.status(200)
+					.json({ message: "Invoice already created", invoice: existing });
 				return;
 			}
-			resolvedUserId = lead.convertedUser
-				? String(lead.convertedUser)
-				: undefined;
 		} catch (error) {
 			next(error);
 			return;
 		}
 	}
 
-	if (!resolvedUserId && !parsed.data.leadId) {
-		res.status(400).json({
-			error: "Either userId or leadId is required",
-			code: "BAD_REQUEST",
-		});
-		return;
-	}
-
-	// Resolve the branch this invoice is issued at. With one active location
-	// the resolver supplies it automatically; with several the desk must be
-	// explicit — passing the header-selected locationId satisfies that.
+	// The branch this invoice is issued at, honoured as sent. With one active
+	// location the resolver supplies it; with several the desk must send one.
 	const rawLocationId = parsed.data.locationId;
 	let resolvedLocationId: mongoose.Types.ObjectId | undefined;
 	try {
@@ -116,7 +165,9 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 	} catch (error) {
 		if (error instanceof LocationError) {
 			const mapped = mapLocationError(error);
-			res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+			res
+				.status(mapped.status)
+				.json({ error: mapped.message, code: mapped.code });
 			return;
 		}
 		next(error);
@@ -125,12 +176,14 @@ export const createInvoiceHandler: RequestHandler = async (req, res, next) => {
 
 	try {
 		const invoice = await createInvoice(
-			{ ...parsed.data, userId: resolvedUserId },
-			req.user?.id ?? "",
+			parsed.data,
+			actorId,
 			resolvedLocationId,
+			idempotencyKey,
 		);
 		res.status(201).json({ message: "Invoice created", invoice });
 	} catch (error) {
+		if (sendSaleError(res, error)) return;
 		next(error);
 	}
 };
@@ -229,6 +282,11 @@ export const updateInvoiceStatusHandler: RequestHandler = async (
 			parsed.data.paymentMethod as Parameters<
 				typeof transitionInvoiceStatus
 			>[2],
+			{
+				paymentReference: parsed.data.paymentReference,
+				recordedBy: req.user?.id,
+				membershipStartDate: parsed.data.membershipStartDate,
+			},
 		);
 
 		if (!result.invoice) {
@@ -249,6 +307,7 @@ export const updateInvoiceStatusHandler: RequestHandler = async (
 			...(isPaid && result.membership ? { membership: result.membership } : {}),
 		});
 	} catch (error) {
+		if (sendSaleError(res, error)) return;
 		next(error);
 	}
 };

@@ -1,9 +1,8 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import { type Gender, AlertSeverity, AlertStatus, AlertType, LeadStatus, MembershipStatus } from "../models/Enums";
+import { type Gender, AlertSeverity, AlertStatus, AlertType, LeadStatus } from "../models/Enums";
 import Lead from "../models/Lead";
 import User from "../models/User";
-import Membership from "../models/Membership";
 import OperationalAlert from "../models/OperationalAlert";
 import Location from "../models/Location";
 import { emitOperationalAlert } from "../services/realtime.service";
@@ -11,6 +10,7 @@ import { autoResolveOperationalAlerts } from "./operational-alert.controller";
 import { getEffectiveAlertRule } from "../utils/default-alert-rules";
 import { isSalesStaffOnDuty } from "../services/staff-presence.service";
 import { calculateHealthScore } from "../utils/health-score";
+import { pendingInvoiceIdsByLead } from "../utils/lead-pending-invoice";
 import { hashPassword } from "../utils/password";
 import {
 	buildLocationFilter,
@@ -32,6 +32,22 @@ import {
 	publicLeadCaptureBodySchema,
 	updateLeadBodySchema,
 } from "../validators/lead.validator";
+
+// A lead becomes Converted only when it turns into a member — its invoice is
+// paid, or POST /leads/:id/convert. Setting the status by hand would leave a
+// "converted" lead with no member behind it.
+const rejectDirectConversion = (
+	res: Parameters<RequestHandler>[1],
+	status: string | undefined,
+): boolean => {
+	if (status !== LeadStatus.Converted) return false;
+	res.status(400).json({
+		message:
+			"A lead can't be marked Converted directly. It converts when its invoice is paid, or via POST /leads/:id/convert.",
+		code: "LEAD_CONVERSION_NOT_ALLOWED",
+	});
+	return true;
+};
 
 const parseDateOrNull = (value: string | undefined) => {
 	if (!value) return null;
@@ -76,6 +92,8 @@ export const createLead: RequestHandler = async (req, res, next) => {
 		});
 		return;
 	}
+
+	if (rejectDirectConversion(res, parsedBody.data.status)) return;
 
 	const { ownerId, ...leadData } = parsedBody.data;
 
@@ -376,7 +394,13 @@ export const getAllLeads: RequestHandler = async (req, res, next) => {
 			"convertedUser",
 			"username email onboarded onboardingStatus",
 		);
-		res.status(200).json({ leads });
+		const pending = await pendingInvoiceIdsByLead(leads.map((l) => l._id));
+		res.status(200).json({
+			leads: leads.map((lead) => ({
+				...lead.toJSON(),
+				pendingInvoiceId: pending.get(String(lead._id)) ?? null,
+			})),
+		});
 	} catch (error) {
 		if (error instanceof LocationError) {
 			sendLocationError(res, error);
@@ -462,7 +486,13 @@ export const getLeadById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		res.status(200).json({ lead });
+		const pending = await pendingInvoiceIdsByLead([lead._id]);
+		res.status(200).json({
+			lead: {
+				...lead.toJSON(),
+				pendingInvoiceId: pending.get(String(lead._id)) ?? null,
+			},
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -485,6 +515,8 @@ export const updateLeadById: RequestHandler = async (req, res, next) => {
 		});
 		return;
 	}
+
+	if (rejectDirectConversion(res, parsedBody.data.status)) return;
 
 	const { ownerId, ...payload } = parsedBody.data;
 
@@ -645,17 +677,9 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 			};
 		}
 
-		// Transactional Membership Allocation: Instantly create and save a new Membership document
-		await Membership.create({
-			user: targetUserId,
-			planName: "Standard Protocol Membership",
-			creditsIncluded: 10,
-			creditsRemaining: 10,
-			status: MembershipStatus.Active,
-			price: 0,
-			startDate: new Date(),
-			endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30-day default limits
-		});
+		// No membership is created here. The member's plan comes from the
+		// invoice they pay (Mark as Paid provisions it) or from the desk assigning
+		// one, so a converted lead never gets free credits they didn't buy.
 
 		// Audit Trail Update
 		lead.status = LeadStatus.Converted;

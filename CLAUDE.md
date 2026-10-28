@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Express.js + MongoDB backend for the **Fitflix Flutter app** and **FrontDesk Fitflix admin dashboard**. Deployed on Vercel via serverless function.
+Express.js + MongoDB backend for the **Fitflix Flutter app** and **FrontDesk Fitflix admin dashboard**. Deployed on an AWS EC2 t3.small instance (`FITFLIX_OFFICIAL_SERVER`, ap-south-1, api.fitflix.in). Access it via AWS SSM (no SSH) to read server/app logs.
 
 **Runtime:** Bun (also compatible with Node.js)
 **Language:** TypeScript (strict)
@@ -35,7 +35,6 @@ npx tsc --noEmit                     # TypeScript type check (no emit)
 ```
 FITFLIX_BACKEND/
 ├── index.ts                  # Entry point — connects DB, starts server
-├── api/index.ts              # Vercel serverless handler
 ├── src/
 │   ├── app.ts                # Express app, CORS, middleware, route mounting
 │   ├── models/               # Mongoose schemas
@@ -46,7 +45,7 @@ FITFLIX_BACKEND/
 │   ├── utils/                # Services and helpers
 │   └── types/                # TypeScript type augmentations
 ├── scripts/                  # One-off admin/migration scripts
-└── vercel.json               # Vercel deployment config
+└── (no vercel.json — Vercel is no longer used)
 ```
 
 ---
@@ -134,10 +133,17 @@ All error responses follow this envelope — the global middleware in `app.ts` n
 ```json
 {
   "error": "Human-readable message",
+  "message": "Same text as error",
   "code": "ERROR_CODE",
   "details": { "field": "error message" }
 }
 ```
+
+For `VALIDATION_ERROR`, a generic top-level message ("Validation failed",
+"Invalid lead payload", …) is replaced by the field messages themselves, so
+FrontDesk toasts show what to fix. Field messages for Zod schemas without their
+own message come from the global error map in `src/utils/validation-messages.ts`
+(installed in `app.ts`); writing a message on the schema still overrides it.
 
 Error codes: `VALIDATION_ERROR` | `BAD_REQUEST` | `UNAUTHORIZED` | `FORBIDDEN` | `NOT_FOUND` | `CONFLICT` | `NOT_IMPLEMENTED` | `INTERNAL_ERROR` | `API_ERROR`
 
@@ -217,7 +223,7 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 ```
 Gender              — Male, Female, Other (string; legacy numeric 0/1/2 normalized on input)
 BookingStatus       — Booked, Confirmed, Cancelled, Attended, Unattended (numeric)
-MembershipStatus    — Active, Paused, Cancelled, Expired
+MembershipStatus    — Active, Upcoming, Paused, Cancelled, Expired
 TodoStatus          — Todo, Doing, Done (numeric)
 LeadStatus          — New, Contacted, Qualified, Warm, Hot, Cold, Converted, Lost
 CreditTransactionType  — Consume, Refund, AdminTopUp, Void
@@ -278,6 +284,7 @@ same commit whenever you change a route.
 | `/schedules` | `schedule.routes.ts` | admin, trainer, user |
 | `/exercises` | `exercise.routes.ts` | admin, user |
 | `/leads` | `lead.routes.ts` | Public capture + admin, frontdesk, trainer |
+| `/people` | `people.routes.ts` | admin, frontdesk (`GET /people/lookup`) |
 | `/dashboard` | `dashboard.routes.ts` | admin, frontdesk |
 | `/nutrition` | `nutrition.routes.ts` | nutritionist, admin, user |
 | `/notifications` | `notification.routes.ts` | any authenticated |

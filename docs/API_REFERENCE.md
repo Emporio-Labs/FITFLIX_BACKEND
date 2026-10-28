@@ -46,15 +46,16 @@ Single-source HTTP reference for the Fitflix Express + MongoDB backend that powe
 26. [Workouts — `/workouts`](#workouts--workouts)
 27. [Workout plans — `/workout-plans`](#workout-plans--workout-plans)
 28. [Leads — `/leads`](#leads--leads)
-29. [Dashboard — `/dashboard`](#dashboard--dashboard)
-30. [Nutrition — `/nutrition`](#nutrition--nutrition)
-31. [Nutritionist bookings — `/nutritionist`](#nutritionist-bookings--nutritionist)
-32. [Notifications — `/notifications`](#notifications--notifications)
-33. [Webhook — `/webhook`](#webhook--webhook)
-34. [Internal — `/internal`](#internal--internal)
-35. [Health & diagnostics](#health--diagnostics)
-36. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
-37. [Appendix B: Path aliases](#appendix-b-path-aliases)
+29. [People lookup — `/people`](#people-lookup--people)
+30. [Dashboard — `/dashboard`](#dashboard--dashboard)
+31. [Nutrition — `/nutrition`](#nutrition--nutrition)
+32. [Nutritionist bookings — `/nutritionist`](#nutritionist-bookings--nutritionist)
+33. [Notifications — `/notifications`](#notifications--notifications)
+34. [Webhook — `/webhook`](#webhook--webhook)
+35. [Internal — `/internal`](#internal--internal)
+36. [Health & diagnostics](#health--diagnostics)
+37. [Appendix A: Onboarding step order](#appendix-a-onboarding-step-order)
+38. [Appendix B: Path aliases](#appendix-b-path-aliases)
 
 ---
 
@@ -153,11 +154,25 @@ Every error response follows this envelope (normalized by global middleware in `
 
 ```json
 {
-  "error": "Human-readable message",
+  "error": "Phone number is required; Email must be a valid email address",
+  "message": "Phone number is required; Email must be a valid email address",
   "code": "VALIDATION_ERROR",
-  "details": { "fieldName": "validation message" }
+  "details": {
+    "phone": "Phone number is required",
+    "email": "Email must be a valid email address"
+  }
 }
 ```
+
+`message` always carries the same text as `error`, for clients that read either.
+
+For a validation error, `error` is the field messages themselves (up to three,
+then `(and N more)`), not a generic "Validation failed". Each message names the
+field and the input it expects ("Status must be one of: New, Contacted, …",
+"Start date must be a date in YYYY-MM-DD format"). A schema's own message wins;
+fields without one get these from `src/utils/validation-messages.ts`. A
+controller's specific top-level message (e.g. the Excel import's "The file has 2
+problems …") is kept as-is.
 
 `details` is omitted for non-validation errors.
 
@@ -181,7 +196,7 @@ Authoritative source: [src/models/Enums.ts](../src/models/Enums.ts). Numeric enu
 |---|---|
 | `Gender` | `Male`, `Female`, `Other` (legacy numeric inputs `0`/`1`/`2` are accepted on signup and normalized) |
 | `BookingStatus` *(numeric)* | `Booked` (0), `Confirmed` (1), `Cancelled` (2), `Attended` (3), `Unattended` (4) |
-| `MembershipStatus` | `Active`, `Paused`, `Cancelled`, `Expired` |
+| `MembershipStatus` | `Active`, `Upcoming`, `Paused`, `Cancelled`, `Expired` — `Upcoming` = sold, start date still ahead; not usable for bookings/credits until it flips to `Active` on its start day |
 | `TodoStatus` *(numeric)* | `Todo` (0), `Doing` (1), `Done` (2) |
 | `LeadStatus` | `New`, `Contacted`, `Qualified`, `Warm`, `Hot`, `Cold`, `Converted`, `Lost` |
 | `CreditTransactionType` | `Consume`, `Refund`, `AdminTopUp`, `Void` |
@@ -448,6 +463,14 @@ Rate limit: `apiRateLimit`.
 | PATCH | `/leads/:id` | JWT | admin, frontdesk, trainer | `updateLeadById` |
 | DELETE | `/leads/:id` | JWT | admin, frontdesk | `deleteLeadById` |
 | POST | `/leads/:id/convert` | JWT | admin, frontdesk | `convertLeadToUser` |
+
+#### `/people` → [people.routes.ts](../src/routes/people.routes.ts)
+
+Rate limit: `apiRateLimit`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/people/lookup` | JWT | admin, frontdesk | `lookupPeople` |
 
 #### `/invoices` → [invoice.routes.ts](../src/routes/invoice.routes.ts)
 
@@ -1328,7 +1351,9 @@ Create a user (admin-managed). Use `/auth/signup` for self-service signup.
 
 | Field | Type | Required | Constraints |
 |---|---|---|---|
-| `username`, `phone`, `email`, `password`, `age`, `gender` | — | yes | Same as `/auth/signup` |
+| `username`, `phone`, `gender` | — | yes | Same as `/auth/signup` |
+| `email`, `password` | — | no | Same rules as `/auth/signup` when given |
+| `age` | number | no | integer 0–130. Optional for staff-created accounts (app signup still requires it), so `age` may be absent on a member |
 | `dateOfBirth` | string/Date | no | ISO date |
 | `emergencyContact` | string | no | |
 | `address` | string | no | |
@@ -3192,7 +3217,11 @@ await axios.post(
 
 ### POST /memberships
 
-**Auth:** Bearer (`admin`)
+A membership created by hand, outside the invoice flow (sales go through
+`POST /invoices` → `PATCH /invoices/:id/status` `PAID`). The `reason` is stored
+on the membership as `manualReason`, with the admin as `createdBy`.
+
+**Auth:** Bearer (`admin` only)
 
 **Request body**
 
@@ -3201,13 +3230,15 @@ await axios.post(
 | `userId` | string | no | required when admin assigns to a specific user |
 | `planName` | string | yes | min 1 |
 | `creditsIncluded` | number | no | ≥ 0 integer, default 0 |
-| `status` | `MembershipStatus` | no | |
+| `status` | `MembershipStatus` | no | Omitted: `Upcoming` when `startDate` is in the future, else `Active` |
 | `price` | number | yes | ≥ 0 |
 | `currency` | string | no | default `"USD"` |
 | `startDate` | ISO date string | yes | min 1 |
 | `endDate` | ISO date string | no | |
 | `features` | string[] | no | default `[]` |
 | `notes` | string | no | |
+| `locationId` | ObjectId | conditional | Required when more than one branch is active |
+| `reason` | string | **yes** | Why this membership skips the invoice; stored as `manualReason` |
 
 ```bash
 curl -X POST "https://api.example.com/memberships" \
@@ -3218,17 +3249,29 @@ curl -X POST "https://api.example.com/memberships" \
     "creditsIncluded": 20,
     "price": 49.99,
     "startDate": "2026-06-01",
-    "endDate": "2026-07-01"
+    "endDate": "2026-07-01",
+    "reason": "Migrated from paper register"
   }'
 ```
 
 **Success (201):** `{ "message": "Membership created", "membership": { /* ... */ } }`
+
+**Errors**
+
+| Status | Code | When |
+|---|---|---|
+| 400 | — | Invalid payload (including missing `reason`) |
+| 403 | `FORBIDDEN` | Caller is not `admin` |
+| 409 | `MEMBERSHIP_OVERLAP` | The member already has an `Active`/`Paused`/`Upcoming` membership overlapping these dates — `details: { conflictingMembershipId, endDate }` |
 
 ### GET /memberships
 
 **Auth:** Bearer (`admin`)
 
 **Query params:** `userId`, and `locationId` — only memberships issued at that branch (malformed id → 400 `INVALID_LOCATION_ID`).
+
+`Upcoming` memberships whose start has arrived are flipped to `Active` before
+the list is read (also done every reminder tick), here and on `/memberships/me`.
 
 ```bash
 curl "https://api.example.com/memberships" -H "Authorization: Bearer $TOKEN"
@@ -3334,15 +3377,29 @@ Admin-defined plan catalogue that `Membership` records are sold from. From
 > `GET /membership-plans` is declared **before** `router.use(authenticateToken)`,
 > making it the only public route in this file. Every other route requires a JWT.
 
+**Branches.** A plan has `locationId` — the branch it is sold at, or `null`
+for every branch. Plans are deliberately not stamped with the default branch
+on create, so leaving `locationId` out keeps a plan all-branch. `isFounding`
+marks founding-member (presale) pricing, and `availableUntil` is the last
+moment the plan can be sold (`null` = no cut-off). A branch's opening day is
+`Location.opensOn` (`null` = open), set through the existing
+`POST /locations` / `PATCH /locations/:id` body as `"YYYY-MM-DD"` or ISO.
+
 ### GET /membership-plans
 
-Full plan catalogue. Returns every plan, including `active: false` ones — there
-is no filtering or pagination.
+Plan catalogue, including `active: false` plans. No pagination.
 
 **Auth:** Public
 
+**Query params**
+
+| Param | Meaning |
+|---|---|
+| `locationId` | Only plans sold at that branch **plus** all-branch plans (`locationId: null`, including plans saved before the field existed). 400 `INVALID_LOCATION_ID` if malformed. |
+| `includeExpired` | `true` also returns plans past `availableUntil`. By default they are hidden. |
+
 ```bash
-curl "https://api.example.com/membership-plans"
+curl "https://api.example.com/membership-plans?locationId=6650f1a2b3c4d5e6f7a8b9c1"
 ```
 
 **Success (200)**
@@ -3361,7 +3418,10 @@ curl "https://api.example.com/membership-plans"
       "active": true,
       "gymId": "hsr-layout",
       "durationMonths": 3,
-      "benefits": {}
+      "benefits": {},
+      "locationId": null,
+      "isFounding": false,
+      "availableUntil": null
     }
   ]
 }
@@ -3393,6 +3453,9 @@ curl "https://api.example.com/membership-plans"
 | `active` | boolean | no | model default `true` | |
 | `durationMonths` | number | no | `1` | integer ≥ 1 |
 | `benefits` | object | no | `{}` | Arbitrary key/value map |
+| `locationId` | ObjectId \| null | no | `null` | Branch the plan is sold at; must be an active Location. `null`, `""` or `"all"` = every branch |
+| `isFounding` | boolean | no | `false` | Founding-member pricing |
+| `availableUntil` | date \| null | no | `null` | `"YYYY-MM-DD"` or ISO; `null` clears the cut-off |
 
 **Success (201):** `{ "message": "Membership plan created", "plan": { /* ... */ }, "requestId": "..." }`
 
@@ -3401,6 +3464,8 @@ curl "https://api.example.com/membership-plans"
 | Status | Code | When |
 |---|---|---|
 | 400 | `INVALID_PAYLOAD` | Zod validation failed |
+| 400 | `INVALID_LOCATION_ID` / `LOCATION_INACTIVE` | `locationId` malformed or not an active branch |
+| 404 | `LOCATION_NOT_FOUND` | `locationId` is not a branch |
 | 409 | `DUPLICATE_RESOURCE` | Plan already exists (duplicate key) |
 | 500 | `INTERNAL_ERROR` | `Failed to create membership plan` |
 
@@ -3412,7 +3477,7 @@ Partial update — at least one field required.
 
 **Success (200):** `{ "message": "Membership plan updated", "plan": { /* ... */ }, "requestId": "..." }`
 
-**Errors:** 400 `Invalid id`, 400 `INVALID_PAYLOAD`, 404, 409 `DUPLICATE_RESOURCE`.
+**Errors:** 400 `Invalid id`, 400 `INVALID_PAYLOAD`, the branch errors of POST, 404, 409 `DUPLICATE_RESOURCE`.
 
 ### DELETE /membership-plans/:id
 
@@ -3447,8 +3512,27 @@ listed is rejected with `409 CONFLICT`.
 
 ### POST /invoices
 
-Create an invoice. `subtotal` and `total` are computed server-side from `items`,
-`tax`, and `discount`; `invoiceNumber` is generated.
+Create an invoice for a sale. `subtotal` and `total` are computed server-side
+from `items`, `tax`, and `discount`; `invoiceNumber` is generated.
+
+**The person is resolved at creation**, so the response invoice always has
+`userId`:
+
+- `userId` — an existing member.
+- `leadId` — links the User whose phone matches the lead's (last 10 digits), or
+  creates one from the lead (name, phone, email unless already taken,
+  `homeLocationId` = invoice branch, no password — the app signs in by phone
+  OTP) and sets `lead.convertedUser`. No membership is granted; the lead's
+  status becomes `Converted` only when the invoice is paid.
+- `newLead` — a walk-in: reuses the lead with that phone, else creates one
+  (`source: "frontdesk-sale"`) at the invoice branch, then as `leadId`.
+
+When `startDate` is sent, the overlap guard runs here too, so a clash is
+refused before money is taken (see `PATCH /invoices/:id/status`).
+
+**Headers:** `Idempotency-Key` (optional, 1–200 chars). A repeat POST with the
+same key from the same staff member returns the invoice the first one created
+(`200`, `"Invoice already created"`) instead of a second invoice.
 
 **Auth:** Bearer (`admin`, `frontdesk`)
 
@@ -3458,10 +3542,16 @@ Create an invoice. `subtotal` and `total` are computed server-side from `items`,
 |---|---|---|---|---|
 | `items` | array | yes | — | min 1; each `{ name, price ≥ 0, quantity ≥ 1 }` |
 | `planSnapshot` | object | yes | — | `{ name, durationInDays ≥ 1, price ≥ 0, includedCredits ≥ 0 }` — frozen copy of the plan as sold |
-| `userId` | ObjectId | conditional | — | **`userId` or `leadId` is required** |
-| `leadId` | ObjectId | conditional | — | Must resolve to an existing Lead |
-| `tax` | number | no | `0` | ≥ 0 |
+| `userId` | ObjectId | conditional | — | **One of `userId`, `leadId`, `newLead` is required** |
+| `leadId` | ObjectId | conditional | — | Must resolve to an existing Lead with a phone |
+| `newLead` | object | conditional | — | `{ name, phone (≥ 10 digits), email? }`. Not combinable with `userId`/`leadId` |
+| `locationId` | ObjectId | conditional | resolved | Branch the sale is made at, honoured as sent. **Required when more than one branch is active** (`400 LOCATION_REQUIRED`) |
+| `planId` | ObjectId | no | — | The `MembershipPlan` sold; copied onto the membership |
+| `startDate` | `YYYY-MM-DD` | no | day paid | Day the membership starts, in the branch's timezone |
+| `durationMonths` | integer | no | — | 1–60. Membership runs this many calendar months; omitted, `planSnapshot.durationInDays` |
+| `tax` | number | no | computed | ≥ 0. Omitted: `(subtotal − discount) × Location.settings.taxRatePercent / 100`, rounded to the paisa |
 | `discount` | number | no | `0` | ≥ 0 |
+| `discountReason` | string | no | — | |
 | `paymentMethod` | `InvoicePaymentMethod` | no | `NONE` | |
 | `paymentStatus` | string | no | `DRAFT` | **On create, only `DRAFT` or `PENDING` are accepted** |
 | `issuedAt` | string | no | — | Parseable date |
@@ -3486,8 +3576,10 @@ curl -X POST "https://api.example.com/invoices" \
 | Status | Code | When |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Zod validation failed |
-| 400 | `BAD_REQUEST` | Invalid `userId`/`leadId`/`issuedAt`, or neither id supplied |
-| 404 | `NOT_FOUND` | `Lead not found` |
+| 400 | `BAD_REQUEST` | Invalid `userId`/`leadId`/`planId`/`issuedAt`/`Idempotency-Key`, no person supplied, `newLead` combined with an id, or the lead has no phone |
+| 400 | `LOCATION_REQUIRED` / `INVALID_LOCATION_ID` / `LOCATION_INACTIVE` | Branch missing with several active, malformed, or inactive |
+| 404 | `NOT_FOUND` | Lead, member, membership plan or location not found |
+| 409 | `MEMBERSHIP_OVERLAP` | `startDate` sent and the member already holds an overlapping membership — `details: { conflictingMembershipId, endDate }` |
 
 ### GET /invoices
 
@@ -3520,10 +3612,19 @@ Move an invoice through the status machine.
 |---|---|---|---|
 | `paymentStatus` | `InvoicePaymentStatus` | yes | Must be a legal transition from the current status |
 | `paymentMethod` | `InvoicePaymentMethod` | no | |
+| `paymentReference` | string | no | UPI transaction id, card slip number, etc. Stored on the invoice |
+| `membershipStartDate` | ISO date | no | `PAID` only. Overrides the invoice's `startDate` for the created membership (its calendar day in the branch's timezone). Prefer `startDate` on `POST /invoices` |
 
 > **Transitioning to `PAID` has side effects.** It converts the linked Lead and
-> activates the membership, returning `lead` and `membership` alongside the
-> invoice.
+> creates the membership from the invoice, returning `lead` and `membership`
+> alongside the invoice. The caller is stored as `recordedBy`.
+>
+> The membership starts on the invoice's `startDate` (branch midnight; default
+> today), ends `durationMonths` calendar months later (fallback
+> `planSnapshot.durationInDays`), carries the invoice's `locationId`, `planId`
+> and `invoiceId`, and is `Upcoming` when its start is still ahead. An older
+> invoice with only a `leadId` has its account resolved (or created) at this
+> point, so paying never needs a prior convert.
 
 **Success (200) — non-`PAID`:** `{ "message": "Invoice status updated to CANCELLED", "invoice": { /* ... */ } }`
 
@@ -3548,6 +3649,7 @@ Move an invoice through the status machine.
 | 400 | `BAD_REQUEST` / `VALIDATION_ERROR` | Invalid id or body |
 | 404 | `NOT_FOUND` | No such invoice |
 | 409 | `CONFLICT` | `Cannot transition invoice from X to Y`, or `Invoice was already marked as PAID` |
+| 409 | `MEMBERSHIP_OVERLAP` | `PAID` only: the member already has an `Active`/`Paused`/`Upcoming` membership overlapping the new dates — `details: { conflictingMembershipId, endDate }`. The invoice stays unpaid |
 
 ### GET /invoices/:id/pdf
 
@@ -4180,7 +4282,7 @@ Create a lead (back office).
 | `tags` | string[] | no |
 | `followUpDate` | ISO date | no |
 | `ownerId` | ObjectId | no |
-| `status` | `LeadStatus` | no |
+| `status` | `LeadStatus` | no — any but `Converted` |
 
 ```bash
 curl -X POST "https://api.example.com/leads" \
@@ -4189,6 +4291,8 @@ curl -X POST "https://api.example.com/leads" \
 ```
 
 **Success (201):** `{ "message": "Lead created", "lead": { /* ... */ } }`
+
+**Errors:** `400 LEAD_CONVERSION_NOT_ALLOWED` when `status` is `Converted` — see [PATCH /leads/:id](#patch-leadsid).
 
 ### GET /leads
 
@@ -4201,6 +4305,10 @@ curl "https://api.example.com/leads" -H "Authorization: Bearer $TOKEN"
 ```
 
 **Success (200):** `{ "leads": [ /* ... */ ] }`
+
+Each lead carries `pendingInvoiceId`: the id of its newest `DRAFT`/`PENDING`
+invoice, or `null`. Read in one query for the whole list. `GET /leads/:id`
+returns it too.
 
 ### GET /leads/stats
 
@@ -4251,6 +4359,10 @@ curl -X PATCH "https://api.example.com/leads/5f1a2b3c4d5e6f7a8b9c0d1e" \
 
 **Success (200):** `{ "message": "Lead updated", "lead": { /* ... */ } }`
 
+**Errors:** `400 { "code": "LEAD_CONVERSION_NOT_ALLOWED" }` when `status` is
+`Converted`. A lead converts only by becoming a member — its invoice is paid
+(`PATCH /invoices/:id/status` → `PAID`) or [`POST /leads/:id/convert`](#post-leadsidconvert).
+
 ### DELETE /leads/:id
 
 **Auth:** Bearer (`admin`)
@@ -4268,6 +4380,8 @@ Convert a lead into a `User`. If a user with that email already exists, the exis
 
 **Branches:** a newly created member gets the lead's branch as their home club.
 
+No membership is created. The member's plan comes from paying their invoice (`PATCH /invoices/:id/status` → `PAID`) or from `POST /memberships`.
+
 **Auth:** Bearer (`admin`)
 
 **Request body**
@@ -4277,7 +4391,7 @@ Convert a lead into a `User`. If a user with that email already exists, the exis
 | `username` | string | no | defaults to lead name |
 | `phone` | string | yes | |
 | `age` | string | yes | numeric string |
-| `gender` | `Gender` | yes | `Male` \| `Female` \| `Other` |
+| `gender` | `Gender` | yes | `Male` \| `Female` \| `Other`; legacy `0`/`1`/`2` (number or string) are accepted and mapped in that order |
 | `password` | string | yes | |
 
 ```bash
@@ -4295,6 +4409,89 @@ curl -X POST "https://api.example.com/leads/5f1a2b3c4d5e6f7a8b9c0d1e/convert" \
   "user": { "id": "5f1a2b3c4d5e6f7a8b9c0d1e", "email": "user@example.com", "role": "user" }
 }
 ```
+
+---
+
+## People lookup — `/people`
+
+From [people.routes.ts](../src/routes/people.routes.ts). The first step of the
+desk's New sale flow: is this person already a member, a lead, or someone with
+an unpaid invoice?
+
+### GET /people/lookup
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+**Query params:** `q` (required, 2–100 chars).
+
+- Four or more digits (spaces, `+`, `-`, brackets allowed) is a **phone**
+  search on the last 10 digits: `+91 98765 43210`, `9876543210` and `98765`
+  all find `9876543210`, and separators in the stored phone are ignored.
+- Anything else is a case-insensitive **name or email** search (members by
+  `username`, leads by `leadName`). Regex characters match literally.
+
+Searches every branch. At most 10 members, 10 leads and 10 pending invoices,
+most recently updated/created first. Leads already `Converted` are left out —
+the member row stands for them.
+
+```bash
+curl "https://api.example.com/people/lookup?q=98765" -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200)**
+
+```json
+{
+  "members": [
+    {
+      "_id": "6650f1a2b3c4d5e6f7a8b9c0",
+      "username": "Ravi",
+      "phone": "9876543210",
+      "email": "ravi@example.com",
+      "homeLocationId": "6650f1a2b3c4d5e6f7a8b9c1",
+      "currentMembership": {
+        "_id": "6650f1a2b3c4d5e6f7a8b9c2",
+        "planId": null,
+        "planName": "Gold",
+        "status": "Active",
+        "startDate": "2026-06-01T00:00:00.000Z",
+        "endDate": "2026-12-31T00:00:00.000Z",
+        "locationId": "6650f1a2b3c4d5e6f7a8b9c1"
+      }
+    }
+  ],
+  "leads": [
+    {
+      "_id": "6650f1a2b3c4d5e6f7a8b9c3",
+      "name": "Ravi Kumar",
+      "phone": "+91 98765 43210",
+      "email": "",
+      "status": "Hot",
+      "locationId": "6650f1a2b3c4d5e6f7a8b9c1",
+      "interestedIn": "Gold",
+      "pendingInvoiceId": "6650f1a2b3c4d5e6f7a8b9c4"
+    }
+  ],
+  "pendingInvoices": [
+    {
+      "_id": "6650f1a2b3c4d5e6f7a8b9c4",
+      "invoiceNumber": "INV-2026-0042",
+      "total": 5899,
+      "userId": null,
+      "leadId": "6650f1a2b3c4d5e6f7a8b9c3",
+      "locationId": "6650f1a2b3c4d5e6f7a8b9c1"
+    }
+  ]
+}
+```
+
+- `currentMembership` is the member's `Active`, `Paused` or `Upcoming`
+  membership with the latest `endDate`, or `null`. `planId` is `null` on
+  memberships sold before memberships carried it.
+- `pendingInvoices` are the `DRAFT`/`PENDING` invoices of the members and
+  leads found.
+
+**Errors:** `400 VALIDATION_ERROR` when `q` is missing, blank or over 100 characters.
 
 ---
 
@@ -5430,7 +5627,7 @@ curl -X POST "https://api.example.com/internal/reminders/tick" \
 ### POST /internal/sessions/lifecycle/tick
 
 Drives the video-room lifecycle. Called **every minute** by an external
-scheduler — the Vercel Cron entry only runs daily, far too coarse for a
+scheduler — a daily cron would be far too coarse for a
 lead-time / expiry-grace room lifecycle.
 
 **Auth:** `X-Internal-Secret` (or `X-Webhook-Secret`)

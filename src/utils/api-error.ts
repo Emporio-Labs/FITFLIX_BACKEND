@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { ZodError } from "zod";
 import { TrainerRosterError } from "../services/trainerRoster.service";
 import { CreditServiceError } from "./credit.service";
+import { readableMongooseMessage } from "./validation-messages";
 
 export type ApiErrorCode =
 	| "VALIDATION_ERROR"
@@ -17,6 +18,8 @@ export type ApiErrorCode =
 
 export type ApiErrorEnvelope = {
 	error: string;
+	/** Same text as `error`, for clients that read `message`. */
+	message?: string;
 	code: ApiErrorCode | string;
 	details?: unknown;
 };
@@ -173,6 +176,71 @@ const hasValidationDetails = (details: unknown): boolean => {
 	}
 
 	return Object.keys(details).length > 0;
+};
+
+// Top-level messages that only say "something in the body was wrong". When the
+// per-field messages are known, the response leads with those instead.
+const GENERIC_VALIDATION_MESSAGE =
+	/^(validation (failed|error)\b|invalid\b.*\b(payload|data|query|input|request|body|param(eter)?s?|message)$)/i;
+
+const MAX_SUMMARY_MESSAGES = 3;
+
+const collectValidationMessages = (
+	details: unknown,
+	into: string[] = [],
+): string[] => {
+	if (typeof details === "string") {
+		const message = details.trim();
+		if (message && !into.includes(message)) {
+			into.push(message);
+		}
+	} else if (Array.isArray(details)) {
+		// An issue object in a list ({ sheet, row, message }) is read for its
+		// message only, so locations like "Sheet1" or "B" stay out of the text.
+		for (const entry of details) {
+			collectValidationMessages(
+				isPlainObject(entry) && typeof entry.message === "string"
+					? entry.message
+					: entry,
+				into,
+			);
+		}
+	} else if (isPlainObject(details)) {
+		for (const [key, value] of Object.entries(details)) {
+			if (key !== "debug") {
+				collectValidationMessages(value, into);
+			}
+		}
+	}
+
+	return into;
+};
+
+const summarizeValidationMessages = (messages: string[]): string => {
+	const shown = messages.slice(0, MAX_SUMMARY_MESSAGES).join("; ");
+	const hidden = messages.length - MAX_SUMMARY_MESSAGES;
+	return hidden > 0 ? `${shown} (and ${hidden} more)` : shown;
+};
+
+const withReadableMessage = (envelope: ApiErrorEnvelope): ApiErrorEnvelope => {
+	const { error, message, ...rest } = envelope;
+
+	if (
+		envelope.code === "VALIDATION_ERROR" &&
+		GENERIC_VALIDATION_MESSAGE.test(error)
+	) {
+		const messages = collectValidationMessages(envelope.details);
+		if (messages.length > 0) {
+			const summary = summarizeValidationMessages(messages);
+			return { error: summary, message: summary, ...rest };
+		}
+	}
+
+	return {
+		error,
+		message: typeof message === "string" ? message : error,
+		...rest,
+	};
 };
 
 export const mapStatusToErrorCode = (
@@ -341,11 +409,9 @@ const mapError = (
 			if (details[key]) {
 				continue;
 			}
-			const message =
-				entry && typeof entry.message === "string"
-					? entry.message
-					: "Validation failed";
-			details[key] = message;
+			details[key] = entry
+				? readableMongooseMessage(key, entry)
+				: "Validation failed";
 		}
 		return {
 			status: 400,
@@ -359,7 +425,10 @@ const mapError = (
 			status: 400,
 			error: "Invalid request parameter",
 			details: {
-				[error.path || "field"]: error.message || "Invalid value",
+				[error.path || "field"]: readableMongooseMessage(
+					error.path || "field",
+					error,
+				),
 			},
 		};
 	}
@@ -435,6 +504,10 @@ const attachDebugDetails = (
 };
 
 export const normalizeErrorResponse = (
+	input: NormalizeErrorResponseInput,
+): ApiErrorEnvelope => withReadableMessage(toErrorEnvelope(input));
+
+const toErrorEnvelope = (
 	input: NormalizeErrorResponseInput,
 ): ApiErrorEnvelope => {
 	if (isApiErrorEnvelope(input.body)) {
@@ -513,6 +586,8 @@ export const resolveErrorResponse = (
 
 	return {
 		status: normalized.status,
-		body: attachDebugDetails(envelope, error, options?.verbose),
+		body: withReadableMessage(
+			attachDebugDetails(envelope, error, options?.verbose),
+		),
 	};
 };

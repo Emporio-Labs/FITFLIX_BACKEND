@@ -35,6 +35,24 @@ export class MembershipLifecycleError extends Error {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Flip Upcoming memberships whose start has arrived to Active.
+ *
+ * Runs on every reminder tick and before the membership listings read, so a
+ * presale member can book from the first minute of their start day. Pass a
+ * filter (e.g. `{ user }`) to scope the on-read call to one member.
+ */
+export const activateDueMemberships = async (
+	now: Date = new Date(),
+	scope: Record<string, unknown> = {},
+): Promise<number> => {
+	const result = await Membership.updateMany(
+		{ ...scope, status: MembershipStatus.Upcoming, startDate: { $lte: now } },
+		{ $set: { status: MembershipStatus.Active } },
+	);
+	return result.modifiedCount;
+};
+
 export type ExpiryRunSummary = {
 	scanned: number;
 	expired: number;

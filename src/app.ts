@@ -36,6 +36,7 @@ import expertAppointmentRouter from "./routes/expert-appointment.routes";
 import expertScheduleRouter from "./routes/expert-schedule.routes";
 
 import onboardingRouter from "./routes/onboarding.routes";
+import peopleRouter from "./routes/people.routes";
 import dnaRouter from "./routes/dna.routes";
 import scheduleRouter from "./routes/schedule.routes";
 import serviceRouter from "./routes/service.routes";
@@ -54,12 +55,14 @@ import {
 	normalizeErrorResponse,
 	resolveErrorResponse,
 } from "./utils/api-error";
+import { installReadableValidationMessages } from "./utils/validation-messages";
 
 config();
+installReadableValidationMessages();
 
 const app = express();
 
-// Behind a tunnel/proxy (ngrok in dev, Vercel in prod) the socket is local —
+// Behind a tunnel/proxy (ngrok in dev, the EC2 reverse proxy in prod) the socket is local —
 // without this, `req.protocol` reads "http" and `req.ip` reads the proxy, so
 // absolute URLs handed to the app come back as cleartext links that Android
 // blocks. Trusting X-Forwarded-Proto / -For fixes both.
@@ -148,7 +151,7 @@ app.use((req, res, next) => {
 	);
 	res.setHeader(
 		"Access-Control-Allow-Headers",
-		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token, ngrok-skip-browser-warning",
+		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token, Idempotency-Key, ngrok-skip-browser-warning",
 	);
 	res.setHeader(
 		"Access-Control-Expose-Headers",
@@ -262,6 +265,7 @@ app.use("/api/v1/credits", apiRateLimit, creditRouter);
 app.use("/schedules", apiRateLimit, scheduleRouter);
 app.use("/exercises", apiRateLimit, exerciseRouter);
 app.use("/leads", apiRateLimit, leadRouter);
+app.use("/people", apiRateLimit, peopleRouter);
 app.use("/gym-visits", apiRateLimit, gymVisitRouter);
 app.use("/invoices", apiRateLimit, invoiceRouter);
 app.use("/api/invoices", apiRateLimit, invoiceRouter);
@@ -300,7 +304,7 @@ app.use("/dashboard", dashboardRouter);
 // path first because the deployed EC2 build does not mount the /api/v1
 // namespace at all (see HANDOVER-ec2-deploy-api-v1-mount.md); an endpoint
 // reachable only under /api/v1 works in dev and 404s for every production
-// user. The /api/v1 alias is kept for Vercel parity.
+// user. The /api/v1 alias is kept for backwards compatibility.
 app.use("/analytics", apiRateLimit, analyticsRouter);
 app.use("/api/v1/analytics", apiRateLimit, analyticsRouter);
 app.use("/alerts", apiRateLimit, operationalAlertRouter);

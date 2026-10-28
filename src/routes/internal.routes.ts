@@ -42,7 +42,7 @@ function verifyInternalSecret(req: Request, res: Response): boolean {
 
 /**
  * POST /internal/reminders/tick
- * Called by Vercel Cron or any scheduler every minute.
+ * Called by a cron job on the EC2 host or any scheduler every minute.
  * Processes all due appointment reminders atomically.
  */
 router.post("/reminders/tick", async (req: Request, res: Response) => {
@@ -61,8 +61,8 @@ router.post("/reminders/tick", async (req: Request, res: Response) => {
 
 /**
  * POST /internal/sessions/lifecycle/tick
- * Called every minute by an external scheduler (the Vercel Cron entry only
- * runs daily, too coarse for a T-minus-lead / T-plus-expiry room lifecycle).
+ * Called every minute by an external scheduler (a daily cron would be too
+ * coarse for a T-minus-lead / T-plus-expiry room lifecycle).
  *
  * Three independent sweeps, for both group_class and live_stream sessions:
  *  - prepareDueRooms:    stamp videoRoomId + roomStatus READY at (start - lead)
@@ -99,7 +99,7 @@ router.post("/sessions/lifecycle/tick", async (req: Request, res: Response) => {
 
 /**
  * POST /internal/leads/followup
- * Called by Vercel Cron or any scheduler to trigger lead follow-ups.
+ * Called by a cron job on the EC2 host or any scheduler to trigger lead follow-ups.
  */
 router.post("/leads/followup", async (req: Request, res: Response) => {
 	if (!verifyInternalSecret(req, res)) return;
