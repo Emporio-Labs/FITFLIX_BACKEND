@@ -8,6 +8,7 @@ import {
 import Lead from "../models/Lead";
 import Location from "../models/Location";
 import OperationalAlert from "../models/OperationalAlert";
+import { logLeadActivity } from "../services/lead-activity.service";
 import { emitOperationalAlert } from "../services/realtime.service";
 import { isSalesStaffOnDuty } from "../services/staff-presence.service";
 import { getEffectiveAlertRule } from "../utils/default-alert-rules";
@@ -15,6 +16,7 @@ import { getEffectiveAlertRule } from "../utils/default-alert-rules";
 /** Statuses of a lead someone is working; its follow-up dates are watched. */
 const OPEN_WORKED_STATUSES = [
 	LeadStatus.Contacted,
+	LeadStatus.VisitBooked,
 	LeadStatus.Qualified,
 	LeadStatus.Warm,
 	LeadStatus.Hot,
@@ -144,6 +146,14 @@ export const runLeadSlaAndEscalationSweep = async (
 				activeAlertSet.add(leadIdStr);
 				metrics.unclaimedAlerted++;
 
+				void logLeadActivity({
+					leadId: lead._id,
+					locationId: lead.locationId,
+					type: "system",
+					outcome: "escalated",
+					label: title,
+				});
+
 				// Mark lead escalated in DB
 				await Lead.findByIdAndUpdate(lead._id, {
 					$set: {
@@ -268,6 +278,14 @@ export const runLeadSlaAndEscalationSweep = async (
 				emitOperationalAlert(alert.toObject());
 				activeCallbackAlertSet.add(leadIdStr);
 				metrics.callbacksAlerted++;
+
+				void logLeadActivity({
+					leadId: lead._id,
+					locationId: lead.locationId,
+					type: "system",
+					outcome: "escalated",
+					label: title,
+				});
 
 				// Mark lead escalated in DB
 				await Lead.findByIdAndUpdate(lead._id, {

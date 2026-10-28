@@ -1,6 +1,7 @@
 import type mongoose from "mongoose";
 import { LeadStatus } from "../models/Enums";
 import Lead from "../models/Lead";
+import { logLeadActivity } from "../services/lead-activity.service";
 
 /** Last ten digits of a phone, so "+91 98765 43210" and "9876543210" match. */
 export const lastTenDigits = (phone: string | null | undefined): string =>
@@ -70,6 +71,16 @@ export const recordAppSignupLead = async (input: {
 			set.interestedIn = input.interestedIn;
 		}
 		if (existing.status === LeadStatus.Lost) set.status = LeadStatus.New;
+		void logLeadActivity({
+			leadId: existing._id,
+			locationId: existing.locationId,
+			type: "system",
+			outcome: "app_signup",
+			label: "Signed up in the app",
+			note: input.note ?? "",
+			statusFrom: existing.status,
+			statusTo: (set.status as string) ?? existing.status,
+		});
 		return Lead.findByIdAndUpdate(
 			existing._id,
 			{ $set: set, $addToSet: { tags: { $each: tags } } },
@@ -77,7 +88,7 @@ export const recordAppSignupLead = async (input: {
 		);
 	}
 
-	return Lead.create({
+	const created = await Lead.create({
 		leadName: input.name,
 		phone: input.phone ?? "",
 		email: input.email ?? "",
@@ -91,4 +102,14 @@ export const recordAppSignupLead = async (input: {
 			? { locationId: input.locationId as mongoose.Types.ObjectId }
 			: {}),
 	});
+	void logLeadActivity({
+		leadId: created._id,
+		locationId: created.locationId,
+		type: "system",
+		outcome: "created",
+		label: "Signed up in the app",
+		note: input.note ?? "",
+		statusTo: created.status,
+	});
+	return created;
 };

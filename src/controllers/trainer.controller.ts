@@ -182,21 +182,25 @@ export const updateTrainerById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { password, locationId, ...rest } = parsedBody.data;
+	const { password, locationId, canAccessLeads, ...rest } = parsedBody.data;
 	const hashedPassword = password ? await hashPassword(password) : null;
 
 	try {
-		// Which branch a trainer works at is an admin decision; a trainer
-		// editing their own profile can't move themselves.
+		// Which branch a trainer works at, and whether they may work leads,
+		// are admin decisions; a trainer editing their own profile can't
+		// change either.
+		const isAdminCaller =
+			Boolean(req.user) && normalizeRole(req.user!.role) === "admin";
 		const branchPatch =
-			locationId !== undefined &&
-			req.user &&
-			normalizeRole(req.user.role) === "admin"
+			locationId !== undefined && isAdminCaller
 				? { locationId: locationId && (await resolveLocationId(locationId)) }
 				: {};
 		const updatePayload = {
 			...rest,
 			...branchPatch,
+			...(canAccessLeads !== undefined && isAdminCaller
+				? { canAccessLeads }
+				: {}),
 			...(hashedPassword ? { passwordHash: hashedPassword } : {}),
 		};
 

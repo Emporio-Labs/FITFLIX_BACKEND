@@ -37,6 +37,23 @@ const leadSchema = new mongoose.Schema(
 			ref: "User",
 			default: null,
 		},
+		// ── Worked-lead summary, kept in step with LeadActivity ──────────
+		// Written by recordLeadOutcome; the timeline itself lives in
+		// LeadActivity. Old leads default to empty and fill in as staff log.
+		temperature: {
+			type: String,
+			enum: ["hot", "warm", "cold", null],
+			default: null,
+		},
+		visitAt: { type: Date, default: null },
+		attemptCount: { type: Number, default: 0 },
+		noAnswerStreak: { type: Number, default: 0 },
+		firstAttemptAt: { type: Date, default: null },
+		lastAttemptAt: { type: Date, default: null },
+		firstContactedAt: { type: Date, default: null },
+		lastContactedAt: { type: Date, default: null },
+		lastOutcome: { type: String, default: "" },
+		lostReason: { type: String, default: "" },
 	},
 	{ timestamps: true },
 );

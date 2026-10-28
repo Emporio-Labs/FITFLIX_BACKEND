@@ -89,6 +89,8 @@ type LoginUserPayload = {
 	email: string;
 	role: AppRole;
 	staffRole?: string | null;
+	// Trainers only: whether an admin has let them work the lead board.
+	canAccessLeads?: boolean;
 	onboarded?: boolean;
 	onboardingStatus?: unknown;
 };
@@ -313,6 +315,9 @@ export const login: RequestHandler = async (req, res, next) => {
 			: null;
 
 		const userPayload = buildLoginUserPayload(matchedAccount, user);
+		if (matchedAccount.role === "trainer") {
+			userPayload.canAccessLeads = Boolean(trainer?.canAccessLeads);
+		}
 
 		console.log("[AUTH][LOGIN] Login successful", {
 			email: maskEmail(email),

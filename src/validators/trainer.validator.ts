@@ -10,6 +10,7 @@ export const createTrainerBodySchema = z.object({
 	imageUrl: z.string().optional().default(""),
 	keySentence: z.string().optional().default(""),
 	isActive: z.boolean().optional().default(true),
+	canAccessLeads: z.boolean().optional(),
 	// The branch the trainer works at. "" / "none" / null = no branch; a value
 	// must be an active Location (checked in the controller).
 	locationId: z.preprocess(

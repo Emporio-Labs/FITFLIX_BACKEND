@@ -10,6 +10,7 @@ import { autoResolveOperationalAlerts } from "./operational-alert.controller";
 import { getEffectiveAlertRule } from "../utils/default-alert-rules";
 import { isSalesStaffOnDuty } from "../services/staff-presence.service";
 import { calculateHealthScore } from "../utils/health-score";
+import { logLeadActivity, resolveActor } from "../services/lead-activity.service";
 import { findExistingLead } from "../utils/lead-match";
 import { pendingInvoiceIdsByLead } from "../utils/lead-pending-invoice";
 import { hashPassword } from "../utils/password";
@@ -123,6 +124,17 @@ export const createLead: RequestHandler = async (req, res, next) => {
 				| undefined,
 			...(followUpDateValue ? { followUpDate: followUpDateValue } : {}),
 			...(ownerId ? { owner: ownerId } : {}),
+		});
+
+		void logLeadActivity({
+			leadId: lead._id,
+			locationId: lead.locationId,
+			type: "system",
+			outcome: "created",
+			label: `Lead added${lead.source ? ` (${lead.source})` : ""}`,
+			note: lead.notes ?? "",
+			statusTo: lead.status,
+			actor: await resolveActor(req.user),
 		});
 
 		res.status(201).json({ message: "Lead created", lead });
@@ -340,6 +352,19 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 					status: LeadStatus.New,
 					publicCapture,
 				});
+
+		void logLeadActivity({
+			leadId: lead._id,
+			locationId: lead.locationId,
+			type: "system",
+			outcome: reuse ? "enquired_again" : "created",
+			label: reuse
+				? `Enquired again via ${normalizedSource}`
+				: `Enquiry via ${normalizedSource}`,
+			note: resolvedNotes ?? "",
+			statusFrom: reuse ? existing.status : null,
+			statusTo: lead.status,
+		});
 
 		// FX-35.1: If lead is an urgent callback or hot lead, raise an OperationalAlert
 		const isUrgent =
@@ -575,11 +600,36 @@ export const updateLeadById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const { locationId, ...fields } = payload;
+		const before = await Lead.findById(id).select("status visitAt");
+		if (!before) {
+			res.status(404).json({ message: "Lead not found" });
+			return;
+		}
+
+		const { locationId, visitAt: visitAtRaw, ...fields } = payload;
+		const visitAtValue =
+			visitAtRaw === undefined ? undefined : parseDateOrNull(visitAtRaw ?? undefined);
+		if (visitAtRaw && !visitAtValue) {
+			res.status(400).json({ message: "Invalid visitAt" });
+			return;
+		}
+		// A booked visit needs a time; the desk asks for one before moving it.
+		if (
+			fields.status === LeadStatus.VisitBooked &&
+			!(visitAtValue ?? before.visitAt)
+		) {
+			res.status(400).json({
+				message: "Pick the visit date and time",
+				code: "VISIT_AT_REQUIRED",
+			});
+			return;
+		}
+
 		const updatedLead = await Lead.findByIdAndUpdate(
 			id,
 			{
 				...fields,
+				...(visitAtValue !== undefined ? { visitAt: visitAtValue } : {}),
 				...(locationId !== undefined
 					? { locationId: locationId && (await resolveLocationId(locationId)) }
 					: {}),
@@ -594,6 +644,21 @@ export const updateLeadById: RequestHandler = async (req, res, next) => {
 		if (!updatedLead) {
 			res.status(404).json({ message: "Lead not found" });
 			return;
+		}
+
+		if (fields.status && fields.status !== before.status) {
+			void logLeadActivity({
+				leadId: updatedLead._id,
+				locationId: updatedLead.locationId,
+				type: "status_change",
+				outcome: "moved",
+				label: "Moved on the board",
+				statusFrom: before.status,
+				statusTo: updatedLead.status,
+				lostReason: updatedLead.lostReason ?? "",
+				visitAt: updatedLead.visitAt ?? null,
+				actor: await resolveActor(req.user),
+			});
 		}
 
 		// FX-35.4: Auto-resolve alert when lead is claimed or updated
@@ -727,6 +792,16 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 		lead.status = LeadStatus.Converted;
 		lead.convertedUser = targetUserId;
 		await lead.save();
+
+		void logLeadActivity({
+			leadId: lead._id,
+			locationId: lead.locationId,
+			type: "system",
+			outcome: "converted",
+			label: "Converted to a member",
+			statusTo: LeadStatus.Converted,
+			actor: await resolveActor(req.user),
+		});
 
 		// FX-35.4: Auto-resolve alert when lead is converted to member
 		void autoResolveOperationalAlerts("lead", id, "Lead converted to member");

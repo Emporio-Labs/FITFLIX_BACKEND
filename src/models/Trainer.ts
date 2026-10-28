@@ -21,6 +21,9 @@ const trainerSchema = new mongoose.Schema(
 			index: true,
 		},
 		isActive: { type: Boolean, default: true },
+		// Admin-granted: may see and work the lead board. Every trainer can
+		// still add a lead (a referral); only these can see or work them.
+		canAccessLeads: { type: Boolean, default: false },
 	},
 	{ timestamps: true },
 );

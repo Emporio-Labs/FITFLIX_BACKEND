@@ -226,7 +226,7 @@ export const getSignupFunnel: RequestHandler = async (req, res, next) => {
 				Lead.countDocuments(leadMatch as any),
 				Lead.countDocuments({
 					...leadMatch,
-					status: { $in: ["Contacted", "Qualified", "Warm", "Hot", "Converted"] },
+					status: { $in: ["Contacted", "VisitBooked", "Qualified", "Warm", "Hot", "Converted"] },
 				} as any),
 				User.countDocuments(userMatch as any),
 				User.countDocuments({

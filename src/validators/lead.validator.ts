@@ -130,6 +130,9 @@ export const createLeadBodySchema = z.object({
 	followUpDate: z.string().trim().min(1).optional(),
 	ownerId: z.string().trim().min(1).optional(),
 	status: z.enum(leadStatusValues).optional(),
+	temperature: z.enum(["hot", "warm", "cold"]).nullable().optional(),
+	visitAt: z.string().trim().min(1).nullable().optional(),
+	lostReason: z.string().trim().max(300).optional(),
 	// The branch the lead is for. "" / "none" / null = no branch; a value must
 	// be an active Location (checked in the controller).
 	locationId: z.preprocess(

@@ -6,6 +6,7 @@ import {
 } from "../models/Enums";
 import Invoice from "../models/Invoice";
 import Lead from "../models/Lead";
+import { logLeadActivity } from "../services/lead-activity.service";
 import Location from "../models/Location";
 import Membership from "../models/Membership";
 import MembershipPlan from "../models/MembershipPlan";
@@ -489,6 +490,16 @@ export const transitionInvoiceStatus = async (
 		);
 
 		await session.commitTransaction();
+		if (updatedLead) {
+			void logLeadActivity({
+				leadId: updatedLead._id,
+				locationId: updatedLead.locationId,
+				type: "system",
+				outcome: "converted",
+				label: "Paid — joined as a member",
+				statusTo: LeadStatus.Converted,
+			});
+		}
 		return { invoice, lead: updatedLead, membership };
 	} catch (error) {
 		if (session.inTransaction()) {

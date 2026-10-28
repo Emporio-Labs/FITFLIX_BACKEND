@@ -32,6 +32,9 @@ export enum TodoStatus {
 export enum LeadStatus {
 	New = "New",
 	Contacted = "Contacted",
+	// A visit or trial is on the calendar (Lead.visitAt).
+	VisitBooked = "VisitBooked",
+	// Shown as "Visited" on the desk: came in, deciding or paying.
 	Qualified = "Qualified",
 	Warm = "Warm",
 	Hot = "Hot",

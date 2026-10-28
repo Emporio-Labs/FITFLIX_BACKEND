@@ -1,5 +1,6 @@
 import Lead from "../models/Lead";
 import { LeadStatus } from "../models/Enums";
+import { logLeadActivity } from "./lead-activity.service";
 
 export interface FollowUpOutbox {
 	leadId: string;
@@ -42,6 +43,14 @@ export async function processLeadFollowups(): Promise<{ processedCount: number; 
 			});
 			lead.tags = [...tags, "followup-7d-sent"];
 			await lead.save();
+			await logLeadActivity({
+				leadId: lead._id,
+				locationId: lead.locationId,
+				type: "system",
+				outcome: "auto_message",
+				label: "Automated 7d follow-up message queued",
+				note: msg,
+			});
 		}
 		// Milestone 2: 72 Hours (approx 72 hours)
 		else if (ageHours >= 72 && !tags.includes("followup-72h-sent") && !tags.includes("followup-7d-sent")) {
@@ -55,6 +64,14 @@ export async function processLeadFollowups(): Promise<{ processedCount: number; 
 			});
 			lead.tags = [...tags, "followup-72h-sent"];
 			await lead.save();
+			await logLeadActivity({
+				leadId: lead._id,
+				locationId: lead.locationId,
+				type: "system",
+				outcome: "auto_message",
+				label: "Automated 72h follow-up message queued",
+				note: msg,
+			});
 		}
 		// Milestone 1: 24 Hours (approx 24 hours)
 		else if (ageHours >= 24 && !tags.includes("followup-24h-sent") && !tags.includes("followup-72h-sent") && !tags.includes("followup-7d-sent")) {
@@ -68,6 +85,14 @@ export async function processLeadFollowups(): Promise<{ processedCount: number; 
 			});
 			lead.tags = [...tags, "followup-24h-sent"];
 			await lead.save();
+			await logLeadActivity({
+				leadId: lead._id,
+				locationId: lead.locationId,
+				type: "system",
+				outcome: "auto_message",
+				label: "Automated 24h follow-up message queued",
+				note: msg,
+			});
 		}
 	}
 
