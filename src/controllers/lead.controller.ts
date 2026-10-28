@@ -10,6 +10,7 @@ import { autoResolveOperationalAlerts } from "./operational-alert.controller";
 import { getEffectiveAlertRule } from "../utils/default-alert-rules";
 import { isSalesStaffOnDuty } from "../services/staff-presence.service";
 import { calculateHealthScore } from "../utils/health-score";
+import { findExistingLead } from "../utils/lead-match";
 import { pendingInvoiceIdsByLead } from "../utils/lead-pending-invoice";
 import { hashPassword } from "../utils/password";
 import {
@@ -286,18 +287,59 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 	};
 
 	try {
-		const lead = await Lead.create({
-			leadName: resolvedLeadName,
-			...(resolvedEmail ? { email: resolvedEmail } : {}),
-			...(resolvedPhone ? { phone: resolvedPhone } : {}),
-			source: normalizedSource,
-			...(resolvedInterest ? { interestedIn: resolvedInterest } : {}),
-			...(resolvedNotes ? { notes: resolvedNotes } : {}),
-			tags: finalTags,
-			...(followUpDateValue ? { followUpDate: followUpDateValue } : {}),
-			status: LeadStatus.New,
-			publicCapture,
+		// Someone enquiring again lands on their existing lead instead of a
+		// duplicate the desk would call twice. A lead marked Lost reopens. A
+		// member (Converted) enquiring again is a new sale, so gets a new lead.
+		const existing = await findExistingLead({
+			phone: resolvedPhone,
+			email: resolvedEmail,
 		});
+		const reuse = existing && existing.status !== LeadStatus.Converted;
+
+		const lead = reuse
+			? ((await Lead.findByIdAndUpdate(
+					existing._id,
+					{
+						$set: {
+							notes: [
+								existing.notes?.trim(),
+								`Enquired again via ${normalizedSource} on ${new Date().toISOString().slice(0, 10)}${
+									resolvedNotes ? `:\n${resolvedNotes}` : ""
+								}`,
+							]
+								.filter(Boolean)
+								.join("\n"),
+							publicCapture,
+							...(existing.status === LeadStatus.Lost
+								? { status: LeadStatus.New }
+								: {}),
+							...(!existing.email && resolvedEmail ? { email: resolvedEmail } : {}),
+							...(!existing.phone && resolvedPhone ? { phone: resolvedPhone } : {}),
+							...(!existing.interestedIn && resolvedInterest
+								? { interestedIn: resolvedInterest }
+								: {}),
+							// The phone stood in as the name until a real one arrived.
+							...(existing.leadName === existing.phone && resolvedLeadName
+								? { leadName: resolvedLeadName }
+								: {}),
+							...(followUpDateValue ? { followUpDate: followUpDateValue } : {}),
+						},
+						$addToSet: { tags: { $each: [...finalTags, "repeat-enquiry"] } },
+					},
+					{ returnDocument: "after" },
+				)) ?? existing)
+			: await Lead.create({
+					leadName: resolvedLeadName,
+					...(resolvedEmail ? { email: resolvedEmail } : {}),
+					...(resolvedPhone ? { phone: resolvedPhone } : {}),
+					source: normalizedSource,
+					...(resolvedInterest ? { interestedIn: resolvedInterest } : {}),
+					...(resolvedNotes ? { notes: resolvedNotes } : {}),
+					tags: existing ? [...finalTags, "existing-member"] : finalTags,
+					...(followUpDateValue ? { followUpDate: followUpDateValue } : {}),
+					status: LeadStatus.New,
+					publicCapture,
+				});
 
 		// FX-35.1: If lead is an urgent callback or hot lead, raise an OperationalAlert
 		const isUrgent =

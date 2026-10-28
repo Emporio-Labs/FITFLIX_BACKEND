@@ -12,6 +12,16 @@ import { emitOperationalAlert } from "../services/realtime.service";
 import { isSalesStaffOnDuty } from "../services/staff-presence.service";
 import { getEffectiveAlertRule } from "../utils/default-alert-rules";
 
+/** Statuses of a lead someone is working; its follow-up dates are watched. */
+const OPEN_WORKED_STATUSES = [
+	LeadStatus.Contacted,
+	LeadStatus.Qualified,
+	LeadStatus.Warm,
+	LeadStatus.Hot,
+	LeadStatus.Cold,
+];
+const OPEN_FOLLOW_UP_LOOKBACK_MS = 7 * 24 * 60 * 60_000;
+
 export interface LeadSlaSweepMetrics {
 	unclaimedChecked: number;
 	unclaimedAlerted: number;
@@ -110,7 +120,7 @@ export const runLeadSlaAndEscalationSweep = async (
 					: `[Direct to Manager] Unclaimed Lead: ${lead.leadName}`;
 				const message = salesOnDuty
 					? `New lead has remained unclaimed for over ${timeLimitMinutes} minutes (${lead.phone || lead.email || "Contact pending"}). First responder: ${rule.firstResponderRole || "frontdesk"}.`
-					: `Lead unclaimed for >${timeLimitMinutes} minutes with no sales staff on duty at branch. Escalated directly to Branch Manager (${lead.phone || lead.email || "Contact pending"}).`;
+					: `Lead unclaimed for >${timeLimitMinutes} minutes with no sales staff on duty at branch. Escalated directly to Branch Manager. Lead contact: ${lead.phone || lead.email || "not given"}.`;
 
 				const alert = await OperationalAlert.create({
 					type: AlertType.LeadUnclaimed,
@@ -149,18 +159,32 @@ export const runLeadSlaAndEscalationSweep = async (
 		// -------------------------------------------------------------
 		// FX-42.2: Check Overdue Requested Callbacks
 		// -------------------------------------------------------------
+		// A lead already being worked can miss its follow-up too. Only
+		// follow-ups due in the last week count, so leads with long-stale
+		// dates don't all alert at once.
+		const followUpWindowStart = new Date(
+			now.getTime() - OPEN_FOLLOW_UP_LOOKBACK_MS,
+		);
 		const overdueCallbacks = await Lead.find({
-			status: LeadStatus.New,
 			$or: [
-				{ slaDeadline: { $ne: null, $lte: now } },
-				{ followUpDate: { $ne: null, $lte: now } },
 				{
-					tags: "callback",
-					createdAt: { $lte: unclaimedCutoff },
+					status: LeadStatus.New,
+					$or: [
+						{ slaDeadline: { $ne: null, $lte: now } },
+						{ followUpDate: { $ne: null, $lte: now } },
+						{
+							tags: "callback",
+							createdAt: { $lte: unclaimedCutoff },
+						},
+						{
+							source: "APP_PAYMENT_FALLBACK",
+							createdAt: { $lte: unclaimedCutoff },
+						},
+					],
 				},
 				{
-					source: "APP_PAYMENT_FALLBACK",
-					createdAt: { $lte: unclaimedCutoff },
+					status: { $in: OPEN_WORKED_STATUSES },
+					followUpDate: { $gte: followUpWindowStart, $lte: now },
 				},
 			],
 		}).lean();
@@ -213,12 +237,15 @@ export const runLeadSlaAndEscalationSweep = async (
 				const escalationLadder = salesOnDuty
 					? rule.escalationLadder || []
 					: [{ role: "admin", afterMinutes: 15 }];
+				const isFollowUp = lead.status !== LeadStatus.New;
+				const what = isFollowUp ? "Follow-up" : "Callback";
+				const contact = `Lead contact: ${lead.phone || lead.email || "not given"}.`;
 				const title = salesOnDuty
-					? `Overdue Callback: ${lead.leadName}`
-					: `[Direct to Manager] Overdue Callback: ${lead.leadName}`;
+					? `Overdue ${what}: ${lead.leadName}`
+					: `[Direct to Manager] Overdue ${what}: ${lead.leadName}`;
 				const message = salesOnDuty
-					? `Requested callback due time has passed and has not been made (${lead.phone || lead.email || "Contact pending"}). First responder: ${rule.firstResponderRole || "frontdesk"}.`
-					: `Requested callback is overdue with no sales staff on duty at branch. Escalated directly to Branch Manager (${lead.phone || lead.email || "Contact pending"}).`;
+					? `${isFollowUp ? "Scheduled follow-up" : "Requested callback"} due time has passed and has not been made. ${contact} First responder: ${rule.firstResponderRole || "frontdesk"}.`
+					: `${isFollowUp ? "Scheduled follow-up" : "Requested callback"} is overdue with no sales staff on duty at branch. Escalated directly to Branch Manager. ${contact}`;
 
 				const alert = await OperationalAlert.create({
 					type: AlertType.LeadUnclaimed,
@@ -233,7 +260,7 @@ export const runLeadSlaAndEscalationSweep = async (
 					relatedEntity: {
 						entityType: "lead",
 						entityId: leadIdStr,
-						summary: `${lead.leadName} - Callback pending`,
+						summary: `${lead.leadName} - ${what} pending`,
 					},
 					autoResolveKey: `lead:${leadIdStr}`,
 				});

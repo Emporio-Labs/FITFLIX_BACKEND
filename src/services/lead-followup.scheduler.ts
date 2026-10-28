@@ -13,7 +13,9 @@ export async function processLeadFollowups(): Promise<{ processedCount: number; 
 	const now = new Date();
 	const outbox: FollowUpOutbox[] = [];
 
-	// Fetch leads that are either New or Contacted (excluding Converted/Lost)
+	// Fetch leads that are either New or Contacted (excluding Converted/Lost).
+	// Queuing an automated message is not contact: the status is left alone
+	// so the desk still sees a lead nobody has spoken to as New.
 	const leads = await Lead.find({
 		status: { $in: [LeadStatus.New, LeadStatus.Contacted] },
 	});
@@ -39,7 +41,6 @@ export async function processLeadFollowups(): Promise<{ processedCount: number; 
 				message: msg,
 			});
 			lead.tags = [...tags, "followup-7d-sent"];
-			lead.status = LeadStatus.Contacted;
 			await lead.save();
 		}
 		// Milestone 2: 72 Hours (approx 72 hours)
@@ -53,7 +54,6 @@ export async function processLeadFollowups(): Promise<{ processedCount: number; 
 				message: msg,
 			});
 			lead.tags = [...tags, "followup-72h-sent"];
-			lead.status = LeadStatus.Contacted;
 			await lead.save();
 		}
 		// Milestone 1: 24 Hours (approx 24 hours)
@@ -67,7 +67,6 @@ export async function processLeadFollowups(): Promise<{ processedCount: number; 
 				message: msg,
 			});
 			lead.tags = [...tags, "followup-24h-sent"];
-			lead.status = LeadStatus.Contacted;
 			await lead.save();
 		}
 	}

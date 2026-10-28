@@ -1,8 +1,8 @@
 import type { RequestHandler } from "express";
 import Admin from "../models/Admin";
 
-import { type Gender, LeadStatus, OnboardingStep } from "../models/Enums";
-import Lead from "../models/Lead";
+import { type Gender, OnboardingStep } from "../models/Enums";
+import { recordAppSignupLead } from "../utils/lead-match";
 import TokenBlacklist from "../models/TokenBlacklist";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
@@ -193,29 +193,18 @@ export const signup: RequestHandler = async (req, res, next) => {
 			},
 		});
 
-		// Upsert CRM lead — awaited so failures are visible, but a lead sync
-		// error does NOT fail the signup (user account was already created).
+		// Record the signup on this person's lead. Signing up is not
+		// converting — `Converted` is reserved for an actual sale — and an
+		// existing lead keeps its status, source and notes.
+		// Awaited so failures are visible, but a lead sync error does NOT fail
+		// the signup (user account was already created).
 		try {
-			await Lead.findOneAndUpdate(
-				{ email },
-				{
-					$set: {
-						leadName: username,
-						phone: phone ?? "",
-						source: "app-signup",
-						// Signing up is not converting. `Converted` is reserved for an
-						// actual sale — set by convertLeadToUser and by invoice payment
-						// (invoice.service.ts) — so a signup that lands here still has
-						// to be worked by sales. The phone/OTP signup path already does
-						// this; these two were disagreeing about the same event.
-						// `convertedUser` still links the account that was created.
-						status: LeadStatus.New,
-						convertedUser: createdUser._id,
-					},
-					$addToSet: { tags: { $each: ["signup", "app-signup"] } },
-				},
-				{ upsert: true, new: true },
-			);
+			await recordAppSignupLead({
+				userId: createdUser._id,
+				name: username,
+				phone: phone ?? "",
+				email,
+			});
 		} catch (err) {
 			// Non-fatal: user account exists; CRM sync can be retried manually.
 			console.error(

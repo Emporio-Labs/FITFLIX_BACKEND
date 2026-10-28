@@ -1,8 +1,8 @@
 import type { RequestHandler } from "express";
-import Lead from "../models/Lead";
+import { recordAppSignupLead } from "../utils/lead-match";
 import User from "../models/User";
 import { defaultLocationId } from "../utils/location-stamp.plugin";
-import { Gender, LeadStatus, OnboardingStep } from "../models/Enums";
+import { Gender, OnboardingStep } from "../models/Enums";
 import { MINOR_AGE_THRESHOLD } from "../utils/activity-consent";
 import type { AuthenticatedUser } from "../types/auth";
 import {
@@ -266,34 +266,21 @@ export const registerPhone: RequestHandler = async (req, res, next) => {
 			throw error;
 		}
 
-		// Upsert the Lead by phone — reuses the existing funnel/workflow.
+		// Record the signup on this person's lead. An existing lead keeps its
+		// status, source and notes — the desk may already be working it.
 		// Non-fatal: a CRM sync failure must not fail account creation.
 		try {
-			await Lead.findOneAndUpdate(
-				{ phone: { $regex: new RegExp(last10 + "$") } },
-				{
-					$set: {
-						leadName: name,
-						phone: last10,
-						// Lead has no age/gender columns — keep them in the existing
-						// notes field to avoid any Lead schema redesign.
-						notes: `Age: ${age}, Gender: ${gender}`,
-						interestedIn: goal,
-						source: "app-signup",
-						status: LeadStatus.New,
-						convertedUser: createdUser._id,
-					},
-					$addToSet: { tags: { $each: ["signup", "app-signup"] } },
-					// An upsert skips locationStampPlugin: a new lead takes the
-					// member's home branch (FX-01). An existing lead keeps its own.
-					$setOnInsert: {
-						locationId:
-							(createdUser as { homeLocationId?: unknown }).homeLocationId ??
-							(await defaultLocationId()),
-					},
-				},
-				{ upsert: true, new: true },
-			);
+			await recordAppSignupLead({
+				userId: createdUser._id,
+				name,
+				phone: last10,
+				interestedIn: goal,
+				note: `Age: ${age}, Gender: ${gender}`,
+				// A new lead takes the member's home branch (FX-01).
+				locationId:
+					(createdUser as { homeLocationId?: unknown }).homeLocationId ??
+					(await defaultLocationId()),
+			});
 		} catch (err) {
 			console.error(
 				"[AUTH][PHONE-REGISTER] Lead upsert failed — signup still succeeded:",
