@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import { type Gender, AlertSeverity, AlertStatus, AlertType, LeadStatus } from "../models/Enums";
 import Lead from "../models/Lead";
+import LeadActivity from "../models/LeadActivity";
 import User from "../models/User";
 import OperationalAlert from "../models/OperationalAlert";
 import Location from "../models/Location";
@@ -689,6 +690,8 @@ export const deleteLeadById: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Lead not found" });
 			return;
 		}
+
+		await LeadActivity.deleteMany({ leadId: deletedLead._id });
 
 		// FX-42.4: Auto-resolve alerts on lead deletion
 		void autoResolveOperationalAlerts("lead", id, "Lead deleted");

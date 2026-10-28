@@ -158,6 +158,17 @@ export const LEAD_OUTCOMES: LeadOutcomeDefinition[] = [
 		lostReason: "invalid_number",
 		requires: {},
 	},
+	{
+		key: "unreachable_close",
+		label: "Can't reach — close as Lost",
+		group: "not_connected",
+		channels: CALL_AND_WA,
+		connected: false,
+		status: LeadStatus.Lost,
+		force: true,
+		lostReason: "unreachable",
+		requires: {},
+	},
 	// ── Visits ────────────────────────────────────────────────────────────
 	{
 		key: "visited_joining",
@@ -287,6 +298,8 @@ export interface OutcomeInput {
 	customLabel?: string;
 	/** Custom outcomes only: where to move the lead. */
 	customStatus?: LeadStatus;
+	/** Custom outcomes only: did we actually speak to / meet them? Default yes. */
+	customConnected?: boolean;
 	/** Overrides the outcome's default temperature. */
 	temperature?: LeadTemperature;
 	nextFollowUpAt?: Date | null;
@@ -360,6 +373,9 @@ export const applyLeadOutcome = (
 		throw new LeadOutcomeError("That status can't be set here", "INVALID_STATUS");
 	}
 
+	const connected =
+		def.key === "custom" ? input.customConnected !== false : def.connected;
+
 	// Target status
 	const wanted = def.key === "custom" ? input.customStatus : def.status;
 	let statusTo = lead.status;
@@ -375,12 +391,12 @@ export const applyLeadOutcome = (
 		}
 	}
 	// First real conversation moves a New lead on even without a status.
-	if (def.connected && statusTo === LeadStatus.New && def.key !== "custom") {
+	if (connected && statusTo === LeadStatus.New && def.key !== "custom") {
 		statusTo = LeadStatus.Contacted;
 	}
 	// Speaking to a Lost lead (without closing it again) reopens it.
 	if (
-		def.connected &&
+		connected &&
 		lead.status === LeadStatus.Lost &&
 		statusTo === LeadStatus.Lost &&
 		wanted !== LeadStatus.Lost
@@ -423,7 +439,7 @@ export const applyLeadOutcome = (
 
 	// Counters
 	const prevStreak = lead.noAnswerStreak ?? 0;
-	const noAnswerStreak = def.noAnswer ? prevStreak + 1 : def.connected ? 0 : prevStreak;
+	const noAnswerStreak = def.noAnswer ? prevStreak + 1 : connected ? 0 : prevStreak;
 	const firstAttemptAt = lead.firstAttemptAt ?? now;
 
 	// Temperature
@@ -457,7 +473,7 @@ export const applyLeadOutcome = (
 	};
 	if (visitAt) set.visitAt = visitAt;
 	if (def.key === "no_show") set.visitAt = null;
-	if (def.connected) {
+	if (connected) {
 		set.lastContactedAt = now;
 		if (!lead.firstContactedAt) set.firstContactedAt = now;
 	}
@@ -469,7 +485,7 @@ export const applyLeadOutcome = (
 		statusTo,
 		label: def.key === "custom" ? customLabel : def.label,
 		lostReason,
-		connected: def.connected,
+		connected: connected,
 		suggestLost,
 	};
 };

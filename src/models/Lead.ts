@@ -32,6 +32,9 @@ const leadSchema = new mongoose.Schema(
 		slaDeadline: { type: Date, default: null },
 		isEscalated: { type: Boolean, default: false },
 		owner: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
+		// Display name of `owner`, kept beside it because an owner may be an
+		// Admin or a Trainer and `owner` can only populate one collection.
+		ownerName: { type: String, default: "" },
 		convertedUser: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "User",

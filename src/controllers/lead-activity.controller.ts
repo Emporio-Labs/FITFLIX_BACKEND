@@ -44,6 +44,7 @@ const activityBodySchema = z.object({
 			LeadStatus.Lost,
 		])
 		.optional(),
+	customConnected: z.boolean().optional(),
 	temperature: z.enum(["hot", "warm", "cold"]).optional(),
 	note: z.string().trim().max(2000).optional(),
 	nextFollowUpAt: isoDate.optional().nullable(),
@@ -142,6 +143,7 @@ export const createLeadActivity: RequestHandler = async (req, res, next) => {
 				outcome: body.outcome,
 				customLabel: body.customLabel,
 				customStatus: body.customStatus,
+				customConnected: body.customConnected,
 				temperature: body.temperature,
 				nextFollowUpAt: body.nextFollowUpAt ?? null,
 				visitAt: body.visitAt ?? null,

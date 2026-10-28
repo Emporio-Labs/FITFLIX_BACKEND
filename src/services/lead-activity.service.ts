@@ -113,6 +113,7 @@ export const recordLeadOutcome = async (
 	const set: Record<string, unknown> = { ...result.set };
 	if (!lead.owner && actor.id && mongoose.Types.ObjectId.isValid(actor.id)) {
 		set.owner = new mongoose.Types.ObjectId(actor.id);
+		set.ownerName = actor.name;
 	}
 	// A follow-up moved into the future or a closed lead clears the flag the
 	// SLA sweep set.
