@@ -67,20 +67,39 @@ const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
 
 /**
  * Resolves the public URL for an asset.
- * If running in AWS with real S3 credentials, returns the S3 bucket URL.
- * If running locally in development, returns the local server URL serving the file from /uploads.
+ * Routes through the authenticated /events/assets/* streaming proxy
+ * to ensure 100% public access even when the underlying S3 bucket enforces private access.
  */
 export const getPublicAssetUrl = (key: string): string => {
 	const cleanKey = key.replace(/^\/+/, "");
-	if (hasAwsCredentials) {
-		if (process.env.AWS_S3_PUBLIC_BASE_URL) {
-			return `${process.env.AWS_S3_PUBLIC_BASE_URL.replace(/\/+$/, "")}/${cleanKey}`;
-		}
-		return `https://${BUCKET}.s3.${REGION}.amazonaws.com/${cleanKey}`;
+	if (process.env.AWS_S3_PUBLIC_BASE_URL) {
+		return `${process.env.AWS_S3_PUBLIC_BASE_URL.replace(/\/+$/, "")}/${cleanKey}`;
 	}
-
 	const backendBaseUrl = (process.env.BACKEND_URL || "http://localhost:3000").replace(/\/+$/, "");
-	return `${backendBaseUrl}/uploads/${cleanKey}`;
+	return `${backendBaseUrl}/events/assets/${cleanKey}`;
+};
+
+export const getS3ObjectStream = async (
+	key: string,
+): Promise<{ stream: any; contentType: string; contentLength?: number } | null> => {
+	if (s3Client) {
+		try {
+			const command = new GetObjectCommand({
+				Bucket: BUCKET,
+				Key: key,
+			});
+			const response = await s3Client.send(command);
+			return {
+				stream: response.Body,
+				contentType: response.ContentType || "application/octet-stream",
+				contentLength: response.ContentLength,
+			};
+		} catch (err: any) {
+			console.error(`[S3_GET_ERROR] Failed to fetch ${key}:`, err?.message || err);
+			return null;
+		}
+	}
+	return null;
 };
 
 export const uploadToS3 = async (

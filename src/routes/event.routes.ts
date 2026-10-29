@@ -17,6 +17,7 @@ import {
 	updateEvent,
 	uploadEventImage,
 	verifyEventCheckIn,
+	streamEventAsset,
 } from "../controllers/event.controller";
 
 const router = Router();
@@ -25,6 +26,12 @@ const router = Router();
  * GET /events/public / GET /api/v1/events/public
  * Public: List published upcoming events for mobile app discovery
  */
+/**
+ * GET /events/assets/* / GET /api/v1/events/assets/*
+ * Public: Streaming proxy for event flyers, co-branding logos, and collaborator assets
+ */
+router.get("/assets/*", streamEventAsset);
+
 router.get("/public", getPublicEvents);
 
 /**

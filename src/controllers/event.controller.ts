@@ -5,12 +5,13 @@ import Lead from "../models/Lead";
 import { EventStatus, LeadStatus, RegistrationPaymentStatus } from "../models/Enums";
 import { registerEventSchema, verifyCheckInSchema } from "../validators/event-registration.validator";
 import type { RequestHandler } from "express";
+import { createReadStream, existsSync } from "node:fs";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import mongoose from "mongoose";
 import FitflixEvent from "../models/FitflixEvent";
 import { createEventSchema, updateEventSchema } from "../validators/event.validator";
-import { uploadToS3 } from "../utils/s3.service";
+import { getS3ObjectStream, uploadToS3 } from "../utils/s3.service";
 
 const getValidationDetails = (
 	issues: Array<{ path: PropertyKey[]; message: string }>,
@@ -149,6 +150,58 @@ export const uploadEventImage: RequestHandler = async (req, res, next) => {
  * POST /events (and /api/v1/events)
  * Create an offline Fitflix event (Admin & Frontdesk only)
  */
+/**
+ * GET /events/assets/* (and /api/v1/events/assets/*)
+ * Public streaming proxy for event flyers, co-branding logos, and collaborator assets.
+ * Seamlessly resolves from local uploads/ or authenticated AWS S3 without 403 Forbidden errors.
+ */
+export const streamEventAsset: RequestHandler = async (req, res, next) => {
+	try {
+		const rawPath = req.params[0] || req.path.replace(/^\/assets\/?/, '');
+		const cleanKey = String(rawPath).replace(/^\/+/, '').replace(/\.\./g, '');
+
+		if (!cleanKey) {
+			res.status(400).json({ error: 'Asset key required', code: 'BAD_REQUEST' });
+			return;
+		}
+
+		// 1. Check local disk first
+		const localUploadsPath = path.resolve(process.cwd(), 'uploads', cleanKey);
+		if (existsSync(localUploadsPath)) {
+			const ext = path.extname(cleanKey).toLowerCase();
+			const mimeMap: Record<string, string> = {
+				'.jpg': 'image/jpeg',
+				'.jpeg': 'image/jpeg',
+				'.png': 'image/png',
+				'.webp': 'image/webp',
+				'.svg': 'image/svg+xml',
+				'.gif': 'image/gif',
+			};
+			const contentType = mimeMap[ext] || 'application/octet-stream';
+			res.setHeader('Content-Type', contentType);
+			res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+			createReadStream(localUploadsPath).pipe(res);
+			return;
+		}
+
+		// 2. Fetch from AWS S3 via server credentials
+		const s3Data = await getS3ObjectStream(cleanKey);
+		if (s3Data?.stream) {
+			res.setHeader('Content-Type', s3Data.contentType);
+			if (s3Data.contentLength) {
+				res.setHeader('Content-Length', s3Data.contentLength);
+			}
+			res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+			(s3Data.stream as any).pipe(res);
+			return;
+		}
+
+		res.status(404).json({ error: 'Asset not found', code: 'NOT_FOUND' });
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const createEvent: RequestHandler = async (req, res, next) => {
 	if (!req.user || !["admin", "frontdesk", "ROLE_FRONT_DESK_STAFF"].includes(req.user.role)) {
 		res.status(403).json({
