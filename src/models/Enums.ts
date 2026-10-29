@@ -575,3 +575,12 @@ export enum EventType {
 	WellnessSummit = "wellness_summit",
 	Celebration = "celebration",
 }
+
+export enum RegistrationPaymentStatus {
+	Free = "free",
+	Pending = "pending",
+	Paid = "paid",
+	CreditDeducted = "credit_deducted",
+	Cancelled = "cancelled",
+	Refunded = "refunded",
+}

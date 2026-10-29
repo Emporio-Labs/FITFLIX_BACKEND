@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticateToken } from "../middleware/jwt-auth.middleware";
+import { authenticateToken, optionalAuthenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 import { uploadMiddleware } from "../middleware/upload.middleware";
 import {
@@ -7,11 +7,26 @@ import {
 	deleteEvent,
 	getEventById,
 	getEvents,
+	getEventRegistrations,
+	getPublicEventBySlug,
+	registerForEvent,
 	updateEvent,
 	uploadEventImage,
 } from "../controllers/event.controller";
 
 const router = Router();
+
+/**
+ * GET /events/public/:slug / GET /api/v1/events/public/:slug
+ * Public: Anyone can fetch published event landing details
+ */
+router.get("/public/:slug", getPublicEventBySlug);
+
+/**
+ * POST /events/:slug/register / POST /api/v1/events/:slug/register
+ * Public / Member Registration: Book a ticket tier pass
+ */
+router.post("/:slug/register", optionalAuthenticateToken, registerForEvent);
 
 /**
  * GET /events / GET /api/v1/events
@@ -22,6 +37,17 @@ router.get(
 	authenticateToken,
 	authorize(["admin", "frontdesk"]),
 	getEvents,
+);
+
+/**
+ * GET /events/:id/registrations
+ * Protected: Admin and FrontDesk staff only
+ */
+router.get(
+	"/:id/registrations",
+	authenticateToken,
+	authorize(["admin", "frontdesk"]),
+	getEventRegistrations,
 );
 
 /**

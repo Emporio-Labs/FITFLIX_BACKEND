@@ -306,8 +306,11 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 
 | Method | Path | Auth | Roles | Handler |
 |---|---|---|---|---|
+| GET | `/events/public/:slug` | Public | — | `getPublicEventBySlug` |
+| POST | `/events/:slug/register` | Public / Opt JWT | — | `registerForEvent` |
 | GET | `/events` | JWT | admin, frontdesk | `getEvents` |
 | GET | `/events/:id` | JWT | admin, frontdesk | `getEventById` |
+| GET | `/events/:id/registrations` | JWT | admin, frontdesk | `getEventRegistrations` |
 | POST | `/events/upload-image` | JWT | admin, frontdesk | `uploadEventImage` |
 | POST | `/events` | JWT | admin, frontdesk | `createEvent` |
 | PATCH | `/events/:id` | JWT | admin, frontdesk | `updateEvent` |

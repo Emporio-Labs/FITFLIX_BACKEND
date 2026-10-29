@@ -1,3 +1,9 @@
+import crypto from "node:crypto";
+import EventRegistration from "../models/EventRegistration";
+import User from "../models/User";
+import Lead from "../models/Lead";
+import { EventStatus, LeadStatus, RegistrationPaymentStatus } from "../models/Enums";
+import { registerEventSchema } from "../validators/event-registration.validator";
 import type { RequestHandler } from "express";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -328,6 +334,320 @@ export const deleteEvent: RequestHandler = async (req, res, next) => {
 		res.status(200).json({
 			message: "Event deleted successfully",
 			deletedEventId: event._id,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+const generateTicketId = (eventSlug: string): string => {
+	const cleanSlug = eventSlug.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "EVNT";
+	const random = Math.floor(1000 + Math.random() * 9000);
+	return `FFX-${cleanSlug}-${random}`;
+};
+
+/**
+ * GET /events/public/:slug (and /api/v1/events/public/:slug)
+ * Public endpoint to fetch event details, tiers, and availability
+ */
+export const getPublicEventBySlug: RequestHandler = async (req, res, next) => {
+	const slug = String(req.params.slug || "").trim().toLowerCase();
+	if (!slug) {
+		res.status(400).json({ error: "Event slug is required", code: "BAD_REQUEST" });
+		return;
+	}
+
+	try {
+		const event = await FitflixEvent.findOne({ slug }).lean();
+		if (!event) {
+		res.status(404).json({ error: "Event not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		// Public can view Published, Ongoing, or RegistrationClosed events
+		if (![EventStatus.Published, EventStatus.RegistrationClosed, EventStatus.Ongoing].includes(event.status as any)) {
+			res.status(404).json({ error: "Event is not publicly accessible", code: "NOT_FOUND" });
+			return;
+		}
+
+		// Calculate remaining quantity per tier
+		const tiersWithAvailability = (event.ticketTiers || []).map((t) => ({
+			...t,
+			remainingQuantity: Math.max(0, (t.totalQuantity || 0) - (t.soldQuantity || 0)),
+			isSoldOut: (t.soldQuantity || 0) >= (t.totalQuantity || 0),
+		}));
+
+		res.status(200).json({
+			event: {
+				...event,
+				ticketTiers: tiersWithAvailability,
+				isSoldOut: (event.totalRegistered || 0) >= (event.totalCapacity || 0),
+			},
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * POST /events/:slug/register (and /api/v1/events/:slug/register)
+ * Public / Member registration checkout endpoint
+ */
+export const registerForEvent: RequestHandler = async (req, res, next) => {
+	const slug = String(req.params.slug || "").trim().toLowerCase();
+	if (!slug) {
+		res.status(400).json({ error: "Event slug is required", code: "BAD_REQUEST" });
+		return;
+	}
+
+	const parsed = registerEventSchema.safeParse(req.body);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
+	const { tierId, attendeeName, attendeeEmail, attendeePhone, answers, paymentReference } = parsed.data;
+
+	try {
+		const event = await FitflixEvent.findOne({ slug });
+		if (!event) {
+			res.status(404).json({ error: "Event not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		// Guard: Event status
+		if (event.status !== EventStatus.Published) {
+			res.status(400).json({
+				error: `Event registrations are currently not open (Status: ${event.status}).`,
+				code: "REGISTRATION_NOT_OPEN",
+			});
+			return;
+		}
+
+		// Guard: Overall event capacity
+		if (event.totalRegistered >= event.totalCapacity) {
+			res.status(409).json({
+				error: "This event has reached full capacity. No further registrations can be accepted.",
+				code: "EVENT_SOLD_OUT",
+			});
+			return;
+		}
+
+		// Guard: Find ticket tier
+		const tier = event.ticketTiers.find((t) => t.tierId === tierId);
+		if (!tier) {
+			res.status(404).json({
+				error: "Selected pass tier does not exist for this event.",
+				code: "TIER_NOT_FOUND",
+			});
+			return;
+		}
+
+		// Guard: Tier quota
+		if (tier.soldQuantity >= tier.totalQuantity) {
+			res.status(409).json({
+				error: `The ${tier.name} tier is completely sold out.`,
+				code: "TIER_SOLD_OUT",
+			});
+			return;
+		}
+
+		// Guard: Sales window
+		const now = new Date();
+		if (tier.validFrom && now < new Date(tier.validFrom)) {
+			res.status(400).json({
+				error: `Pass sales have not started yet (Opens on ${new Date(tier.validFrom).toLocaleDateString()}).`,
+				code: "SALES_NOT_STARTED",
+			});
+			return;
+		}
+		if (tier.validUntil && now > new Date(tier.validUntil)) {
+			res.status(400).json({
+				error: "Pass sales for this tier have ended.",
+				code: "SALES_ENDED",
+			});
+			return;
+		}
+
+		// Guard: Duplicate registration
+		const existingReg = await EventRegistration.findOne({
+			eventId: event._id,
+			$or: [{ attendeeEmail }, { attendeePhone }],
+		});
+		if (existingReg) {
+			res.status(409).json({
+				error: "You have already registered for this event with this email or phone number.",
+				code: "DUPLICATE_REGISTRATION",
+				existingTicketId: existingReg.ticketId,
+			});
+			return;
+		}
+
+		// Generate unique Ticket ID
+		let ticketId = "";
+		let isUnique = false;
+		let attempts = 0;
+		while (!isUnique && attempts < 10) {
+			attempts++;
+			ticketId = generateTicketId(event.slug);
+			const exists = await EventRegistration.exists({ ticketId });
+			if (!exists) isUnique = true;
+		}
+
+		const verificationToken = crypto.randomBytes(24).toString("hex");
+
+		// Check User association if logged in or existing member
+		let userId: mongoose.Types.ObjectId | null = null;
+		if (req.user?.id && mongoose.Types.ObjectId.isValid(req.user.id)) {
+			userId = new mongoose.Types.ObjectId(req.user.id);
+		} else {
+			const existingUser = await User.findOne({
+				$or: [{ email: attendeeEmail }, { phone: attendeePhone }],
+			});
+			if (existingUser) {
+				userId = existingUser._id;
+			}
+		}
+
+		// Determine payment status
+		const paymentStatus =
+			tier.price > 0
+				? paymentReference
+					? RegistrationPaymentStatus.Paid
+					: RegistrationPaymentStatus.Pending
+				: RegistrationPaymentStatus.Free;
+
+		const registration = await EventRegistration.create({
+			eventId: event._id,
+			tierId: tier.tierId,
+			tierName: tier.name,
+			ticketId,
+			userId,
+			attendeeName,
+			attendeeEmail,
+			attendeePhone,
+			answers,
+			paymentStatus,
+			paymentReference: paymentReference || null,
+			amountPaid: tier.price || 0,
+			verificationToken,
+		});
+
+		// Atomic tier and event counter increment
+		await FitflixEvent.updateOne(
+			{ _id: event._id, "ticketTiers.tierId": tier.tierId },
+			{
+				$inc: {
+					totalRegistered: 1,
+					"ticketTiers.$.soldQuantity": 1,
+				},
+			},
+		);
+
+		// Async CRM lead sync (non-blocking)
+		Lead.findOneAndUpdate(
+			{ phone: attendeePhone },
+			{
+				$setOnInsert: {
+					leadName: attendeeName,
+					email: attendeeEmail,
+					phone: attendeePhone,
+					source: `Offline Event: ${event.title}`,
+					status: LeadStatus.Warm,
+					tags: ["event_attendee", tier.tierId, event.slug],
+					notes: `Registered for ${event.title} (${tier.name}) on ${new Date().toLocaleDateString()}`,
+				},
+			},
+			{ upsert: true },
+		).catch((err) => console.error("Lead sync error:", err));
+
+		res.status(201).json({
+			message: "Registration successful! Your digital pass has been issued.",
+			registration: {
+				id: registration._id,
+				ticketId: registration.ticketId,
+				tierName: registration.tierName,
+				tierId: registration.tierId,
+				attendeeName: registration.attendeeName,
+				attendeeEmail: registration.attendeeEmail,
+				attendeePhone: registration.attendeePhone,
+				paymentStatus: registration.paymentStatus,
+				amountPaid: registration.amountPaid,
+				verificationToken: registration.verificationToken,
+				createdAt: registration.createdAt,
+			},
+			event: {
+				id: event._id,
+				title: event.title,
+				slug: event.slug,
+				startDate: event.startDate,
+				reportingTime: event.reportingTime,
+				venue: event.venue,
+				coverImageUrl: event.coverImageUrl,
+			},
+		});
+	} catch (error) {
+		if ((error as any)?.code === 11000) {
+			res.status(409).json({
+				error: "A registration with this email address or phone number already exists for this event.",
+				code: "DUPLICATE_REGISTRATION",
+			});
+			return;
+		}
+		next(error);
+	}
+};
+
+/**
+ * GET /events/:id/registrations (and /api/v1/events/:id/registrations)
+ * List registered attendees for an event (FrontDesk / Admin)
+ */
+export const getEventRegistrations: RequestHandler = async (req, res, next) => {
+	const param = String(req.params.id || "").trim();
+	if (!param) {
+		res.status(400).json({ error: "Event ID or slug required", code: "BAD_REQUEST" });
+		return;
+	}
+
+	try {
+		const query = mongoose.Types.ObjectId.isValid(param)
+			? { $or: [{ _id: param }, { slug: param.toLowerCase() }] }
+			: { slug: param.toLowerCase() };
+
+		const event = await FitflixEvent.findOne(query);
+		if (!event) {
+			res.status(404).json({ error: "Event not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		const filter: Record<string, any> = { eventId: event._id };
+		if (req.query.checkedIn !== undefined) {
+			filter.checkedIn = req.query.checkedIn === "true";
+		}
+		if (req.query.tierId && typeof req.query.tierId === "string") {
+			filter.tierId = req.query.tierId.trim();
+		}
+		if (req.query.search && typeof req.query.search === "string") {
+			const s = req.query.search.trim();
+			filter.$or = [
+				{ attendeeName: { $regex: s, $options: "i" } },
+				{ attendeeEmail: { $regex: s, $options: "i" } },
+				{ attendeePhone: { $regex: s, $options: "i" } },
+				{ ticketId: { $regex: s, $options: "i" } },
+			];
+		}
+
+		const registrations = await EventRegistration.find(filter)
+			.sort({ createdAt: -1 })
+			.lean();
+
+		res.status(200).json({
+			total: registrations.length,
+			registrations,
 		});
 	} catch (error) {
 		next(error);
