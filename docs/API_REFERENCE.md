@@ -299,6 +299,17 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 | POST | `/auth/phone/verify` | Public | — | `verifyPhone` |
 | POST | `/auth/phone/register` | Public | — | `registerPhone` |
 
+
+#### `/events` → [event.routes.ts](../src/routes/event.routes.ts)
+
+*Mounted at `/events` and `/api/v1/events`.*
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/events` | JWT | admin, frontdesk | `getEvents` |
+| POST | `/events/upload-image` | JWT | admin, frontdesk | `uploadEventImage` |
+| POST | `/events` | JWT | admin, frontdesk | `createEvent` |
+
 #### `/delete-account` → [delete-account.routes.ts](../src/routes/delete-account.routes.ts)
 
 | Method | Path | Auth | Roles | Handler |

@@ -555,3 +555,23 @@ export enum AlertType {
 	MemberNoShow = "member_no_show",
 	ExpertUnavailable = "expert_unavailable",
 }
+
+
+export enum EventStatus {
+	Draft = "draft",
+	Published = "published",
+	RegistrationClosed = "registration_closed",
+	Ongoing = "ongoing",
+	Completed = "completed",
+	Cancelled = "cancelled",
+}
+
+export enum EventType {
+	CommunityMeetup = "community_meetup",
+	FitnessChallenge = "fitness_challenge",
+	Workshop = "workshop",
+	MarathonRun = "marathon_run",
+	Masterclass = "masterclass",
+	WellnessSummit = "wellness_summit",
+	Celebration = "celebration",
+}
