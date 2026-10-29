@@ -14,6 +14,7 @@ import {
 	toggleRegistrationCheckIn,
 	updateEvent,
 	uploadEventImage,
+	verifyEventCheckIn,
 } from "../controllers/event.controller";
 
 const router = Router();
@@ -90,6 +91,18 @@ router.post(
 	authenticateToken,
 	authorize(["admin", "frontdesk"]),
 	createEvent,
+);
+
+/**
+ * POST /events/verify-checkin / POST /api/v1/events/verify-checkin
+ * Protected: Admin and FrontDesk staff only
+ * Process live QR scan or ticket code verification at entrance gate
+ */
+router.post(
+	"/verify-checkin",
+	authenticateToken,
+	authorize(["admin", "frontdesk"]),
+	verifyEventCheckIn,
 );
 
 /**

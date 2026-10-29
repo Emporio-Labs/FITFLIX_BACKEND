@@ -13,4 +13,10 @@ export const registerEventSchema = z.object({
 	paymentReference: z.string().trim().optional(),
 });
 
+export const verifyCheckInSchema = z.object({
+	payload: z.string().trim().min(1, "QR payload or ticket ID is required"),
+	eventId: z.string().trim().optional(),
+});
+
 export type RegisterEventBody = z.infer<typeof registerEventSchema>;
+export type VerifyCheckInBody = z.infer<typeof verifyCheckInSchema>;

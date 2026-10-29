@@ -3,7 +3,7 @@ import EventRegistration from "../models/EventRegistration";
 import User from "../models/User";
 import Lead from "../models/Lead";
 import { EventStatus, LeadStatus, RegistrationPaymentStatus } from "../models/Enums";
-import { registerEventSchema } from "../validators/event-registration.validator";
+import { registerEventSchema, verifyCheckInSchema } from "../validators/event-registration.validator";
 import type { RequestHandler } from "express";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -819,6 +819,194 @@ export const getDigitalPassByTicketId: RequestHandler = async (req, res, next) =
 				collaborators: event.collaborators,
 				sponsors: event.sponsors,
 			},
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * POST /events/verify-checkin (and /api/v1/events/verify-checkin)
+ * Protected: Admin and FrontDesk staff only
+ * Process live QR scan or ticket code verification at entrance gate
+ */
+export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
+	if (!req.user || !["admin", "frontdesk", "ROLE_FRONT_DESK_STAFF"].includes(req.user.role)) {
+		res.status(403).json({
+			error: "Forbidden: Only staff and admins can verify ticket check-ins",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	const parsed = verifyCheckInSchema.safeParse(req.body);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
+	const { payload, eventId: targetEventId } = parsed.data;
+
+	try {
+		// 1. Extract ticketId from payload
+		let extractedTicketId = "";
+		let eventIdFromPayload: string | null = null;
+		const trimmedPayload = payload.trim();
+
+		// Case A: JSON object payload
+		if (trimmedPayload.startsWith("{") && trimmedPayload.endsWith("}")) {
+			try {
+				const json = JSON.parse(trimmedPayload);
+				if (json.ticketId) extractedTicketId = String(json.ticketId).trim().toUpperCase();
+				if (json.eventId) eventIdFromPayload = String(json.eventId).trim();
+			} catch {
+				// not valid JSON
+			}
+		}
+
+		// Case B: Delimited string (e.g. ticketId:token:timestamp:sig)
+		if (!extractedTicketId && trimmedPayload.includes(":")) {
+			const parts = trimmedPayload.split(":");
+			if (parts.length >= 1) {
+				extractedTicketId = parts[0].trim().toUpperCase();
+			}
+		}
+
+		// Case C: Raw ticket ID string
+		if (!extractedTicketId) {
+			extractedTicketId = trimmedPayload.toUpperCase();
+		}
+
+		// 2. Query registration by ticketId
+		let registration = await EventRegistration.findOne({ ticketId: extractedTicketId });
+
+		// Fallback: If not found by ticket ID, check if input was phone or email for this event
+		if (!registration && targetEventId && mongoose.Types.ObjectId.isValid(targetEventId)) {
+			registration = await EventRegistration.findOne({
+				eventId: targetEventId,
+				$or: [
+					{ attendeePhone: trimmedPayload },
+					{ attendeeEmail: trimmedPayload.toLowerCase() },
+				],
+			});
+		}
+
+		if (!registration) {
+			res.status(404).json({
+				status: "INVALID",
+				error: `Ticket '${extractedTicketId}' not found. Please verify the QR code or check attendee phone.`,
+				code: "TICKET_NOT_FOUND",
+			});
+			return;
+		}
+
+		// 3. Verify event matching
+		const expectedEventId = targetEventId || eventIdFromPayload;
+		if (expectedEventId && registration.eventId.toString() !== expectedEventId) {
+			const wrongEvent = await FitflixEvent.findById(registration.eventId).select("title").lean();
+			res.status(400).json({
+				status: "WRONG_EVENT",
+				error: `Wrong Event: This ticket was issued for "${wrongEvent?.title || "another event"}", not this event!`,
+				code: "WRONG_EVENT",
+				ticketEventId: registration.eventId,
+				expectedEventId,
+				eventName: wrongEvent?.title,
+			});
+			return;
+		}
+
+		// 4. Fetch event and tier for branding / badge response
+		const event = await FitflixEvent.findById(registration.eventId).lean();
+		const tier = (event?.ticketTiers || []).find((t) => t.tierId === registration.tierId);
+
+		// 5. Duplicate Entry Guard (Already Checked In)
+		if (registration.checkedIn) {
+			res.status(409).json({
+				status: "ALREADY_CHECKED_IN",
+				error: `DUPLICATE ENTRY: ${registration.attendeeName} was ALREADY checked in!`,
+				code: "ALREADY_CHECKED_IN",
+				registration: {
+					id: registration._id,
+					ticketId: registration.ticketId,
+					attendeeName: registration.attendeeName,
+					attendeeEmail: registration.attendeeEmail,
+					attendeePhone: registration.attendeePhone,
+					tierName: registration.tierName,
+					badgeLabel: tier?.badgeLabel || "GENERAL PASS",
+					badgeColor: tier?.badgeColor || "#10b981",
+					checkedIn: true,
+					checkedInAt: registration.checkedInAt,
+					checkedInByStaffId: registration.checkedInByStaffId,
+				},
+				event: event ? { id: event._id, title: event.title } : undefined,
+			});
+			return;
+		}
+
+		// 6. Concurrency-Safe Atomic Check-in
+		const checkedInAt = new Date();
+		const staffId =
+			req.user?.id && mongoose.Types.ObjectId.isValid(req.user.id)
+				? new mongoose.Types.ObjectId(req.user.id)
+				: null;
+
+		const updatedReg = await EventRegistration.findOneAndUpdate(
+			{ _id: registration._id, checkedIn: false },
+			{
+				$set: {
+					checkedIn: true,
+					checkedInAt,
+					checkedInByStaffId: staffId,
+				},
+			},
+			{ returnDocument: "after" },
+		);
+
+		if (!updatedReg) {
+			// Another thread completed check-in simultaneously
+			res.status(409).json({
+				status: "ALREADY_CHECKED_IN",
+				error: `DUPLICATE ENTRY: ${registration.attendeeName} was just checked in by another scanner!`,
+				code: "ALREADY_CHECKED_IN",
+				registration: {
+					id: registration._id,
+					ticketId: registration.ticketId,
+					attendeeName: registration.attendeeName,
+					attendeeEmail: registration.attendeeEmail,
+					attendeePhone: registration.attendeePhone,
+					tierName: registration.tierName,
+					checkedIn: true,
+				},
+			});
+			return;
+		}
+
+		// Increment event counter atomically
+		await FitflixEvent.findByIdAndUpdate(registration.eventId, {
+			$inc: { totalCheckedIn: 1 },
+		});
+
+		res.status(200).json({
+			status: "VALID",
+			message: `Welcome, ${registration.attendeeName}! Check-in verified.`,
+			registration: {
+				id: updatedReg._id,
+				ticketId: updatedReg.ticketId,
+				attendeeName: updatedReg.attendeeName,
+				attendeeEmail: updatedReg.attendeeEmail,
+				attendeePhone: updatedReg.attendeePhone,
+				tierName: updatedReg.tierName,
+				badgeLabel: tier?.badgeLabel || "GENERAL PASS",
+				badgeColor: tier?.badgeColor || "#10b981",
+				perks: tier?.perks || [],
+				checkedIn: true,
+				checkedInAt: updatedReg.checkedInAt,
+			},
+			event: event ? { id: event._id, title: event.title } : undefined,
 		});
 	} catch (error) {
 		next(error);

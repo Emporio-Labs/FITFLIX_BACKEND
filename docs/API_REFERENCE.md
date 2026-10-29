@@ -312,6 +312,7 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 | GET | `/events` | JWT | admin, frontdesk | `getEvents` |
 | GET | `/events/:id` | JWT | admin, frontdesk | `getEventById` |
 | GET | `/events/:id/registrations` | JWT | admin, frontdesk | `getEventRegistrations` |
+| POST | `/events/verify-checkin` | JWT | admin, frontdesk | `verifyEventCheckIn` |
 | PATCH | `/events/registrations/:id/toggle-checkin` | JWT | admin, frontdesk | `toggleRegistrationCheckIn` |
 | POST | `/events/upload-image` | JWT | admin, frontdesk | `uploadEventImage` |
 | POST | `/events` | JWT | admin, frontdesk | `createEvent` |
