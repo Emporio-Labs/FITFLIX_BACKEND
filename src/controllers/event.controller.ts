@@ -624,12 +624,46 @@ export const getEventRegistrations: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// 1. Calculate overall event roster summary (independent of current table filters)
+		const allEventRegs = await EventRegistration.find({ eventId: event._id }).lean();
+		const totalCheckedIn = allEventRegs.filter((r) => r.checkedIn).length;
+		const totalRevenue = allEventRegs.reduce((sum, r) => sum + (r.amountPaid || 0), 0);
+
+		const tierBreakdown = (event.ticketTiers || []).map((t) => {
+			const bookedCount = allEventRegs.filter((r) => r.tierId === t.tierId).length;
+			return {
+				tierId: t.tierId,
+				name: t.name,
+				badgeLabel: t.badgeLabel,
+				badgeColor: t.badgeColor,
+				price: t.price,
+				totalQuantity: t.totalQuantity,
+				bookedCount,
+				soldQuantity: t.soldQuantity || bookedCount,
+				isSoldOut: (t.soldQuantity || bookedCount) >= t.totalQuantity,
+			};
+		});
+
+		const summary = {
+			totalRegistered: allEventRegs.length,
+			totalCapacity: event.totalCapacity || 100,
+			totalCheckedIn,
+			totalPending: Math.max(0, allEventRegs.length - totalCheckedIn),
+			checkedInPercentage: allEventRegs.length > 0 ? Math.round((totalCheckedIn / allEventRegs.length) * 100) : 0,
+			totalRevenue,
+			tierBreakdown,
+		};
+
+		// 2. Apply filters for table view
 		const filter: Record<string, any> = { eventId: event._id };
 		if (req.query.checkedIn !== undefined) {
 			filter.checkedIn = req.query.checkedIn === "true";
 		}
 		if (req.query.tierId && typeof req.query.tierId === "string") {
 			filter.tierId = req.query.tierId.trim();
+		}
+		if (req.query.paymentStatus && typeof req.query.paymentStatus === "string") {
+			filter.paymentStatus = req.query.paymentStatus.trim();
 		}
 		if (req.query.search && typeof req.query.search === "string") {
 			const s = req.query.search.trim();
@@ -646,8 +680,69 @@ export const getEventRegistrations: RequestHandler = async (req, res, next) => {
 			.lean();
 
 		res.status(200).json({
+			event: {
+				id: event._id,
+				title: event.title,
+				slug: event.slug,
+				startDate: event.startDate,
+				reportingTime: event.reportingTime,
+				venue: event.venue,
+			},
+			summary,
 			total: registrations.length,
 			registrations,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * PATCH /events/registrations/:id/toggle-checkin (and /api/v1/events/registrations/:id/toggle-checkin)
+ * Protected: Admin and FrontDesk staff only
+ * Manually toggle attendee check-in state from the roster table
+ */
+export const toggleRegistrationCheckIn: RequestHandler = async (req, res, next) => {
+	const registrationId = String(req.params.id || "").trim();
+	if (!registrationId || !mongoose.Types.ObjectId.isValid(registrationId)) {
+		res.status(400).json({ error: "Valid registration ID is required", code: "BAD_REQUEST" });
+		return;
+	}
+
+	try {
+		const registration = await EventRegistration.findById(registrationId);
+		if (!registration) {
+			res.status(404).json({ error: "Registration record not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		const newCheckedInState = !registration.checkedIn;
+		registration.checkedIn = newCheckedInState;
+		registration.checkedInAt = newCheckedInState ? new Date() : null;
+		registration.checkedInByStaffId = newCheckedInState && req.user?.id ? new mongoose.Types.ObjectId(req.user.id) : null;
+		await registration.save();
+
+		// Update event totalCheckedIn counter atomically
+		await FitflixEvent.updateOne(
+			{ _id: registration.eventId },
+			{
+				$inc: {
+					totalCheckedIn: newCheckedInState ? 1 : -1,
+				},
+			},
+		);
+
+		res.status(200).json({
+			message: newCheckedInState
+				? `Attendee ${registration.attendeeName} checked in successfully.`
+				: `Check-in undone for ${registration.attendeeName}.`,
+			registration: {
+				id: registration._id,
+				ticketId: registration.ticketId,
+				attendeeName: registration.attendeeName,
+				checkedIn: registration.checkedIn,
+				checkedInAt: registration.checkedInAt,
+			},
 		});
 	} catch (error) {
 		next(error);

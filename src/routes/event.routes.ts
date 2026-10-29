@@ -11,6 +11,7 @@ import {
 	getEventRegistrations,
 	getPublicEventBySlug,
 	registerForEvent,
+	toggleRegistrationCheckIn,
 	updateEvent,
 	uploadEventImage,
 } from "../controllers/event.controller";
@@ -89,6 +90,18 @@ router.post(
 	authenticateToken,
 	authorize(["admin", "frontdesk"]),
 	createEvent,
+);
+
+/**
+ * PATCH /events/registrations/:id/toggle-checkin
+ * Protected: Admin and FrontDesk staff only
+ * Manual check-in toggle for attendee roster
+ */
+router.patch(
+	"/registrations/:id/toggle-checkin",
+	authenticateToken,
+	authorize(["admin", "frontdesk"]),
+	toggleRegistrationCheckIn,
 );
 
 /**
