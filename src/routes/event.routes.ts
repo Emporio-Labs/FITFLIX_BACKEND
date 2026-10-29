@@ -2,7 +2,14 @@ import { Router } from "express";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 import { uploadMiddleware } from "../middleware/upload.middleware";
-import { createEvent, getEvents, uploadEventImage } from "../controllers/event.controller";
+import {
+	createEvent,
+	deleteEvent,
+	getEventById,
+	getEvents,
+	updateEvent,
+	uploadEventImage,
+} from "../controllers/event.controller";
 
 const router = Router();
 
@@ -15,6 +22,17 @@ router.get(
 	authenticateToken,
 	authorize(["admin", "frontdesk"]),
 	getEvents,
+);
+
+/**
+ * GET /events/:id
+ * Protected: Admin and FrontDesk staff only
+ */
+router.get(
+	"/:id",
+	authenticateToken,
+	authorize(["admin", "frontdesk"]),
+	getEventById,
 );
 
 /**
@@ -38,6 +56,28 @@ router.post(
 	authenticateToken,
 	authorize(["admin", "frontdesk"]),
 	createEvent,
+);
+
+/**
+ * PATCH /events/:id
+ * Protected: Admin and FrontDesk staff only
+ */
+router.patch(
+	"/:id",
+	authenticateToken,
+	authorize(["admin", "frontdesk"]),
+	updateEvent,
+);
+
+/**
+ * DELETE /events/:id
+ * Protected: Admin only
+ */
+router.delete(
+	"/:id",
+	authenticateToken,
+	authorize(["admin"]),
+	deleteEvent,
 );
 
 export default router;

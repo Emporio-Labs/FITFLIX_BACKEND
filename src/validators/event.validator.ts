@@ -21,44 +21,63 @@ export const venueSchema = z.object({
 	locationId: objectId.optional(),
 });
 
+export const eventFields = {
+	title: z.string().trim().min(1, "Event title is required"),
+	slug: z
+		.string()
+		.trim()
+		.regex(
+			/^[a-z0-9-]+$/,
+			"Slug can only contain lowercase alphanumeric characters and hyphens",
+		)
+		.optional(),
+	tagline: optionalString,
+	description: z.string().trim().default(""),
+	eventType: z
+		.nativeEnum(EventType)
+		.default(EventType.CommunityMeetup),
+	status: z
+		.nativeEnum(EventStatus)
+		.default(EventStatus.Draft),
+	startDate: z.coerce.date({ message: "startDate must be a valid date" }),
+	endDate: z.coerce.date({ message: "endDate must be a valid date" }),
+	reportingTime: z
+		.string()
+		.trim()
+		.min(1, "Reporting time is required")
+		.default("09:00 AM IST"),
+	venue: venueSchema,
+	totalCapacity: z.coerce
+		.number()
+		.int()
+		.min(1, "Capacity must be at least 1")
+		.default(100),
+	coverImageUrl: optionalString,
+	badgeWatermarkUrl: optionalString,
+};
+
 export const createEventSchema = z
-	.object({
-		title: z.string().trim().min(1, "Event title is required"),
-		slug: z
-			.string()
-			.trim()
-			.regex(
-				/^[a-z0-9-]+$/,
-				"Slug can only contain lowercase alphanumeric characters and hyphens",
-			)
-			.optional(),
-		tagline: optionalString,
-		description: z.string().trim().default(""),
-		eventType: z
-			.nativeEnum(EventType)
-			.default(EventType.CommunityMeetup),
-		status: z
-			.nativeEnum(EventStatus)
-			.default(EventStatus.Draft),
-		startDate: z.coerce.date({ message: "startDate must be a valid date" }),
-		endDate: z.coerce.date({ message: "endDate must be a valid date" }),
-		reportingTime: z
-			.string()
-			.trim()
-			.min(1, "Reporting time is required")
-			.default("09:00 AM IST"),
-		venue: venueSchema,
-		totalCapacity: z.coerce
-			.number()
-			.int()
-			.min(1, "Capacity must be at least 1")
-			.default(100),
-		coverImageUrl: optionalString,
-		badgeWatermarkUrl: optionalString,
-	})
+	.object(eventFields)
 	.refine((data) => data.endDate >= data.startDate, {
 		message: "endDate cannot be before startDate",
 		path: ["endDate"],
 	});
 
+export const updateEventSchema = z
+	.object(eventFields)
+	.partial()
+	.refine(
+		(data) => {
+			if (data.startDate && data.endDate) {
+				return data.endDate >= data.startDate;
+			}
+			return true;
+		},
+		{
+			message: "endDate cannot be before startDate",
+			path: ["endDate"],
+		},
+	);
+
 export type CreateEventBody = z.infer<typeof createEventSchema>;
+export type UpdateEventBody = z.infer<typeof updateEventSchema>;

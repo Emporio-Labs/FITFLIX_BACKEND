@@ -3,7 +3,7 @@ import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import mongoose from "mongoose";
 import FitflixEvent from "../models/FitflixEvent";
-import { createEventSchema } from "../validators/event.validator";
+import { createEventSchema, updateEventSchema } from "../validators/event.validator";
 import { uploadToS3 } from "../utils/s3.service";
 
 const getValidationDetails = (
@@ -33,12 +33,57 @@ const slugify = (text: string): string => {
 
 /**
  * GET /events (and /api/v1/events)
- * List all events for FrontDesk staff
+ * List all events for FrontDesk staff with optional filtering
  */
-export const getEvents: RequestHandler = async (_req, res, next) => {
+export const getEvents: RequestHandler = async (req, res, next) => {
 	try {
-		const events = await FitflixEvent.find().sort({ startDate: -1 }).lean();
+		const filter: Record<string, any> = {};
+		if (req.query.status && typeof req.query.status === "string" && req.query.status !== "all") {
+			filter.status = req.query.status.toLowerCase().trim();
+		}
+		if (req.query.eventType && typeof req.query.eventType === "string") {
+			filter.eventType = req.query.eventType.trim();
+		}
+		if (req.query.search && typeof req.query.search === "string") {
+			const s = req.query.search.trim();
+			filter.$or = [
+				{ title: { $regex: s, $options: "i" } },
+				{ slug: { $regex: s, $options: "i" } },
+				{ "venue.name": { $regex: s, $options: "i" } },
+				{ "venue.city": { $regex: s, $options: "i" } },
+			];
+		}
+
+		const events = await FitflixEvent.find(filter).sort({ startDate: -1 }).lean();
 		res.status(200).json({ events });
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * GET /events/:id
+ * Retrieve a single event by ObjectId or Slug
+ */
+export const getEventById: RequestHandler = async (req, res, next) => {
+	try {
+		const param = String(req.params.id || "").trim();
+		if (!param) {
+			res.status(400).json({ error: "Event ID or slug required", code: "BAD_REQUEST" });
+			return;
+		}
+
+		const query = mongoose.Types.ObjectId.isValid(param)
+			? { $or: [{ _id: param }, { slug: param.toLowerCase() }] }
+			: { slug: param.toLowerCase() };
+
+		const event = await FitflixEvent.findOne(query).lean();
+		if (!event) {
+			res.status(404).json({ error: "Event not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		res.status(200).json({ event });
 	} catch (error) {
 		next(error);
 	}
@@ -150,6 +195,139 @@ export const createEvent: RequestHandler = async (req, res, next) => {
 		res.status(201).json({
 			message: "Event created successfully",
 			event,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * PATCH /events/:id
+ * Update event details (Admin & Frontdesk only)
+ */
+export const updateEvent: RequestHandler = async (req, res, next) => {
+	if (!req.user || !["admin", "frontdesk", "ROLE_FRONT_DESK_STAFF"].includes(req.user.role)) {
+		res.status(403).json({
+			error: "Forbidden: Only staff and admins can update events",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	const param = String(req.params.id || "").trim();
+	if (!param) {
+		res.status(400).json({ error: "Event ID or slug required", code: "BAD_REQUEST" });
+		return;
+	}
+
+	const parsed = updateEventSchema.safeParse(req.body);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
+	try {
+		const query = mongoose.Types.ObjectId.isValid(param)
+			? { $or: [{ _id: param }, { slug: param.toLowerCase() }] }
+			: { slug: param.toLowerCase() };
+
+		const event = await FitflixEvent.findOne(query);
+		if (!event) {
+			res.status(404).json({ error: "Event not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		const updates = parsed.data;
+
+		// Date consistency check when updating either date individually
+		const effectiveStartDate = updates.startDate ?? event.startDate;
+		const effectiveEndDate = updates.endDate ?? event.endDate;
+		if (effectiveEndDate < effectiveStartDate) {
+			res.status(400).json({
+				error: "Validation failed",
+				code: "VALIDATION_ERROR",
+				details: { endDate: "endDate cannot be before startDate" },
+			});
+			return;
+		}
+
+		// If updating slug, ensure uniqueness across other events
+		if (updates.slug && updates.slug !== event.slug) {
+			const slug = slugify(updates.slug);
+			const conflict = await FitflixEvent.findOne({ slug, _id: { $ne: event._id } }).lean();
+			if (conflict) {
+				res.status(409).json({
+					error: "An event with this custom slug already exists",
+					code: "CONFLICT",
+					details: { slug: "Slug is already in use" },
+				});
+				return;
+			}
+			updates.slug = slug;
+		}
+
+		// Merge nested venue cleanly to prevent overwriting existing venue properties
+		if (updates.venue) {
+			const existingVenue = event.venue && typeof (event.venue as any).toObject === "function"
+				? (event.venue as any).toObject()
+				: event.venue || {};
+			updates.venue = {
+				...existingVenue,
+				...updates.venue,
+			};
+		}
+
+		Object.assign(event, updates);
+		await event.save();
+
+		res.status(200).json({
+			message: "Event updated successfully",
+			event,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * DELETE /events/:id
+ * Delete or cancel an event (Admin only)
+ */
+export const deleteEvent: RequestHandler = async (req, res, next) => {
+	if (!req.user || !["admin", "ROLE_FRONT_DESK_STAFF"].includes(req.user.role)) {
+		res.status(403).json({
+			error: "Forbidden: Only administrators can delete events",
+			code: "FORBIDDEN",
+		});
+		return;
+	}
+
+	const param = String(req.params.id || "").trim();
+	if (!param) {
+		res.status(400).json({ error: "Event ID or slug required", code: "BAD_REQUEST" });
+		return;
+	}
+
+	try {
+		const query = mongoose.Types.ObjectId.isValid(param)
+			? { $or: [{ _id: param }, { slug: param.toLowerCase() }] }
+			: { slug: param.toLowerCase() };
+
+		const event = await FitflixEvent.findOne(query);
+		if (!event) {
+			res.status(404).json({ error: "Event not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		await FitflixEvent.deleteOne({ _id: event._id });
+
+		res.status(200).json({
+			message: "Event deleted successfully",
+			deletedEventId: event._id,
 		});
 	} catch (error) {
 		next(error);
