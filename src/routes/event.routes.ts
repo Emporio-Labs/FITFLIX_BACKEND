@@ -9,6 +9,8 @@ import {
 	getEventById,
 	getEvents,
 	getEventRegistrations,
+	getMyEventPasses,
+	getPublicEvents,
 	getPublicEventBySlug,
 	registerForEvent,
 	toggleRegistrationCheckIn,
@@ -20,10 +22,27 @@ import {
 const router = Router();
 
 /**
+ * GET /events/public / GET /api/v1/events/public
+ * Public: List published upcoming events for mobile app discovery
+ */
+router.get("/public", getPublicEvents);
+
+/**
  * GET /events/public/:slug / GET /api/v1/events/public/:slug
  * Public: Anyone can fetch published event landing details
  */
 router.get("/public/:slug", getPublicEventBySlug);
+
+/**
+ * GET /events/my-passes / GET /api/v1/events/my-passes
+ * Protected: Member's booked digital ticket passes
+ */
+router.get(
+	"/my-passes",
+	authenticateToken,
+	authorize(["user", "admin", "frontdesk"]),
+	getMyEventPasses,
+);
 
 /**
  * POST /events/:slug/register / POST /api/v1/events/:slug/register

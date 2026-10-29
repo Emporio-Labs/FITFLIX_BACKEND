@@ -351,6 +351,33 @@ const generateTicketId = (eventSlug: string): string => {
  * GET /events/public/:slug (and /api/v1/events/public/:slug)
  * Public endpoint to fetch event details, tiers, and availability
  */
+/**
+ * GET /events/public (and /api/v1/events/public)
+ * Public: List published upcoming events for mobile app discovery
+ */
+export const getPublicEvents: RequestHandler = async (req, res, next) => {
+	try {
+		const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+		const filter: Record<string, any> = {
+			status: EventStatus.Published,
+			startDate: { $gte: oneDayAgo },
+		};
+
+		if (req.query.eventType && typeof req.query.eventType === "string") {
+			filter.eventType = req.query.eventType.trim();
+		}
+
+		const events = await FitflixEvent.find(filter)
+			.select("title slug tagline eventType startDate endDate reportingTime venue totalCapacity totalRegistered coverImageUrl collaborators ticketTiers status")
+			.sort({ startDate: 1 })
+			.lean();
+
+		res.status(200).json({ events });
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const getPublicEventBySlug: RequestHandler = async (req, res, next) => {
 	const slug = String(req.params.slug || "").trim().toLowerCase();
 	if (!slug) {
@@ -830,6 +857,80 @@ export const getDigitalPassByTicketId: RequestHandler = async (req, res, next) =
  * Protected: Admin and FrontDesk staff only
  * Process live QR scan or ticket code verification at entrance gate
  */
+/**
+ * GET /events/my-passes (and /api/v1/events/my-passes)
+ * Protected (Member): List all event passes booked by logged-in user
+ */
+export const getMyEventPasses: RequestHandler = async (req, res, next) => {
+	if (!req.user || !req.user.id) {
+		res.status(401).json({ error: "Unauthorized: Member authentication required", code: "UNAUTHORIZED" });
+		return;
+	}
+
+	try {
+		const userId = new mongoose.Types.ObjectId(req.user.id);
+		const user = await User.findById(userId).lean();
+
+		// Find registrations tied to userId, or email/phone fallback
+		const orConditions: Array<Record<string, any>> = [{ userId }];
+		if (user?.email) orConditions.push({ attendeeEmail: user.email.toLowerCase() });
+		if (user?.phone) orConditions.push({ attendeePhone: user.phone });
+
+		const registrations = await EventRegistration.find({ $or: orConditions })
+			.populate("eventId", "title slug tagline startDate endDate reportingTime venue coverImageUrl collaborators ticketTiers")
+			.sort({ createdAt: -1 })
+			.lean();
+
+		const passes = registrations.map((reg) => {
+			const evt = reg.eventId as any;
+			const tier = evt?.ticketTiers?.find((t: any) => t.tierId === reg.tierId);
+			const qrPayload = JSON.stringify({
+				ticketId: reg.ticketId,
+				token: reg.verificationToken,
+				eventId: evt?._id,
+			});
+
+			return {
+				id: reg._id,
+				ticketId: reg.ticketId,
+				tierId: reg.tierId,
+				tierName: reg.tierName,
+				badgeLabel: tier?.badgeLabel || "GENERAL PASS",
+				badgeColor: tier?.badgeColor || "#8A965A",
+				perks: tier?.perks || [],
+				attendeeName: reg.attendeeName,
+				attendeeEmail: reg.attendeeEmail,
+				attendeePhone: reg.attendeePhone,
+				checkedIn: reg.checkedIn,
+				checkedInAt: reg.checkedInAt,
+				paymentStatus: reg.paymentStatus,
+				amountPaid: reg.amountPaid,
+				verificationToken: reg.verificationToken,
+				createdAt: reg.createdAt,
+				qrPayload,
+				event: evt
+					? {
+							id: evt._id,
+							title: evt.title,
+							slug: evt.slug,
+							tagline: evt.tagline,
+							startDate: evt.startDate,
+							endDate: evt.endDate,
+							reportingTime: evt.reportingTime,
+							venue: evt.venue,
+							coverImageUrl: evt.coverImageUrl,
+							collaborators: evt.collaborators,
+					  }
+					: null,
+			};
+		});
+
+		res.status(200).json({ passes });
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 	if (!req.user || !["admin", "frontdesk", "ROLE_FRONT_DESK_STAFF"].includes(req.user.role)) {
 		res.status(403).json({
