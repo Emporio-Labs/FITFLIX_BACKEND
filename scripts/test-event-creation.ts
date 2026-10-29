@@ -148,13 +148,13 @@ async function runTestCases() {
 			],
 		},
 
-		// 2. DevFest Nagpur 2026 (matching DevFest reference photo)
+		// 2. Fitflix Summit Nagpur 2026 (matching Fitflix Summit reference photo)
 		{
-			title: "Google Developers DevFest Nagpur 2026",
-			slug: "devfest-nagpur-2026",
+			title: "Fitflix Sunrise Marathon & Recovery Yoga Summit 2026",
+			slug: "fitflix-sunrise-marathon-2026",
 			tagline: "Central India's Largest Technology & Engineering Summit",
 			description:
-				"2 days of deep technical sessions, AI workshops, community networking, and swag distribution with official DevFest attendee passes.",
+				"2 days of deep technical sessions, AI workshops, community networking, and swag distribution with official Fitflix Summit attendee passes.",
 			eventType: EventType.CommunityMeetup,
 			status: EventStatus.Published,
 			startDate: new Date("2026-11-05T09:00:00.000Z"),

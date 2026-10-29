@@ -308,6 +308,7 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 |---|---|---|---|---|
 | GET | `/events/public/:slug` | Public | — | `getPublicEventBySlug` |
 | POST | `/events/:slug/register` | Public / Opt JWT | — | `registerForEvent` |
+| GET | `/events/pass/:ticketId` | Public | — | `getDigitalPassByTicketId` |
 | GET | `/events` | JWT | admin, frontdesk | `getEvents` |
 | GET | `/events/:id` | JWT | admin, frontdesk | `getEventById` |
 | GET | `/events/:id/registrations` | JWT | admin, frontdesk | `getEventRegistrations` |

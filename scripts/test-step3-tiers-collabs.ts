@@ -138,13 +138,13 @@ async function runStep3Tests() {
 		console.log("✅ COMMUNE PART 2 updated with 3 Pass Tiers & Chapter 5 Coffee Co-branding!");
 	}
 
-	// 5. Update DevFest Nagpur 2026 with DevFest Tiers (matching reference 1)
-	const devfestEvent = await FitflixEvent.findOne({ slug: "devfest-nagpur-2026" });
+	// 5. Update Fitflix Summit Nagpur 2026 with Fitflix Summit Tiers (matching reference 1)
+	const devfestEvent = await FitflixEvent.findOne({ slug: "fitflix-sunrise-marathon-2026" });
 	if (devfestEvent) {
 		devfestEvent.ticketTiers = [
 			{
-				tierId: "devfest_all_access",
-				name: "DevFest All Access Pass",
+				tierId: "sunrise_all_access",
+				name: "Fitflix Summit All Access Pass",
 				badgeLabel: "ALL ACCESS PASS",
 				badgeColor: "#10b981",
 				type: "paid",
@@ -152,11 +152,11 @@ async function runStep3Tests() {
 				creditCost: 0,
 				totalQuantity: 250,
 				soldQuantity: 0,
-				perks: ["Keynote & Tech Sessions", "Official DevFest Swag Kit", "Lunch & Snacks for 2 Days"],
+				perks: ["Keynote & Tech Sessions", "Official Fitflix Summit Swag Kit", "Lunch & Snacks for 2 Days"],
 				maxTicketsPerUser: 1,
 			},
 			{
-				tierId: "devfest_student_pass",
+				tierId: "sunrise_student_pass",
 				name: "Student Super Early Bird Pass",
 				badgeLabel: "STUDENT PASS",
 				badgeColor: "#3b82f6",
@@ -169,7 +169,7 @@ async function runStep3Tests() {
 				maxTicketsPerUser: 1,
 			},
 			{
-				tierId: "devfest_speaker_vip",
+				tierId: "sunrise_speaker_vip",
 				name: "Speaker & VIP Pass",
 				badgeLabel: "VIP PASS",
 				badgeColor: "#f59e0b",
@@ -191,7 +191,7 @@ async function runStep3Tests() {
 		] as any;
 
 		await devfestEvent.save();
-		console.log("✅ DevFest Nagpur 2026 updated with All Access / VIP Tiers & Sponsor Strip (matching DevFest ticket photo)!");
+		console.log("✅ Fitflix Summit Nagpur 2026 updated with All Access / VIP Tiers & Sponsor Strip (matching Fitflix Summit ticket photo)!");
 	}
 
 	console.log("\n🎉 Step 3 Tests Completed Successfully!");

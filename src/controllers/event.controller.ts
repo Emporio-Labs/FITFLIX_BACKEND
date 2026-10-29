@@ -653,3 +653,78 @@ export const getEventRegistrations: RequestHandler = async (req, res, next) => {
 		next(error);
 	}
 };
+
+/**
+ * GET /events/pass/:ticketId (and /api/v1/events/pass/:ticketId)
+ * Retrieve digital event pass details with signed verification payload
+ */
+export const getDigitalPassByTicketId: RequestHandler = async (req, res, next) => {
+	const ticketId = String(req.params.ticketId || "").trim().toUpperCase();
+	if (!ticketId) {
+		res.status(400).json({ error: "Ticket ID is required", code: "BAD_REQUEST" });
+		return;
+	}
+
+	try {
+		const registration = await EventRegistration.findOne({ ticketId });
+		if (!registration) {
+			res.status(404).json({ error: "Ticket pass not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		const event = await FitflixEvent.findById(registration.eventId).lean();
+		if (!event) {
+			res.status(404).json({ error: "Associated event not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		// Find tier styling details
+		const tier = (event.ticketTiers || []).find((t) => t.tierId === registration.tierId);
+
+		// Signed payload for offline QR scanning
+		const qrPayload = JSON.stringify({
+			ticketId: registration.ticketId,
+			eventId: event._id,
+			token: registration.verificationToken,
+		});
+
+		res.status(200).json({
+			pass: {
+				id: registration._id,
+				ticketId: registration.ticketId,
+				tierId: registration.tierId,
+				tierName: registration.tierName,
+				badgeLabel: tier?.badgeLabel || "GENERAL PASS",
+				badgeColor: tier?.badgeColor || "#10b981",
+				perks: tier?.perks || [],
+				attendeeName: registration.attendeeName,
+				attendeeEmail: registration.attendeeEmail,
+				attendeePhone: registration.attendeePhone,
+				answers: registration.answers,
+				checkedIn: registration.checkedIn,
+				checkedInAt: registration.checkedInAt,
+				paymentStatus: registration.paymentStatus,
+				amountPaid: registration.amountPaid,
+				verificationToken: registration.verificationToken,
+				qrPayload,
+				createdAt: registration.createdAt,
+			},
+			event: {
+				id: event._id,
+				title: event.title,
+				slug: event.slug,
+				tagline: event.tagline,
+				description: event.description,
+				startDate: event.startDate,
+				endDate: event.endDate,
+				reportingTime: event.reportingTime,
+				venue: event.venue,
+				coverImageUrl: event.coverImageUrl,
+				collaborators: event.collaborators,
+				sponsors: event.sponsors,
+			},
+		});
+	} catch (error) {
+		next(error);
+	}
+};

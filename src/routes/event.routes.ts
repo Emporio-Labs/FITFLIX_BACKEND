@@ -5,6 +5,7 @@ import { uploadMiddleware } from "../middleware/upload.middleware";
 import {
 	createEvent,
 	deleteEvent,
+	getDigitalPassByTicketId,
 	getEventById,
 	getEvents,
 	getEventRegistrations,
@@ -27,6 +28,12 @@ router.get("/public/:slug", getPublicEventBySlug);
  * Public / Member Registration: Book a ticket tier pass
  */
 router.post("/:slug/register", optionalAuthenticateToken, registerForEvent);
+
+/**
+ * GET /events/pass/:ticketId / GET /api/v1/events/pass/:ticketId
+ * Public: Retrieve digital ticket pass details and signed QR payload
+ */
+router.get("/pass/:ticketId", getDigitalPassByTicketId);
 
 /**
  * GET /events / GET /api/v1/events
