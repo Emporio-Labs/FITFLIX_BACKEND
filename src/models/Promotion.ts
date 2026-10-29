@@ -63,7 +63,11 @@ const promotionSchema = new mongoose.Schema(
 			default: null,
 		},
 		title: { type: String, required: true, trim: true },
-		imageUrl: { type: String, required: true, trim: true },
+		// Either an uploaded image (`imageKey`, an object in the private S3
+		// bucket that read endpoints sign into `imageUrl`) or a hand-typed
+		// `imageUrl`. The validator requires one of the two.
+		imageUrl: { type: String, default: null, trim: true },
+		imageKey: { type: String, default: null, trim: true },
 		subtext: { type: String, default: "", trim: true },
 		tag: { type: String, default: "", trim: true },
 		mode: { type: String, enum: [...PROMOTION_MODES, null], default: null },

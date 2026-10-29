@@ -537,6 +537,20 @@ Also mounted at `/api/invoices`. Rate limit: `apiRateLimit`.
 | PATCH | `/membership-plans/:id` | JWT | admin | `updateMembershipPlanById` |
 | DELETE | `/membership-plans/:id` | JWT | admin | `deleteMembershipPlanById` |
 
+#### `/promotions` → [promotion.routes.ts](../src/routes/promotion.routes.ts)
+
+Also mounted at `/api/v1/promotions`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/promotions/public` | Public | — | `getPublicPromotions` |
+| GET | `/promotions` | JWT | — | `getAllPromotions` |
+| GET | `/promotions/:id` | JWT | — | `getPromotionById` |
+| POST | `/promotions/image` | JWT | admin | `uploadPromotionImage` |
+| POST | `/promotions` | JWT | admin | `createPromotion` |
+| PATCH | `/promotions/:id` | JWT | admin | `updatePromotionById` |
+| DELETE | `/promotions/:id` | JWT | admin | `deletePromotionById` |
+
 #### `/onboarding` → [onboarding.routes.ts](../src/routes/onboarding.routes.ts)
 
 | Method | Path | Auth | Roles | Handler |
@@ -3487,6 +3501,44 @@ Partial update — at least one field required.
 
 ---
 
+## Promotions — `/promotions`
+
+The member home-screen carousel. A promotion has **either** an uploaded image
+(`imageKey`) **or** a hand-typed `imageUrl`. Every read returns `imageUrl` as a
+fetchable URL — for an uploaded image it is a presigned S3 URL (1 h), so
+clients render `imageUrl` and ignore `imageKey`.
+
+### POST /promotions/image
+
+**Auth:** Bearer (`admin`). `multipart/form-data`, field `image`.
+
+JPG, PNG or WebP, 5 MB max; content is magic-byte checked. Re-encoded to JPEG
+and capped at 1600 px wide. Upload first, then send the returned `imageKey` in
+the create/update body.
+
+```bash
+curl -X POST "https://api.example.com/promotions/image" \
+  -H "Authorization: Bearer $TOKEN" -F "image=@banner.png"
+```
+
+**Success (201):** `{ "message": "Image uploaded", "imageKey": "promotions/<uuid>/banner.jpg", "imageUrl": "<signed preview url>" }`
+
+**Errors:** 400 `BAD_REQUEST` (no file) / `INVALID_IMAGE`; 413 `PAYLOAD_TOO_LARGE`; 415 `UNSUPPORTED_MEDIA_TYPE`.
+
+### POST /promotions · PATCH /promotions/:id
+
+**Auth:** Bearer (`admin`)
+
+Image fields (the rest of the body is unchanged):
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `imageKey` | string \| null | one of the two | must come from `POST /promotions/image` |
+| `imageUrl` | string (url) \| null | one of the two | |
+
+Sending one clears the other. Replacing or removing an uploaded image, or
+deleting the promotion, deletes the old S3 object.
+
 ## Invoices — `/invoices`
 
 Billing for the FrontDesk dashboard. Also mounted at `/api/invoices` (see
@@ -5875,6 +5927,8 @@ expansion.
 
 ## Changelog
 
+- **2026-10-29** — Added the `/promotions` index and section, including
+  `POST /promotions/image` (banner upload to S3) and the `imageKey` field.
 - **2026-08-09** — Synchronized with the codebase. Removed the `/doctors`,
   `/appointments`, and `/expert-appointments` sections (no such routes,
   controllers, or models exist). Added `/delete-account`, `/membership-plans`,

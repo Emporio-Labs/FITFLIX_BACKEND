@@ -1,7 +1,13 @@
-import type { RequestHandler } from "express";
+import { randomUUID } from "node:crypto";
+import { unlink } from "node:fs/promises";
+import type { Request, RequestHandler } from "express";
+import { Jimp } from "jimp";
 import mongoose from "mongoose";
+import { validateFileSignature } from "../middleware/upload.middleware";
 import Promotion from "../models/Promotion";
+import { signKeyCached } from "../utils/exercise-images";
 import { resolveMemberAudience } from "../utils/membership.guard";
+import { deleteFromS3, uploadToS3 } from "../utils/s3.service";
 import { getMemberHomeLocationId } from "../utils/location.resolver";
 import {
 	buildPromotionFilter,
@@ -53,6 +59,120 @@ const invalidPayload = (
 	});
 };
 
+const PROMOTION_IMAGE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+const PROMOTION_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+// Carousel banners are shown at phone width; anything wider is wasted bytes.
+const PROMOTION_IMAGE_MAX_WIDTH = 1600;
+
+type PromotionLike = { toJSON(): Record<string, any> };
+
+// Without AWS credentials (local dev) generateSignedUrl falls back to a
+// relative `/uploads/<key>` path, which the admin app would resolve against its
+// own origin. Make it absolute against this server so the image loads.
+const absoluteUrl = (req: Request, url: string | null): string | null =>
+	url?.startsWith("/") ? `${req.protocol}://${req.get("host")}${url}` : url;
+
+/**
+ * Uploaded images live in the private bucket, so the stored `imageKey` is
+ * signed onto `imageUrl` on the way out — the shape every client already
+ * renders. Shares exercise-images' cache so repeat reads hand out a
+ * byte-identical URL and the app's image cache keeps hitting.
+ */
+const withSignedImage = async (req: Request, promotion: PromotionLike) => {
+	const json = promotion.toJSON();
+	if (!json.imageKey) return json;
+	const url = absoluteUrl(req, await signKeyCached(json.imageKey));
+	return url ? { ...json, imageUrl: url } : json;
+};
+
+const withSignedImages = (req: Request, promotions: PromotionLike[]) =>
+	Promise.all(promotions.map((p) => withSignedImage(req, p)));
+
+/**
+ * Admin uploads a banner before saving the promotion; the returned `imageKey`
+ * then goes into the create/update body. Re-encoded to JPEG and capped in
+ * width so a 12 MP phone photo doesn't become the carousel's download.
+ */
+export const uploadPromotionImage: RequestHandler = async (req, res, next) => {
+	const file = req.file as Express.Multer.File | undefined;
+	try {
+		if (!file) {
+			res.status(400).json({ error: "No image provided", code: "BAD_REQUEST" });
+			return;
+		}
+
+		const mime = file.mimetype.toLowerCase();
+		if (!PROMOTION_IMAGE_MIME_TYPES.includes(mime)) {
+			res.status(415).json({
+				error: "Only JPG, PNG or WebP images are allowed",
+				code: "UNSUPPORTED_MEDIA_TYPE",
+			});
+			return;
+		}
+
+		if (file.size > PROMOTION_IMAGE_MAX_BYTES) {
+			res.status(413).json({
+				error: "Image must be 5 MB or smaller",
+				code: "PAYLOAD_TOO_LARGE",
+			});
+			return;
+		}
+
+		// Content sniffing: a renamed file declared as image/png fails here.
+		const expected = mime === "image/jpg" ? "image/jpeg" : mime;
+		if (!(await validateFileSignature(file.path, expected))) {
+			res.status(400).json({
+				error: "File content does not match an allowed image type",
+				code: "INVALID_IMAGE",
+			});
+			return;
+		}
+
+		let image: Awaited<ReturnType<typeof Jimp.read>>;
+		try {
+			image = await Jimp.read(file.path);
+		} catch {
+			res
+				.status(400)
+				.json({ error: "Image could not be decoded", code: "INVALID_IMAGE" });
+			return;
+		}
+
+		// Never upscale — a small source stays its own size.
+		if (image.width > PROMOTION_IMAGE_MAX_WIDTH) {
+			image.resize({ w: PROMOTION_IMAGE_MAX_WIDTH });
+		}
+		const buffer = await image.getBuffer("image/jpeg", { quality: 85 });
+
+		// Fresh UUID per upload: the app caches images by object path, so an
+		// overwritten key would keep serving the old banner.
+		const imageKey = `promotions/${randomUUID()}/banner.jpg`;
+		try {
+			await uploadToS3(imageKey, buffer, "image/jpeg");
+		} catch (error) {
+			// Almost always credentials/IAM (AccessDenied) — say so instead of a
+			// bare 500, so the admin's toast points at storage, not their image.
+			console.error("[promotion-image] storage upload failed:", error);
+			res.status(502).json({
+				error:
+					"Image storage rejected the upload. Check the server's S3 credentials and permissions.",
+				code: "STORAGE_ERROR",
+			});
+			return;
+		}
+
+		res.status(201).json({
+			message: "Image uploaded",
+			imageKey,
+			imageUrl: absoluteUrl(req, await signKeyCached(imageKey)),
+		});
+	} catch (error) {
+		next(error);
+	} finally {
+		if (file) await unlink(file.path).catch(() => {});
+	}
+};
+
 export const getAllPromotions: RequestHandler = async (req, res, next) => {
 	try {
 		const location = getLocationParam(req.query.locationId);
@@ -95,7 +215,10 @@ export const getAllPromotions: RequestHandler = async (req, res, next) => {
 
 		const promotions = await Promotion.find(filter).sort(PROMOTION_SORT);
 
-		res.status(200).json({ promotions, count: promotions.length });
+		res.status(200).json({
+			promotions: await withSignedImages(req, promotions),
+			count: promotions.length,
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -125,7 +248,10 @@ export const getPublicPromotions: RequestHandler = async (req, res, next) => {
 			}),
 		).sort(PROMOTION_SORT);
 
-		res.status(200).json({ promotions, count: promotions.length });
+		res.status(200).json({
+			promotions: await withSignedImages(req, promotions),
+			count: promotions.length,
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -159,7 +285,7 @@ export const getPromotionById: RequestHandler = async (req, res, next) => {
 			}
 		}
 
-		res.status(200).json({ promotion });
+		res.status(200).json({ promotion: await withSignedImage(req, promotion) });
 	} catch (error) {
 		next(error);
 	}
@@ -173,8 +299,15 @@ export const createPromotion: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const promotion = await Promotion.create(parsed.data);
-		res.status(201).json({ message: "Promotion created", promotion });
+		// One image source only: an uploaded key wins over a typed URL.
+		const data = parsed.data.imageKey
+			? { ...parsed.data, imageUrl: null }
+			: { ...parsed.data, imageKey: null };
+		const promotion = await Promotion.create(data);
+		res.status(201).json({
+			message: "Promotion created",
+			promotion: await withSignedImage(req, promotion),
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -194,7 +327,9 @@ export const updatePromotionById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const existing = await Promotion.findById(id).select("activeFrom activeTo");
+		const existing = await Promotion.findById(id).select(
+			"activeFrom activeTo imageUrl imageKey",
+		);
 		if (!existing) {
 			notFound(res);
 			return;
@@ -215,9 +350,28 @@ export const updatePromotionById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// Setting one image source clears the other, and the merged result must
+		// still have one.
+		const update: Record<string, unknown> = { ...parsed.data };
+		if (parsed.data.imageKey) update.imageUrl = null;
+		else if (parsed.data.imageUrl) update.imageKey = null;
+		const nextImageUrl =
+			"imageUrl" in update ? update.imageUrl : existing.imageUrl;
+		const nextImageKey =
+			"imageKey" in update ? update.imageKey : existing.imageKey;
+		if (!nextImageUrl && !nextImageKey) {
+			invalidPayload(res, [
+				{
+					path: ["imageUrl"],
+					message: "An image is required — upload one or give an image URL",
+				},
+			]);
+			return;
+		}
+
 		const promotion = await Promotion.findByIdAndUpdate(
 			id,
-			{ $set: parsed.data },
+			{ $set: update },
 			{ new: true, runValidators: true },
 		);
 
@@ -226,7 +380,15 @@ export const updatePromotionById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		res.status(200).json({ message: "Promotion updated", promotion });
+		// The replaced upload is no longer referenced by anything.
+		if (existing.imageKey && existing.imageKey !== promotion.imageKey) {
+			await deleteFromS3(existing.imageKey);
+		}
+
+		res.status(200).json({
+			message: "Promotion updated",
+			promotion: await withSignedImage(req, promotion),
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -252,6 +414,8 @@ export const deletePromotionById: RequestHandler = async (req, res, next) => {
 			notFound(res);
 			return;
 		}
+
+		if (promotion.imageKey) await deleteFromS3(promotion.imageKey);
 
 		res.status(200).json({ message: "Promotion deleted", promotion });
 	} catch (error) {
