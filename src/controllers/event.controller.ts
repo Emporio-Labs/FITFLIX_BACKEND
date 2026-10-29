@@ -157,8 +157,13 @@ export const uploadEventImage: RequestHandler = async (req, res, next) => {
  */
 export const streamEventAsset: RequestHandler = async (req, res, next) => {
 	try {
-		const rawPath = req.params[0] || req.path.replace(/^\/assets\/?/, '');
-		const cleanKey = String(rawPath).replace(/^\/+/, '').replace(/\.\./g, '');
+		const rawKey = req.params.key;
+		const keyString = Array.isArray(rawKey)
+			? rawKey.join('/')
+			: typeof rawKey === 'string'
+				? rawKey
+				: req.params[0] || req.path.replace(/^\/assets\/?/, '');
+		const cleanKey = String(keyString).replace(/^\/+/, '').replace(/\.\./g, '');
 
 		if (!cleanKey) {
 			res.status(400).json({ error: 'Asset key required', code: 'BAD_REQUEST' });

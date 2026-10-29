@@ -27,10 +27,10 @@ const router = Router();
  * Public: List published upcoming events for mobile app discovery
  */
 /**
- * GET /events/assets/* / GET /api/v1/events/assets/*
+ * GET /events/assets/{*key} / GET /api/v1/events/assets/{*key}
  * Public: Streaming proxy for event flyers, co-branding logos, and collaborator assets
  */
-router.get("/assets/*", streamEventAsset);
+router.get("/assets/{*key}", streamEventAsset);
 
 router.get("/public", getPublicEvents);
 
