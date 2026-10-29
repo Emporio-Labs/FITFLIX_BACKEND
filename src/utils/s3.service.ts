@@ -65,11 +65,29 @@ const s3PresignClient = hasAwsCredentials
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
 
+/**
+ * Resolves the public URL for an asset.
+ * If running in AWS with real S3 credentials, returns the S3 bucket URL.
+ * If running locally in development, returns the local server URL serving the file from /uploads.
+ */
+export const getPublicAssetUrl = (key: string): string => {
+	const cleanKey = key.replace(/^\/+/, "");
+	if (hasAwsCredentials) {
+		if (process.env.AWS_S3_PUBLIC_BASE_URL) {
+			return `${process.env.AWS_S3_PUBLIC_BASE_URL.replace(/\/+$/, "")}/${cleanKey}`;
+		}
+		return `https://${BUCKET}.s3.${REGION}.amazonaws.com/${cleanKey}`;
+	}
+
+	const backendBaseUrl = (process.env.BACKEND_URL || "http://localhost:3000").replace(/\/+$/, "");
+	return `${backendBaseUrl}/uploads/${cleanKey}`;
+};
+
 export const uploadToS3 = async (
 	key: string,
 	buffer: Buffer,
 	contentType: string,
-): Promise<{ s3Key: string }> => {
+): Promise<{ s3Key: string; url: string }> => {
 	if (s3Client) {
 		try {
 			await s3Client.send(
@@ -97,6 +115,7 @@ export const uploadToS3 = async (
 
 	return {
 		s3Key: key,
+		url: getPublicAssetUrl(key),
 	};
 };
 

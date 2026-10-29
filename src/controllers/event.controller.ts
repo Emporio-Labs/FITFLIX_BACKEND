@@ -120,9 +120,13 @@ export const uploadEventImage: RequestHandler = async (req, res, next) => {
 
 	try {
 		const ext = path.extname(file.originalname).toLowerCase() || ".png";
-		const key = `events/cover-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+		const assetType = String(req.query.type || "cover").toLowerCase().trim();
+		const folderPrefix = ["collaborator", "sponsor", "badge", "cover"].includes(assetType)
+			? assetType
+			: "asset";
+		const key = `events/${folderPrefix}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
 		const buffer = await readFile(file.path);
-		await uploadToS3(key, buffer, file.mimetype);
+		const uploadResult = await uploadToS3(key, buffer, file.mimetype);
 
 		// Clean up multer temp file
 		try {
@@ -131,12 +135,9 @@ export const uploadEventImage: RequestHandler = async (req, res, next) => {
 			// Ignore temp cleanup errors
 		}
 
-		const backendBaseUrl = process.env.BACKEND_URL || "http://localhost:3000";
-		const imageUrl = `${backendBaseUrl}/uploads/${key}`;
-
 		res.status(200).json({
-			message: "Event image uploaded successfully",
-			url: imageUrl,
+			message: "Event asset uploaded successfully",
+			url: uploadResult.url,
 			key,
 		});
 	} catch (error) {
