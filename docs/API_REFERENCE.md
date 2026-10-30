@@ -523,6 +523,8 @@ Also mounted at `/api/invoices`. Rate limit: `apiRateLimit`.
 |---|---|---|---|---|
 | GET | `/api/v1/admin/settings/rooms` | JWT | — | `getConferenceSettings` |
 | PUT | `/api/v1/admin/settings/rooms` | JWT | — | `updateConferenceSettings` |
+| GET | `/api/v1/admin/settings/billing` | JWT | admin, frontdesk | `getBillingSettings` |
+| PUT | `/api/v1/admin/settings/billing` | JWT | admin | `updateBillingSettings` |
 | GET | `/api/v1/admin/settings/alert-rules` | JWT | admin, frontdesk | `getAllAlertRules` |
 | PUT | `/api/v1/admin/settings/alert-rules/:alertType` | JWT | admin | `updateAlertRule` |
 | POST | `/api/v1/admin/settings/alert-rules/reset` | JWT | admin | `resetAlertRules` |
@@ -2617,6 +2619,44 @@ are assigned.
 **Success (200):** `{ "message": "Conference settings updated successfully", "settings": { /* ... */ } }`
 
 **Errors:** `400 { "message": "Validation failed for conference settings update", "errors": [ /* Zod issues */ ] }`.
+
+### GET /api/v1/admin/settings/billing
+
+Return the billing and tax configuration (including default GST rate %). Creates a 5% default document if none exists.
+
+**Auth:** Bearer (`admin`, `frontdesk`)
+
+**Success (200):**
+```json
+{
+  "message": "Billing settings retrieved successfully",
+  "settings": {
+    "taxRatePercent": 5,
+    "currency": "INR",
+    "sacCode": "999723",
+    "gstin": ""
+  }
+}
+```
+
+### PUT /api/v1/admin/settings/billing
+
+Update global billing and tax settings. When `syncLocations: true` (default), updates all active branches' `settings.taxRatePercent`.
+
+**Auth:** Bearer (`admin`)
+
+**Request body**
+
+| Field | Type | Constraints |
+|---|---|---|
+| `taxRatePercent` | number | 0–100 |
+| `gstin` | string | optional |
+| `currency` | string | optional (default "INR") |
+| `sacCode` | string | optional (default "999723") |
+| `syncLocations` | boolean | optional (default true) |
+
+**Success (200):** `{ "message": "Billing settings updated successfully", "settings": { /* ... */ } }`
+
 
 ---
 

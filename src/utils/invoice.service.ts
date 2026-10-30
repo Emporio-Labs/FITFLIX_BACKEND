@@ -5,6 +5,7 @@ import {
 	LeadStatus,
 } from "../models/Enums";
 import Invoice from "../models/Invoice";
+import BillingSettings from "../models/BillingSettings";
 import Lead from "../models/Lead";
 import { logLeadActivity } from "../services/lead-activity.service";
 import Location from "../models/Location";
@@ -179,11 +180,11 @@ export const computeInvoiceTax = async (
 	discount: number,
 	locationId?: mongoose.Types.ObjectId,
 ): Promise<number> => {
-	if (!locationId) return 0;
-	const location = await Location.findById(locationId)
-		.select("settings.taxRatePercent")
-		.lean();
-	const rate = Number(location?.settings?.taxRatePercent ?? 0);
+	const location = locationId ? await Location.findById(locationId).select("settings.taxRatePercent").lean() : null;
+
+
+
+	const rate = typeof location?.settings?.taxRatePercent === "number" ? Number(location.settings.taxRatePercent) : Number((await BillingSettings.findOne().select("taxRatePercent").lean())?.taxRatePercent ?? 5);
 	const taxable = Math.max(0, subtotal - discount);
 	return Math.round(taxable * rate) / 100;
 };
