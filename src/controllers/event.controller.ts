@@ -18,6 +18,13 @@ import type { AuthenticatedUser } from "../types/auth";
 
 const EVENT_ASSET_PREFIX = "events/";
 
+// The app-wide error normaliser keeps only { error, code, details } on 4xx
+// responses, so a scan result's status, attendee and event ride in details too.
+const scanResult = (body: Record<string, unknown>) => {
+	const { error, code, ...rest } = body;
+	return { ...body, details: rest };
+};
+
 const isEventStaff = (user?: AuthenticatedUser): boolean =>
 	!!user && ["admin", "frontdesk"].includes(normalizeRole(user.role));
 
@@ -351,7 +358,13 @@ export const updateEvent: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		const updates = parsed.data;
+		// zod still fills defaults inside .partial(), so a PATCH of just
+		// { status } would also reset description, eventType, reportingTime and
+		// totalCapacity. Only apply the fields the caller actually sent.
+		const sentKeys = new Set(Object.keys(req.body ?? {}));
+		const updates = Object.fromEntries(
+			Object.entries(parsed.data).filter(([key]) => sentKeys.has(key)),
+		) as typeof parsed.data;
 
 		// Date consistency check when updating either date individually
 		const effectiveStartDate = updates.startDate ?? event.startDate;
@@ -622,7 +635,7 @@ export const registerForEvent: RequestHandler = async (req, res, next) => {
 			res.status(409).json({
 				error: "You have already registered for this event with this email or phone number.",
 				code: "DUPLICATE_REGISTRATION",
-				...(canRecover ? { existingTicketId: existingReg.ticketId } : {}),
+				...(canRecover ? { details: { existingTicketId: existingReg.ticketId } } : {}),
 			});
 			return;
 		}
@@ -684,8 +697,7 @@ export const registerForEvent: RequestHandler = async (req, res, next) => {
 					? `Payment of ₹${requiredAmount} is required for pass inclusives. Please contact or visit the Fitflix Frontdesk.`
 					: "Payment is required for non-members. Please visit or contact the Fitflix Frontdesk to complete your booking.",
 				code: "PAYMENT_REQUIRED_CONTACT_FRONTDESK",
-				requiredAmount,
-				tierName: tier.name,
+				details: { requiredAmount, tierName: tier.name },
 			});
 			return;
 		}
@@ -1149,11 +1161,11 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 		}
 
 		if (!registration) {
-			res.status(404).json({
+			res.status(404).json(scanResult({
 				status: "INVALID",
 				error: `Ticket '${extractedTicketId}' not found. Please verify the QR code or check attendee phone.`,
 				code: "TICKET_NOT_FOUND",
-			});
+			}));
 			return;
 		}
 
@@ -1161,11 +1173,11 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 		// ticket ID (or a forged one) is not a pass. Typed entry is the staff
 		// member's call, made after checking the attendee in person.
 		if (!manual && !tokensMatch(scannedToken, registration.verificationToken)) {
-			res.status(401).json({
+			res.status(401).json(scanResult({
 				status: "INVALID",
 				error: "This QR code is not a valid Fitflix pass. Ask the attendee to open their pass, or check their ID and enter the ticket code manually.",
 				code: "INVALID_PASS_TOKEN",
-			});
+			}));
 			return;
 		}
 
@@ -1173,14 +1185,14 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 		const expectedEventId = targetEventId || eventIdFromPayload;
 		if (expectedEventId && registration.eventId.toString() !== expectedEventId) {
 			const wrongEvent = await FitflixEvent.findById(registration.eventId).select("title").lean();
-			res.status(400).json({
+			res.status(400).json(scanResult({
 				status: "WRONG_EVENT",
 				error: `Wrong Event: This ticket was issued for "${wrongEvent?.title || "another event"}", not this event!`,
 				code: "WRONG_EVENT",
 				ticketEventId: registration.eventId,
 				expectedEventId,
 				eventName: wrongEvent?.title,
-			});
+			}));
 			return;
 		}
 
@@ -1190,7 +1202,7 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 
 		// 5. Duplicate Entry Guard (Already Checked In)
 		if (registration.checkedIn) {
-			res.status(409).json({
+			res.status(409).json(scanResult({
 				status: "ALREADY_CHECKED_IN",
 				error: `DUPLICATE ENTRY: ${registration.attendeeName} was ALREADY checked in!`,
 				code: "ALREADY_CHECKED_IN",
@@ -1208,7 +1220,7 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 					checkedInByStaffId: registration.checkedInByStaffId,
 				},
 				event: event ? { id: event._id, title: event.title } : undefined,
-			});
+			}));
 			return;
 		}
 
@@ -1233,7 +1245,7 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 
 		if (!updatedReg) {
 			// Another thread completed check-in simultaneously
-			res.status(409).json({
+			res.status(409).json(scanResult({
 				status: "ALREADY_CHECKED_IN",
 				error: `DUPLICATE ENTRY: ${registration.attendeeName} was just checked in by another scanner!`,
 				code: "ALREADY_CHECKED_IN",
@@ -1246,7 +1258,7 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 					tierName: registration.tierName,
 					checkedIn: true,
 				},
-			});
+			}));
 			return;
 		}
 

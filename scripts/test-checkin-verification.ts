@@ -165,11 +165,12 @@ async function runCheckInVerificationTests() {
 		}
 	}
 
-	// TEST 2: Duplicate scan guard
+	// TEST 2: Duplicate scan guard (staff typing the code of a pass already used)
 	{
 		const { req, res, next, getResult } = createMockReqRes({
 			payload: reg1.ticketId,
 			eventId: eventA._id.toString(),
+			manual: true,
 		});
 
 		await verifyEventCheckIn(req, res, next);
@@ -188,6 +189,7 @@ async function runCheckInVerificationTests() {
 		const { req, res, next, getResult } = createMockReqRes({
 			payload: regPhone.attendeePhone,
 			eventId: eventA._id.toString(),
+			manual: true,
 		});
 
 		await verifyEventCheckIn(req, res, next);
@@ -205,7 +207,8 @@ async function runCheckInVerificationTests() {
 	{
 		const { req, res, next, getResult } = createMockReqRes({
 			payload: regEventB.ticketId,
-			eventId: eventA._id.toString(), // Scanned at Gate of Event A!
+			eventId: eventA._id.toString(), // Typed in at the Gate of Event A!
+			manual: true,
 		});
 
 		await verifyEventCheckIn(req, res, next);
@@ -299,13 +302,15 @@ async function runCheckInVerificationTests() {
 			paymentStatus: RegistrationPaymentStatus.Free,
 		});
 
+		// Two gate scanners reading the same real pass QR at once
+		const raceQr = JSON.stringify({ ticketId: raceReg.ticketId, token: "tok_verify_race" });
 		const reqRes1 = createMockReqRes({
-			payload: raceReg.ticketId,
+			payload: raceQr,
 			eventId: eventA._id.toString(),
 		});
 
 		const reqRes2 = createMockReqRes({
-			payload: raceReg.ticketId,
+			payload: raceQr,
 			eventId: eventA._id.toString(),
 		});
 

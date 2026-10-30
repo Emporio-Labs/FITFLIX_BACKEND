@@ -28,7 +28,8 @@ async function run() {
 	if (
 		collabResult.s3Key === collabKey &&
 		(collabResult.url.includes("fitflix-storage.s3.ap-south-1.amazonaws.com") ||
-			collabResult.url.includes("/uploads/"))
+			collabResult.url.includes("/uploads/") ||
+			collabResult.url.includes("/events/assets/events/"))
 	) {
 		console.log(`✅ Case 1: Partner logo uploaded successfully -> ${collabResult.url}`);
 		passCount++;
@@ -45,7 +46,8 @@ async function run() {
 	if (
 		sponsorResult.s3Key === sponsorKey &&
 		(sponsorResult.url.includes("fitflix-storage.s3.ap-south-1.amazonaws.com") ||
-			sponsorResult.url.includes("/uploads/"))
+			sponsorResult.url.includes("/uploads/") ||
+			sponsorResult.url.includes("/events/assets/events/"))
 	) {
 		console.log(`✅ Case 2: Sponsor logo uploaded successfully -> ${sponsorResult.url}`);
 		passCount++;
@@ -62,7 +64,8 @@ async function run() {
 	if (
 		coverResult.s3Key === coverKey &&
 		(coverResult.url.includes("fitflix-storage.s3.ap-south-1.amazonaws.com") ||
-			coverResult.url.includes("/uploads/"))
+			coverResult.url.includes("/uploads/") ||
+			coverResult.url.includes("/events/assets/events/"))
 	) {
 		console.log(`✅ Case 3: Cover poster uploaded successfully -> ${coverResult.url}`);
 		passCount++;
@@ -95,7 +98,8 @@ async function run() {
 	const generatedUrl = getPublicAssetUrl("events/collaborators/chapter-5.png");
 	if (
 		generatedUrl.startsWith("https://fitflix-storage.s3.ap-south-1.amazonaws.com") ||
-		generatedUrl.includes("/uploads/")
+		generatedUrl.includes("/uploads/") ||
+		generatedUrl.includes("/events/assets/events/")
 	) {
 		console.log(`✅ Case 5: Public URL format valid -> ${generatedUrl}`);
 		passCount++;

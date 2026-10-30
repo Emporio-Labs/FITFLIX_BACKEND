@@ -172,9 +172,9 @@ async function duplicateRecovery() {
 	installStubs(registration);
 	const body = { tierId: "vip", attendeeName: "X", attendeeEmail: "asha@example.com", attendeePhone: "9876543210" };
 	const anon = await call(registerForEvent, { params: { slug: "summit" }, body });
-	assert(anon.status === 409 && anon.body.existingTicketId === undefined, "a stranger is not handed the existing ticket ID");
+	assert(anon.status === 409 && anon.body.details?.existingTicketId === undefined, "a stranger is not handed the existing ticket ID");
 	const own = await call(registerForEvent, { params: { slug: "summit" }, body, user: member });
-	assert(own.status === 409 && own.body.existingTicketId === registration.ticketId, "the owner gets their ticket back");
+	assert(own.status === 409 && own.body.details?.existingTicketId === registration.ticketId, "the owner gets their ticket back");
 }
 
 async function passLookup() {
