@@ -12,6 +12,7 @@ import mongoose from "mongoose";
 import FitflixEvent from "../models/FitflixEvent";
 import { createEventSchema, updateEventSchema } from "../validators/event.validator";
 import { getS3ObjectStream, uploadToS3 } from "../utils/s3.service";
+import { getActiveMembership } from "../utils/membership.guard";
 
 const getValidationDetails = (
 	issues: Array<{ path: PropertyKey[]; message: string }>,
@@ -599,9 +600,44 @@ export const registerForEvent: RequestHandler = async (req, res, next) => {
 			}
 		}
 
+		// Check Active Membership
+		const activeMembership = userId ? await getActiveMembership(String(userId)) : null;
+
+		// Guard: Members Only Tier
+		if (tier.membersOnly && !activeMembership) {
+			res.status(403).json({
+				error: "This pass tier is exclusively reserved for active Fitflix club members.",
+				code: "MEMBERS_ONLY_TIER",
+			});
+			return;
+		}
+
+		// Determine Effective Price & Inclusives for this user
+		let requiredAmount = tier.price || 0;
+		if (activeMembership) {
+			if (tier.isMemberIncluded ?? true) {
+				requiredAmount = typeof tier.memberPrice === "number" ? tier.memberPrice : 0;
+			} else {
+				requiredAmount = typeof tier.memberPrice === "number" && tier.memberPrice > 0 ? tier.memberPrice : tier.price;
+			}
+		}
+
+		// Guard: If payment required and no payment reference provided
+		if (requiredAmount > 0 && !paymentReference) {
+			res.status(402).json({
+				error: activeMembership
+					? `Payment of ₹${requiredAmount} is required for pass inclusives. Please contact or visit the Fitflix Frontdesk.`
+					: "Payment is required for non-members. Please visit or contact the Fitflix Frontdesk to complete your booking.",
+				code: "PAYMENT_REQUIRED_CONTACT_FRONTDESK",
+				requiredAmount,
+				tierName: tier.name,
+			});
+			return;
+		}
+
 		// Determine payment status
 		const paymentStatus =
-			tier.price > 0
+			requiredAmount > 0
 				? paymentReference
 					? RegistrationPaymentStatus.Paid
 					: RegistrationPaymentStatus.Pending
@@ -619,7 +655,7 @@ export const registerForEvent: RequestHandler = async (req, res, next) => {
 			answers,
 			paymentStatus,
 			paymentReference: paymentReference || null,
-			amountPaid: tier.price || 0,
+			amountPaid: requiredAmount,
 			verificationToken,
 		});
 
