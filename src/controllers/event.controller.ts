@@ -13,6 +13,42 @@ import FitflixEvent from "../models/FitflixEvent";
 import { createEventSchema, updateEventSchema } from "../validators/event.validator";
 import { getS3ObjectStream, uploadToS3 } from "../utils/s3.service";
 import { getActiveMembership } from "../utils/membership.guard";
+import { normalizeRole } from "../middleware/rbac.middleware";
+import type { AuthenticatedUser } from "../types/auth";
+
+const EVENT_ASSET_PREFIX = "events/";
+
+const isEventStaff = (user?: AuthenticatedUser): boolean =>
+	!!user && ["admin", "frontdesk"].includes(normalizeRole(user.role));
+
+const tokensMatch = (given: unknown, expected: string | null | undefined): boolean => {
+	if (typeof given !== "string" || !expected) return false;
+	const a = Buffer.from(given);
+	const b = Buffer.from(expected);
+	return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
+
+/**
+ * True when the caller may see a registration's contact details and QR token:
+ * event staff, the member it belongs to (by account, email or phone), or
+ * whoever holds its verification token.
+ */
+const canViewRegistration = async (
+	user: AuthenticatedUser | undefined,
+	registration: { userId?: mongoose.Types.ObjectId | null; attendeeEmail?: string; attendeePhone?: string; verificationToken?: string },
+	token?: unknown,
+): Promise<boolean> => {
+	if (tokensMatch(token, registration.verificationToken)) return true;
+	if (!user?.id) return false;
+	if (isEventStaff(user)) return true;
+	if (registration.userId && registration.userId.toString() === user.id) return true;
+	if (!mongoose.Types.ObjectId.isValid(user.id)) return false;
+	const account = await User.findById(user.id).select("email phone").lean();
+	return (
+		(!!account?.email && account.email.toLowerCase() === registration.attendeeEmail) ||
+		(!!account?.phone && account.phone === registration.attendeePhone)
+	);
+};
 
 const getValidationDetails = (
 	issues: Array<{ path: PropertyKey[]; message: string }>,
@@ -126,7 +162,7 @@ export const uploadEventImage: RequestHandler = async (req, res, next) => {
 		const folderPrefix = ["collaborator", "sponsor", "badge", "cover"].includes(assetType)
 			? assetType
 			: "asset";
-		const key = `events/${folderPrefix}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+		const key = `${EVENT_ASSET_PREFIX}${folderPrefix}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
 		const buffer = await readFile(file.path);
 		const uploadResult = await uploadToS3(key, buffer, file.mimetype);
 
@@ -164,16 +200,24 @@ export const streamEventAsset: RequestHandler = async (req, res, next) => {
 			: typeof rawKey === 'string'
 				? rawKey
 				: req.params[0] || req.path.replace(/^\/assets\/?/, '');
-		const cleanKey = String(keyString).replace(/^\/+/, '').replace(/\.\./g, '');
+		const cleanKey = String(keyString).replace(/^\/+/, '');
 
 		if (!cleanKey) {
 			res.status(400).json({ error: 'Asset key required', code: 'BAD_REQUEST' });
 			return;
 		}
 
+		// This route is public and the bucket also holds medical and DNA reports,
+		// so it only ever serves event assets.
+		if (!cleanKey.startsWith(EVENT_ASSET_PREFIX) || cleanKey.split('/').includes('..')) {
+			res.status(404).json({ error: 'Asset not found', code: 'NOT_FOUND' });
+			return;
+		}
+
 		// 1. Check local disk first
+		const eventUploadsDir = path.resolve(process.cwd(), 'uploads', EVENT_ASSET_PREFIX);
 		const localUploadsPath = path.resolve(process.cwd(), 'uploads', cleanKey);
-		if (existsSync(localUploadsPath)) {
+		if (localUploadsPath.startsWith(eventUploadsDir + path.sep) && existsSync(localUploadsPath)) {
 			const ext = path.extname(cleanKey).toLowerCase();
 			const mimeMap: Record<string, string> = {
 				'.jpg': 'image/jpeg',
@@ -402,7 +446,10 @@ export const deleteEvent: RequestHandler = async (req, res, next) => {
 
 const generateTicketId = (eventSlug: string): string => {
 	const cleanSlug = eventSlug.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "EVNT";
-	const random = Math.floor(1000 + Math.random() * 9000);
+	// The ticket ID is printed on the pass and typed in at the gate, so it must
+	// not be guessable: 8 characters from a 32-letter alphabet (no 0/O/1/I).
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+	const random = Array.from(crypto.randomBytes(8), (b) => alphabet[b % alphabet.length]).join("");
 	return `FFX-${cleanSlug}-${random}`;
 };
 
@@ -497,7 +544,10 @@ export const registerForEvent: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { tierId, attendeeName, attendeeEmail, attendeePhone, answers, paymentReference } = parsed.data;
+	const { tierId, attendeeName, attendeeEmail, attendeePhone, answers } = parsed.data;
+	// There is no online checkout for events yet, so a payment reference only
+	// counts when front desk staff record it after taking the money.
+	const paymentReference = isEventStaff(req.user) ? parsed.data.paymentReference : undefined;
 
 	try {
 		const event = await FitflixEvent.findOne({ slug });
@@ -566,10 +616,13 @@ export const registerForEvent: RequestHandler = async (req, res, next) => {
 			$or: [{ attendeeEmail }, { attendeePhone }],
 		});
 		if (existingReg) {
+			// Only hand back the ticket to someone allowed to open it; otherwise
+			// anyone could type a stranger's email and walk off with their pass.
+			const canRecover = !!req.user && (await canViewRegistration(req.user, existingReg));
 			res.status(409).json({
 				error: "You have already registered for this event with this email or phone number.",
 				code: "DUPLICATE_REGISTRATION",
-				existingTicketId: existingReg.ticketId,
+				...(canRecover ? { existingTicketId: existingReg.ticketId } : {}),
 			});
 			return;
 		}
@@ -589,7 +642,9 @@ export const registerForEvent: RequestHandler = async (req, res, next) => {
 
 		// Check User association if logged in or existing member
 		let userId: mongoose.Types.ObjectId | null = null;
-		if (req.user?.id && mongoose.Types.ObjectId.isValid(req.user.id)) {
+		// Staff booking at the desk are registering someone else, so match the
+		// attendee's own account rather than the staff member's.
+		if (req.user?.id && !isEventStaff(req.user) && mongoose.Types.ObjectId.isValid(req.user.id)) {
 			userId = new mongoose.Types.ObjectId(req.user.id);
 		} else {
 			const existingUser = await User.findOne({
@@ -884,7 +939,9 @@ export const getDigitalPassByTicketId: RequestHandler = async (req, res, next) =
 
 	try {
 		const registration = await EventRegistration.findOne({ ticketId });
-		if (!registration) {
+		// The pass carries contact details and the gate token, so a ticket ID on
+		// its own is not enough. Answer 404 either way so IDs can't be probed.
+		if (!registration || !(await canViewRegistration(req.user, registration, req.query.token))) {
 			res.status(404).json({ error: "Ticket pass not found", code: "NOT_FOUND" });
 			return;
 		}
@@ -1026,7 +1083,7 @@ export const getMyEventPasses: RequestHandler = async (req, res, next) => {
 };
 
 export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
-	if (!req.user || !["admin", "frontdesk", "ROLE_FRONT_DESK_STAFF"].includes(req.user.role)) {
+	if (!isEventStaff(req.user)) {
 		res.status(403).json({
 			error: "Forbidden: Only staff and admins can verify ticket check-ins",
 			code: "FORBIDDEN",
@@ -1044,12 +1101,13 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { payload, eventId: targetEventId } = parsed.data;
+	const { payload, eventId: targetEventId, manual } = parsed.data;
 
 	try {
 		// 1. Extract ticketId from payload
 		let extractedTicketId = "";
 		let eventIdFromPayload: string | null = null;
+		let scannedToken: string | null = null;
 		const trimmedPayload = payload.trim();
 
 		// Case A: JSON object payload
@@ -1058,6 +1116,7 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 				const json = JSON.parse(trimmedPayload);
 				if (json.ticketId) extractedTicketId = String(json.ticketId).trim().toUpperCase();
 				if (json.eventId) eventIdFromPayload = String(json.eventId).trim();
+				if (json.token) scannedToken = String(json.token).trim();
 			} catch {
 				// not valid JSON
 			}
@@ -1066,9 +1125,8 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 		// Case B: Delimited string (e.g. ticketId:token:timestamp:sig)
 		if (!extractedTicketId && trimmedPayload.includes(":")) {
 			const parts = trimmedPayload.split(":");
-			if (parts.length >= 1) {
-				extractedTicketId = parts[0].trim().toUpperCase();
-			}
+			extractedTicketId = (parts[0] ?? "").trim().toUpperCase();
+			if (parts[1]) scannedToken = parts[1].trim();
 		}
 
 		// Case C: Raw ticket ID string
@@ -1095,6 +1153,18 @@ export const verifyEventCheckIn: RequestHandler = async (req, res, next) => {
 				status: "INVALID",
 				error: `Ticket '${extractedTicketId}' not found. Please verify the QR code or check attendee phone.`,
 				code: "TICKET_NOT_FOUND",
+			});
+			return;
+		}
+
+		// A scanned QR must carry the pass's own token: a code holding just a
+		// ticket ID (or a forged one) is not a pass. Typed entry is the staff
+		// member's call, made after checking the attendee in person.
+		if (!manual && !tokensMatch(scannedToken, registration.verificationToken)) {
+			res.status(401).json({
+				status: "INVALID",
+				error: "This QR code is not a valid Fitflix pass. Ask the attendee to open their pass, or check their ID and enter the ticket code manually.",
+				code: "INVALID_PASS_TOKEN",
 			});
 			return;
 		}

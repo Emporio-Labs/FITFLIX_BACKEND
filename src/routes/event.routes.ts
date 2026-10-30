@@ -59,9 +59,10 @@ router.post("/:slug/register", optionalAuthenticateToken, registerForEvent);
 
 /**
  * GET /events/pass/:ticketId / GET /api/v1/events/pass/:ticketId
- * Public: Retrieve digital ticket pass details and signed QR payload
+ * Staff, the pass owner, or a caller with ?token=<verificationToken>:
+ * retrieve digital ticket pass details and signed QR payload
  */
-router.get("/pass/:ticketId", getDigitalPassByTicketId);
+router.get("/pass/:ticketId", optionalAuthenticateToken, getDigitalPassByTicketId);
 
 /**
  * GET /events / GET /api/v1/events

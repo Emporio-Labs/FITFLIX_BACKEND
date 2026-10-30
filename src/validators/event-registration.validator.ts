@@ -16,6 +16,8 @@ export const registerEventSchema = z.object({
 export const verifyCheckInSchema = z.object({
 	payload: z.string().trim().min(1, "QR payload or ticket ID is required"),
 	eventId: z.string().trim().optional(),
+	// true when staff typed the code instead of scanning a pass QR
+	manual: z.boolean().optional().default(false),
 });
 
 export type RegisterEventBody = z.infer<typeof registerEventSchema>;

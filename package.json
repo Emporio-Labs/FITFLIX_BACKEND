@@ -48,6 +48,7 @@
 		"test:feature-015": "bun run tests/feature-015-cancellation-engine.test.ts",
 		"test:lead-data-fixes": "bun run tests/lead-data-fixes.test.ts",
 		"test:lead-activity": "bun run tests/lead-activity.test.ts",
+		"test:events-security": "bun run tests/events-security.test.ts",
 		"test:feature-auth": "bun run tests/feature-class-auth.test.ts",
 		"test:feature-validation": "bun run tests/feature-class-validation.test.ts",
 		"test:feature-002": "bun run tests/feature-002-create-group-class.test.ts",
