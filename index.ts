@@ -1,3 +1,4 @@
+import "./src/utils/ist-log-timestamps";
 import "./src/utils/patch-v8";
 import { createServer } from "node:http";
 import app from "./src/app";
