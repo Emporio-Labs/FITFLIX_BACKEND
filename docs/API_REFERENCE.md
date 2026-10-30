@@ -299,6 +299,26 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 | POST | `/auth/phone/verify` | Public | — | `verifyPhone` |
 | POST | `/auth/phone/register` | Public | — | `registerPhone` |
 
+
+#### `/events` → [event.routes.ts](../src/routes/event.routes.ts)
+
+*Mounted at `/events` and `/api/v1/events`.*
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/events/public/:slug` | Public | — | `getPublicEventBySlug` |
+| POST | `/events/:slug/register` | Public / Opt JWT | — | `registerForEvent` |
+| GET | `/events/pass/:ticketId` | Public | — | `getDigitalPassByTicketId` |
+| GET | `/events` | JWT | admin, frontdesk | `getEvents` |
+| GET | `/events/:id` | JWT | admin, frontdesk | `getEventById` |
+| GET | `/events/:id/registrations` | JWT | admin, frontdesk | `getEventRegistrations` |
+| POST | `/events/verify-checkin` | JWT | admin, frontdesk | `verifyEventCheckIn` |
+| PATCH | `/events/registrations/:id/toggle-checkin` | JWT | admin, frontdesk | `toggleRegistrationCheckIn` |
+| POST | `/events/upload-image` | JWT | admin, frontdesk | `uploadEventImage` |
+| POST | `/events` | JWT | admin, frontdesk | `createEvent` |
+| PATCH | `/events/:id` | JWT | admin, frontdesk | `updateEvent` |
+| DELETE | `/events/:id` | JWT | admin | `deleteEvent` |
+
 #### `/delete-account` → [delete-account.routes.ts](../src/routes/delete-account.routes.ts)
 
 | Method | Path | Auth | Roles | Handler |
