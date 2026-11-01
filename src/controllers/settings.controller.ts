@@ -1,6 +1,8 @@
 import type { RequestHandler } from "express";
 import { z } from "zod";
+import BillingSettings from "../models/BillingSettings";
 import ConferenceSettings from "../models/ConferenceSettings";
+import Location from "../models/Location";
 
 const updateConferenceSettingsSchema = z.object({
 	defaultVideoResolution: z.enum(["360p", "540p", "720p", "1080p"]).optional(),
@@ -61,6 +63,78 @@ export const updateConferenceSettings: RequestHandler = async (
 
 		res.status(200).json({
 			message: "Conference settings updated successfully",
+			settings,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+const updateBillingSettingsSchema = z.object({
+	taxRatePercent: z.coerce.number().min(0).max(100).optional(),
+	gstin: z.string().trim().optional(),
+	currency: z.string().trim().optional(),
+	sacCode: z.string().trim().optional(),
+	syncLocations: z.boolean().optional(),
+});
+
+export const getBillingSettings: RequestHandler = async (req, res, next) => {
+	try {
+		let settings = await BillingSettings.findOne();
+		if (!settings) {
+			settings = await BillingSettings.create({
+				taxRatePercent: 5,
+				currency: "INR",
+				sacCode: "999723",
+				gstin: "",
+			});
+		}
+		res.status(200).json({
+			message: "Billing settings retrieved successfully",
+			settings,
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const updateBillingSettings: RequestHandler = async (req, res, next) => {
+	try {
+		const parsed = updateBillingSettingsSchema.safeParse(req.body);
+		if (!parsed.success) {
+			res.status(400).json({
+				message: "Validation failed for billing settings update",
+				errors: parsed.error.issues,
+			});
+			return;
+		}
+
+		const { syncLocations = true, ...data } = parsed.data;
+
+		let settings = await BillingSettings.findOne();
+		if (!settings) {
+			settings = new BillingSettings({
+				taxRatePercent: 5,
+				currency: "INR",
+				sacCode: "999723",
+				gstin: "",
+				...data,
+			});
+		} else {
+			Object.assign(settings, data);
+		}
+
+		await settings.save();
+
+		if (syncLocations && typeof data.taxRatePercent === "number") {
+			await Location.updateMany(
+				{},
+				{ $set: { "settings.taxRatePercent": data.taxRatePercent } },
+			);
+		}
+
+		res.status(200).json({
+			message: "Billing settings updated successfully",
 			settings,
 		});
 	} catch (error) {

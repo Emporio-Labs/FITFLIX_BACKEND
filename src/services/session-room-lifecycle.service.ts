@@ -510,7 +510,7 @@ export async function checkTrainerNoShowSessions(
 				// Count waiting members
 				const waitingCount = await Booking.countDocuments({
 					sessionId: String(session._id),
-					...nonCancelledBookingStatusFilter,
+					status: nonCancelledBookingStatusFilter,
 				});
 				const waitingMembersCount =
 					waitingCount > 0 ? waitingCount : (session.currentBookings || 0);

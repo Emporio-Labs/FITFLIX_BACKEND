@@ -1,6 +1,8 @@
 import { Router } from "express";
 import {
+	getBillingSettings,
 	getConferenceSettings,
+	updateBillingSettings,
 	updateConferenceSettings,
 } from "../controllers/settings.controller";
 import {
@@ -18,6 +20,18 @@ settingsRouter.use(authenticateToken);
 
 settingsRouter.get("/rooms", getConferenceSettings);
 settingsRouter.put("/rooms", updateConferenceSettings);
+
+// Billing & Tax Settings
+settingsRouter.get(
+	"/billing",
+	authorize(["admin", "frontdesk"]),
+	getBillingSettings,
+);
+settingsRouter.put(
+	"/billing",
+	authorize(["admin"]),
+	updateBillingSettings,
+);
 
 // FX-36: Alert Rules & Escalation Matrix settings
 settingsRouter.get("/alert-rules", authorize(["admin", "frontdesk"]), getAllAlertRules);

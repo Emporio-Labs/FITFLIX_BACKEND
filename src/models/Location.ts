@@ -36,7 +36,7 @@ const graceGrantLimitsSchema = new mongoose.Schema(
 const locationSettingsSchema = new mongoose.Schema(
 	{
 		operatingHours: { type: [operatingHoursSchema], default: undefined },
-		taxRatePercent: { type: Number, default: 18, min: 0 },
+		taxRatePercent: { type: Number, default: 5, min: 0 },
 		currency: { type: String, default: "INR" },
 		// How far ahead a member may book.
 		bookingWindowDays: { type: Number, default: 30, min: 1 },
@@ -120,7 +120,7 @@ export const DEFAULT_LOCATION_SETTINGS = {
 		closeTime: "22:00",
 		isClosed: false,
 	})),
-	taxRatePercent: 18,
+	taxRatePercent: 5,
 	currency: "INR",
 	bookingWindowDays: 30,
 	cancellationWindowHours: 24,

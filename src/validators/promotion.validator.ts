@@ -79,11 +79,26 @@ const linkSchema = z
 		}
 	});
 
+/**
+ * Only keys minted by `POST /promotions/image` are accepted, so a promotion
+ * can never be pointed at some other object in the bucket (a medical report,
+ * a private post) and have it signed onto the public carousel.
+ */
+export const PROMOTION_IMAGE_KEY_RE =
+	/^promotions\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/banner\.jpg$/i;
+
 const promotionFields = z.object({
 	// Omitted or null means company-wide.
 	locationId: objectId.nullable().optional(),
 	title: z.string().trim().min(1),
-	imageUrl: z.string().trim().url(),
+	// One of the two is required (see hasImage). Null clears it on an update.
+	imageUrl: z.string().trim().url().nullable().optional(),
+	imageKey: z
+		.string()
+		.trim()
+		.regex(PROMOTION_IMAGE_KEY_RE, "Upload the image through /promotions/image")
+		.nullable()
+		.optional(),
 	subtext: z.string().trim().optional(),
 	tag: z.string().trim().optional(),
 	// Null is meaningful: it matches both audiences. Distinct from absent on
@@ -113,9 +128,23 @@ const endsAfterItStarts = (
 	}
 };
 
-export const createPromotionSchema = promotionFields.superRefine(
-	endsAfterItStarts,
-);
+const hasImage = (
+	p: { imageUrl?: string | null; imageKey?: string | null },
+	ctx: z.RefinementCtx,
+) => {
+	if (!p.imageUrl && !p.imageKey) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			path: ["imageUrl"],
+			message: "An image is required — upload one or give an image URL",
+		});
+	}
+};
+
+export const createPromotionSchema = promotionFields.superRefine((p, ctx) => {
+	hasImage(p, ctx);
+	endsAfterItStarts(p, ctx);
+});
 
 /**
  * A partial update can move one end of the window without the other, so the
