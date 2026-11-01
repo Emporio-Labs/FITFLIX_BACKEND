@@ -9,6 +9,7 @@ const trainerSchema = new mongoose.Schema(
 		passwordHash: { type: String, required: true, select: false },
 		description: { type: String, default: "" },
 		specialities: { type: [String], default: [] },
+		certifications: { type: [String], default: [] },
 		imageUrl: { type: String, default: "" },
 		keySentence: { type: String, default: "" },
 		// Branch this coach works out of. Optional on the schema so existing

@@ -346,6 +346,9 @@ prefix and notes the aliases; every listed path exists at each alias too. See
 | GET | `/trainers/public/:id` | Public | — | `getPublicTrainerById` |
 | POST | `/trainers` | JWT | admin | `createTrainer` |
 | GET | `/trainers` | JWT | admin | `getAllTrainers` |
+| POST | `/trainers/upload-image` | JWT | admin, trainer | `uploadTrainerImage` |
+| GET | `/trainers/me` | JWT | trainer | `getMyTrainerProfile` |
+| PATCH | `/trainers/me` | JWT | trainer | `updateMyTrainerProfile` |
 | GET | `/trainers/:id` | JWT | admin, trainer | `getTrainerById` |
 | PATCH | `/trainers/:id` | JWT | admin, trainer | `updateTrainerById` |
 | DELETE | `/trainers/:id` | JWT | admin | `deleteTrainerById` |
@@ -2025,6 +2028,9 @@ else needs a JWT.
 | GET | `/trainers/public/:id` | Public |
 | POST | `/trainers` | `admin` |
 | GET | `/trainers` | `admin` |
+| POST | `/trainers/upload-image` | `admin`, `trainer` |
+| GET | `/trainers/me` | `trainer` |
+| PATCH | `/trainers/me` | `trainer` |
 | GET | `/trainers/:id` | `admin`, `trainer` |
 | PATCH | `/trainers/:id` | `admin`, `trainer` |
 | DELETE | `/trainers/:id` | `admin` |
@@ -2040,6 +2046,7 @@ else needs a JWT.
 | `phone` | string | yes |
 | `password` | string | yes |
 | `specialities` | string[] | no |
+| `certifications` | string[] | no |
 
 The public endpoints return a reduced projection with no contact details or
 credentials.

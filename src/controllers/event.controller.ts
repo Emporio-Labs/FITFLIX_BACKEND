@@ -17,6 +17,7 @@ import { normalizeRole } from "../middleware/rbac.middleware";
 import type { AuthenticatedUser } from "../types/auth";
 
 const EVENT_ASSET_PREFIX = "events/";
+const ALLOWED_PUBLIC_PREFIXES = ["events/", "trainers/", "promotions/"];
 
 // The app-wide error normaliser keeps only { error, code, details } on 4xx
 // responses, so a scan result's status, attendee and event ride in details too.
@@ -215,16 +216,19 @@ export const streamEventAsset: RequestHandler = async (req, res, next) => {
 		}
 
 		// This route is public and the bucket also holds medical and DNA reports,
-		// so it only ever serves event assets.
-		if (!cleanKey.startsWith(EVENT_ASSET_PREFIX) || cleanKey.split('/').includes('..')) {
-			res.status(404).json({ error: 'Asset not found', code: 'NOT_FOUND' });
+		// so it only ever serves public event and trainer assets.
+		if (
+			!ALLOWED_PUBLIC_PREFIXES.some((prefix) => cleanKey.startsWith(prefix)) ||
+			cleanKey.split("/").includes("..")
+		) {
+			res.status(404).json({ error: "Asset not found", code: "NOT_FOUND" });
 			return;
 		}
 
 		// 1. Check local disk first
-		const eventUploadsDir = path.resolve(process.cwd(), 'uploads', EVENT_ASSET_PREFIX);
-		const localUploadsPath = path.resolve(process.cwd(), 'uploads', cleanKey);
-		if (localUploadsPath.startsWith(eventUploadsDir + path.sep) && existsSync(localUploadsPath)) {
+		const uploadsDir = path.resolve(process.cwd(), "uploads");
+		const localUploadsPath = path.resolve(process.cwd(), "uploads", cleanKey);
+		if (localUploadsPath.startsWith(uploadsDir + path.sep) && existsSync(localUploadsPath)) {
 			const ext = path.extname(cleanKey).toLowerCase();
 			const mimeMap: Record<string, string> = {
 				'.jpg': 'image/jpeg',

@@ -1,4 +1,9 @@
+import { randomUUID } from "node:crypto";
+import { unlink } from "node:fs/promises";
 import type { RequestHandler } from "express";
+import { Jimp } from "jimp";
+import { validateFileSignature } from "../middleware/upload.middleware";
+import { uploadToS3 } from "../utils/s3.service";
 import mongoose from "mongoose";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
@@ -43,6 +48,7 @@ const toPublicTrainerResponse = (trainer: {
 	trainerName: string;
 	description: string;
 	specialities: string[];
+	certifications?: string[];
 	imageUrl?: string;
 	keySentence?: string;
 	isActive?: boolean;
@@ -51,6 +57,7 @@ const toPublicTrainerResponse = (trainer: {
 	name: trainer.trainerName,
 	description: trainer.description,
 	specialities: trainer.specialities,
+	certifications: trainer.certifications || [],
 	imageUrl: trainer.imageUrl || "",
 	keySentence: trainer.keySentence || "",
 	isActive: trainer.isActive !== false,
@@ -110,7 +117,7 @@ export const getAllTrainers: RequestHandler = async (_req, res, next) => {
 export const getPublicTrainers: RequestHandler = async (_req, res, next) => {
 	try {
 		const trainers = await Trainer.find({ isActive: { $ne: false } }).select(
-			"trainerName description specialities imageUrl keySentence isActive",
+			"trainerName description specialities certifications imageUrl keySentence isActive",
 		);
 		res.status(200).json({ trainers: trainers.map(toPublicTrainerResponse) });
 	} catch (error) {
@@ -150,7 +157,7 @@ export const getPublicTrainerById: RequestHandler = async (req, res, next) => {
 
 	try {
 		const trainer = await Trainer.findOne({ _id: id, isActive: { $ne: false } }).select(
-			"trainerName description specialities imageUrl keySentence isActive",
+			"trainerName description specialities certifications imageUrl keySentence isActive",
 		);
 
 		if (!trainer) {
@@ -191,6 +198,10 @@ export const updateTrainerById: RequestHandler = async (req, res, next) => {
 		// change either.
 		const isAdminCaller =
 			Boolean(req.user) && normalizeRole(req.user!.role) === "admin";
+		if (!isAdminCaller && req.user?.id !== id) {
+			res.status(403).json({ message: "Forbidden: Trainers can only edit their own profile", code: "FORBIDDEN" });
+			return;
+		}
 		const branchPatch =
 			locationId !== undefined && isAdminCaller
 				? { locationId: locationId && (await resolveLocationId(locationId)) }
@@ -231,6 +242,155 @@ export const updateTrainerById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 		next(error);
+	}
+};
+
+// ── GET /trainers/me ─────────────────────────────────────────────────────────
+// Authenticated trainer retrieves their own profile with populated location.
+export const getMyTrainerProfile: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester || requester.role !== "trainer") {
+		res.status(403).json({ error: "Forbidden: Only trainers can access their profile", code: "FORBIDDEN" });
+		return;
+	}
+
+	try {
+		const trainer = await Trainer.findById(requester.id).populate("locationId", "name code address timezone");
+		if (!trainer) {
+			res.status(404).json({ error: "Trainer profile not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		res.status(200).json({ trainer });
+	} catch (error) {
+		next(error);
+	}
+};
+
+// ── PATCH /trainers/me ───────────────────────────────────────────────────────
+// Authenticated trainer updates their own profile (name, phone, bio, specialities, photo, password).
+export const updateMyTrainerProfile: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester || requester.role !== "trainer") {
+		res.status(403).json({ error: "Forbidden: Only trainers can update their profile", code: "FORBIDDEN" });
+		return;
+	}
+
+	const parsedBody = updateTrainerBodySchema.safeParse(req.body);
+	if (!parsedBody.success) {
+		res.status(400).json({
+			error: "Invalid trainer update payload",
+			code: "VALIDATION_ERROR",
+			errors: parsedBody.error.issues,
+		});
+		return;
+	}
+
+	const { password, locationId: _loc, canAccessLeads: _cal, ...rest } = parsedBody.data;
+	const hashedPassword = password ? await hashPassword(password) : null;
+
+	try {
+		if (rest.email) {
+			const emailCheck = await isEmailInUseAcrossSystem(rest.email, requester.id);
+			if (emailCheck.exists) {
+				res.status(409).json({ message: `An account with this email already exists as a ${emailCheck.accountType}` });
+				return;
+			}
+		}
+
+		const updatePayload = {
+			...rest,
+			...(hashedPassword ? { passwordHash: hashedPassword } : {}),
+		};
+
+		const updatedTrainer = await Trainer.findByIdAndUpdate(requester.id, updatePayload, {
+			returnDocument: "after",
+			runValidators: true,
+		}).populate("locationId", "name code address timezone");
+
+		if (!updatedTrainer) {
+			res.status(404).json({ error: "Trainer not found", code: "NOT_FOUND" });
+			return;
+		}
+
+		res.status(200).json({ message: "Profile updated successfully", trainer: updatedTrainer });
+	} catch (error) {
+		next(error);
+	}
+};
+
+// ── POST /trainers/upload-image ──────────────────────────────────────────────
+// Upload and square-crop a trainer avatar / profile image to S3 or local storage.
+export const uploadTrainerImage: RequestHandler = async (req, res, next) => {
+	const file = req.file;
+	if (!file) {
+		res.status(400).json({ error: "No image file provided", code: "VALIDATION_ERROR" });
+		return;
+	}
+
+	try {
+		const mime = file.mimetype.toLowerCase();
+		const allowedMimes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+		if (!allowedMimes.includes(mime)) {
+			res.status(415).json({
+				error: "Only JPG, PNG or WebP images are allowed",
+				code: "UNSUPPORTED_MEDIA_TYPE",
+			});
+			return;
+		}
+
+		if (file.size > 30 * 1024 * 1024) {
+			res.status(413).json({
+				error: "Image must be 30 MB or smaller",
+				code: "PAYLOAD_TOO_LARGE",
+			});
+			return;
+		}
+
+		const expected = mime === "image/jpg" ? "image/jpeg" : mime;
+		const signatureOk = await validateFileSignature(file.path, expected);
+		if (!signatureOk) {
+			res.status(400).json({
+				error: "File content does not match an allowed image type",
+				code: "INVALID_IMAGE",
+			});
+			return;
+		}
+
+		let image: Awaited<ReturnType<typeof Jimp.read>>;
+		try {
+			image = await Jimp.read(file.path);
+		} catch {
+			res.status(400).json({ error: "Image could not be decoded", code: "INVALID_IMAGE" });
+			return;
+		}
+
+		// Centre-crop to square for profile picture
+		const edge = Math.min(image.width, image.height);
+		const square = image.crop({
+			x: Math.floor((image.width - edge) / 2),
+			y: Math.floor((image.height - edge) / 2),
+			w: edge,
+			h: edge,
+		});
+
+		if (square.width > 1200) {
+			square.resize({ w: 1200, h: 1200 });
+		}
+
+		const buffer = await square.getBuffer("image/jpeg", { quality: 92 });
+		const imageKey = `trainers/avatars/${randomUUID()}.jpg`;
+		const uploadResult = await uploadToS3(imageKey, buffer, "image/jpeg");
+
+		res.status(201).json({
+			message: "Trainer image uploaded successfully",
+			imageUrl: uploadResult.url,
+			s3Key: uploadResult.s3Key,
+		});
+	} catch (error) {
+		next(error);
+	} finally {
+		if (file) await unlink(file.path).catch(() => {});
 	}
 };
 
