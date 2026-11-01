@@ -52,3 +52,31 @@ export const authenticateToken: RequestHandler = async (req, res, next) => {
 	req.user = user;
 	next();
 };
+
+export const optionalAuthenticateToken: RequestHandler = async (req, res, next) => {
+	const config = getJwtConfig();
+	if (!config) {
+		return next();
+	}
+
+	const token = getBearerToken(req.header("authorization"));
+	if (!token) {
+		return next();
+	}
+
+	try {
+		const blacklisted = await TokenBlacklist.findOne({ token }).lean();
+		if (blacklisted) {
+			return next();
+		}
+
+		const user = verifyAuthToken(token, config);
+		if (user) {
+			req.user = user;
+		}
+	} catch {
+		// Optional auth ignores failure
+	}
+
+	next();
+};

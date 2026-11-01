@@ -48,6 +48,7 @@ import workoutRouter from "./routes/workout.routes";
 import workoutPlanRouter from "./routes/workout-plan.routes";
 import zegoRouter from "./routes/zego.routes";
 import settingsRouter from "./routes/settings.routes";
+import eventRouter from "./routes/event.routes";
 import recordingRouter, { adminRecordingRouter } from "./routes/recording.routes";
 import { getApp } from "./services/fcm.service";
 import {
@@ -321,6 +322,8 @@ app.use("/pt", apiRateLimit, personalTrainingRouter);
 app.use("/api/v1/billing", apiRateLimit, billingRouter);
 app.use("/billing", apiRateLimit, billingRouter);
 app.use("/notifications", notificationRouter);
+app.use("/events", apiRateLimit, eventRouter);
+app.use("/api/v1/events", apiRateLimit, eventRouter);
 // Admin moderation and the unauthenticated public surface must both be mounted
 // BEFORE the member router — that one authenticates every request, so anything
 // falling through to it answers 401 instead of reaching its own handler.
