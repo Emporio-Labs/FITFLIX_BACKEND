@@ -5,7 +5,7 @@ import { CommunityRole, PostStatus, PostVisibility } from "../models/Enums";
 import Post from "../models/Post";
 import Trainer from "../models/Trainer";
 import { decodeCursor, encodeCursor } from "../services/community/cursor";
-import { getFeed, getPostForViewer } from "../services/community/post.service";
+import { getFeed, getPostForViewer, getPostsByAuthor } from "../services/community/post.service";
 
 const NOT_FOUND = { error: "Not found", code: "NOT_FOUND" };
 
@@ -192,7 +192,7 @@ export const publicPostSearchHandler: RequestHandler = async (req, res, next) =>
 export const publicTrainerListHandler: RequestHandler = async (_req, res, next) => {
 	try {
 		const trainers = await Trainer.find({})
-			.select("trainerName description specialities createdAt")
+			.select("trainerName description specialities createdAt imageUrl certifications keySentence")
 			.sort({ createdAt: -1 })
 			.limit(100)
 			.lean();
@@ -202,6 +202,9 @@ export const publicTrainerListHandler: RequestHandler = async (_req, res, next) 
 				name: t.trainerName,
 				description: t.description ?? "",
 				specialities: t.specialities ?? [],
+				imageUrl: t.imageUrl ?? null,
+				certifications: t.certifications ?? [],
+				keySentence: t.keySentence ?? "",
 			})),
 			membershipPrompt,
 		});
@@ -218,7 +221,7 @@ export const publicTrainerDetailHandler: RequestHandler = async (req, res, next)
 			return;
 		}
 		const t = await Trainer.findById(id)
-			.select("trainerName description specialities createdAt")
+			.select("trainerName description specialities createdAt imageUrl certifications keySentence")
 			.lean();
 		if (!t) {
 			res.status(404).json(NOT_FOUND);
@@ -230,6 +233,9 @@ export const publicTrainerDetailHandler: RequestHandler = async (req, res, next)
 				name: t.trainerName,
 				description: t.description ?? "",
 				specialities: t.specialities ?? [],
+				imageUrl: t.imageUrl ?? null,
+				certifications: t.certifications ?? [],
+				keySentence: t.keySentence ?? "",
 			},
 			membershipPrompt,
 		});
@@ -245,32 +251,19 @@ export const publicTrainerPostsHandler: RequestHandler = async (req, res, next) 
 			res.status(404).json(NOT_FOUND);
 			return;
 		}
+		const cursor =
+			typeof req.query.cursor === "string" ? decodeCursor(req.query.cursor) : null;
 		const limit = parseLimit(req.query.limit);
-		const found = await Post.find({
-			authorId: id,
-			authorRole: CommunityRole.Trainer,
-			deletedAt: null,
-			status: PostStatus.Published,
+		const { posts, nextCursor } = await getPostsByAuthor(id, true, {
+			cursor,
+			limit,
 			visibility: PostVisibility.Public,
-			...(cursorFilter(req.query.cursor) ?? {}),
-		})
-			.sort({ createdAt: -1, _id: -1 })
-			.limit(limit + 1)
-			.lean();
-
-		const hasMore = found.length > limit;
-		const docs = hasMore ? found.slice(0, limit) : found;
+			authorRole: CommunityRole.Trainer,
+		});
 
 		res.status(200).json({
-			posts: docs.map((d) => ({
-				id: String(d._id),
-				content: d.content,
-				createdAt: d.createdAt,
-				likeCount: d.likeCount ?? 0,
-				commentCount: d.commentCount ?? 0,
-				shareCount: d.shareCount ?? 0,
-			})),
-			nextCursor: nextCursorFor(docs, hasMore),
+			posts,
+			nextCursor,
 			membershipPrompt,
 		});
 	} catch (error) {

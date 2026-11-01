@@ -487,7 +487,12 @@ export async function getFeed(
 export async function getPostsByAuthor(
 	authorId: string,
 	viewerIsMember: boolean,
-	params: { cursor?: FeedCursor | null; limit?: number },
+	params: {
+		cursor?: FeedCursor | null;
+		limit?: number;
+		visibility?: string;
+		authorRole?: string;
+	},
 	viewerId?: string,
 ) {
 	const pageSize = params.limit ?? communityConfig.feed.defaultPageSize;
@@ -497,6 +502,12 @@ export async function getPostsByAuthor(
 		deletedAt: null,
 		status: PostStatus.Published,
 	};
+	if (params.visibility) {
+		filter.visibility = params.visibility;
+	}
+	if (params.authorRole) {
+		filter.authorRole = params.authorRole;
+	}
 	if (params.cursor) {
 		const at = new Date(params.cursor.createdAt);
 		const id = new mongoose.Types.ObjectId(params.cursor.id);

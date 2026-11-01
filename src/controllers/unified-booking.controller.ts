@@ -34,7 +34,7 @@ import {
 export const getTrainers: RequestHandler = async (_req, res, next) => {
 	try {
 		const trainers = await Trainer.find({ isActive: { $ne: false } }).select(
-			"trainerName description specialities imageUrl keySentence isActive email phone",
+			"trainerName description specialities certifications imageUrl keySentence isActive email phone",
 		);
 
 		const formatted = trainers.map((t) => ({
@@ -42,6 +42,7 @@ export const getTrainers: RequestHandler = async (_req, res, next) => {
 			name: t.trainerName,
 			description: t.description || "",
 			specialities: t.specialities || [],
+			certifications: t.certifications || [],
 			imageUrl: t.imageUrl || "",
 			keySentence: t.keySentence || "",
 			isActive: t.isActive !== false,
