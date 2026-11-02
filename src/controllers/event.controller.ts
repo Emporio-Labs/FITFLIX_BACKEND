@@ -978,6 +978,207 @@ export const getDigitalPassByTicketId: RequestHandler = async (req, res, next) =
 			token: registration.verificationToken,
 		});
 
+		// Hydrate custom HTML pass template if active
+		let hydratedHtml: string | null = null;
+		if (event.passTemplateMode === "custom_html" && event.customPassTemplateHtml) {
+			let raw = event.customPassTemplateHtml;
+			const eventDateFormatted = new Date(event.startDate).toLocaleDateString("en-IN", {
+				weekday: "long",
+				day: "numeric",
+				month: "short",
+				year: "numeric",
+			});
+			const venueName = event.venue?.name || "";
+			const venueAddress = event.venue?.address || "";
+			const venueCity = event.venue?.city || "";
+			const venueMapUrl =
+				event.venue?.googleMapsUrl ||
+				`https://maps.google.com/?q=${encodeURIComponent(`${venueName} ${venueCity}`.trim())}`;
+			const attendee = registration.attendeeName;
+			const email = registration.attendeeEmail;
+			const phone = registration.attendeePhone;
+			const ticketId = registration.ticketId;
+			const tierName = registration.tierName || tier?.badgeLabel || "GENERAL PASS";
+			const eventTitle = event.title;
+			const eventTime = event.reportingTime || "06:00 AM IST";
+
+			const tagReplacements: Record<string, string> = {
+				"{{attendee_name}}": attendee,
+				"{{attendee_email}}": email,
+				"{{attendee_phone}}": phone,
+				"{{ticket_number}}": ticketId,
+				"{{ticket_id}}": ticketId,
+				"{{ticket_tier}}": tierName,
+				"{{ticket_type}}": tierName,
+				"{{event_title}}": eventTitle,
+				"{{event_name}}": eventTitle,
+				"{{event_date}}": eventDateFormatted,
+				"{{event_time}}": eventTime,
+				"{{reporting_time}}": eventTime,
+				"{{venue_name}}": venueName,
+				"{{event_venue}}": venueName,
+				"{{venue_address}}": venueAddress,
+				"{{venue_city}}": venueCity,
+				"{{venue_map_url}}": venueMapUrl,
+				"{{venue_map_link}}": venueMapUrl,
+				"{{google_maps_url}}": venueMapUrl,
+				"{{qr_payload}}": qrPayload,
+			};
+
+			for (const [tag, val] of Object.entries(tagReplacements)) {
+				raw = raw.split(tag).join(val);
+				raw = raw.split(tag.toUpperCase()).join(val);
+			}
+
+			if (!raw.includes('name="viewport"')) {
+				const viewportMeta = '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">';
+				if (raw.includes("<head>")) {
+					raw = raw.replace("<head>", `<head>${viewportMeta}`);
+				} else {
+					raw = viewportMeta + raw;
+				}
+			}
+
+			const bridgeScript = `
+<script id="fitflix-hydration-bridge">
+(function() {
+  const data = ${JSON.stringify({
+		attendeeName: attendee,
+		attendeeEmail: email,
+		attendeePhone: phone,
+		ticketNumber: ticketId,
+		ticketTier: tierName,
+		eventTitle,
+		eventDate: eventDateFormatted,
+		eventTime,
+		venueName,
+		venueAddress,
+		venueCity,
+		venueMapUrl,
+		qrPayload,
+	})};
+
+  window.__FITFLIX_PASS_DATA__ = data;
+
+  function hydrateDom() {
+    var update = function(selectors, text) {
+      if (!text) return;
+      document.querySelectorAll(selectors).forEach(function(el) {
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') el.value = text;
+        else el.textContent = text;
+      });
+    };
+
+    update('[data-field="attendee"], #attendee-name, .attendee-name, #attendee, .attendee', data.attendeeName);
+    update('[data-field="ticket"], #ticket-id, .ticket-id, #ticket-number, .ticket-number', data.ticketNumber);
+    update('[data-field="title"], [data-field="event-title"], #event-title, .event-title', data.eventTitle);
+    update('[data-field="venue"], #venue, .venue, #venue-name, .venue-name', data.venueName);
+    update('[data-field="venue-address"], #venue-address, .venue-address', data.venueAddress);
+    update('[data-field="tier"], #ticket-tier, .ticket-tier, #ticket-type, .ticket-type', data.ticketTier);
+    update('[data-field="date"], #event-date, .event-date', data.eventDate);
+    update('[data-field="time"], #event-time, .event-time', data.eventTime);
+
+    if (data.venueMapUrl) {
+      document.querySelectorAll('a[href*="maps"], a[data-field="venue-map"], a.map-link').forEach(function(a) {
+        a.href = data.venueMapUrl;
+      });
+    }
+
+    try {
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      var nodesToReplace = [];
+      while (walker.nextNode()) {
+        var node = walker.currentNode;
+        var text = (node.nodeValue || '').trim();
+        if (!text) continue;
+
+        if (text === 'Alex Developer' || text === 'John Doe' || text === 'Jane Doe' || text.toLowerCase() === 'attendee name') {
+          nodesToReplace.push({ node: node, val: data.attendeeName });
+        } else if (text === 'Tech Park' || text === 'Convention Center' || text.toLowerCase() === 'venue name') {
+          nodesToReplace.push({ node: node, val: data.venueName });
+        } else if (text === "Build with AI Summit '26" || text === "Developer Summit" || text.toLowerCase() === 'event name') {
+          nodesToReplace.push({ node: node, val: data.eventTitle });
+        } else if (text === 'General Admission' || text === 'VIP Pass') {
+          nodesToReplace.push({ node: node, val: data.ticketTier });
+        } else if (/^#?GDSC-\\d+/i.test(text) || text === '#TICKET-1234') {
+          nodesToReplace.push({ node: node, val: data.ticketNumber });
+        } else if (text === 'Nov 24, 2026' || text === 'October 24, 2024') {
+          nodesToReplace.push({ node: node, val: data.eventDate });
+        } else if (text === '10:00 AM' || text === '09:00 AM') {
+          nodesToReplace.push({ node: node, val: data.eventTime });
+        }
+      }
+      nodesToReplace.forEach(function(item) {
+        if (item.val) item.node.nodeValue = item.val;
+      });
+    } catch(e) {}
+
+    document.querySelectorAll('*').forEach(function(el) {
+      var text = (el.textContent || '').trim().toUpperCase();
+      if (text === 'ATTENDEE' && el.nextElementSibling) {
+        el.nextElementSibling.textContent = data.attendeeName;
+      }
+      if (text === 'VENUE' && el.nextElementSibling) {
+        el.nextElementSibling.textContent = data.venueName;
+        if (data.venueMapUrl && !el.nextElementSibling.querySelector('a')) {
+          el.nextElementSibling.style.cursor = 'pointer';
+          el.nextElementSibling.title = 'Open Google Maps';
+          el.nextElementSibling.onclick = function() { window.open(data.venueMapUrl, '_blank'); };
+        }
+      }
+      if (text === 'TICKET TYPE' && el.nextElementSibling) {
+        el.nextElementSibling.textContent = data.ticketTier;
+      }
+      if (text === 'DATE' && el.nextElementSibling) {
+        el.nextElementSibling.textContent = data.eventDate;
+      }
+      if (text === 'TIME' && el.nextElementSibling) {
+        el.nextElementSibling.textContent = data.eventTime;
+      }
+    });
+
+    if (typeof window.renderPass === 'function') {
+      try { window.renderPass(data); } catch(e) {}
+    }
+
+    // Auto-fit pass layout if card exceeds viewport width
+    try {
+      var target = document.getElementById('pass-card') || 
+                   document.querySelector('.ticket-card') || 
+                   document.querySelector('.ticket') || 
+                   document.querySelector('.pass-container') ||
+                   document.querySelector('.card') || 
+                   (document.body ? document.body.firstElementChild : null);
+      if (target) {
+        var vw = window.innerWidth || document.documentElement.clientWidth;
+        var tw = target.scrollWidth || target.offsetWidth;
+        if (tw > vw && vw > 0 && tw > 0) {
+          var scale = (vw - 8) / tw;
+          target.style.transform = 'scale(' + scale + ')';
+          target.style.transformOrigin = 'top center';
+          target.style.margin = '0 auto';
+        }
+      }
+    } catch(e) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', hydrateDom);
+  } else {
+    hydrateDom();
+  }
+})();
+</script>
+`;
+
+			if (raw.includes("</body>")) {
+				raw = raw.replace("</body>", `${bridgeScript}</body>`);
+			} else {
+				raw += bridgeScript;
+			}
+			hydratedHtml = raw;
+		}
+
 		res.status(200).json({
 			pass: {
 				id: registration._id,
@@ -997,6 +1198,8 @@ export const getDigitalPassByTicketId: RequestHandler = async (req, res, next) =
 				amountPaid: registration.amountPaid,
 				verificationToken: registration.verificationToken,
 				qrPayload,
+				hydratedHtml,
+				passTemplateMode: event.passTemplateMode || "default",
 				createdAt: registration.createdAt,
 			},
 			event: {
@@ -1012,6 +1215,8 @@ export const getDigitalPassByTicketId: RequestHandler = async (req, res, next) =
 				coverImageUrl: event.coverImageUrl,
 				collaborators: event.collaborators,
 				sponsors: event.sponsors,
+				customPassTemplateHtml: event.customPassTemplateHtml,
+				passTemplateMode: event.passTemplateMode || "default",
 			},
 		});
 	} catch (error) {

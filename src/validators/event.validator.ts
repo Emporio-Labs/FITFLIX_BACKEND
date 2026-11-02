@@ -123,6 +123,8 @@ export const eventFields = {
 		.optional(),
 	collaborators: z.array(collaboratorSchema).optional(),
 	sponsors: z.array(sponsorSchema).optional(),
+	customPassTemplateHtml: optionalString,
+	passTemplateMode: z.enum(["default", "custom_html"]).default("default").optional(),
 };
 
 export const createEventSchema = z

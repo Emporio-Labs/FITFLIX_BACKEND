@@ -119,6 +119,14 @@ const fitflixEventSchema = new mongoose.Schema(
 		// Tiers
 		ticketTiers: { type: [ticketTierSchema], default: [] },
 
+		// Custom Pass Template (HTML & Mode)
+		customPassTemplateHtml: { type: String, default: null },
+		passTemplateMode: {
+			type: String,
+			enum: ["default", "custom_html"],
+			default: "default",
+		},
+
 		createdByAdminId: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "Admin",
