@@ -225,6 +225,10 @@ export const streamEventAsset: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
+		// The global same-site CORP header would block these images on the
+		// front desk and admin panels, which are served from other sites.
+		res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+
 		// 1. Check local disk first
 		const uploadsDir = path.resolve(process.cwd(), "uploads");
 		const localUploadsPath = path.resolve(process.cwd(), "uploads", cleanKey);
