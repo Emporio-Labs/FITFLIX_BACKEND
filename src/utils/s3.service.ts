@@ -69,14 +69,18 @@ const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
  * Resolves the public URL for an asset.
  * Routes through the authenticated /events/assets/* streaming proxy
  * to ensure 100% public access even when the underlying S3 bucket enforces private access.
+ * The result is persisted, so there is no localhost fallback: a missing BACKEND_URL
+ * throws instead of storing a link that only works on the server itself.
  */
 export const getPublicAssetUrl = (key: string): string => {
 	const cleanKey = key.replace(/^\/+/, "");
 	if (process.env.AWS_S3_PUBLIC_BASE_URL) {
 		return `${process.env.AWS_S3_PUBLIC_BASE_URL.replace(/\/+$/, "")}/${cleanKey}`;
 	}
-	const backendBaseUrl = (process.env.BACKEND_URL || "http://localhost:3000").replace(/\/+$/, "");
-	return `${backendBaseUrl}/events/assets/${cleanKey}`;
+	if (!process.env.BACKEND_URL) {
+		throw new Error("BACKEND_URL (or AWS_S3_PUBLIC_BASE_URL) must be set to build public asset URLs");
+	}
+	return `${process.env.BACKEND_URL.replace(/\/+$/, "")}/events/assets/${cleanKey}`;
 };
 
 export const getS3ObjectStream = async (
@@ -107,6 +111,8 @@ export const uploadToS3 = async (
 	buffer: Buffer,
 	contentType: string,
 ): Promise<{ s3Key: string; url: string }> => {
+	// Resolve first so a missing BACKEND_URL fails before anything is uploaded.
+	const url = getPublicAssetUrl(key);
 	if (s3Client) {
 		try {
 			await s3Client.send(
@@ -134,7 +140,7 @@ export const uploadToS3 = async (
 
 	return {
 		s3Key: key,
-		url: getPublicAssetUrl(key),
+		url,
 	};
 };
 
