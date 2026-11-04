@@ -1,3 +1,4 @@
+import { branchFilter } from "../utils/branch-scope";
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Booking from "../models/Bookings";
@@ -278,7 +279,7 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 export const getAllBookings: RequestHandler = async (req, res, next) => {
 	try {
 		const { userId: userIdRaw, status, search, sessionId, classId } = req.query;
-		const filter: Record<string, unknown> = {};
+		const filter: Record<string, unknown> = await branchFilter(req);
 
 		if (typeof userIdRaw === "string" && userIdRaw.length > 0) {
 			const userId = getIdParam(userIdRaw);

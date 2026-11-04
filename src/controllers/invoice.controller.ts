@@ -23,6 +23,7 @@ import {
 	mapLocationError,
 	resolveLocationId,
 } from "../utils/location.resolver";
+import { resolveBranchScope } from "../utils/branch-scope";
 import {
 	MembershipOverlapError,
 	overlapErrorBody,
@@ -199,7 +200,10 @@ export const listInvoicesHandler: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const invoices = await listInvoices(parsed.data);
+		const invoices = await listInvoices(
+			parsed.data,
+			await resolveBranchScope(req),
+		);
 		res.status(200).json({ invoices });
 	} catch (error) {
 		next(error);

@@ -23,6 +23,7 @@ import dashboardRouter from "./routes/dashboard.routes";
 import deleteAccountRouter from "./routes/delete-account.routes";
 import exerciseRouter from "./routes/exercise.routes";
 import operationalAlertRouter from "./routes/operational-alert.routes";
+import { LocationError, mapLocationError } from "./utils/location.resolver";
 import gymVisitRouter from "./routes/gymVisit.routes";
 import internalRouter from "./routes/internal.routes";
 import invoiceRouter from "./routes/invoice.routes";
@@ -152,7 +153,7 @@ app.use((req, res, next) => {
 	);
 	res.setHeader(
 		"Access-Control-Allow-Headers",
-		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token, Idempotency-Key, ngrok-skip-browser-warning",
+		"Content-Type, Authorization, X-Captcha-Token, X-Webhook-Secret, X-Step-Up-Token, Idempotency-Key, X-Location-Id, ngrok-skip-browser-warning",
 	);
 	res.setHeader(
 		"Access-Control-Expose-Headers",
@@ -373,6 +374,13 @@ app.use(
 		_next: express.NextFunction,
 	) => {
 		if (res.headersSent) {
+			return;
+		}
+
+		// A bad branch id from resolveBranchScope is the caller's mistake, not a 500.
+		if (error instanceof LocationError) {
+			const mapped = mapLocationError(error);
+			res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
 			return;
 		}
 

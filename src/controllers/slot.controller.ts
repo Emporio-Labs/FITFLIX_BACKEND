@@ -11,6 +11,7 @@ import {
 	mapLocationError,
 	resolveLocationId,
 } from "../utils/location.resolver";
+import { branchFilter } from "../utils/branch-scope";
 
 /**
  * Expert types that no longer draw from Slot capacity. Trainers were never in
@@ -338,9 +339,9 @@ export const getAvailableSlots: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllSlots: RequestHandler = async (_req, res, next) => {
+export const getAllSlots: RequestHandler = async (req, res, next) => {
 	try {
-		const slots = await Slot.find();
+		const slots = await Slot.find(await branchFilter(req));
 		res.status(200).json({ slots });
 	} catch (error) {
 		next(error);

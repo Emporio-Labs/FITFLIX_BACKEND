@@ -1,3 +1,4 @@
+import { branchFilter } from "../utils/branch-scope";
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import { normalizeRole } from "../middleware/rbac.middleware";
@@ -9,8 +10,10 @@ import Membership from "../models/Membership";
 import User from "../models/User";
 import { getBranchBoardData } from "../services/branch-board.service";
 
-export const getDashboardMetrics: RequestHandler = async (_req, res, next) => {
+export const getDashboardMetrics: RequestHandler = async (req, res, next) => {
 	try {
+		const scope = await branchFilter(req);
+		const memberScope = await branchFilter(req, "homeLocationId");
 		const thirtyDaysAgo = new Date();
 		thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -23,13 +26,16 @@ export const getDashboardMetrics: RequestHandler = async (_req, res, next) => {
 			recentLeadCount,
 		] = await Promise.all([
 			Lead.aggregate([
+				{ $match: scope },
 				{ $group: { _id: "$status", count: { $sum: 1 } } },
 				{ $sort: { count: -1 } },
 			]),
 			Invoice.aggregate([
+				{ $match: scope },
 				{ $group: { _id: "$paymentStatus", count: { $sum: 1 } } },
 			]),
 			Invoice.aggregate([
+				{ $match: scope },
 				{
 					$group: {
 						_id: "$paymentStatus",
@@ -37,9 +43,9 @@ export const getDashboardMetrics: RequestHandler = async (_req, res, next) => {
 					},
 				},
 			]),
-			Membership.countDocuments({ status: MembershipStatus.Active }),
-			User.countDocuments(),
-			Lead.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
+			Membership.countDocuments({ status: MembershipStatus.Active, ...scope }),
+			User.countDocuments(memberScope),
+			Lead.countDocuments({ createdAt: { $gte: thirtyDaysAgo }, ...scope }),
 		]);
 
 		res.status(200).json({

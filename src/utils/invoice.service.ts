@@ -285,8 +285,15 @@ export const createInvoice = async (
 	}
 };
 
-export const listInvoices = async (query: ListInvoicesQuery) => {
+export const listInvoices = async (
+	query: ListInvoicesQuery,
+	locationId?: string | null,
+) => {
 	const filter: Record<string, unknown> = {};
+
+	if (locationId && mongoose.Types.ObjectId.isValid(locationId)) {
+		filter.locationId = new mongoose.Types.ObjectId(locationId);
+	}
 
 	if (query.paymentStatus) {
 		filter.paymentStatus = query.paymentStatus;

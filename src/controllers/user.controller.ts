@@ -45,6 +45,7 @@ import {
 	mapLocationError,
 	resolveLocationId,
 } from "../utils/location.resolver";
+import { branchFilter } from "../utils/branch-scope";
 import { hashPassword, verifyPassword } from "../utils/password";
 import { isEmailInUseAcrossSystem } from "../utils/email-uniqueness";
 import { generateSignedUrl } from "../utils/s3.service";
@@ -249,12 +250,11 @@ export const getAllUsers: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const { search, status, page, limit, sort, order, locationId } =
-			parsed.data;
+		const { search, status, page, limit, sort, order } = parsed.data;
 
 		// Members belong to a branch through `homeLocationId`.
-		const filter: Record<string, unknown> = buildLocationFilter(
-			locationId,
+		const filter: Record<string, unknown> = await branchFilter(
+			req,
 			"homeLocationId",
 		);
 		if (search) {

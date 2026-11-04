@@ -17,6 +17,7 @@ import {
 	mapLocationError,
 	resolveLocationId,
 } from "../utils/location.resolver";
+import { resolveBranchScope } from "../utils/branch-scope";
 import {
 	isBroadcastClass,
 	isClassVisibleToMember,
@@ -428,12 +429,18 @@ export const createClass: RequestHandler = async (req, res, next) => {
 };
 
 export const getAllClassesForAdmin: RequestHandler = async (
-	_req,
+	req,
 	res,
 	next,
 ) => {
 	try {
-		const classes = await Class.find().sort({ createdAt: -1 });
+		// A branch's classes plus the company-wide ones (no branch), which run
+		// everywhere.
+		const branch = await resolveBranchScope(req);
+		const filter = branch
+			? { locationId: { $in: [new mongoose.Types.ObjectId(branch), null] } }
+			: {};
+		const classes = await Class.find(filter).sort({ createdAt: -1 });
 		res.status(200).json({ classes });
 	} catch (error) {
 		next(error);

@@ -19,6 +19,7 @@ import {
 	mapLocationError,
 	resolveLocationId,
 } from "../utils/location.resolver";
+import { branchFilter } from "../utils/branch-scope";
 import {
 	assertNoMembershipOverlap,
 	MembershipOverlapError,
@@ -194,14 +195,8 @@ export const getAllMemberships: RequestHandler = async (req, res, next) => {
 			new Date(),
 			filter.user ? { user: new mongoose.Types.ObjectId(String(filter.user)) } : {},
 		);
-		// ?locationId= narrows to memberships issued at that branch.
-		const locationIdRaw = req.query.locationId;
-		Object.assign(
-			filter,
-			buildLocationFilter(
-				typeof locationIdRaw === "string" && locationIdRaw ? locationIdRaw : undefined,
-			),
-		);
+		// Narrows to memberships issued at the selected (or the caller's own) branch.
+		Object.assign(filter, await branchFilter(req));
 		const memberships = await Membership.find(filter);
 		res.status(200).json({ memberships });
 	} catch (error) {

@@ -18,6 +18,7 @@ import {
 	mapLocationError,
 	resolveLocationId,
 } from "../utils/location.resolver";
+import { branchFilter } from "../utils/branch-scope";
 
 const sendLocationError = (
 	res: Parameters<RequestHandler>[1],
@@ -105,9 +106,9 @@ export const createTrainer: RequestHandler = async (req, res, next) => {
 	}
 };
 
-export const getAllTrainers: RequestHandler = async (_req, res, next) => {
+export const getAllTrainers: RequestHandler = async (req, res, next) => {
 	try {
-		const trainers = await Trainer.find();
+		const trainers = await Trainer.find(await branchFilter(req));
 		res.status(200).json({ trainers });
 	} catch (error) {
 		next(error);

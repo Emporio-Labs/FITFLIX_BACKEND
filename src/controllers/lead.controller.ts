@@ -21,6 +21,7 @@ import {
 	mapLocationError,
 	resolveLocationId,
 } from "../utils/location.resolver";
+import { branchFilter } from "../utils/branch-scope";
 
 const sendLocationError = (
 	res: Parameters<RequestHandler>[1],
@@ -438,10 +439,8 @@ export const createPublicLead: RequestHandler = async (req, res, next) => {
 
 export const getAllLeads: RequestHandler = async (req, res, next) => {
 	try {
-		const { source, status, tags, locationId } = req.query;
-		const filter: Record<string, unknown> = buildLocationFilter(
-			typeof locationId === "string" ? locationId : undefined,
-		);
+		const { source, status, tags } = req.query;
+		const filter: Record<string, unknown> = await branchFilter(req);
 
 		if (typeof source === "string" && source) {
 			filter.source = source;

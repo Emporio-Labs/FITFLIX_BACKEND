@@ -8,6 +8,7 @@ import {
 	mapLocationError,
 	resolveLocationId,
 } from "../utils/location.resolver";
+import { branchFilter } from "../utils/branch-scope";
 import { getJwtConfig, signGymQrToken, verifyGymQrToken } from "../utils/jwt";
 import { computeStreaks, toISTDateString } from "../utils/streaks";
 
@@ -305,7 +306,7 @@ export const checkOutVisit: RequestHandler = async (req, res, next) => {
 /** Admin — list visits with filters. */
 export const listVisits: RequestHandler = async (req, res, next) => {
 	try {
-		const { userId, visitType, from, to, status, locationId } = req.query;
+		const { userId, visitType, from, to, status } = req.query;
 		const limit = parseLimit(req.query.limit);
 		const offset = Math.max(0, Number(req.query.offset) || 0);
 
@@ -315,9 +316,7 @@ export const listVisits: RequestHandler = async (req, res, next) => {
 		}
 		// Branch scoping. Omitted means "all branches", which is what a
 		// multi-club report wants; the admin UI passes the selected branch.
-		if (isValidObjectId(locationId)) {
-			filter.locationId = new mongoose.Types.ObjectId(locationId as string);
-		}
+		Object.assign(filter, await branchFilter(req));
 		if (typeof visitType === "string" && VISIT_TYPES.includes(visitType as VisitType)) {
 			filter.visitType = visitType;
 		}
@@ -366,13 +365,12 @@ export const listVisits: RequestHandler = async (req, res, next) => {
 /** Members currently inside the gym (open visits), most-recent first. */
 export const listCurrentlyIn: RequestHandler = async (req, res, next) => {
 	try {
-		const { locationId } = req.query;
-		const filter: Record<string, unknown> = { checkOutAt: null };
 		// "Who is in the building" is inherently a per-branch question once
 		// there is more than one building.
-		if (isValidObjectId(locationId)) {
-			filter.locationId = new mongoose.Types.ObjectId(locationId as string);
-		}
+		const filter: Record<string, unknown> = {
+			checkOutAt: null,
+			...(await branchFilter(req)),
+		};
 
 		const items = await GymVisit.find(filter).sort({ checkInAt: -1 }).lean();
 
