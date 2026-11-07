@@ -4,6 +4,7 @@ import { z } from "zod";
 import { PresaleApplication, PresaleCallRequest, PresaleCallSlot, PresaleSettings } from "../models/PresaleFounders";
 import { applicationSchema, defaultSettings, memberCapacity, type CampaignSettings, type LeadRoute } from "../validators/presale-founders.validator";
 import { publicFounderSlot, canRequestCallWindow } from "../utils/presale-founders.booking-policy";
+import { notifyFounderSubmission } from "../utils/presale-founders.notify";
 import { asApplicationResult, buildStructuredSummary, decryptPrivateToken, encryptPrivateToken, hashApplicationPayload, hashContact, hashPrivateToken, qualifyApplication, newPrivateToken } from "../utils/presale-founders.utils";
 
 const noStore = (_req: any, res: any, next: any) => { res.setHeader("Cache-Control", "no-store"); next(); };
@@ -45,6 +46,7 @@ export const submitFounderApplication: RequestHandler = async (req, res, next) =
     const qualification = qualifyApplication(input.answers);
     const doc = { _id: randomUUID(), requestId: input.requestId, payloadHash, tokenHash: hashPrivateToken(token), encryptedToken: encryptPrivateToken(token), answers: input.answers, contact: input.contact, consents: { adultConsent: input.contact.adultConsent, serviceConsent: input.contact.serviceConsent, marketingConsent: input.contact.marketingConsent }, attribution: input.attribution, route: qualification.route, readinessRoute: qualification.route, fitScore: qualification.fitScore, brief: buildStructuredSummary(input.answers), summaryMode: "structured", status: "new", bookingStatus: qualification.route === "founder" ? "available" : "not_applicable", createdAt: new Date(), updatedAt: new Date() };
     try { await PresaleApplication.create(doc as any); } catch (error: any) { if (error?.code !== 11000) throw error; const raced = await PresaleApplication.findOne({ requestId: input.requestId }).lean(); if (!raced || raced.payloadHash !== payloadHash) { conflict(res, "requestId is already bound to a different payload"); return; } res.status(200).json(resultFor(raced)); return; }
+    notifyFounderSubmission({ applicationId: doc._id, input, route: doc.route, fitScore: doc.fitScore });
     res.status(201).json(asApplicationResult({ id: doc._id, name: input.contact.name, route: doc.route, fitScore: doc.fitScore, summary: doc.brief, answers: doc.answers, bookingStatus: doc.bookingStatus }, token));
   } catch (error) { next(error); }
 };
