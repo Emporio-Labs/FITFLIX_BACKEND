@@ -77,10 +77,8 @@ export const getPublicAssetUrl = (key: string): string => {
 	if (process.env.AWS_S3_PUBLIC_BASE_URL) {
 		return `${process.env.AWS_S3_PUBLIC_BASE_URL.replace(/\/+$/, "")}/${cleanKey}`;
 	}
-	if (!process.env.BACKEND_URL) {
-		throw new Error("BACKEND_URL (or AWS_S3_PUBLIC_BASE_URL) must be set to build public asset URLs");
-	}
-	return `${process.env.BACKEND_URL.replace(/\/+$/, "")}/events/assets/${cleanKey}`;
+	const baseUrl = process.env.BACKEND_URL?.trim() || "https://api.fitflix.in";
+	return `${baseUrl.replace(/\/+$/, "")}/events/assets/${cleanKey}`;
 };
 
 export const getS3ObjectStream = async (

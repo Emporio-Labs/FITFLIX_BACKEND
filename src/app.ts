@@ -50,6 +50,7 @@ import workoutPlanRouter from "./routes/workout-plan.routes";
 import zegoRouter from "./routes/zego.routes";
 import settingsRouter from "./routes/settings.routes";
 import eventRouter from "./routes/event.routes";
+import progressPhotoRouter from "./routes/progress-photo.routes";
 import recordingRouter, { adminRecordingRouter } from "./routes/recording.routes";
 import presaleFoundersRouter, {
 	presaleFoundersAdminRouter,
@@ -317,6 +318,8 @@ app.use("/dashboard", dashboardRouter);
 // user. The /api/v1 alias is kept for backwards compatibility.
 app.use("/analytics", apiRateLimit, analyticsRouter);
 app.use("/api/v1/analytics", apiRateLimit, analyticsRouter);
+app.use("/progress/photos", apiRateLimit, progressPhotoRouter);
+app.use("/api/v1/progress/photos", apiRateLimit, progressPhotoRouter);
 app.use("/alerts", apiRateLimit, operationalAlertRouter);
 app.use("/api/v1/alerts", apiRateLimit, operationalAlertRouter);
 app.use("/workout-plans", workoutPlanRouter);

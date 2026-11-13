@@ -584,3 +584,10 @@ export enum RegistrationPaymentStatus {
 	Cancelled = "cancelled",
 	Refunded = "refunded",
 }
+
+export enum PhotoPose {
+	Front = "front",
+	Side = "side",
+	Back = "back",
+}
+

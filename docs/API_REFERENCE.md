@@ -783,6 +783,20 @@ Also mounted at `/api/v1/analytics`.
 | GET | `/analytics/funnels/booking` | JWT | admin, frontdesk | `getBookingFunnel` |
 | POST | `/analytics/events` | JWT | — | `ingestProductAnalytics` |
 
+#### `/progress/photos` → [progress-photo.routes.ts](../src/routes/progress-photo.routes.ts)
+
+Also mounted at `/api/v1/progress/photos`. Rate limit: `apiRateLimit`. Upload uses `uploadMiddleware.single("file")` and `uploadRateLimiter`.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| POST | `/progress/photos` | JWT | user | `uploadProgressPhoto` |
+| GET | `/progress/photos/me` | JWT | user | `getMyProgressPhotos` |
+| GET | `/progress/photos/me/compare` | JWT | user | `getMyComparison` |
+| DELETE | `/progress/photos/:id` | JWT | user | `deleteMyProgressPhoto` |
+| GET | `/progress/photos/user/:userId` | JWT | admin, frontdesk, trainer, nutritionist | `getMemberProgressPhotosForStaff` |
+| GET | `/progress/photos/user/:userId/compare` | JWT | admin, frontdesk, trainer, nutritionist | `getMemberComparisonForStaff` |
+
+
 #### `/alerts` → [operational-alert.routes.ts](../src/routes/operational-alert.routes.ts)
 
 Also mounted at `/api/v1/alerts`. Rate limit: `apiRateLimit`.
