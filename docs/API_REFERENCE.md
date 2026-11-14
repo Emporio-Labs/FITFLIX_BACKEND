@@ -796,6 +796,16 @@ Also mounted at `/api/v1/progress/photos`. Rate limit: `apiRateLimit`. Upload us
 | GET | `/progress/photos/user/:userId` | JWT | admin, frontdesk, trainer, nutritionist | `getMemberProgressPhotosForStaff` |
 | GET | `/progress/photos/user/:userId/compare` | JWT | admin, frontdesk, trainer, nutritionist | `getMemberComparisonForStaff` |
 
+#### `/agenda` → [agenda.routes.ts](../src/routes/agenda.routes.ts)
+
+Also mounted at `/api/v1/agenda`. Rate limit: `apiRateLimit`. Aggregates workouts, group classes, live streams, therapies, 1-on-1 personal training, and nutritionist appointments.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/agenda/me` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `getMemberAgendaHandler` |
+| GET | `/agenda/user/:userId` | JWT | admin, frontdesk, trainer, nutritionist, doctor | `getMemberAgendaForStaffHandler` |
+| GET | `/agenda` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `getMemberAgendaHandler` |
+
 
 #### `/alerts` → [operational-alert.routes.ts](../src/routes/operational-alert.routes.ts)
 

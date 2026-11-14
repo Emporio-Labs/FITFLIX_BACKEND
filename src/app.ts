@@ -51,6 +51,7 @@ import zegoRouter from "./routes/zego.routes";
 import settingsRouter from "./routes/settings.routes";
 import eventRouter from "./routes/event.routes";
 import progressPhotoRouter from "./routes/progress-photo.routes";
+import agendaRouter from "./routes/agenda.routes";
 import recordingRouter, { adminRecordingRouter } from "./routes/recording.routes";
 import presaleFoundersRouter, {
 	presaleFoundersAdminRouter,
@@ -320,6 +321,8 @@ app.use("/analytics", apiRateLimit, analyticsRouter);
 app.use("/api/v1/analytics", apiRateLimit, analyticsRouter);
 app.use("/progress/photos", apiRateLimit, progressPhotoRouter);
 app.use("/api/v1/progress/photos", apiRateLimit, progressPhotoRouter);
+app.use("/agenda", apiRateLimit, agendaRouter);
+app.use("/api/v1/agenda", apiRateLimit, agendaRouter);
 app.use("/alerts", apiRateLimit, operationalAlertRouter);
 app.use("/api/v1/alerts", apiRateLimit, operationalAlertRouter);
 app.use("/workout-plans", workoutPlanRouter);
