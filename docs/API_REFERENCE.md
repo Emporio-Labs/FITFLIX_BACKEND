@@ -755,6 +755,37 @@ Also mounted at `/api/v1`.
 | PATCH | `/workouts/:sessionId/exercises/:exerciseId/sets/:setId` | JWT | user | `updateSet` |
 | DELETE | `/workouts/:sessionId/exercises/:exerciseId/sets/:setId` | JWT | user | `deleteSet` |
 
+#### `/chat` (alias `/api/v1/chat`) → [chat.routes.ts](../src/routes/chat.routes.ts)
+
+Who may message whom is decided per request by the chat policy, not by role
+guards — see [CHAT_MODULE.md](CHAT_MODULE.md).
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/chat/contacts?search=` | JWT | — | `getContacts` |
+| GET | `/chat/unread-count` | JWT | — | `getUnread` |
+| GET | `/chat/conversations` | JWT | — | `getConversations` |
+| POST | `/chat/conversations` | JWT | — | `postConversation` |
+| GET | `/chat/conversations/:id` | JWT | — | `getConversationById` |
+| GET | `/chat/conversations/:id/messages?before=&limit=` | JWT | — | `getMessages` |
+| POST | `/chat/conversations/:id/messages` | JWT (rate-limited per user) | — | `postMessage` |
+| POST | `/chat/conversations/:id/read` | JWT | — | `postRead` |
+| POST | `/chat/conversations/:id/report` | JWT (rate-limited per user) | — | `postReport` |
+| DELETE | `/chat/messages/:id` | JWT | sender or admin | `deleteMessageById` |
+| GET | `/chat/blocks` | JWT | — | `getBlocked` |
+| POST | `/chat/blocks` | JWT | — | `postBlock` |
+| DELETE | `/chat/blocks/:kind/:id` | JWT | — | `deleteBlock` |
+| GET | `/chat/admin/policy` | JWT | admin | `getPolicy` |
+| PUT | `/chat/admin/policy` | JWT | admin | `putPolicy` |
+| POST | `/chat/admin/policy/reset` | JWT | admin | `postPolicyReset` |
+| GET | `/chat/admin/people?role=client&search=` | JWT | admin | `getPeopleOverrides` |
+| PUT | `/chat/admin/overrides/:kind/:id` | JWT | admin | `putOverride` |
+| PUT | `/chat/admin/settings` | JWT | admin | `putSettings` |
+| GET | `/chat/admin/reports?status=` | JWT | admin | `getReports` |
+| PATCH | `/chat/admin/reports/:id` | JWT | admin | `patchReport` |
+| GET | `/chat/admin/conversations?search=` | JWT | admin | `getAllConversations` |
+| GET | `/chat/admin/conversations/:id` | JWT | admin | `getAnyConversation` |
+
 #### `/notifications` → [notification.routes.ts](../src/routes/notification.routes.ts)
 
 | Method | Path | Auth | Roles | Handler |

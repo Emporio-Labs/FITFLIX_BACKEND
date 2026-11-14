@@ -288,6 +288,7 @@ same commit whenever you change a route.
 | `/dashboard` | `dashboard.routes.ts` | admin, frontdesk |
 | `/nutrition` | `nutrition.routes.ts` | nutritionist, admin, user |
 | `/notifications` | `notification.routes.ts` | any authenticated |
+| `/chat` (+ `/api/v1/chat`) | `chat.routes.ts` | any authenticated; who may message whom is the chat policy — see [docs/CHAT_MODULE.md](docs/CHAT_MODULE.md); `/chat/admin/*` is admin |
 | `/webhook` | `webhook.route.ts` | Webhook secret + user/admin reads |
 | `/internal` | `internal.routes.ts` | `X-Internal-Secret` |
 | `/workouts` | `workout.routes.ts` | user |
