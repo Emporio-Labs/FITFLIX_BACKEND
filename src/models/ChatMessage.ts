@@ -17,6 +17,30 @@ const chatMessageSchema = new mongoose.Schema(
 		senderRole: { type: String, required: true },
 		senderName: { type: String, default: "" },
 		body: { type: String, default: "", maxlength: CHAT_MESSAGE_MAX_LENGTH },
+		kind: {
+			type: String,
+			enum: ["text", "activity_card"],
+			default: "text",
+		},
+		payload: {
+			type: mongoose.Schema.Types.Mixed,
+			default: undefined,
+		},
+		reactions: {
+			type: [
+				{
+					userId: { type: mongoose.Schema.Types.ObjectId, required: true },
+					senderKind: {
+						type: String,
+						enum: CHAT_PARTICIPANT_KINDS,
+						required: true,
+					},
+					reaction: { type: String, required: true },
+					reactedAt: { type: Date, default: Date.now },
+				},
+			],
+			default: [],
+		},
 		// Client-generated id for the optimistic bubble. A retried POST with the
 		// same id returns the stored message instead of a duplicate.
 		clientMessageId: { type: String, default: undefined },

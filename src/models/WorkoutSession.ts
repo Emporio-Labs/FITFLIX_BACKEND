@@ -17,6 +17,24 @@ const workoutSessionSchema = new mongoose.Schema(
 		startedAt: { type: Date, default: Date.now },
 		completedAt: { type: Date, default: null },
 		notes: { type: String, default: null },
+		rpe: { type: Number, min: 1, max: 10, default: null },
+		reflection: { type: String, default: null },
+		coachReaction: {
+			coachId: {
+				type: mongoose.Schema.Types.ObjectId,
+				refPath: "coachReaction.coachModel",
+				default: null,
+			},
+			coachModel: {
+				type: String,
+				enum: ["Trainer", "Admin"],
+				default: "Trainer",
+			},
+			coachName: { type: String, default: null },
+			reaction: { type: String, default: null },
+			comment: { type: String, default: null },
+			reactedAt: { type: Date, default: null },
+		},
 		planId: {
 			type: mongoose.Schema.Types.ObjectId,
 			ref: "WorkoutPlan",
