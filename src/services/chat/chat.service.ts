@@ -17,6 +17,7 @@ import {
 	type ChatReportReason,
 } from "../../models/ChatPolicy";
 import User from "../../models/User";
+import WorkoutSession from "../../models/WorkoutSession";
 import { resolveTrainerUserId } from "../../utils/expert-user.resolver";
 import { sendPushToUser } from "../fcm.service";
 import { emitChatEvent, isAttentive } from "../realtime.service";
@@ -84,6 +85,13 @@ type ConversationLean = {
 	updatedAt: Date;
 };
 
+type MessageReactionLean = {
+	userId: mongoose.Types.ObjectId;
+	senderKind: ChatParticipantKind;
+	reaction: string;
+	reactedAt: Date;
+};
+
 type MessageLean = {
 	_id: mongoose.Types.ObjectId;
 	conversationId: mongoose.Types.ObjectId;
@@ -95,6 +103,9 @@ type MessageLean = {
 	clientMessageId?: string;
 	deletedAt?: Date | null;
 	createdAt: Date;
+	kind?: string;
+	payload?: Record<string, unknown>;
+	reactions?: MessageReactionLean[];
 };
 
 export interface ChatPeerDto {
@@ -116,6 +127,14 @@ export interface ChatMessageDto {
 	deleted: boolean;
 	clientMessageId: string | null;
 	createdAt: string;
+	kind: string;
+	payload?: Record<string, unknown>;
+	reactions: Array<{
+		userId: string;
+		senderKind: string;
+		reaction: string;
+		reactedAt: string;
+	}>;
 }
 
 export interface ChatConversationDto {
@@ -150,6 +169,14 @@ const toMessageDto = (m: MessageLean): ChatMessageDto => ({
 	deleted: Boolean(m.deletedAt),
 	clientMessageId: m.clientMessageId ?? null,
 	createdAt: new Date(m.createdAt).toISOString(),
+	kind: m.kind ?? "text",
+	payload: m.payload,
+	reactions: (m.reactions ?? []).map((r) => ({
+		userId: String(r.userId),
+		senderKind: r.senderKind,
+		reaction: r.reaction,
+		reactedAt: new Date(r.reactedAt).toISOString(),
+	})),
 });
 
 const toPeerDto = (p: ParticipantLean | ChatPerson): ChatPeerDto => ({
@@ -466,7 +493,12 @@ const pushToRecipient = async (
 export const sendMessage = async (
 	me: ChatActor,
 	conversationId: string,
-	input: { body: string; clientMessageId?: string },
+	input: {
+		body: string;
+		clientMessageId?: string;
+		kind?: "text" | "activity_card";
+		payload?: Record<string, unknown>;
+	},
 ): Promise<ChatMessageDto> => {
 	const body = input.body.trim();
 	if (!body) throw badRequest("Message cannot be empty");
@@ -510,6 +542,8 @@ export const sendMessage = async (
 			senderName: self.name,
 			body,
 			clientMessageId: input.clientMessageId,
+			kind: input.kind ?? "text",
+			payload: input.payload,
 		});
 		created = doc.toObject() as unknown as MessageLean;
 	} catch (error) {
@@ -559,6 +593,171 @@ export const sendMessage = async (
 		console.error("[chat] push failed", err),
 	);
 	return dto;
+};
+
+export const toggleReaction = async (
+	me: ChatActor,
+	conversationId: string,
+	messageId: string,
+	reaction: string,
+): Promise<{ reactions: ChatMessageDto["reactions"] }> => {
+	const conv = await loadConversation(me, conversationId);
+	const parts = splitParticipants(conv, me);
+	if (!parts) throw notFound();
+
+	const msg = await ChatMessage.findOne({
+		_id: oid(messageId),
+		conversationId: conv._id,
+	});
+	if (!msg) throw notFound("Message");
+	if (msg.deletedAt) throw badRequest("Cannot react to deleted message");
+
+	const self = await loadPerson(me.kind, me.id);
+	if (!self) throw new ChatError(401, "UNAUTHORIZED", "Account not found");
+
+	const reactions = (msg.reactions ?? []) as mongoose.Types.DocumentArray<{
+		userId: mongoose.Types.ObjectId;
+		senderKind: ChatParticipantKind;
+		reaction: string;
+		reactedAt: Date;
+	}>;
+
+	const existingIndex = reactions.findIndex(
+		(r) => String(r.userId) === me.id,
+	);
+
+	if (existingIndex !== -1) {
+		if (reactions[existingIndex].reaction === reaction) {
+			// Same reaction: toggle off
+			reactions.splice(existingIndex, 1);
+		} else {
+			// Change reaction
+			reactions[existingIndex].reaction = reaction;
+			reactions[existingIndex].reactedAt = new Date();
+		}
+	} else {
+		// New reaction
+		reactions.push({
+			userId: oid(me.id),
+			senderKind: me.kind,
+			reaction,
+			reactedAt: new Date(),
+		});
+	}
+
+	msg.reactions = reactions;
+	await msg.save();
+
+	// Mirror to WorkoutSession if activity card
+	if (msg.kind === "activity_card" && msg.payload && typeof msg.payload === "object" && "sessionId" in msg.payload) {
+		const isCoachOrStaff =
+			me.kind === "Trainer" || me.role === "admin" || me.role === "trainer";
+		if (isCoachOrStaff) {
+			const activeReaction = reactions.find(
+				(r) => String(r.userId) === me.id,
+			);
+			const sessionId = (msg.payload as { sessionId?: string }).sessionId;
+			if (sessionId && mongoose.Types.ObjectId.isValid(sessionId)) {
+				if (activeReaction) {
+					await WorkoutSession.findByIdAndUpdate(sessionId, {
+						$set: {
+							coachReaction: {
+								coachId: oid(me.id),
+								coachModel: me.kind === "Admin" ? "Admin" : "Trainer",
+								coachName: self.name,
+								reaction: activeReaction.reaction,
+								reactedAt: activeReaction.reactedAt,
+							},
+						},
+					});
+				} else {
+					await WorkoutSession.findByIdAndUpdate(sessionId, {
+						$set: { coachReaction: null },
+					});
+				}
+			}
+		}
+	}
+
+	const reactionsDto = (reactions ?? []).map((r) => ({
+		userId: String(r.userId),
+		senderKind: r.senderKind,
+		reaction: r.reaction,
+		reactedAt: new Date(r.reactedAt).toISOString(),
+	}));
+
+	const eventPayload = {
+		conversationId: String(conv._id),
+		messageId: String(msg._id),
+		reactions: reactionsDto,
+	};
+	emitChatEvent(me.id, "chat:reaction", eventPayload);
+	emitChatEvent(String(parts.peer.id), "chat:reaction", eventPayload);
+
+	return { reactions: reactionsDto };
+};
+
+export const deleteReaction = async (
+	me: ChatActor,
+	conversationId: string,
+	messageId: string,
+): Promise<{ reactions: ChatMessageDto["reactions"] }> => {
+	const conv = await loadConversation(me, conversationId);
+	const parts = splitParticipants(conv, me);
+	if (!parts) throw notFound();
+
+	const msg = await ChatMessage.findOne({
+		_id: oid(messageId),
+		conversationId: conv._id,
+	});
+	if (!msg) throw notFound("Message");
+
+	const reactions = (msg.reactions ?? []) as mongoose.Types.DocumentArray<{
+		userId: mongoose.Types.ObjectId;
+		senderKind: ChatParticipantKind;
+		reaction: string;
+		reactedAt: Date;
+	}>;
+
+	const existingIndex = reactions.findIndex(
+		(r) => String(r.userId) === me.id,
+	);
+
+	if (existingIndex !== -1) {
+		reactions.splice(existingIndex, 1);
+		msg.reactions = reactions;
+		await msg.save();
+
+		if (msg.kind === "activity_card" && msg.payload && typeof msg.payload === "object" && "sessionId" in msg.payload) {
+			const isCoachOrStaff =
+				me.kind === "Trainer" || me.role === "admin" || me.role === "trainer";
+			if (isCoachOrStaff) {
+				const sessionId = (msg.payload as { sessionId?: string }).sessionId;
+				if (sessionId && mongoose.Types.ObjectId.isValid(sessionId)) {
+					await WorkoutSession.findByIdAndUpdate(sessionId, {
+						$set: { coachReaction: null },
+					});
+				}
+			}
+		}
+	}
+
+	const reactionsDto = (reactions ?? []).map((r) => ({
+		userId: String(r.userId),
+		senderKind: r.senderKind,
+		reaction: r.reaction,
+		reactedAt: new Date(r.reactedAt).toISOString(),
+	}));
+
+	const eventPayload = {
+		conversationId: String(conv._id),
+		messageId: String(msg._id),
+		reactions: reactionsDto,
+	};
+	emitChatEvent(me.id, "chat:reaction", eventPayload);
+	emitChatEvent(String(parts.peer.id), "chat:reaction", eventPayload);
+
+	return { reactions: reactionsDto };
 };
 
 /**

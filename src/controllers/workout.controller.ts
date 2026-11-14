@@ -6,6 +6,9 @@ import SetLog from "../models/SetLog";
 import WorkoutExercise from "../models/WorkoutExercise";
 import WorkoutPlanAssignment from "../models/WorkoutPlanAssignment";
 import WorkoutSession from "../models/WorkoutSession";
+import WorkoutPlan from "../models/WorkoutPlan";
+import User from "../models/User";
+import { openConversation, sendMessage } from "../services/chat/chat.service";
 import type { AppUserRole } from "../types/auth";
 import { actorModelForRole } from "../utils/actor-model";
 import { withSignedImages } from "../utils/exercise-images";
@@ -543,9 +546,83 @@ export const updateSession: RequestHandler = async (req, res, next) => {
 			}
 		}
 
+		const isFinishing =
+			parsed.data.status === WorkoutSessionStatus.Completed &&
+			session.status !== WorkoutSessionStatus.Completed;
+
 		const updated = await WorkoutSession.findByIdAndUpdate(id, update, {
 			new: true,
 		});
+
+		if (isFinishing && updated) {
+			try {
+				const user = await User.findById(session.userId);
+				if (user?.assignedTrainer) {
+					const exercises = await WorkoutExercise.find({
+						session: session._id,
+						isDeleted: false,
+					}).lean();
+					const exerciseIds = exercises.map((e) => e._id);
+					const sets = await SetLog.find({
+						workoutExercise: { $in: exerciseIds },
+						isDeleted: false,
+					}).lean();
+
+					const completedExercises = exercises.filter(
+						(e) => e.isCompleted,
+					).length;
+					const totalVolumeKg = sets.reduce(
+						(sum, s) => sum + (s.actualReps ?? 0) * (s.actualWeightKg ?? 0),
+						0,
+					);
+					const durationSeconds = Math.max(
+						0,
+						Math.round(
+							((updated.completedAt ?? new Date()).getTime() -
+								new Date(session.startedAt).getTime()) /
+								1000,
+						),
+					);
+
+					let workoutTitle = "Daily Workout";
+					if (session.planId) {
+						const plan = await WorkoutPlan.findById(session.planId).lean();
+						if (plan?.title) workoutTitle = plan.title;
+					}
+
+					const conv = await openConversation(
+						{ kind: "User", id: user._id.toString(), role: "client" },
+						{ kind: "Trainer", id: user.assignedTrainer.toString() },
+					);
+
+					await sendMessage(
+						{ kind: "User", id: user._id.toString(), role: "client" },
+						conv.id,
+						{
+							body: `Completed workout: ${workoutTitle}`,
+							kind: "activity_card",
+							payload: {
+								type: "WORKOUT_COMPLETED",
+								sessionId: session._id.toString(),
+								workoutTitle,
+								exercisesCount: exercises.length,
+								completedExercises,
+								totalSets: sets.length,
+								totalVolumeKg: Math.round(totalVolumeKg),
+								durationSeconds,
+								rpe: updated.rpe ?? null,
+								reflection: updated.reflection ?? null,
+							},
+						},
+					);
+				}
+			} catch (chatCardErr) {
+				console.error(
+					"[updateSession] Auto chat activity card dispatch skipped:",
+					chatCardErr,
+				);
+			}
+		}
 
 		res.status(200).json(updated);
 	} catch (error) {

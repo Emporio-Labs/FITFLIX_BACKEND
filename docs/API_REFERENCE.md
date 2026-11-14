@@ -770,6 +770,8 @@ guards — see [CHAT_MODULE.md](CHAT_MODULE.md).
 | GET | `/chat/conversations/:id` | JWT | — | `getConversationById` |
 | GET | `/chat/conversations/:id/messages?before=&limit=` | JWT | — | `getMessages` |
 | POST | `/chat/conversations/:id/messages` | JWT (rate-limited per user) | — | `postMessage` |
+| POST | `/chat/conversations/:id/messages/:messageId/reactions` | JWT | — | `postReaction` |
+| DELETE | `/chat/conversations/:id/messages/:messageId/reactions` | JWT | — | `deleteReactionById` |
 | POST | `/chat/conversations/:id/read` | JWT | — | `postRead` |
 | POST | `/chat/conversations/:id/report` | JWT (rate-limited per user) | — | `postReport` |
 | DELETE | `/chat/messages/:id` | JWT | sender or admin | `deleteMessageById` |

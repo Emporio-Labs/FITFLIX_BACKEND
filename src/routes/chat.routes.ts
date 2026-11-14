@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
 	deleteBlock,
 	deleteMessageById,
+	deleteReactionById,
 	getAllConversations,
 	getAnyConversation,
 	getBlocked,
@@ -18,6 +19,7 @@ import {
 	postConversation,
 	postMessage,
 	postPolicyReset,
+	postReaction,
 	postRead,
 	postReport,
 	putOverride,
@@ -41,6 +43,8 @@ router.post("/conversations", postConversation);
 router.get("/conversations/:id", getConversationById);
 router.get("/conversations/:id/messages", getMessages);
 router.post("/conversations/:id/messages", chatRateLimit, postMessage);
+router.post("/conversations/:id/messages/:messageId/reactions", postReaction);
+router.delete("/conversations/:id/messages/:messageId/reactions", deleteReactionById);
 router.post("/conversations/:id/read", postRead);
 router.post("/conversations/:id/report", chatRateLimit, postReport);
 router.delete("/messages/:id", deleteMessageById);

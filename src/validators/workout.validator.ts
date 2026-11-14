@@ -34,6 +34,8 @@ export const updateSessionBodySchema = z
 			.optional(),
 		notes: z.string().max(1000).optional(),
 		startedAt: z.coerce.date().optional(),
+		rpe: z.coerce.number().int().min(1).max(10).optional(),
+		reflection: z.string().max(1000).optional(),
 	})
 	.refine((payload) => Object.keys(payload).length > 0, {
 		message: "At least one field is required",

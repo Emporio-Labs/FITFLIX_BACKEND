@@ -11,6 +11,7 @@ import {
 	ChatError,
 	countOpenReports,
 	deleteMessage,
+	deleteReaction,
 	getConversation,
 	getUnreadCount,
 	listBlocked,
@@ -23,6 +24,7 @@ import {
 	reportConversation,
 	resolveReport,
 	sendMessage,
+	toggleReaction,
 	unblockPerson,
 } from "../services/chat/chat.service";
 import {
@@ -108,6 +110,12 @@ const sendSchema = z.object({
 		.min(1, "Message cannot be empty")
 		.max(CHAT_MESSAGE_MAX_LENGTH),
 	clientMessageId: z.string().trim().min(1).max(64).optional(),
+	kind: z.enum(["text", "activity_card"]).optional(),
+	payload: z.record(z.string(), z.unknown()).optional(),
+});
+
+const reactionSchema = z.object({
+	reaction: z.string().trim().min(1).max(32),
 });
 
 const roleSchema = z.enum(CHAT_ROLES);
@@ -197,6 +205,29 @@ export const postMessage: RequestHandler = handle(async (req, res, user) => {
 	);
 	res.status(201).json({ message });
 });
+
+export const postReaction: RequestHandler = handle(async (req, res, user) => {
+	const parsed = reactionSchema.safeParse(req.body);
+	if (!parsed.success) return invalid(res, parsed.error);
+	const result = await toggleReaction(
+		actorFromAuth(user),
+		param(req.params.id),
+		param(req.params.messageId),
+		parsed.data.reaction,
+	);
+	res.status(200).json(result);
+});
+
+export const deleteReactionById: RequestHandler = handle(
+	async (req, res, user) => {
+		const result = await deleteReaction(
+			actorFromAuth(user),
+			param(req.params.id),
+			param(req.params.messageId),
+		);
+		res.status(200).json(result);
+	},
+);
 
 export const postRead: RequestHandler = handle(async (req, res, user) => {
 	const result = await markRead(actorFromAuth(user), param(req.params.id));
