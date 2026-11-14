@@ -22,7 +22,7 @@ export const CURATED_HABIT_CATALOG: HabitCatalogItem[] = [
 	// Sleep & Circadian
 	{
 		category: HabitCategory.Sleep,
-		title: "Evening Circadian Reset",
+		title: "Screens Off Before Bed",
 		description: "Screens off 45 mins before sleep",
 		icon: "bedtime",
 		timeOfDayHint: "EVENING",
@@ -31,7 +31,7 @@ export const CURATED_HABIT_CATALOG: HabitCatalogItem[] = [
 	},
 	{
 		category: HabitCategory.Sleep,
-		title: "Consistent Bedtime Window",
+		title: "Sleep at the Same Time",
 		description: "Sleep within a 30-min window every night",
 		icon: "bed",
 		timeOfDayHint: "EVENING",
@@ -97,7 +97,7 @@ export const CURATED_HABIT_CATALOG: HabitCatalogItem[] = [
 	// Recovery & Mindfulness
 	{
 		category: HabitCategory.Recovery,
-		title: "5-Min Box Breathing",
+		title: "5-Min Deep Breathing",
 		description: "Inhale 4s, hold 4s, exhale 4s, hold 4s",
 		icon: "self_improvement",
 		timeOfDayHint: "ANYTIME",
@@ -153,7 +153,7 @@ export async function ensureDefaultHabits(userId: string): Promise<void> {
 		},
 		{
 			userId: userObjectId,
-			title: "Evening Circadian Reset",
+			title: "Screens Off Before Bed",
 			description: "Screens off 45 mins before sleep",
 			category: HabitCategory.Sleep,
 			icon: "bedtime",
@@ -166,7 +166,25 @@ export async function ensureDefaultHabits(userId: string): Promise<void> {
 		},
 	];
 
+	// Update any existing habits with previous legacy titles
+	await migrateLegacyHabitTitles(userObjectId);
+
 	await Habit.insertMany(defaultHabits);
+}
+
+async function migrateLegacyHabitTitles(userObjectId: mongoose.Types.ObjectId): Promise<void> {
+	await Habit.updateMany(
+		{ userId: userObjectId, title: "Evening Circadian Reset" },
+		{ $set: { title: "Screens Off Before Bed" } },
+	);
+	await Habit.updateMany(
+		{ userId: userObjectId, title: "Consistent Bedtime Window" },
+		{ $set: { title: "Sleep at the Same Time" } },
+	);
+	await Habit.updateMany(
+		{ userId: userObjectId, title: "5-Min Box Breathing" },
+		{ $set: { title: "5-Min Deep Breathing" } },
+	);
 }
 
 export async function getTodayHabits(
@@ -176,6 +194,8 @@ export async function getTodayHabits(
 	await ensureDefaultHabits(userId);
 
 	const userObjectId = new mongoose.Types.ObjectId(userId);
+	await migrateLegacyHabitTitles(userObjectId);
+
 	const todayStr =
 		targetDateStr || formatDateInZone(new Date(), DEFAULT_TIMEZONE);
 
@@ -334,6 +354,8 @@ export async function getMyHabits(userId: string) {
 	await ensureDefaultHabits(userId);
 
 	const userObjectId = new mongoose.Types.ObjectId(userId);
+	await migrateLegacyHabitTitles(userObjectId);
+
 	const habits = await Habit.find({
 		userId: userObjectId,
 		isActive: true,
