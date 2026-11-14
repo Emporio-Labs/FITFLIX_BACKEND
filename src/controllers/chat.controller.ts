@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { Request, RequestHandler, Response } from "express";
 import mongoose from "mongoose";
 import { z } from "zod";
 import { CHAT_PARTICIPANT_KINDS } from "../models/ChatConversation";
 import { CHAT_MESSAGE_MAX_LENGTH } from "../models/ChatMessage";
 import { CHAT_REPORT_REASONS, ChatOverride } from "../models/ChatPolicy";
+import { generatePresignedPutUrl, generateSignedUrl } from "../utils/s3.service";
 import {
 	adminGetConversation,
 	adminListConversations,
@@ -103,16 +106,111 @@ const openSchema = z.object({
 	id: objectId,
 });
 
-const sendSchema = z.object({
-	body: z
-		.string()
-		.trim()
-		.min(1, "Message cannot be empty")
-		.max(CHAT_MESSAGE_MAX_LENGTH),
-	clientMessageId: z.string().trim().min(1).max(64).optional(),
-	kind: z.enum(["text", "activity_card"]).optional(),
-	payload: z.record(z.string(), z.unknown()).optional(),
+const mediaSchema = z.object({
+	s3Key: z.string().trim().min(1),
+	url: z.string().trim().min(1),
+	thumbnailUrl: z.string().trim().optional(),
+	mimeType: z.string().trim().min(1),
+	byteSize: z.number().int().positive(),
+	durationSeconds: z.number().positive().optional(),
+	width: z.number().int().positive().optional(),
+	height: z.number().int().positive().optional(),
 });
+
+const sendSchema = z
+	.object({
+		body: z.string().trim().max(CHAT_MESSAGE_MAX_LENGTH).default(""),
+		clientMessageId: z.string().trim().min(1).max(64).optional(),
+		kind: z
+			.enum([
+				"text",
+				"image",
+				"video",
+				"audio",
+				"activity_card",
+				"exercise_share",
+			])
+			.optional(),
+		payload: z.record(z.string(), z.unknown()).optional(),
+		media: mediaSchema.optional(),
+	})
+	.refine(
+		(data) => {
+			if (
+				data.media ||
+				data.kind === "activity_card" ||
+				data.kind === "exercise_share"
+			) {
+				return true;
+			}
+			return data.body.length > 0;
+		},
+		{
+			message: "Message text or media attachment is required",
+			path: ["body"],
+		},
+	);
+
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024; // 15MB
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10MB
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50MB
+
+const ALLOWED_MIME_TYPES: Record<string, string[]> = {
+	image: [
+		"image/jpeg",
+		"image/png",
+		"image/webp",
+		"image/heic",
+		"image/heif",
+		"image/gif",
+	],
+	audio: [
+		"audio/m4a",
+		"audio/mp4",
+		"audio/aac",
+		"audio/mpeg",
+		"audio/wav",
+		"audio/ogg",
+		"audio/webm",
+		"audio/x-m4a",
+	],
+	video: [
+		"video/mp4",
+		"video/quicktime",
+		"video/webm",
+		"video/3gpp",
+	],
+};
+
+const presignMediaSchema = z
+	.object({
+		fileName: z.string().trim().min(1).max(255),
+		mimeType: z.string().trim().toLowerCase(),
+		byteSize: z.number().int().positive(),
+		kind: z.enum(["image", "video", "audio"]),
+	})
+	.refine(
+		(data) => {
+			const allowed = ALLOWED_MIME_TYPES[data.kind];
+			return allowed && allowed.includes(data.mimeType);
+		},
+		{
+			message: "Unsupported file type for this media category",
+			path: ["mimeType"],
+		},
+	)
+	.refine(
+		(data) => {
+			if (data.kind === "image" && data.byteSize > MAX_IMAGE_BYTES) return false;
+			if (data.kind === "audio" && data.byteSize > MAX_AUDIO_BYTES) return false;
+			if (data.kind === "video" && data.byteSize > MAX_VIDEO_BYTES) return false;
+			return true;
+		},
+		{
+			message: "File exceeds maximum permitted size",
+			path: ["byteSize"],
+		},
+	);
 
 const reactionSchema = z.object({
 	reaction: z.string().trim().min(1).max(32),
@@ -205,6 +303,49 @@ export const postMessage: RequestHandler = handle(async (req, res, user) => {
 	);
 	res.status(201).json({ message });
 });
+
+export const presignChatMedia: RequestHandler = handle(
+	async (req, res, user) => {
+		const conversationId = param(req.params.id);
+		const conv = await getConversation(actorFromAuth(user), conversationId);
+		if (!conv) {
+			return fail(res, 404, "NOT_FOUND", "Conversation not found");
+		}
+		if (!conv.canSend) {
+			return fail(
+				res,
+				403,
+				"FORBIDDEN",
+				conv.blockedReason ?? "Sending is blocked in this conversation",
+			);
+		}
+
+		const parsed = presignMediaSchema.safeParse(req.body);
+		if (!parsed.success) return invalid(res, parsed.error);
+
+		const { fileName, mimeType, byteSize, kind } = parsed.data;
+		const ext =
+			path.extname(fileName) ||
+			(kind === "image" ? ".jpg" : kind === "audio" ? ".m4a" : ".mp4");
+		const sanitizedExt = ext.toLowerCase().replace(/[^a-z0-9.]/g, "");
+		const s3Key = `chat-media/${conversationId}/${Date.now()}-${randomUUID()}${sanitizedExt}`;
+
+		const uploadUrl = await generatePresignedPutUrl(
+			s3Key,
+			mimeType,
+			byteSize,
+			900,
+		);
+		const url = await generateSignedUrl(s3Key, 86400 * 7, mimeType);
+
+		res.status(200).json({
+			uploadUrl,
+			downloadUrl: url,
+			s3Key,
+			url,
+		});
+	},
+);
 
 export const postReaction: RequestHandler = handle(async (req, res, user) => {
 	const parsed = reactionSchema.safeParse(req.body);

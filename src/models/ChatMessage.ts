@@ -19,11 +19,34 @@ const chatMessageSchema = new mongoose.Schema(
 		body: { type: String, default: "", maxlength: CHAT_MESSAGE_MAX_LENGTH },
 		kind: {
 			type: String,
-			enum: ["text", "activity_card"],
+			enum: [
+				"text",
+				"image",
+				"video",
+				"audio",
+				"activity_card",
+				"exercise_share",
+			],
 			default: "text",
 		},
 		payload: {
 			type: mongoose.Schema.Types.Mixed,
+			default: undefined,
+		},
+		media: {
+			type: new mongoose.Schema(
+				{
+					s3Key: { type: String, required: true },
+					url: { type: String, required: true },
+					thumbnailUrl: { type: String, default: undefined },
+					mimeType: { type: String, required: true },
+					byteSize: { type: Number, required: true },
+					durationSeconds: { type: Number, default: undefined },
+					width: { type: Number, default: undefined },
+					height: { type: Number, default: undefined },
+				},
+				{ _id: false },
+			),
 			default: undefined,
 		},
 		reactions: {

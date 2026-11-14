@@ -105,8 +105,29 @@ type MessageLean = {
 	createdAt: Date;
 	kind?: string;
 	payload?: Record<string, unknown>;
+	media?: {
+		s3Key: string;
+		url: string;
+		thumbnailUrl?: string;
+		mimeType: string;
+		byteSize: number;
+		durationSeconds?: number;
+		width?: number;
+		height?: number;
+	};
 	reactions?: MessageReactionLean[];
 };
+
+export interface ChatMediaDto {
+	s3Key: string;
+	url: string;
+	thumbnailUrl?: string;
+	mimeType: string;
+	byteSize: number;
+	durationSeconds?: number;
+	width?: number;
+	height?: number;
+}
 
 export interface ChatPeerDto {
 	kind: ChatParticipantKind;
@@ -129,6 +150,7 @@ export interface ChatMessageDto {
 	createdAt: string;
 	kind: string;
 	payload?: Record<string, unknown>;
+	media?: ChatMediaDto;
 	reactions: Array<{
 		userId: string;
 		senderKind: string;
@@ -171,6 +193,18 @@ const toMessageDto = (m: MessageLean): ChatMessageDto => ({
 	createdAt: new Date(m.createdAt).toISOString(),
 	kind: m.kind ?? "text",
 	payload: m.payload,
+	media: m.media
+		? {
+				s3Key: m.media.s3Key,
+				url: m.media.url,
+				thumbnailUrl: m.media.thumbnailUrl,
+				mimeType: m.media.mimeType,
+				byteSize: m.media.byteSize,
+				durationSeconds: m.media.durationSeconds,
+				width: m.media.width,
+				height: m.media.height,
+		  }
+		: undefined,
 	reactions: (m.reactions ?? []).map((r) => ({
 		userId: String(r.userId),
 		senderKind: r.senderKind,
@@ -438,8 +472,25 @@ export const listMessages = async (
 	return pageMessages(conv._id, options);
 };
 
-const preview = (body: string): string =>
-	body.length > 140 ? `${body.slice(0, 137)}…` : body;
+const formatPreview = (body: string, kind?: string): string => {
+	if (body.trim()) {
+		return body.length > 140 ? `${body.slice(0, 137)}…` : body.trim();
+	}
+	switch (kind) {
+		case "image":
+			return "Photo";
+		case "video":
+			return "Video";
+		case "audio":
+			return "Voice memo";
+		case "activity_card":
+			return "Workout completed";
+		case "exercise_share":
+			return "Shared an exercise";
+		default:
+			return "Attachment";
+	}
+};
 
 /** The User record that holds this person's browser push subscriptions. */
 const pushUserIdOf = async (p: ParticipantLean): Promise<string | null> => {
@@ -467,7 +518,7 @@ const pushToRecipient = async (
 ): Promise<void> => {
 	if (isAttentive(String(recipient.id))) return;
 	const title = senderName || "New message";
-	const body = preview(message.body);
+	const body = formatPreview(message.body, message.kind);
 	const data = {
 		kind: "chat_message",
 		conversationId: message.conversationId,
@@ -496,12 +547,20 @@ export const sendMessage = async (
 	input: {
 		body: string;
 		clientMessageId?: string;
-		kind?: "text" | "activity_card";
+		kind?: string;
 		payload?: Record<string, unknown>;
+		media?: ChatMediaDto;
 	},
 ): Promise<ChatMessageDto> => {
 	const body = input.body.trim();
-	if (!body) throw badRequest("Message cannot be empty");
+	if (
+		!body &&
+		!input.media &&
+		input.kind !== "activity_card" &&
+		input.kind !== "exercise_share"
+	) {
+		throw badRequest("Message cannot be empty");
+	}
 	if (body.length > CHAT_MESSAGE_MAX_LENGTH) {
 		throw badRequest("Message is too long");
 	}
@@ -542,8 +601,19 @@ export const sendMessage = async (
 			senderName: self.name,
 			body,
 			clientMessageId: input.clientMessageId,
-			kind: input.kind ?? "text",
+			kind:
+				input.kind ??
+				(input.media
+					? input.media.mimeType.startsWith("image/")
+						? "image"
+						: input.media.mimeType.startsWith("video/")
+							? "video"
+							: input.media.mimeType.startsWith("audio/")
+								? "audio"
+								: "text"
+					: "text"),
 			payload: input.payload,
+			media: input.media,
 		});
 		created = doc.toObject() as unknown as MessageLean;
 	} catch (error) {
@@ -560,7 +630,7 @@ export const sendMessage = async (
 			$set: {
 				lastMessage: {
 					id: created._id,
-					body: preview(body),
+					body: formatPreview(body, created.kind),
 					senderId: created.senderId,
 					at,
 				},

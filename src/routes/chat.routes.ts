@@ -22,6 +22,7 @@ import {
 	postReaction,
 	postRead,
 	postReport,
+	presignChatMedia,
 	putOverride,
 	putPolicy,
 	putSettings,
@@ -43,6 +44,7 @@ router.post("/conversations", postConversation);
 router.get("/conversations/:id", getConversationById);
 router.get("/conversations/:id/messages", getMessages);
 router.post("/conversations/:id/messages", chatRateLimit, postMessage);
+router.post("/conversations/:id/media/presign", chatRateLimit, presignChatMedia);
 router.post("/conversations/:id/messages/:messageId/reactions", postReaction);
 router.delete("/conversations/:id/messages/:messageId/reactions", deleteReactionById);
 router.post("/conversations/:id/read", postRead);
