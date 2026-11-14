@@ -503,7 +503,10 @@ export const updateSession: RequestHandler = async (req, res, next) => {
 			lastTouchedBy: new mongoose.Types.ObjectId(req.user!.id),
 			lastTouchedByModel: actorModelForRole(req.user!.role as AppUserRole),
 		};
-		if (parsed.data.status === WorkoutSessionStatus.Completed) {
+		if (
+			parsed.data.status === WorkoutSessionStatus.Completed &&
+			session.status !== WorkoutSessionStatus.Completed
+		) {
 			update.completedAt = new Date();
 
 			// Mark the assigned plan day as completed in WorkoutPlanAssignment

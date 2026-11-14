@@ -1,6 +1,7 @@
 import { ProgressRecordedBy } from "../../models/Enums";
 import NutritionProgress from "../../models/nutrition-progress.model";
 import type { NutritionActor } from "../../types/nutrition";
+import { syncWeightGoal } from "../goal.service";
 import { getPlan } from "./nutrition-assignment.service";
 import { normalizeToUtcDate, toObjectId } from "./nutrition-errors";
 
@@ -33,7 +34,7 @@ export const addProgressEntry = async (
 ) => {
 	const userObjectId = toObjectId(userId, "BAD_REQUEST", "Invalid user ID");
 
-	return NutritionProgress.create({
+	const entry = await NutritionProgress.create({
 		userId: userObjectId,
 		planId: input.planId
 			? toObjectId(input.planId, "BAD_REQUEST", "Invalid plan ID")
@@ -46,6 +47,14 @@ export const addProgressEntry = async (
 		note: input.note ?? "",
 		recordedBy,
 	});
+
+	if (typeof input.weightKg === "number" && input.weightKg > 0) {
+		void syncWeightGoal(userObjectId, input.weightKg).catch((err) => {
+			console.error("[addProgressEntry] Failed to sync weight goal:", err);
+		});
+	}
+
+	return entry;
 };
 
 export const listProgress = async (

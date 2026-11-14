@@ -2,7 +2,9 @@ import mongoose from "mongoose";
 import BcaMetric from "../models/BcaMetric";
 import { GoalStatus, GoalType } from "../models/Enums";
 import HealthGoals from "../models/HealthGoals";
+import HealthMarkers from "../models/HealthMarkers";
 import MemberGoal from "../models/MemberGoal";
+import NutritionProgress from "../models/nutrition-progress.model";
 import type {
 	CreateGoalInput,
 	UpdateGoalInput,
@@ -16,15 +18,30 @@ export async function ensureDefaultGoals(userId: string): Promise<void> {
 	});
 	if (count > 0) return;
 
-	// Check onboarding intake for target weight
-	const intake = await HealthGoals.findOne({ userId: userObjectId }).lean();
-	// Check latest BCA metric for baseline weight
-	const latestBca = await BcaMetric.findOne({ userId: userObjectId })
-		.sort({ recordedAt: -1 })
-		.lean();
+	// Check onboarding intake for target weight and health markers
+	const [intakeGoals, intakeMarkers, latestBca, latestProgress] = await Promise.all([
+		HealthGoals.findOne({ userId: userObjectId }).lean(),
+		HealthMarkers.findOne({ userId: userObjectId }).lean(),
+		BcaMetric.findOne({ userId: userObjectId }).sort({ recordedAt: -1 }).lean(),
+		NutritionProgress.findOne({ userId: userObjectId, weightKg: { $ne: null } })
+			.sort({ recordedAt: -1 })
+			.lean(),
+	]);
 
-	const baselineWeight = latestBca?.bodyComposition?.weight ?? 75.0;
-	const targetWeight = intake?.targetWeight ?? Math.max(baselineWeight - 4, 60.0);
+	// Ground truth baseline weight priority: Latest Progress Check-in -> Latest BCA scan vitals -> Onboarding Health Markers -> 75.0 fallback
+	const baselineWeight =
+		latestProgress?.weightKg ??
+		latestBca?.vitals?.weight_kg ??
+		intakeMarkers?.weight ??
+		75.0;
+
+	const targetWeight =
+		intakeGoals?.targetWeight ?? Math.max(baselineWeight - 4, 60.0);
+
+	const currentWeight =
+		latestProgress?.weightKg ??
+		latestBca?.vitals?.weight_kg ??
+		baselineWeight;
 
 	const defaultGoals = [
 		{
@@ -33,7 +50,7 @@ export async function ensureDefaultGoals(userId: string): Promise<void> {
 			title: "Target Weight & Recomposition",
 			description: "Progress towards your target body weight",
 			startValue: baselineWeight,
-			currentValue: baselineWeight,
+			currentValue: currentWeight,
 			targetValue: targetWeight,
 			unit: "kg",
 			status: GoalStatus.Active,
@@ -44,7 +61,7 @@ export async function ensureDefaultGoals(userId: string): Promise<void> {
 			title: "Daily Longevity Hydration",
 			description: "Optimal cellular hydration volume",
 			startValue: 0,
-			currentValue: 1250,
+			currentValue: 0,
 			targetValue: 3000,
 			unit: "ml",
 			status: GoalStatus.Active,
@@ -55,7 +72,7 @@ export async function ensureDefaultGoals(userId: string): Promise<void> {
 			title: "Daily Calorie Target",
 			description: "Target energy intake per prescribed plan",
 			startValue: 0,
-			currentValue: 1450,
+			currentValue: 0,
 			targetValue: 2200,
 			unit: "kcal",
 			status: GoalStatus.Active,
@@ -63,6 +80,24 @@ export async function ensureDefaultGoals(userId: string): Promise<void> {
 	];
 
 	await MemberGoal.insertMany(defaultGoals);
+}
+
+/**
+ * Synchronizes the active WEIGHT goal's currentValue when a new weigh-in is
+ * recorded or an ActiveX BCA scan is ingested.
+ */
+export async function syncWeightGoal(
+	userId: string | mongoose.Types.ObjectId,
+	currentWeightKg: number,
+): Promise<void> {
+	if (!currentWeightKg || currentWeightKg <= 0) return;
+	const userObjectId =
+		typeof userId === "string" ? new mongoose.Types.ObjectId(userId) : userId;
+
+	await MemberGoal.updateMany(
+		{ userId: userObjectId, type: GoalType.Weight, status: GoalStatus.Active },
+		{ $set: { currentValue: currentWeightKg } },
+	);
 }
 
 export async function getMyGoals(userId: string) {

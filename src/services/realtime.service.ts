@@ -94,14 +94,22 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
 			void socket.join(`nutritionist:${user.id}`);
 		}
 
-		// Join branch room if provided in handshake or query (FX-35.5)
-		const branchId = socket.handshake.auth?.branchId || socket.handshake.query?.branchId;
-		if (typeof branchId === "string" && branchId.trim()) {
+		// Join branch room if authorized staff (FX-35.5)
+		const isStaffRole = [
+			"admin",
+			"frontdesk",
+			"trainer",
+			"nutritionist",
+			"doctor",
+		].includes(user.role);
+		const branchId =
+			socket.handshake.auth?.branchId || socket.handshake.query?.branchId;
+		if (isStaffRole && typeof branchId === "string" && branchId.trim()) {
 			void socket.join(`branch:${branchId.trim()}`);
 		}
 
 		socket.on("join_branch", (bId: string) => {
-			if (typeof bId === "string" && bId.trim()) {
+			if (isStaffRole && typeof bId === "string" && bId.trim()) {
 				void socket.join(`branch:${bId.trim()}`);
 			}
 		});

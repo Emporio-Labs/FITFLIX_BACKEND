@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import BcaMetric from "../models/BcaMetric";
 import { OnboardingStep } from "../models/Enums";
 import User from "../models/User";
+import { syncWeightGoal } from "../services/goal.service";
 import { updateSharedOnboardingStep } from "./onboarding.service";
 
 dotenv.config();
@@ -215,6 +216,12 @@ export const upsertBcaRecordForUser = async (
 		{ $set: payload },
 		{ upsert: true },
 	);
+
+	if (typeof payload.vitals?.weight_kg === "number" && payload.vitals.weight_kg > 0) {
+		void syncWeightGoal(userId, payload.vitals.weight_kg).catch((err) => {
+			console.error("[activex] Failed to sync weight goal from BCA scan:", err);
+		});
+	}
 
 	try {
 		await updateSharedOnboardingStep(
