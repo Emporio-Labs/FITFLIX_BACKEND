@@ -53,6 +53,7 @@ import eventRouter from "./routes/event.routes";
 import progressPhotoRouter from "./routes/progress-photo.routes";
 import agendaRouter from "./routes/agenda.routes";
 import habitRouter from "./routes/habit.routes";
+import sleepRouter from "./routes/sleep.routes";
 import goalRouter from "./routes/goal.routes";
 import recordingRouter, { adminRecordingRouter } from "./routes/recording.routes";
 import presaleFoundersRouter, {
@@ -329,6 +330,8 @@ app.use("/habits", apiRateLimit, habitRouter);
 app.use("/api/v1/habits", apiRateLimit, habitRouter);
 app.use("/goals", apiRateLimit, goalRouter);
 app.use("/api/v1/goals", apiRateLimit, goalRouter);
+app.use("/sleep", apiRateLimit, sleepRouter);
+app.use("/api/v1/sleep", apiRateLimit, sleepRouter);
 app.use("/alerts", apiRateLimit, operationalAlertRouter);
 app.use("/api/v1/alerts", apiRateLimit, operationalAlertRouter);
 app.use("/workout-plans", workoutPlanRouter);

@@ -516,6 +516,16 @@ const buildNutrition = async (
 			consumedKcal: Math.round(row?.consumedCaloriesKcal ?? 0),
 			plannedKcal: Math.round(row?.plannedCaloriesKcal ?? 0),
 			logged: isLogged(row),
+			consumedMacros: {
+				proteinG: Math.round((row?.consumedMacros as any)?.proteinG ?? 0),
+				carbsG: Math.round((row?.consumedMacros as any)?.carbsG ?? 0),
+				fatG: Math.round((row?.consumedMacros as any)?.fatG ?? 0),
+			},
+			plannedMacros: {
+				proteinG: Math.round((row?.plannedMacros as any)?.proteinG ?? 0),
+				carbsG: Math.round((row?.plannedMacros as any)?.carbsG ?? 0),
+				fatG: Math.round((row?.plannedMacros as any)?.fatG ?? 0),
+			},
 		});
 	}
 

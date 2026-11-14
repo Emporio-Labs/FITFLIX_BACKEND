@@ -120,6 +120,16 @@ export interface NutritionDayPoint {
 	 *  distinct empty bar — never as a zero, which would read as "ate
 	 *  nothing". */
 	logged: boolean;
+	consumedMacros?: {
+		proteinG: number;
+		carbsG: number;
+		fatG: number;
+	};
+	plannedMacros?: {
+		proteinG: number;
+		carbsG: number;
+		fatG: number;
+	};
 }
 
 export interface MacroPair {
