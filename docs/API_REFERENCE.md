@@ -807,6 +807,33 @@ Also mounted at `/api/v1/agenda`. Rate limit: `apiRateLimit`. Aggregates workout
 | GET | `/agenda` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `getMemberAgendaHandler` |
 
 
+#### `/habits` → [habit.routes.ts](../src/routes/habit.routes.ts)
+
+Also mounted at `/api/v1/habits`. Rate limit: `apiRateLimit`. Manages member longevity habits, daily completion status, streaks, and curated catalog.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/habits/catalog` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `getHabitCatalogHandler` |
+| GET | `/habits/me/today` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `getTodayHabitsHandler` |
+| POST | `/habits/me/toggle` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `toggleHabitHandler` |
+| GET | `/habits/me` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `getMyHabitsHandler` |
+| POST | `/habits/me` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `createHabitHandler` |
+| PATCH | `/habits/me/:id` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `updateHabitHandler` |
+| GET | `/habits/user/:userId` | JWT | admin, frontdesk, trainer, nutritionist, doctor | `getMemberHabitsForStaffHandler` |
+
+
+#### `/goals` → [goal.routes.ts](../src/routes/goal.routes.ts)
+
+Also mounted at `/api/v1/goals`. Rate limit: `apiRateLimit`. Manages member goals (target weight, hydration, calorie targets, custom goals) with progress percentages.
+
+| Method | Path | Auth | Roles | Handler |
+|---|---|---|---|---|
+| GET | `/goals/me` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `getMyGoalsHandler` |
+| POST | `/goals/me` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `createGoalHandler` |
+| PATCH | `/goals/me/:id` | JWT | user, admin, frontdesk, trainer, nutritionist, doctor | `updateGoalHandler` |
+| GET | `/goals/user/:userId` | JWT | admin, frontdesk, trainer, nutritionist, doctor | `getMemberGoalsForStaffHandler` |
+
+
 #### `/alerts` → [operational-alert.routes.ts](../src/routes/operational-alert.routes.ts)
 
 Also mounted at `/api/v1/alerts`. Rate limit: `apiRateLimit`.

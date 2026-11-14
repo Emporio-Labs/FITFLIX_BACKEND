@@ -52,6 +52,8 @@ import settingsRouter from "./routes/settings.routes";
 import eventRouter from "./routes/event.routes";
 import progressPhotoRouter from "./routes/progress-photo.routes";
 import agendaRouter from "./routes/agenda.routes";
+import habitRouter from "./routes/habit.routes";
+import goalRouter from "./routes/goal.routes";
 import recordingRouter, { adminRecordingRouter } from "./routes/recording.routes";
 import presaleFoundersRouter, {
 	presaleFoundersAdminRouter,
@@ -323,6 +325,10 @@ app.use("/progress/photos", apiRateLimit, progressPhotoRouter);
 app.use("/api/v1/progress/photos", apiRateLimit, progressPhotoRouter);
 app.use("/agenda", apiRateLimit, agendaRouter);
 app.use("/api/v1/agenda", apiRateLimit, agendaRouter);
+app.use("/habits", apiRateLimit, habitRouter);
+app.use("/api/v1/habits", apiRateLimit, habitRouter);
+app.use("/goals", apiRateLimit, goalRouter);
+app.use("/api/v1/goals", apiRateLimit, goalRouter);
 app.use("/alerts", apiRateLimit, operationalAlertRouter);
 app.use("/api/v1/alerts", apiRateLimit, operationalAlertRouter);
 app.use("/workout-plans", workoutPlanRouter);

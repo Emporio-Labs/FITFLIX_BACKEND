@@ -591,3 +591,44 @@ export enum PhotoPose {
 	Back = "back",
 }
 
+export enum HabitCategory {
+	Hydration = "HYDRATION",
+	Movement = "MOVEMENT",
+	Sleep = "SLEEP",
+	Nutrition = "NUTRITION",
+	Recovery = "RECOVERY",
+	Mindfulness = "MINDFULNESS",
+	Custom = "CUSTOM",
+}
+
+export enum HabitFrequency {
+	Daily = "DAILY",
+	Weekdays = "WEEKDAYS",
+	Weekends = "WEEKENDS",
+}
+
+export enum HabitLogSource {
+	Manual = "manual",
+	AppleWatch = "apple_watch",
+	HealthKit = "healthkit",
+	HealthConnect = "health_connect",
+	Coach = "coach",
+}
+
+export enum GoalType {
+	Weight = "WEIGHT",
+	Water = "WATER",
+	Nutrition = "NUTRITION",
+	Steps = "STEPS",
+	WorkoutFrequency = "WORKOUT_FREQUENCY",
+	Custom = "CUSTOM",
+}
+
+export enum GoalStatus {
+	Active = "ACTIVE",
+	Achieved = "ACHIEVED",
+	Paused = "PAUSED",
+	Cancelled = "CANCELLED",
+}
+
+
