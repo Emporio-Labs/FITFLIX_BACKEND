@@ -1,7 +1,10 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
+import { NotificationChannel, NotificationKind } from "../models/Enums";
 import Notification from "../models/Notification";
+import NotificationPreferences from "../models/NotificationPreferences";
 import { isAllowedTopic, registerFcmToken, sendPushToTopic } from "../services/fcm.service";
+import { notify } from "../services/notification.service";
 import {
 	getVapidPublicKey,
 	listPushSubscriptions,
@@ -11,6 +14,18 @@ import {
 	updatePushPreferences,
 } from "../services/webpush.service";
 import type { AuthenticatedUser } from "../types/auth";
+import { updateNotificationPreferencesSchema } from "../validators/notification-preferences.validator";
+
+const getValidationDetails = (
+	issues: Array<{ path: PropertyKey[]; message: string }>,
+): Record<string, string> => {
+	const details: Record<string, string> = {};
+	for (const issue of issues) {
+		const field = issue.path.length > 0 ? issue.path.map(String).join(".") : "body";
+		details[field] = issue.message;
+	}
+	return details;
+};
 
 const getIdParam = (v: unknown): string | null => {
 	if (typeof v !== "string" || !mongoose.Types.ObjectId.isValid(v)) return null;
@@ -313,6 +328,160 @@ export const broadcastToTopic: RequestHandler = async (req, res, next) => {
 			: undefined;
 		await sendPushToTopic(topic, { title, body, data: stringData });
 		res.status(200).json({ message: "Broadcast sent", topic });
+	} catch (err) {
+		next(err);
+	}
+};
+
+// -----------------------------------------------------------------------------
+// Im-6 · Mobile member notification preferences & diagnostics
+// -----------------------------------------------------------------------------
+
+export const getMemberPreferences: RequestHandler = async (req, res, next) => {
+	const user = req.user as AuthenticatedUser | undefined;
+	if (!user) {
+		res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+		return;
+	}
+
+	try {
+		let preferences = await NotificationPreferences.findOne({ userId: user.id });
+		if (!preferences) {
+			preferences = await NotificationPreferences.create({ userId: user.id });
+		}
+		res.status(200).json({ preferences });
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const updateMemberPreferences: RequestHandler = async (req, res, next) => {
+	const user = req.user as AuthenticatedUser | undefined;
+	if (!user) {
+		res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+		return;
+	}
+
+	const parsed = updateNotificationPreferencesSchema.safeParse(req.body);
+	if (!parsed.success) {
+		res.status(400).json({
+			error: "Validation failed",
+			code: "VALIDATION_ERROR",
+			details: getValidationDetails(parsed.error.issues),
+		});
+		return;
+	}
+
+	try {
+		let preferences = await NotificationPreferences.findOne({ userId: user.id });
+		if (!preferences) {
+			preferences = new NotificationPreferences({ userId: user.id });
+		}
+
+		const data = parsed.data;
+		if (data.masterPushEnabled !== undefined) {
+			preferences.masterPushEnabled = data.masterPushEnabled;
+		}
+		if (data.coachMessages) {
+			if (data.coachMessages.directMessages) {
+				preferences.coachMessages.directMessages = data.coachMessages.directMessages;
+			}
+			if (data.coachMessages.feedbackAndComments) {
+				preferences.coachMessages.feedbackAndComments =
+					data.coachMessages.feedbackAndComments;
+			}
+		}
+		if (data.appointments) {
+			if (data.appointments.sessionUpdates) {
+				preferences.appointments.sessionUpdates = data.appointments.sessionUpdates;
+			}
+			if (data.appointments.reminderLeadMinutes !== undefined) {
+				preferences.appointments.reminderLeadMinutes =
+					data.appointments.reminderLeadMinutes;
+			}
+			if (data.appointments.waitlistAlerts) {
+				preferences.appointments.waitlistAlerts = data.appointments.waitlistAlerts;
+			}
+		}
+		if (data.workouts) {
+			if (data.workouts.completionMode) {
+				preferences.workouts.completionMode = data.workouts.completionMode;
+			}
+			if (data.workouts.completionFrequency) {
+				preferences.workouts.completionFrequency =
+					data.workouts.completionFrequency;
+			}
+			if (data.workouts.milestonesAndPrs) {
+				preferences.workouts.milestonesAndPrs = data.workouts.milestonesAndPrs;
+			}
+			if (data.workouts.bcaScanSynced) {
+				preferences.workouts.bcaScanSynced = data.workouts.bcaScanSynced;
+			}
+		}
+		if (data.habits) {
+			if (data.habits.weighInReminderEnabled !== undefined) {
+				preferences.habits.weighInReminderEnabled =
+					data.habits.weighInReminderEnabled;
+			}
+			if (data.habits.weighInTime) {
+				preferences.habits.weighInTime = data.habits.weighInTime;
+			}
+			if (data.habits.waterNudgesEnabled !== undefined) {
+				preferences.habits.waterNudgesEnabled = data.habits.waterNudgesEnabled;
+			}
+		}
+		if (data.community) {
+			if (data.community.repliesAndMentions) {
+				preferences.community.repliesAndMentions =
+					data.community.repliesAndMentions;
+			}
+			if (data.community.cheersAndLikes) {
+				preferences.community.cheersAndLikes = data.community.cheersAndLikes;
+			}
+		}
+		if (data.quietHours) {
+			if (data.quietHours.enabled !== undefined) {
+				preferences.quietHours.enabled = data.quietHours.enabled;
+			}
+			if (data.quietHours.startTime) {
+				preferences.quietHours.startTime = data.quietHours.startTime;
+			}
+			if (data.quietHours.endTime) {
+				preferences.quietHours.endTime = data.quietHours.endTime;
+			}
+		}
+
+		await preferences.save();
+		res.status(200).json({ preferences });
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const sendTestNotificationPush: RequestHandler = async (req, res, next) => {
+	const user = req.user as AuthenticatedUser | undefined;
+	if (!user) {
+		res.status(403).json({ error: "Forbidden", code: "FORBIDDEN" });
+		return;
+	}
+
+	try {
+		await notify({
+			userId: user.id,
+			kind: NotificationKind.SystemTest,
+			title: "Fitflix Notification Test",
+			body: "The Fitflix notification engine is configured and working properly on your device.",
+			channels: [NotificationChannel.InApp, NotificationChannel.Push],
+			data: {
+				test: true,
+				sentAt: new Date().toISOString(),
+			},
+		});
+
+		res.status(200).json({
+			message: "Test notification dispatched successfully",
+			sentAt: new Date(),
+		});
 	} catch (err) {
 		next(err);
 	}

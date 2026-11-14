@@ -218,6 +218,18 @@ export enum NotificationChannel {
 	Socket = "SOCKET",
 }
 
+export enum NotificationDeliveryMode {
+	Both = "both",
+	InApp = "in_app",
+	None = "none",
+}
+
+export enum WorkoutNotificationFrequency {
+	MilestoneOnly = "milestone_only",
+	All = "all",
+	None = "none",
+}
+
 export enum NotificationKind {
 	AppointmentBooked = "appointment_booked",
 	AppointmentRescheduled = "appointment_rescheduled",
@@ -233,6 +245,14 @@ export enum NotificationKind {
 	// FX-12 Class Waitlist notifications
 	WaitlistPromoted = "waitlist_promoted",
 	WaitlistSkippedInsufficientCredits = "waitlist_skipped_insufficient_credits",
+	// Coach, workouts, habits & system diagnostics
+	CoachMessage = "coach_message",
+	CoachFeedback = "coach_feedback",
+	WorkoutCompleted = "workout_completed",
+	BcaScanSynced = "bca_scan_synced",
+	GoalMilestone = "goal_milestone",
+	HabitReminder = "habit_reminder",
+	SystemTest = "system_test",
 }
 
 export enum WaitlistStatus {

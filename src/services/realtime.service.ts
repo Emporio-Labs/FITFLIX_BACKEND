@@ -24,7 +24,14 @@ export type UserEvent =
 	| "community_post_commented"
 	| "community_comment_replied"
 	| "waitlist_promoted"
-	| "waitlist_skipped_insufficient_credits";
+	| "waitlist_skipped_insufficient_credits"
+	| "coach_message"
+	| "coach_feedback"
+	| "workout_completed"
+	| "bca_scan_synced"
+	| "goal_milestone"
+	| "habit_reminder"
+	| "system_test";
 
 export type NutritionistEvent =
 	| "new_user_assigned"

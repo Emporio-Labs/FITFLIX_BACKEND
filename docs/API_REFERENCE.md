@@ -795,6 +795,9 @@ guards — see [CHAT_MODULE.md](CHAT_MODULE.md).
 | Method | Path | Auth | Roles | Handler |
 |---|---|---|---|---|
 | GET | `/notifications` | JWT | — | `listNotifications` |
+| GET | `/notifications/preferences` | JWT | — | `getMemberPreferences` |
+| PATCH | `/notifications/preferences` | JWT | — | `updateMemberPreferences` |
+| POST | `/notifications/test-push` | JWT | — | `sendTestNotificationPush` |
 | PATCH | `/notifications/read-all` | JWT | — | `markAllRead` |
 | PATCH | `/notifications/:id/read` | JWT | — | `markNotificationRead` |
 | POST | `/notifications/fcm-token` | JWT | — | `registerToken` |
@@ -5863,6 +5866,44 @@ Register a device push token.
 | `platform` | string | yes | `ios` or `android` |
 
 **Success (200):** `{ "message": "FCM token registered" }`
+
+### GET /notifications/preferences
+
+Get member notification preferences (creates defaults if none exist).
+
+**Auth:** Bearer (any role)
+
+**Success (200):**
+```json
+{
+  "preferences": {
+    "userId": "67...",
+    "masterPushEnabled": true,
+    "coachMessages": { "directMessages": "both", "feedbackAndComments": "both" },
+    "appointments": { "sessionUpdates": "both", "reminderLeadMinutes": 60, "waitlistAlerts": "both" },
+    "workouts": { "completionMode": "both", "completionFrequency": "milestone_only", "milestonesAndPrs": "both", "bcaScanSynced": "both" },
+    "habits": { "weighInReminderEnabled": true, "weighInTime": "07:30", "waterNudgesEnabled": true },
+    "community": { "repliesAndMentions": "both", "cheersAndLikes": "in_app" },
+    "quietHours": { "enabled": true, "startTime": "22:00", "endTime": "07:00" }
+  }
+}
+```
+
+### PATCH /notifications/preferences
+
+Update member notification preferences with deep partial support.
+
+**Auth:** Bearer (any role)
+
+**Success (200):** `{ "preferences": { /* updated preferences */ } }`
+
+### POST /notifications/test-push
+
+Trigger an instant diagnostic test push to registered devices and write an in-app notification row.
+
+**Auth:** Bearer (any role)
+
+**Success (200):** `{ "message": "Test notification dispatched successfully", "sentAt": "..." }`
 
 ---
 

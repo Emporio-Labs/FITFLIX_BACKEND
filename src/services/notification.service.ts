@@ -1,6 +1,7 @@
 import { NotificationChannel, NotificationKind } from "../models/Enums";
 import Notification from "../models/Notification";
 import { sendPushToUser } from "./fcm.service";
+import { resolveNotificationDelivery } from "./notification-filter.service";
 import {
 	emitToFrontDesk,
 	emitToNutritionist,
@@ -45,11 +46,18 @@ export async function notify(payload: NotifyPayload): Promise<void> {
 			)
 		: undefined;
 
+	// Check member notification preferences and quiet hours
+	const decision = await resolveNotificationDelivery(payload.userId, payload.kind, {
+		isMilestone: Boolean(payload.data?.isMilestone),
+		isPR: Boolean(payload.data?.isPR),
+		isTransactional: Boolean(payload.data?.isTransactional),
+	});
+
 	// In-app persistence. The created doc's id is threaded into the FCM data
 	// payload below so a tapped push can mark the right notification read
 	// without a round trip to look it up by content.
 	let createdId: string | undefined;
-	if (channels.includes(NotificationChannel.InApp)) {
+	if (channels.includes(NotificationChannel.InApp) && decision.shouldInApp) {
 		try {
 			const created = await Notification.create({
 				userId: payload.userId,
@@ -82,7 +90,7 @@ export async function notify(payload: NotifyPayload): Promise<void> {
 	// FCM push. `kind` and the persisted notification id ride along in the
 	// data payload — without them the client can only guess at a tap's
 	// destination and can't mark the right inbox row read.
-	if (channels.includes(NotificationChannel.Push)) {
+	if (channels.includes(NotificationChannel.Push) && decision.shouldPush) {
 		sendPushToUser(payload.userId, {
 			title: payload.title,
 			body: payload.body,
@@ -128,6 +136,13 @@ function mapKindToUserEvent(kind: NotificationKind): UserEvent {
 		[NotificationKind.WaitlistPromoted]: "waitlist_promoted",
 		[NotificationKind.WaitlistSkippedInsufficientCredits]:
 			"waitlist_skipped_insufficient_credits",
+		[NotificationKind.CoachMessage]: "coach_message",
+		[NotificationKind.CoachFeedback]: "coach_feedback",
+		[NotificationKind.WorkoutCompleted]: "workout_completed",
+		[NotificationKind.BcaScanSynced]: "bca_scan_synced",
+		[NotificationKind.GoalMilestone]: "goal_milestone",
+		[NotificationKind.HabitReminder]: "habit_reminder",
+		[NotificationKind.SystemTest]: "system_test",
 	};
 	return map[kind];
 }

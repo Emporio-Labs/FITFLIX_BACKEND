@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
 	broadcastToTopic,
+	getMemberPreferences,
 	getWebPushVapidKey,
 	listMyWebPushSubscriptions,
 	listNotifications,
@@ -9,7 +10,9 @@ import {
 	registerToken,
 	registerWebPushSubscription,
 	removeWebPushSubscription,
+	sendTestNotificationPush,
 	sendWebPushTest,
+	updateMemberPreferences,
 	updateWebPushPreferences,
 } from "../controllers/notification.controller";
 import { authenticateToken } from "../middleware/jwt-auth.middleware";
@@ -18,7 +21,11 @@ import { authorize } from "../middleware/rbac.middleware";
 const router = Router();
 router.use(authenticateToken);
 
+// Member notification inbox & preferences (Im-6)
 router.get("/", listNotifications);
+router.get("/preferences", getMemberPreferences);
+router.patch("/preferences", updateMemberPreferences);
+router.post("/test-push", sendTestNotificationPush);
 router.patch("/read-all", markAllRead);
 router.patch("/:id/read", markNotificationRead);
 router.post("/fcm-token", registerToken);
