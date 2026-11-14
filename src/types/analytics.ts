@@ -51,6 +51,14 @@ export interface BodySeriesPoint {
 	weightKg: number | null;
 	bodyFatPercent: number | null;
 	skeletalMuscleMassKg: number | null;
+	source?: string;
+	measurements?: {
+		chestCm?: number | null;
+		waistCm?: number | null;
+		hipCm?: number | null;
+		armCm?: number | null;
+		thighCm?: number | null;
+	};
 }
 
 export interface BodyDeltas {

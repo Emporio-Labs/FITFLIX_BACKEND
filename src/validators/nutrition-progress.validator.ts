@@ -13,11 +13,21 @@ export const progressBodySchema = z
 		bodyFatPct: z.coerce.number().min(0).max(100).nullable().optional(),
 		measurements: z
 			.object({
+				neckCm: nullableNumber,
+				shouldersCm: nullableNumber,
 				chestCm: nullableNumber,
+				bicepLeftCm: nullableNumber,
+				bicepRightCm: nullableNumber,
+				armCm: nullableNumber,
+				forearmLeftCm: nullableNumber,
+				forearmRightCm: nullableNumber,
 				waistCm: nullableNumber,
 				hipCm: nullableNumber,
-				armCm: nullableNumber,
+				thighLeftCm: nullableNumber,
+				thighRightCm: nullableNumber,
 				thighCm: nullableNumber,
+				calfLeftCm: nullableNumber,
+				calfRightCm: nullableNumber,
 			})
 			.optional(),
 		photoUrls: z.array(z.string().trim().url()).max(10).optional(),

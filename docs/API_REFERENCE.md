@@ -681,6 +681,7 @@ Also mounted at `/api/v1`.
 | GET | `/nutrition/my/hydration` | JWT | user, nutritionist, admin | `getMyHydration` |
 | POST | `/nutrition/my/progress` | JWT | user | `addMyProgress` |
 | GET | `/nutrition/my/progress` | JWT | user, nutritionist, admin | `listMyProgress` |
+| DELETE | `/nutrition/my/progress/:id` | JWT | user | `deleteMyProgress` |
 | GET | `/nutrition/my/adherence/weekly` | JWT | user, nutritionist, admin | `getMyWeeklyAdherence` |
 | GET | `/nutrition/my/adherence` | JWT | user, nutritionist, admin | `getMyAdherence` |
 | POST | `/nutrition/plans` | JWT | nutritionist, admin | `createPlan` |
@@ -5357,6 +5358,17 @@ curl -X POST "https://api.example.com/nutrition/my/progress" \
 **Success (201):** `{ "message": "Progress recorded", "entry": { /* ... */ } }`
 
 #### GET /nutrition/my/progress — USER (`planId?`, `from?`, `to?`)
+
+#### DELETE /nutrition/my/progress/:id — USER
+
+Deletes a progress check-in entry owned by the authenticated user.
+
+```bash
+curl -X DELETE "https://api.example.com/nutrition/my/progress/664c1b2c3d4e5f6a7b8c9d0e" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Success (200):** `{ "success": true, "message": "Progress entry deleted" }`
 
 ### Adherence (user)
 

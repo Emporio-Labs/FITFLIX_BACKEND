@@ -78,6 +78,15 @@ export const listProgress = async (
 	return NutritionProgress.find(filter).sort({ recordedAt: -1 });
 };
 
+export const deleteProgressEntry = async (id: string, userId: string) => {
+	const userObjectId = toObjectId(userId, "BAD_REQUEST", "Invalid user ID");
+	const progressId = toObjectId(id, "BAD_REQUEST", "Invalid progress ID");
+	return NutritionProgress.findOneAndDelete({
+		_id: progressId,
+		userId: userObjectId,
+	});
+};
+
 // Plan-scoped read for the assigning nutritionist (auth via getPlan).
 export const getPlanProgress = async (
 	planId: string,

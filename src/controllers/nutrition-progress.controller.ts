@@ -8,6 +8,7 @@ import {
 import {
 	addPlanProgress,
 	addProgressEntry,
+	deleteProgressEntry,
 	getPlanProgress,
 	listProgress,
 } from "../services/nutrition/nutrition-progress.service";
@@ -28,9 +29,18 @@ const serializeProgress = (entry: unknown) => {
 	const { recordedAt, weightKg, note, ...rest } = obj;
 	return {
 		...rest,
+		id: obj._id ? String(obj._id) : undefined,
+		_id: obj._id ? String(obj._id) : undefined,
 		date: recordedAt,
+		recordedAt,
 		weight: weightKg,
+		weightKg,
 		notes: note,
+		note,
+		bodyFatPct: obj.bodyFatPct ?? null,
+		measurements: obj.measurements ?? {},
+		photoUrls: obj.photoUrls ?? [],
+		recordedBy: obj.recordedBy ?? "user",
 	};
 };
 
@@ -133,6 +143,28 @@ export const addPlanProgressEntry: RequestHandler = async (req, res, next) => {
 		res
 			.status(201)
 			.json({ message: "Progress recorded", entry: serializeProgress(entry) });
+	} catch (error) {
+		handleNutritionError(error, res, next);
+	}
+};
+
+export const deleteMyProgress: RequestHandler = async (req, res, next) => {
+	const requester = req.user;
+	if (!requester) {
+		res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+		return;
+	}
+
+	try {
+		const id = requireIdParam(req.params.id, "Progress entry not found");
+		const doc = await deleteProgressEntry(id, requester.id);
+		if (!doc) {
+			res
+				.status(404)
+				.json({ error: "Progress entry not found", code: "NOT_FOUND" });
+			return;
+		}
+		res.status(200).json({ success: true, message: "Progress entry deleted" });
 	} catch (error) {
 		handleNutritionError(error, res, next);
 	}

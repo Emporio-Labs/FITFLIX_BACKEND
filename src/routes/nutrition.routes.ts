@@ -57,6 +57,7 @@ import {
 import {
 	addMyProgress,
 	addPlanProgressEntry,
+	deleteMyProgress,
 	listMyProgress,
 	listPlanProgress,
 } from "../controllers/nutrition-progress.controller";
@@ -198,6 +199,7 @@ nutritionRouter.get(
 	authorize(["user", "nutritionist", "admin"]),
 	listMyProgress,
 );
+nutritionRouter.delete("/my/progress/:id", USER, deleteMyProgress);
 
 // ---- Adherence ----
 // /my/adherence/weekly before /my/adherence to avoid partial match.

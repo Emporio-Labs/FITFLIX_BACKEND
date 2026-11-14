@@ -3,11 +3,21 @@ import { ProgressRecordedBy } from "./Enums";
 
 const measurementsSchema = new mongoose.Schema(
 	{
+		neckCm: { type: Number, default: null },
+		shouldersCm: { type: Number, default: null },
 		chestCm: { type: Number, default: null },
+		bicepLeftCm: { type: Number, default: null },
+		bicepRightCm: { type: Number, default: null },
+		armCm: { type: Number, default: null },
+		forearmLeftCm: { type: Number, default: null },
+		forearmRightCm: { type: Number, default: null },
 		waistCm: { type: Number, default: null },
 		hipCm: { type: Number, default: null },
-		armCm: { type: Number, default: null },
+		thighLeftCm: { type: Number, default: null },
+		thighRightCm: { type: Number, default: null },
 		thighCm: { type: Number, default: null },
+		calfLeftCm: { type: Number, default: null },
+		calfRightCm: { type: Number, default: null },
 	},
 	{ _id: false },
 );

@@ -29,6 +29,7 @@ import ExpertAppointment from "../models/ExpertAppointment";
 import GymVisit from "../models/GymVisit";
 import NutritionistBooking from "../models/NutritionistBooking";
 import NutritionAdherenceDaily from "../models/nutrition-adherence.model";
+import NutritionProgress from "../models/nutrition-progress.model";
 import UserNutritionPlan from "../models/nutrition-plan.model";
 import SetLog from "../models/SetLog";
 import UnifiedBooking from "../models/UnifiedBooking";
@@ -157,10 +158,19 @@ const snapshotOf = (scan: Record<string, any>): BodySnapshot => {
 const buildBody = async (
 	userId: mongoose.Types.ObjectId,
 ): Promise<BodyBlock> => {
-	const scans = await BcaMetric.find({ userId })
-		.sort({ recordedAt: 1 })
-		.limit(MAX_SCANS)
-		.lean();
+	const [scans, manualEntries] = await Promise.all([
+		BcaMetric.find({ userId })
+			.sort({ recordedAt: 1 })
+			.limit(MAX_SCANS)
+			.lean(),
+		NutritionProgress.find({
+			userId,
+			weightKg: { $ne: null },
+		})
+			.sort({ recordedAt: 1 })
+			.limit(MAX_SCANS)
+			.lean(),
+	]);
 
 	const empty: BodyBlock = {
 		hasData: false,
@@ -176,22 +186,95 @@ const buildBody = async (
 		},
 		series: [],
 	};
-	if (scans.length === 0) return empty;
+	if (scans.length === 0 && manualEntries.length === 0) return empty;
 
-	const snapshots = scans.map(snapshotOf);
-	// Guarded by the length check above; asserted so the whole block below
-	// does not have to re-narrow on every field access.
-	const baseline = snapshots[0] as BodySnapshot;
-	const latest = snapshots[snapshots.length - 1] as BodySnapshot;
+	const snapshots: BodySnapshot[] = scans.map(snapshotOf);
+	const baseline: BodySnapshot =
+		snapshots[0] ??
+		{
+			recordedAt:
+				manualEntries[0]?.recordedAt?.toISOString() ?? new Date().toISOString(),
+			weightKg: manualEntries[0]?.weightKg ?? null,
+			bmi: null,
+			bodyFatPercent: manualEntries[0]?.bodyFatPct ?? null,
+			skeletalMuscleMassKg: null,
+			visceralFat: null,
+			basalMetabolicRateCal: null,
+			bodyAge: null,
+			totalBodyWaterL: null,
+		};
+
+	const latestManual = manualEntries[manualEntries.length - 1];
+	const latestScan = snapshots[snapshots.length - 1];
+
+	let latest: BodySnapshot;
+	if (latestScan && latestManual) {
+		const scanTime = new Date(latestScan.recordedAt).getTime();
+		const manualTime = new Date(latestManual.recordedAt).getTime();
+		if (manualTime > scanTime) {
+			latest = {
+				...latestScan,
+				recordedAt: latestManual.recordedAt.toISOString(),
+				weightKg: latestManual.weightKg ?? latestScan.weightKg,
+				bodyFatPercent: latestManual.bodyFatPct ?? latestScan.bodyFatPercent,
+			};
+		} else {
+			latest = latestScan;
+		}
+	} else if (latestScan) {
+		latest = latestScan;
+	} else {
+		latest = {
+			recordedAt:
+				latestManual?.recordedAt?.toISOString() ?? new Date().toISOString(),
+			weightKg: latestManual?.weightKg ?? null,
+			bmi: null,
+			bodyFatPercent: latestManual?.bodyFatPct ?? null,
+			skeletalMuscleMassKg: null,
+			visceralFat: null,
+			basalMetabolicRateCal: null,
+			bodyAge: null,
+			totalBodyWaterL: null,
+		};
+	}
+
+	const scanPoints = snapshots.map((s) => ({
+		recordedAt: s.recordedAt,
+		weightKg: s.weightKg,
+		bodyFatPercent: s.bodyFatPercent,
+		skeletalMuscleMassKg: s.skeletalMuscleMassKg,
+		source: "activex",
+	}));
+
+	const manualPoints = manualEntries.map((m) => ({
+		recordedAt: m.recordedAt.toISOString(),
+		weightKg: m.weightKg ?? null,
+		bodyFatPercent: m.bodyFatPct ?? null,
+		skeletalMuscleMassKg: null,
+		source: "manual",
+		measurements: m.measurements
+			? {
+					chestCm: m.measurements.chestCm ?? null,
+					waistCm: m.measurements.waistCm ?? null,
+					hipCm: m.measurements.hipCm ?? null,
+					armCm: m.measurements.armCm ?? null,
+					thighCm: m.measurements.thighCm ?? null,
+				}
+			: undefined,
+	}));
+
+	const allSeries = [...scanPoints, ...manualPoints].sort(
+		(a, b) =>
+			new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime(),
+	);
 
 	return {
 		hasData: true,
-		scanCount: snapshots.length,
+		scanCount: snapshots.length + manualEntries.length,
 		latest,
 		baseline,
-		// A single scan is a measurement, not a trend — no invented deltas.
 		deltas:
-			snapshots.length < 2
+			allSeries.length < 2
 				? empty.deltas
 				: {
 						weightKg: diff(latest.weightKg, baseline.weightKg),
@@ -209,12 +292,7 @@ const buildBody = async (
 							baseline.totalBodyWaterL,
 						),
 					},
-		series: snapshots.map((s) => ({
-			recordedAt: s.recordedAt,
-			weightKg: s.weightKg,
-			bodyFatPercent: s.bodyFatPercent,
-			skeletalMuscleMassKg: s.skeletalMuscleMassKg,
-		})),
+		series: allSeries,
 	};
 };
 
