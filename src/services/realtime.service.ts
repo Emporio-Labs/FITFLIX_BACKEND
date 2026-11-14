@@ -112,6 +112,13 @@ export function initSocketIO(httpServer: HttpServer): SocketIOServer {
 			}
 		});
 
+		// Chat presence: a client says whether its window is actually in front.
+		// A dashboard left open in a background tab is connected but nobody is
+		// looking, so it must not swallow the push notification.
+		socket.on("chat:focus", (visible: unknown) => {
+			socket.data.chatFocused = visible !== false;
+		});
+
 		socket.on("disconnect", () => {
 			// Cleanup is automatic — rooms are vacated on disconnect
 		});
@@ -203,3 +210,40 @@ export function getIO(): SocketIOServer | null {
 }
 
 
+
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+
+export type ChatEvent =
+	| "chat:message"
+	| "chat:message_deleted"
+	| "chat:read"
+	| "chat:conversation";
+
+/**
+ * Chat events go to the personal room every socket joins on connect. Members,
+ * trainers and admins all have one, whichever collection their id comes from.
+ */
+export function emitChatEvent(
+	participantId: string,
+	event: ChatEvent,
+	data: unknown,
+): void {
+	if (!io) return;
+	io.to(`user:${participantId}`).emit(event, data);
+}
+
+/**
+ * True when this person has a live socket whose window is in front — i.e. they
+ * will see a message land. A socket that never reported focus counts as
+ * attentive; one that reported "hidden" does not.
+ */
+export function isAttentive(participantId: string): boolean {
+	if (!io) return false;
+	const room = io.sockets.adapter.rooms.get(`user:${participantId}`);
+	if (!room) return false;
+	for (const socketId of room) {
+		const socket = io.sockets.sockets.get(socketId);
+		if (socket && socket.data.chatFocused !== false) return true;
+	}
+	return false;
+}

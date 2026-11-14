@@ -17,6 +17,7 @@ import NutritionMealLog from "../models/nutrition-meal-log.model";
 import UserNutritionPlan from "../models/nutrition-plan.model";
 import NutritionProfile from "../models/nutrition-profile.model";
 import NutritionProgress from "../models/nutrition-progress.model";
+import { purgeChatDataForUser } from "../services/chat/chat.service";
 
 /**
  * Permanently deletes all personal data (consent, health goals/markers, BCA metrics,
@@ -112,6 +113,16 @@ export const deleteAndAnonymizeUserData = async (
 		NutritionProfile.deleteMany({ userId: userObjectId }),
 		NutritionProgress.deleteMany({ userId: userObjectId }),
 	]);
+
+	// 4b. Hard-Delete Chat: conversations, messages, blocks and reports
+	try {
+		const purged = await purgeChatDataForUser(userObjectId);
+		console.log(
+			`[DELETION_ENGINE] Deleted ${purged.conversations} chat conversations and ${purged.messages} messages.`,
+		);
+	} catch (err) {
+		console.error("[DELETION_ENGINE] Error deleting chat data:", err);
+	}
 
 	// 5. Anonymize User Document
 	console.log("[DELETION_ENGINE] Anonymizing user profile...");

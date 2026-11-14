@@ -30,6 +30,7 @@ import invoiceRouter from "./routes/invoice.routes";
 import leadRouter from "./routes/lead.routes";
 import membershipRouter from "./routes/membership.routes";
 import membershipPlanRouter from "./routes/membershipPlan.routes";
+import chatRouter from "./routes/chat.routes";
 import notificationRouter from "./routes/notification.routes";
 import nutritionRouter from "./routes/nutrition.routes";
 import nutritionistBookingRouter from "./routes/nutritionist-booking.routes";
@@ -346,6 +347,8 @@ app.use("/pt", apiRateLimit, personalTrainingRouter);
 app.use("/api/v1/billing", apiRateLimit, billingRouter);
 app.use("/billing", apiRateLimit, billingRouter);
 app.use("/notifications", notificationRouter);
+app.use("/chat", chatRouter);
+app.use("/api/v1/chat", chatRouter);
 app.use("/events", apiRateLimit, eventRouter);
 app.use("/api/v1/events", apiRateLimit, eventRouter);
 // Admin moderation and the unauthenticated public surface must both be mounted
