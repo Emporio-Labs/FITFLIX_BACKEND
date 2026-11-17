@@ -63,6 +63,7 @@
 		"test:location-stamp": "bun run tests/location-stamp.test.ts",
 		"test:branch-scope": "bun run tests/branch-scope.test.ts",
 		"test:new-sale-lookup": "bun run tests/new-sale-lookup.test.ts",
+		"test:sleep-scope": "bun run tests/sleep-roster-scope.test.ts",
 		"test:class-all": "bun run tests/run-all-tests.ts",
 		"migrate:passwords": "bun run scripts/migrate-passwords.ts",
 		"migrate:plan-actor-refs": "bun run scripts/migrate-plan-actor-refs.ts",
