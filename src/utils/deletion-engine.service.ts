@@ -18,6 +18,8 @@ import UserNutritionPlan from "../models/nutrition-plan.model";
 import NutritionProfile from "../models/nutrition-profile.model";
 import NutritionProgress from "../models/nutrition-progress.model";
 import { purgeChatDataForUser } from "../services/chat/chat.service";
+import { purgeWearableDataForUser } from "../services/wearable.service";
+import SleepLog from "../models/sleep-log.model";
 
 /**
  * Permanently deletes all personal data (consent, health goals/markers, BCA metrics,
@@ -72,6 +74,8 @@ export const deleteAndAnonymizeUserData = async (
 		HealthMarkers.deleteMany({ userId: userObjectId }),
 		BcaMetric.deleteMany({ userId: userObjectId }),
 		MedicalReport.deleteMany({ userId: userObjectId }),
+		SleepLog.deleteMany({ userId: userObjectId }),
+		purgeWearableDataForUser(userObjectId),
 		Schedule.deleteMany({ user: userObjectId }),
 	]);
 
