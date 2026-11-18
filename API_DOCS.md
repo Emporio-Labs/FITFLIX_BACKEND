@@ -4366,6 +4366,27 @@ POST /onboarding/complete
 
 ---
 
+## Wearables (Apple Health / Health Connect)
+
+Base: `/api/v1/wearables`. All routes need a Bearer token. Data comes only from the phone's own health store (Apple Health on iOS, Health Connect on Android); watches sync into those. Google Fit and the legacy Fitbit Web API are shut down and are not sources.
+
+**Consent (DPDP).** Two separate switches on `User.healthDataConsent`: `wearableSync` (store data at all) and `coachSharing` (assigned coach may see it). Under-18s and users with no age/DOB cannot turn sync on. Turning sync off deletes all synced data and turns sharing off. Rules live in `src/utils/wearable-consent.ts`.
+
+| Method | Path | Role | Purpose |
+|---|---|---|---|
+| GET | `/consent` | user | `{ wearableSync, coachSharing, eligible, updatedAt }` |
+| PATCH | `/consent` | user | Body `{ wearableSync?, coachSharing? }`. 403 `NOT_ELIGIBLE` for minors / unknown age |
+| GET | `/connections` | user | Connected sources with `connectedAt`, `lastSyncedAt` |
+| POST | `/connections` | user | Body `{ source, grantedTypes[] }`. Needs consent |
+| DELETE | `/connections/:source` | user | Disconnect and delete that source's data (manual sleep logs kept) |
+| POST | `/sync` | user | Body `{ source, days[], sleep[] }`, max 60 each. Idempotent upsert per day. 403 `CONSENT_REQUIRED` without consent |
+| GET | `/daily?from&to&days` | user | One entry per day: steps, activeCaloriesKcal, distanceMeters, restingHeartRate, avgHeartRate, maxHeartRate, workoutCount, workoutMinutes, weightKg |
+| GET | `/members/:userId/daily` | admin, trainer, nutritionist | Trainers/nutritionists must own the member. Returns `{ sharing: false, daily: [] }` until the member turns on coach sharing |
+
+`source` is `APPLE_HEALTH` or `HEALTH_CONNECT`. Synced sleep is written to the existing sleep log (`/api/v1/sleep/series` shows it); a night the member logged by hand is never overwritten.
+
+---
+
 ## Error Handling
 
 ### Common HTTP Status Codes

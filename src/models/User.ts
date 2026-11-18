@@ -55,6 +55,19 @@ const userSchema = new mongoose.Schema(
 			// Withdrawal has to be as easy as granting, so this moves both ways.
 			updatedAt: { type: Date, default: null },
 		},
+		// Wearable / health-platform data (Apple Health, Health Connect). Its own
+		// block, not a field inside privacyConsent: health data is a different
+		// purpose, and updateMyConsent replaces privacyConsent wholesale, which
+		// would silently wipe anything stored alongside it.
+		// utils/wearable-consent.ts is the only thing that should interpret this.
+		healthDataConsent: {
+			// Syncing wearable data into Fitflix at all.
+			wearableSync: { type: Boolean, default: false },
+			// Letting the member's assigned coach see it. Separate purpose,
+			// separate switch; meaningless (and forced off) without wearableSync.
+			coachSharing: { type: Boolean, default: false },
+			updatedAt: { type: Date, default: null },
+		},
 		emergencyContact: { type: String, default: undefined },
 		address: { type: String, default: undefined },
 		passwordHash: { type: String, select: false },
