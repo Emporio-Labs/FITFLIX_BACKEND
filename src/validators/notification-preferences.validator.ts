@@ -42,6 +42,16 @@ export const updateNotificationPreferencesSchema = z.object({
 			weighInReminderEnabled: z.boolean().optional(),
 			weighInTime: timeStringSchema.optional(),
 			waterNudgesEnabled: z.boolean().optional(),
+			sleepCheckInEnabled: z.boolean().optional(),
+			// null = automatic. A fixed time can be any waking hour, so a
+			// night-shift member can choose the afternoon; the check-in sweep
+			// runs 05:00–22:00 IST (see sleep-checkin.service.ts).
+			sleepCheckInTime: timeStringSchema
+				.refine((t) => t >= "05:00" && t <= "21:00", {
+					message: "Sleep check-in time must be between 05:00 and 21:00",
+				})
+				.nullable()
+				.optional(),
 		})
 		.optional(),
 	community: z

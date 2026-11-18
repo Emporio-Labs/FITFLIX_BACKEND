@@ -30,6 +30,10 @@ import {
 	prepareDueRooms,
 	verifyHostPresence,
 } from "./session-room-lifecycle.service";
+import { SLEEP_CHECKIN, sendSleepCheckIns } from "./sleep-checkin.service";
+
+// Set to 0 so the first tick after boot sweeps.
+let lastSleepCheckInSweep = 0;
 
 const REMINDER_OFFSETS_MS: Record<ReminderKind, number> = {
 	[ReminderKind.TMinus24H]: 24 * 60 * 60 * 1000,
@@ -231,6 +235,18 @@ export async function processReminders(): Promise<{
 		await activateDueMemberships(now);
 	} catch (err) {
 		console.error("[reminder-poller] membership activation sweep failed", err);
+	}
+
+	// Morning sleep check-in push. Every 5 minutes is plenty: each member has a
+	// one-hour send window, and the sweep claims a member per day atomically,
+	// so overlapping ticks (poller + external tick) can't double-send.
+	if (now.getTime() - lastSleepCheckInSweep >= SLEEP_CHECKIN.sweepIntervalMs) {
+		lastSleepCheckInSweep = now.getTime();
+		try {
+			await sendSleepCheckIns(now);
+		} catch (err) {
+			console.error("[reminder-poller] sleep check-in sweep failed", err);
+		}
 	}
 
 	// Membership expiry. Throttled to hourly rather than riding the 60s tick —

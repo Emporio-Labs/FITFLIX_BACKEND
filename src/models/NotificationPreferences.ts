@@ -77,6 +77,17 @@ const notificationPreferencesSchema = new mongoose.Schema(
 				type: Boolean,
 				default: true,
 			},
+			// Morning "How did you sleep?" push. See services/sleep-checkin.service.ts.
+			sleepCheckInEnabled: {
+				type: Boolean,
+				default: true,
+			},
+			// "HH:mm" IST, or null for automatic (≈45 min after the member
+			// usually wakes, learned from their own sleep log).
+			sleepCheckInTime: {
+				type: String,
+				default: null,
+			},
 		},
 		community: {
 			repliesAndMentions: {

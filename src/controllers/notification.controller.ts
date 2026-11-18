@@ -429,6 +429,15 @@ export const updateMemberPreferences: RequestHandler = async (req, res, next) =>
 			if (data.habits.waterNudgesEnabled !== undefined) {
 				preferences.habits.waterNudgesEnabled = data.habits.waterNudgesEnabled;
 			}
+			const habits = preferences.habits;
+			if (habits && data.habits.sleepCheckInEnabled !== undefined) {
+				habits.sleepCheckInEnabled = data.habits.sleepCheckInEnabled;
+			}
+			// null is meaningful here (back to automatic), so test for
+			// undefined rather than truthiness.
+			if (habits && data.habits.sleepCheckInTime !== undefined) {
+				habits.sleepCheckInTime = data.habits.sleepCheckInTime;
+			}
 		}
 		if (data.community) {
 			if (data.community.repliesAndMentions) {

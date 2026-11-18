@@ -1,5 +1,9 @@
 import type { RequestHandler } from "express";
 import {
+	getSleepCheckInStatus,
+	resumeSleepCheckIn,
+} from "../services/sleep-checkin.service";
+import {
 	deleteSleepLog,
 	getSleepSeries,
 	logSleep,
@@ -77,6 +81,41 @@ export const getSleepSeriesHandler: RequestHandler = async (req, res, next) => {
 			success: true,
 			data: series,
 		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+/** GET /sleep/check-in — is the morning reminder on, and is it paused? */
+export const getSleepCheckInHandler: RequestHandler = async (req, res, next) => {
+	if (!req.user || req.user.role !== "user") {
+		res.status(403).json({ error: "Access denied", code: "FORBIDDEN" });
+		return;
+	}
+	try {
+		res
+			.status(200)
+			.json({ success: true, data: await getSleepCheckInStatus(req.user.id) });
+	} catch (error) {
+		next(error);
+	}
+};
+
+/** POST /sleep/check-in/resume — the member chose "Keep reminders". */
+export const resumeSleepCheckInHandler: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
+	if (!req.user || req.user.role !== "user") {
+		res.status(403).json({ error: "Access denied", code: "FORBIDDEN" });
+		return;
+	}
+	try {
+		await resumeSleepCheckIn(req.user.id);
+		res
+			.status(200)
+			.json({ success: true, data: await getSleepCheckInStatus(req.user.id) });
 	} catch (error) {
 		next(error);
 	}

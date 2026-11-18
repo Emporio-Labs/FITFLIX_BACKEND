@@ -18,6 +18,11 @@ const memberGoalSchema = new mongoose.Schema(
 		description: { type: String, default: "" },
 		startValue: { type: Number, required: true },
 		currentValue: { type: Number, required: true },
+		// IST day (YYYY-MM-DD) `currentValue` belongs to, for daily goals
+		// (water, calories, steps). A value from an earlier day reads as 0, so
+		// "Daily Longevity Hydration" starts fresh each morning instead of
+		// adding up forever. See DAILY_GOAL_TYPES in goal.service.ts.
+		progressDate: { type: String, default: null },
 		targetValue: { type: Number, required: true },
 		unit: { type: String, required: true }, // "kg", "ml", "kcal", "steps", "sessions/week"
 		targetDate: { type: Date, default: undefined },

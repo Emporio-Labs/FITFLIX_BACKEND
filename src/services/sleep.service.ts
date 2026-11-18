@@ -1,7 +1,37 @@
 import mongoose from "mongoose";
 import SleepLog, { SleepSource, type SleepLogDocument } from "../models/sleep-log.model";
-import { DEFAULT_TIMEZONE, formatDateInZone } from "../utils/timezone.util";
+import {
+	DEFAULT_TIMEZONE,
+	formatDateInZone,
+	minutesIntoDayInZone,
+} from "../utils/timezone.util";
 import type { LogSleepInput } from "../validators/sleep.validator";
+
+/**
+ * Average wall-clock time of some instants, as members see it (IST), e.g.
+ * "11:15 PM". Read in the business timezone, never the server's: production
+ * runs in UTC, where `getHours()` turned an 11 PM bedtime into 5 PM.
+ *
+ * With `wrapBeforeNoon`, morning times count as "after midnight" (00:30 →
+ * 24:30) so bedtimes either side of midnight average sensibly.
+ */
+export function averageClockTime(
+	instants: Date[],
+	{ wrapBeforeNoon }: { wrapBeforeNoon: boolean },
+): string | null {
+	if (instants.length === 0) return null;
+	const DAY = 24 * 60;
+	const total = instants.reduce((acc, t) => {
+		const mins = minutesIntoDayInZone(t, DEFAULT_TIMEZONE);
+		return acc + (wrapBeforeNoon && mins < 12 * 60 ? mins + DAY : mins);
+	}, 0);
+	const avg = Math.round(total / instants.length) % DAY;
+	const h = Math.floor(avg / 60);
+	const m = avg % 60;
+	const ampm = h >= 12 ? "PM" : "AM";
+	const displayH = h % 12 === 0 ? 12 : h % 12;
+	return `${displayH}:${m.toString().padStart(2, "0")} ${ampm}`;
+}
 
 export interface SleepDaySummary {
 	date: string;
@@ -35,15 +65,16 @@ export async function logSleep(
 	const bedtime = new Date(input.bedtime);
 	const wakeTime = new Date(input.wakeTime);
 
-	let durationMinutes = input.durationMinutes;
-	if (durationMinutes === undefined || durationMinutes <= 0) {
-		let diffMs = wakeTime.getTime() - bedtime.getTime();
-		if (diffMs < 0) {
-			// Crosses midnight, wakeTime is next day
-			diffMs += 24 * 60 * 60 * 1000;
-		}
-		durationMinutes = Math.round(diffMs / (1000 * 60));
-	}
+	// logSleepSchema guarantees bedtime < wakeTime < bedtime + 24h, so the span
+	// is the night. A client-sent duration can only be shorter (time awake in
+	// bed), never longer than the span itself.
+	const spanMinutes = Math.round(
+		(wakeTime.getTime() - bedtime.getTime()) / (1000 * 60),
+	);
+	const durationMinutes =
+		input.durationMinutes !== undefined && input.durationMinutes > 0
+			? Math.min(input.durationMinutes, spanMinutes)
+			: spanMinutes;
 
 	const doc = await SleepLog.findOneAndUpdate(
 		{ userId: userObjectId, date: input.date },
@@ -143,31 +174,10 @@ export async function getSleepSeries(
 		const bedtimes = loggedDays.filter((d) => d.bedtime).map((d) => d.bedtime!);
 		const wakeTimes = loggedDays.filter((d) => d.wakeTime).map((d) => d.wakeTime!);
 
-		if (bedtimes.length > 0) {
-			const totalMins = bedtimes.reduce(
-				(acc, b) => acc + (b.getHours() * 60 + b.getMinutes()),
-				0,
-			);
-			const avgMins = Math.round(totalMins / bedtimes.length);
-			const h = Math.floor(avgMins / 60);
-			const m = avgMins % 60;
-			const ampm = h >= 12 ? "PM" : "AM";
-			const displayH = h % 12 === 0 ? 12 : h % 12;
-			avgBedtimeTimeStr = `${displayH}:${m.toString().padStart(2, "0")} ${ampm}`;
-		}
-
-		if (wakeTimes.length > 0) {
-			const totalMins = wakeTimes.reduce(
-				(acc, w) => acc + (w.getHours() * 60 + w.getMinutes()),
-				0,
-			);
-			const avgMins = Math.round(totalMins / wakeTimes.length);
-			const h = Math.floor(avgMins / 60);
-			const m = avgMins % 60;
-			const ampm = h >= 12 ? "PM" : "AM";
-			const displayH = h % 12 === 0 ? 12 : h % 12;
-			avgWakeTimeStr = `${displayH}:${m.toString().padStart(2, "0")} ${ampm}`;
-		}
+		// Bedtimes straddle midnight (11:30 PM, 12:30 AM), so average them on a
+		// clock that runs on past midnight; a plain average of those two is noon.
+		avgBedtimeTimeStr = averageClockTime(bedtimes, { wrapBeforeNoon: true });
+		avgWakeTimeStr = averageClockTime(wakeTimes, { wrapBeforeNoon: false });
 	}
 
 	return {

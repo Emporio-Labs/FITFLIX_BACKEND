@@ -35,6 +35,8 @@
 		"test:activity-consent": "bun run tests/activity-consent.test.ts",
 		"test:wearable-consent": "bun run tests/wearable-consent.test.ts",
 		"test:wearables": "bun run tests/wearables.test.ts",
+		"test:sleep-checkin": "bun run tests/sleep-checkin.test.ts",
+		"test:daily-goals": "bun run tests/daily-goals.test.ts",
 		"test:timezone": "bun run tests/timezone-util.test.ts",
 		"test:realtime-expired-token": "bun run tests/realtime-expired-token.test.ts",
 		"test:workout-plan-excel": "bun run tests/workout-plan-excel.test.ts",

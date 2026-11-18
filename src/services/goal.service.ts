@@ -5,10 +5,43 @@ import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import MemberGoal from "../models/MemberGoal";
 import NutritionProgress from "../models/nutrition-progress.model";
+import { DEFAULT_TIMEZONE, formatDateInZone } from "../utils/timezone.util";
 import type {
 	CreateGoalInput,
 	UpdateGoalInput,
 } from "../validators/goal.validator";
+
+/**
+ * Goals whose progress is per day. Their `currentValue` only counts on the
+ * IST day in `progressDate`; on any other day it reads as 0.
+ */
+export const DAILY_GOAL_TYPES: ReadonlySet<string> = new Set([
+	GoalType.Water,
+	GoalType.Nutrition,
+	GoalType.Steps,
+]);
+
+const todayIst = (now = new Date()) => formatDateInZone(now, DEFAULT_TIMEZONE);
+
+/** Today's progress for a goal: daily goals from an earlier day count as 0. */
+export function currentValueForToday(
+	goal: { type: string; currentValue: number; progressDate?: string | null },
+	today = todayIst(),
+): number {
+	if (!DAILY_GOAL_TYPES.has(goal.type)) return goal.currentValue;
+	return goal.progressDate === today ? goal.currentValue : 0;
+}
+
+const WATER_GOAL_DEFAULT = {
+	type: GoalType.Water,
+	title: "Daily Longevity Hydration",
+	description: "Optimal cellular hydration volume",
+	startValue: 0,
+	currentValue: 0,
+	targetValue: 3000,
+	unit: "ml",
+	status: GoalStatus.Active,
+} as const;
 
 export async function ensureDefaultGoals(userId: string): Promise<void> {
 	const userObjectId = new mongoose.Types.ObjectId(userId);
@@ -16,7 +49,19 @@ export async function ensureDefaultGoals(userId: string): Promise<void> {
 		userId: userObjectId,
 		status: GoalStatus.Active,
 	});
-	if (count > 0) return;
+	if (count > 0) {
+		// Members whose goals predate the water goal (or who lost it) still get
+		// one: the Home water tile has nothing to save +250 ml taps to without it.
+		const hasWater = await MemberGoal.exists({
+			userId: userObjectId,
+			type: GoalType.Water,
+			status: GoalStatus.Active,
+		});
+		if (!hasWater) {
+			await MemberGoal.create({ userId: userObjectId, ...WATER_GOAL_DEFAULT });
+		}
+		return;
+	}
 
 	// Check onboarding intake for target weight and health markers
 	const [intakeGoals, intakeMarkers, latestBca, latestProgress] = await Promise.all([
@@ -55,17 +100,7 @@ export async function ensureDefaultGoals(userId: string): Promise<void> {
 			unit: "kg",
 			status: GoalStatus.Active,
 		},
-		{
-			userId: userObjectId,
-			type: GoalType.Water,
-			title: "Daily Longevity Hydration",
-			description: "Optimal cellular hydration volume",
-			startValue: 0,
-			currentValue: 0,
-			targetValue: 3000,
-			unit: "ml",
-			status: GoalStatus.Active,
-		},
+		{ userId: userObjectId, ...WATER_GOAL_DEFAULT },
 		{
 			userId: userObjectId,
 			type: GoalType.Nutrition,
@@ -111,7 +146,11 @@ export async function getMyGoals(userId: string) {
 		.sort({ createdAt: 1 })
 		.lean();
 
-	return goals.map((g) => {
+	const today = todayIst();
+	return goals.map((stored) => {
+		// Daily goals restart at 0 each IST day; the stored value is left alone
+		// until the member's next update stamps a new progressDate.
+		const g = { ...stored, currentValue: currentValueForToday(stored, today) };
 		let progressPct = 0;
 		if (g.type === GoalType.Weight) {
 			const totalDelta = Math.abs(g.startValue - g.targetValue);
@@ -155,6 +194,7 @@ export async function createGoal(userId: string, input: CreateGoalInput) {
 		description: input.description || "",
 		startValue: input.startValue,
 		currentValue: input.currentValue,
+		progressDate: todayIst(),
 		targetValue: input.targetValue,
 		unit: input.unit,
 		targetDate: input.targetDate ? new Date(input.targetDate) : undefined,
@@ -175,6 +215,10 @@ export async function updateGoal(
 	const updatePayload: Record<string, unknown> = { ...input };
 	if (input.targetDate) {
 		updatePayload.targetDate = new Date(input.targetDate);
+	}
+	// Stamp which day this progress belongs to (only read for daily goals).
+	if (input.currentValue !== undefined) {
+		updatePayload.progressDate = todayIst();
 	}
 
 	const goal = await MemberGoal.findOneAndUpdate(
