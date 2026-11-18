@@ -8,6 +8,51 @@ import {
 	getSleepSeriesQuerySchema,
 	logSleepSchema,
 } from "../validators/sleep.validator";
+import { assertTrainerOwnsMember } from "../services/trainerRoster.service";
+import { assertNutritionistOwnsMember } from "../services/nutritionistRoster.service";
+
+class SleepAccessError extends Error {
+	constructor(
+		public readonly status: number,
+		public readonly code: string,
+		message: string,
+	) {
+		super(message);
+		this.name = "SleepAccessError";
+	}
+}
+
+/**
+ * Sleep is health data (DPDP Act): staff only see members on their own
+ * roster. Admins keep access; members only ever see their own logs.
+ */
+const assertCanReadMemberSleep = async (
+	requester: { id: string; role: string },
+	memberId: string,
+): Promise<void> => {
+	if (requester.role === "admin") return;
+
+	if (requester.role === "user") {
+		if (memberId === requester.id) return;
+		throw new SleepAccessError(403, "FORBIDDEN", "You can only view your own sleep");
+	}
+
+	if (requester.role === "trainer") {
+		await assertTrainerOwnsMember(requester.id, memberId);
+		return;
+	}
+
+	if (requester.role === "nutritionist") {
+		await assertNutritionistOwnsMember(requester.id, memberId);
+		return;
+	}
+
+	throw new SleepAccessError(
+		403,
+		"FORBIDDEN",
+		"You do not have permission to view this member's sleep",
+	);
+};
 
 export const logSleepHandler: RequestHandler = async (req, res, next) => {
 	if (!req.user || req.user.role !== "user") {
@@ -60,11 +105,8 @@ export const getSleepSeriesHandler: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const targetUserId =
-			(req.user.role === "admin" || req.user.role === "trainer") &&
-			req.query.userId
-				? String(req.query.userId)
-				: req.user.id;
+		const targetUserId = parsed.data.userId ?? req.user.id;
+		await assertCanReadMemberSleep(req.user, targetUserId);
 
 		const series = await getSleepSeries(
 			targetUserId,
@@ -77,7 +119,22 @@ export const getSleepSeriesHandler: RequestHandler = async (req, res, next) => {
 			success: true,
 			data: series,
 		});
-	} catch (error) {
+	} catch (error: any) {
+		if (error instanceof SleepAccessError) {
+			res.status(error.status).json({ error: error.message, code: error.code });
+			return;
+		}
+		if (
+			error?.name === "TrainerRosterError" ||
+			error?.name === "NutritionistRosterError"
+		) {
+			if (error.code === "INVALID_ARGUMENT") {
+				res.status(400).json({ error: error.message, code: "VALIDATION_ERROR" });
+				return;
+			}
+			res.status(403).json({ error: error.message, code: "NOT_YOUR_MEMBER" });
+			return;
+		}
 		next(error);
 	}
 };

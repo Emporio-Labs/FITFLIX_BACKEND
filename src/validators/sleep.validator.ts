@@ -12,6 +12,10 @@ export const logSleepSchema = z.object({
 });
 
 export const getSleepSeriesQuerySchema = z.object({
+	userId: z
+		.string()
+		.regex(/^[a-f\d]{24}$/i, "userId must be a valid member id")
+		.optional(),
 	from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 	to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 	days: z.preprocess(
