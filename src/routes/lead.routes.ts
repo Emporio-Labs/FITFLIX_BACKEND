@@ -35,27 +35,35 @@ leadRouter.use(authenticateToken);
 // Any trainer can add a lead (a referral); seeing and working leads needs
 // an admin to grant it (Trainer.canAccessLeads).
 const worker = [
-	authorize(["admin", "frontdesk", "trainer"]),
+	authorize(["admin", "frontdesk", "manager", "trainer"]),
 	requireLeadAccess,
 ];
 
 leadRouter.post(
 	"/",
-	authorize(["admin", "frontdesk", "trainer"]),
+	authorize(["admin", "frontdesk", "manager", "trainer"]),
 	createLead,
 );
 leadRouter.get("/", ...worker, getAllLeads);
 leadRouter.get("/stats", ...worker, getLeadStats);
 leadRouter.get("/outcomes", ...worker, getLeadOutcomes);
-leadRouter.get("/analytics", authorize(["admin", "frontdesk"]), getLeadAnalytics);
+leadRouter.get(
+	"/analytics",
+	authorize(["admin", "frontdesk", "manager"]),
+	getLeadAnalytics,
+);
 leadRouter.get("/:id", ...worker, getLeadById);
 leadRouter.patch("/:id", ...worker, updateLeadById);
 leadRouter.get("/:id/activities", ...worker, getLeadActivities);
 leadRouter.post("/:id/activities", ...worker, createLeadActivity);
-leadRouter.delete("/:id", authorize(["admin", "frontdesk"]), deleteLeadById);
+leadRouter.delete(
+	"/:id",
+	authorize(["admin", "frontdesk", "manager"]),
+	deleteLeadById,
+);
 leadRouter.post(
 	"/:id/convert",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	convertLeadToUser,
 );
 

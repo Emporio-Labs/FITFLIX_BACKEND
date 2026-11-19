@@ -5,6 +5,8 @@ export const ROLE_MEMBER = "user" as const;
 export type AppUserRole =
 	| "user"
 	| "admin"
+	| "super_admin"
+	| "manager"
 	| "trainer"
 	| "nutritionist"
 	| "sports_scientist"

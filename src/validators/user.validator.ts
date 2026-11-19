@@ -119,6 +119,8 @@ const STAFF_ROLE_VALUES = [
 	ExpertType.Trainer,
 	ExpertType.Doctor,
 	ExpertType.SportsScientist,
+	"manager",
+	"frontdesk",
 ] as [string, ...string[]];
 
 const optionalStaffRole = z.preprocess(

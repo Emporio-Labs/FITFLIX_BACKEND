@@ -11,14 +11,14 @@ const dashboardRouter = Router();
 dashboardRouter.use(authenticateToken);
 dashboardRouter.get(
 	"/metrics",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	getDashboardMetrics,
 );
 
 // FX-43.1 & FX-43.4: Multi-Branch Operations Board
 dashboardRouter.get(
 	"/branch-board",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	getBranchBoardMetricsHandler,
 );
 

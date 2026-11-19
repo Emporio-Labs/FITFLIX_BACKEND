@@ -41,7 +41,7 @@ trainerRouter.get("/public/:id", getPublicTrainerById);
 
 trainerRouter.use(authenticateToken);
 trainerRouter.post("/", authorize(["admin"]), createTrainer);
-trainerRouter.get("/", authorize(["admin"]), getAllTrainers);
+trainerRouter.get("/", authorize(["admin", "frontdesk", "manager"]), getAllTrainers);
 
 // ── Trainer Profile & Avatar Upload ─────────────────────────────────────────
 // Mounted before "/:id" so "upload-image" and "me" are not matched as ObjectId.
@@ -84,7 +84,7 @@ trainerRouter.use(
 	buildWorkoutRouter(["trainer", "admin"], subjectIsMember),
 );
 
-trainerRouter.get("/:id", authorize(["admin", "trainer", "doctor"]), getTrainerById);
+trainerRouter.get("/:id", authorize(["admin", "frontdesk", "manager", "trainer", "doctor"]), getTrainerById);
 trainerRouter.patch(
 	"/:id",
 	authorize(["admin", "trainer"]),

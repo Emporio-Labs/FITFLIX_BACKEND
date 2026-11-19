@@ -23,36 +23,40 @@ gymVisitRouter.get("/me", getMyVisits);
 // Member fetches their rotating gym-entry QR token.
 gymVisitRouter.get("/qr-token", issueQrToken);
 
-// Admin/front-desk manage attendance.
+// Admin/front-desk/manager manage attendance.
 gymVisitRouter.get(
 	"/currently-in",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	listCurrentlyIn,
 );
 gymVisitRouter.get(
 	"/analytics",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	getVisitAnalytics,
 );
-gymVisitRouter.get("/", authorize(["admin", "frontdesk"]), listVisits);
+gymVisitRouter.get(
+	"/",
+	authorize(["admin", "frontdesk", "manager"]),
+	listVisits,
+);
 gymVisitRouter.post(
 	"/check-in",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	checkInMember,
 );
 gymVisitRouter.post(
 	"/qr-check-in",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	qrCheckIn,
 );
 gymVisitRouter.patch(
 	"/:id/check-out",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	checkOutVisit,
 );
 gymVisitRouter.delete(
 	"/:id",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	deleteVisit,
 );
 

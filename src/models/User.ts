@@ -102,6 +102,8 @@ const userSchema = new mongoose.Schema(
 				ExpertType.Trainer,
 				ExpertType.Doctor,
 				ExpertType.SportsScientist,
+				"manager",
+				"frontdesk",
 				null,
 			],
 			default: null,

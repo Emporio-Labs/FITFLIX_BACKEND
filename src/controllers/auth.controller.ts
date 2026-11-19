@@ -82,6 +82,7 @@ type AuthDocument = {
 	// sports scientist or doctor who happens to be stored as a User. It
 	// overrides the "user" role in the issued token; see matchAccount.
 	staffRole?: string | null;
+	homeLocationId?: { toString(): string } | null;
 };
 
 type LoginUserPayload = {
@@ -89,6 +90,7 @@ type LoginUserPayload = {
 	email: string;
 	role: AppRole;
 	staffRole?: string | null;
+	homeLocationId?: string | null;
 	// Trainers only: whether an admin has let them work the lead board.
 	canAccessLeads?: boolean;
 	onboarded?: boolean;
@@ -134,12 +136,17 @@ const buildLoginUserPayload = (
 	matchedAccount: { id: string; email: string; role: AppRole },
 	userAccount: AuthDocument | null,
 ): LoginUserPayload => {
+	const homeLocationId = userAccount?.homeLocationId
+		? userAccount.homeLocationId.toString()
+		: null;
+
 	if (matchedAccount.role !== "user") {
 		return {
 			id: matchedAccount.id,
 			email: matchedAccount.email,
 			role: matchedAccount.role,
 			staffRole: userAccount?.staffRole ?? null,
+			homeLocationId,
 		};
 	}
 
@@ -148,6 +155,7 @@ const buildLoginUserPayload = (
 		email: matchedAccount.email,
 		role: matchedAccount.role,
 		staffRole: userAccount?.staffRole ?? null,
+		homeLocationId,
 		onboarded: Boolean(userAccount?.onboarded),
 		onboardingStatus: userAccount?.onboardingStatus ?? null,
 	};

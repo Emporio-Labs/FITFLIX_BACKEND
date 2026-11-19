@@ -14,12 +14,12 @@ const serviceRouter = Router();
 serviceRouter.use(authenticateToken);
 serviceRouter.get(
 	"/",
-	authorize(["admin", "trainer", "user"]),
+	authorize(["admin", "trainer", "frontdesk", "manager", "user"]),
 	getAllServices,
 );
 serviceRouter.get(
 	"/:id",
-	authorize(["admin", "trainer", "user"]),
+	authorize(["admin", "trainer", "frontdesk", "manager", "user"]),
 	getServiceById,
 );
 serviceRouter.post("/", authorize(["admin"]), createService);

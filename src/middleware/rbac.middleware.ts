@@ -2,7 +2,10 @@ import type { RequestHandler } from "express";
 import type { AppUserRole } from "../types/auth";
 
 export function normalizeRole(role: AppUserRole): string {
-	if (role === "admin" || role === "ROLE_FRONT_DESK_STAFF") return "admin";
+	if (role === "admin" || role === "super_admin" || role === "ROLE_FRONT_DESK_STAFF")
+		return "admin";
+	if (role === "manager") return "manager";
+	if (role === "doctor" || (role as string) === "clinician") return "doctor";
 	if (role === "frontdesk" || role === "staff" || role === "ROLE_FRONT_END_STAFF")
 		return "frontdesk";
 	if (role === "user" || role === "ROLE_MEMBER") return "user";

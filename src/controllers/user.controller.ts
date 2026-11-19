@@ -22,7 +22,9 @@ type StaffRole =
 	| ExpertType.Nutritionist
 	| ExpertType.Trainer
 	| ExpertType.Doctor
-	| ExpertType.SportsScientist;
+	| ExpertType.SportsScientist
+	| "manager"
+	| "frontdesk";
 import HealthGoals from "../models/HealthGoals";
 import HealthMarkers from "../models/HealthMarkers";
 import BcaMetric from "../models/BcaMetric";

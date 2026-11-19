@@ -27,6 +27,8 @@ const normalizeOptional = (value: string | undefined): string | undefined => {
 const isAppUserRole = (value: unknown): value is AppUserRole =>
 	value === "user" ||
 	value === "admin" ||
+	value === "super_admin" ||
+	value === "manager" ||
 	value === "doctor" ||
 	value === "trainer" ||
 	value === "nutritionist" ||

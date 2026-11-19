@@ -104,7 +104,7 @@ export const getBranchBoardMetricsHandler: RequestHandler = async (
 			) {
 				branchIds = [requestedBranchId];
 			}
-		} else if (userRole === "frontdesk") {
+		} else if (userRole === "frontdesk" || userRole === "manager") {
 			// FX-43.4: Managers get the view for their own branch only
 			const dbUser = await User.findById(user.id).select("homeLocationId").lean();
 			const managerBranchId = dbUser?.homeLocationId;

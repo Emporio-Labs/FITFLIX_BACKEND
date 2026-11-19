@@ -19,12 +19,12 @@ therapyRouter.get("/public/:id", getPublicTherapyById);
 therapyRouter.use(authenticateToken);
 therapyRouter.get(
 	"/",
-	authorize(["admin", "trainer", "user"]),
+	authorize(["admin", "trainer", "frontdesk", "manager", "user"]),
 	getAllTherapies,
 );
 therapyRouter.get(
 	"/:id",
-	authorize(["admin", "trainer", "user"]),
+	authorize(["admin", "trainer", "frontdesk", "manager", "user"]),
 	getTherapyById,
 );
 therapyRouter.post("/", authorize(["admin"]), createTherapy);

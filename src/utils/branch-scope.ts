@@ -1,5 +1,6 @@
 import type { Request } from "express";
 import mongoose from "mongoose";
+import Location from "../models/Location";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
 import { normalizeRole } from "../middleware/rbac.middleware";
@@ -54,7 +55,17 @@ const ownBranchId = async (
 		return trainer?.locationId ? String(trainer.locationId) : null;
 	}
 	const user = await User.findById(id).select("homeLocationId").lean();
-	return user?.homeLocationId ? String(user.homeLocationId) : null;
+	if (user?.homeLocationId) return String(user.homeLocationId);
+
+	// Edge Case 6: Manager with missing homeLocationId must not leak all branches
+	if (role === "manager") {
+		const defaultBranch = await Location.findOne({ isActive: true })
+			.select("_id")
+			.lean();
+		return defaultBranch ? String(defaultBranch._id) : new mongoose.Types.ObjectId().toString();
+	}
+
+	return null;
 };
 
 /** `{ [field]: ObjectId }` for the request's branch, or `{}` when unscoped. */

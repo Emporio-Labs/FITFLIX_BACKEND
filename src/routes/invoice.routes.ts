@@ -15,23 +15,27 @@ invoiceRouter.use(authenticateToken);
 
 invoiceRouter.post(
 	"/",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	createInvoiceHandler,
 );
-invoiceRouter.get("/", authorize(["admin", "frontdesk"]), listInvoicesHandler);
+invoiceRouter.get(
+	"/",
+	authorize(["admin", "frontdesk", "manager"]),
+	listInvoicesHandler,
+);
 invoiceRouter.get(
 	"/:id",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	getInvoiceByIdHandler,
 );
 invoiceRouter.patch(
 	"/:id/status",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	updateInvoiceStatusHandler,
 );
 invoiceRouter.get(
 	"/:id/pdf",
-	authorize(["admin", "frontdesk"]),
+	authorize(["admin", "frontdesk", "manager"]),
 	getInvoicePdfHandler,
 );
 
