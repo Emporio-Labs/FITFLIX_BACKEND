@@ -10,6 +10,7 @@ import Exercise from "../models/Exercise";
 import WorkoutPlan from "../models/WorkoutPlan";
 import type { AuthenticatedUser } from "../types/auth";
 import { actorModelForRole } from "../utils/actor-model";
+import { visibleExerciseClauses } from "../utils/exercise-visibility";
 import {
 	buildWorkoutPlanTemplate,
 	type ExportablePlan,
@@ -24,15 +25,12 @@ import { createPlanBodySchema } from "../validators/workout-plan.validator";
 
 /**
  * Same visibility as the exercise picker (GET /exercises): system exercises
- * plus the requester's own, never soft-deleted ones.
+ * plus the gym staff library and the requester's own, never soft-deleted ones.
  */
 const loadVisibleExercises = async (
 	requester: AuthenticatedUser,
 ): Promise<LibraryExercise[]> => {
-	const or: Record<string, unknown>[] = [{ isSystem: true }];
-	if (mongoose.Types.ObjectId.isValid(requester.id)) {
-		or.push({ createdBy: new mongoose.Types.ObjectId(requester.id) });
-	}
+	const or = await visibleExerciseClauses(requester.id);
 	const rows = await Exercise.find({ isDeleted: { $ne: true }, $or: or })
 		.select("name muscleGroups equipment difficulty sectionTypes isSystem")
 		.lean();
