@@ -10,6 +10,10 @@ import {
 // documents (this catalog, live workout sessions, plan/assignment day details)
 // and they must share one presigned-URL cache.
 import { withSignedImages } from "../utils/exercise-images";
+import {
+	isStaffAuthored,
+	visibleExerciseClauses,
+} from "../utils/exercise-visibility";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
@@ -66,10 +70,8 @@ export const listExercises: RequestHandler = async (req, res, next) => {
 				filter.createdBy = new mongoose.Types.ObjectId(requester.id);
 			}
 		} else {
-			filter.$or = [
-				{ isSystem: true },
-				{ createdBy: new mongoose.Types.ObjectId(requester.id) },
-			];
+			// System + gym staff library + the requester's own.
+			filter.$or = await visibleExerciseClauses(requester.id);
 		}
 
 		if (muscleGroup) filter.muscleGroups = muscleGroup;
@@ -125,7 +127,11 @@ export const getExerciseById: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		if (!exercise.isSystem && exercise.createdBy?.toString() !== requester.id) {
+		if (
+			!exercise.isSystem &&
+			exercise.createdBy?.toString() !== requester.id &&
+			!(await isStaffAuthored(exercise.createdBy))
+		) {
 			res.status(404).json({ message: "Exercise not found" });
 			return;
 		}

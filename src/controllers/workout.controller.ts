@@ -12,6 +12,7 @@ import { openConversation, sendMessage } from "../services/chat/chat.service";
 import type { AppUserRole } from "../types/auth";
 import { actorModelForRole } from "../utils/actor-model";
 import { withSignedImages } from "../utils/exercise-images";
+import { visibleExerciseClauses } from "../utils/exercise-visibility";
 import { syncActiveSessionFromAssignment } from "../services/liveSessionSync.service";
 import { completeDayAndShift } from "../utils/workoutProgression";
 import {
@@ -381,6 +382,7 @@ export const createSession: RequestHandler = async (req, res, next) => {
 		});
 
 		let exercisesToAdd = parsed.data.exercises;
+		let seededFromPlan = false;
 
 		if (parsed.data.planId) {
 			const plan = await mongoose
@@ -410,6 +412,7 @@ export const createSession: RequestHandler = async (req, res, next) => {
 								(d: any) => d.dayNumber === requestedDay,
 							)
 						: undefined) ?? (plan as any).days[0];
+				seededFromPlan = true;
 				exercisesToAdd = day.exercises.map((planEx: any) => ({
 					exerciseId: planEx.exerciseId.toString(),
 					targetSets: planEx.targetSets,
@@ -422,10 +425,19 @@ export const createSession: RequestHandler = async (req, res, next) => {
 
 		if (exercisesToAdd.length > 0) {
 			const exerciseIds = exercisesToAdd.map((e) => e.exerciseId);
-			const validExercises = await Exercise.find({
-				_id: { $in: exerciseIds },
-				$or: [{ isSystem: true }, { createdBy: actorObjectId }],
-			});
+			// Plan-seeded exercises were already vetted when the trainer built the
+			// plan; only exercises sent directly by the caller need a visibility
+			// check. Previously both paths required "system or mine", so a member
+			// starting a trainer's plan lost every trainer-created exercise.
+			const validExercises = await Exercise.find(
+				seededFromPlan
+					? { _id: { $in: exerciseIds }, isDeleted: { $ne: true } }
+					: {
+							_id: { $in: exerciseIds },
+							isDeleted: { $ne: true },
+							$or: await visibleExerciseClauses(req.user!.id),
+						},
+			);
 			const validIds = new Set(validExercises.map((e) => e._id.toString()));
 
 			const workoutExercises = exercisesToAdd
@@ -718,10 +730,8 @@ export const addExerciseToSession: RequestHandler = async (req, res, next) => {
 
 		let exercise = await Exercise.findOne({
 			_id: exerciseId,
-			$or: [
-				{ isSystem: true },
-				{ createdBy: new mongoose.Types.ObjectId(req.user!.id) },
-			],
+			isDeleted: { $ne: true },
+			$or: await visibleExerciseClauses(req.user!.id),
 		});
 
 		if (!exercise) {
