@@ -27,8 +27,13 @@ export async function syncActiveSessionFromAssignment(
 	userId: mongoose.Types.ObjectId,
 	actorId?: string,
 	actorRole?: AppUserRole,
+	sessionDate?: Date,
 ): Promise<any> {
-	const today = normalizeToUtcDate(new Date());
+	const today = normalizeToUtcDate(sessionDate ?? new Date());
+	// A trainer back-filling a missed PT session works on a past date. Only that
+	// date's own plan day may seed it — never fall through to the next pending
+	// day, which belongs to today or later.
+	const isBackfill = today.getTime() < normalizeToUtcDate(new Date()).getTime();
 
 	const session = await WorkoutSession.findOne({
 		userId,
@@ -47,12 +52,17 @@ export async function syncActiveSessionFromAssignment(
 	if (!assignment) return session;
 
 	// Find scheduled entry for today in dayProgress (or first pending entry matching day)
-	const todayEntry =
-		assignment.dayProgress.find(
-			(d) =>
-				d.status === "pending" &&
-				normalizeToUtcDate(d.scheduledDate).getTime() === today.getTime(),
-		) || assignment.dayProgress.find((d) => d.status === "pending");
+	const todayEntry = isBackfill
+		? assignment.dayProgress.find(
+				(d) =>
+					(d.status === "pending" || d.status === "missed") &&
+					normalizeToUtcDate(d.scheduledDate).getTime() === today.getTime(),
+			)
+		: assignment.dayProgress.find(
+				(d) =>
+					d.status === "pending" &&
+					normalizeToUtcDate(d.scheduledDate).getTime() === today.getTime(),
+			) || assignment.dayProgress.find((d) => d.status === "pending");
 
 	if (!todayEntry) return session;
 

@@ -42,6 +42,22 @@ const normalizeToUtcDate = (value: Date): Date =>
 		Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
 	);
 
+/** Latest session date accepted: tomorrow (UTC), so an IST evening still counts as "today". */
+const latestAllowedSessionDate = (): Date => {
+	const d = normalizeToUtcDate(new Date());
+	d.setUTCDate(d.getUTCDate() + 1);
+	return d;
+};
+
+/** Parses an optional `?date=YYYY-MM-DD` query. */
+const parseSessionDateQuery = (value: unknown): Date | null | "invalid" => {
+	if (value === undefined || value === "") return null;
+	if (typeof value !== "string") return "invalid";
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) return "invalid";
+	return normalizeToUtcDate(parsed);
+};
+
 const touchSession = async (
 	sessionId: mongoose.Types.ObjectId,
 	actorId: string,
@@ -184,7 +200,12 @@ export const stopOverseeingSession: RequestHandler = async (req, res, next) => {
 export const getActiveSession: RequestHandler = async (req, res, next) => {
 	try {
 		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
-		const today = normalizeToUtcDate(new Date());
+		const requested = parseSessionDateQuery(req.query.date);
+		if (requested === "invalid") {
+			res.status(400).json({ message: "Invalid date" });
+			return;
+		}
+		const today = requested ?? normalizeToUtcDate(new Date());
 
 		const session = await WorkoutSession.findOne({
 			userId,
@@ -211,6 +232,7 @@ export const getActiveSession: RequestHandler = async (req, res, next) => {
 				userId,
 				req.user?.id,
 				req.user?.role as AppUserRole,
+				session.date,
 			);
 		}
 
@@ -343,6 +365,10 @@ export const createSession: RequestHandler = async (req, res, next) => {
 		const userId = new mongoose.Types.ObjectId(req.subjectUserId!);
 		const actorObjectId = new mongoose.Types.ObjectId(req.user!.id);
 		const date = normalizeToUtcDate(parsed.data.date || new Date());
+		if (date.getTime() > latestAllowedSessionDate().getTime()) {
+			res.status(400).json({ message: "Cannot log a workout for a future date" });
+			return;
+		}
 
 		const existing = await WorkoutSession.findOne({
 			userId,
@@ -361,6 +387,7 @@ export const createSession: RequestHandler = async (req, res, next) => {
 					userId,
 					req.user?.id,
 					req.user?.role as AppUserRole,
+					date,
 				);
 			}
 			const detailed = await buildSessionWithDetails(existing._id);
@@ -464,6 +491,7 @@ export const createSession: RequestHandler = async (req, res, next) => {
 				userId,
 				req.user?.id,
 				req.user?.role as AppUserRole,
+				date,
 			);
 		}
 
@@ -531,8 +559,35 @@ export const updateSession: RequestHandler = async (req, res, next) => {
 					status: { $in: ["active", "Active"] },
 					isDeleted: { $ne: true },
 				});
-				if (assignment) {
-					const todayDate = normalizeToUtcDate(session.date);
+				const sessionDay = normalizeToUtcDate(session.date);
+				const isBackfill =
+					sessionDay.getTime() < normalizeToUtcDate(new Date()).getTime();
+				if (assignment && isBackfill) {
+					// A PT session logged after the fact. Credit only the plan day that
+					// was scheduled for that date (usually already marked "missed"), and
+					// leave the upcoming schedule alone: shifting it from a past date
+					// would push pending days into the past and mark them missed.
+					const pastEntry = assignment.dayProgress.find(
+						(d) =>
+							(d.status === "pending" || d.status === "missed") &&
+							normalizeToUtcDate(d.scheduledDate).getTime() === sessionDay.getTime(),
+					);
+					if (pastEntry) {
+						pastEntry.status = "completed";
+						pastEntry.completedAt = sessionDay;
+						(pastEntry as any).sessionId = session._id.toString();
+						const nextPending = assignment.dayProgress.findIndex(
+							(d) => d.status === "pending",
+						);
+						assignment.currentDayIndex =
+							nextPending >= 0 ? nextPending : assignment.dayProgress.length;
+						if (assignment.currentDayIndex >= assignment.dayProgress.length) {
+							assignment.status = "completed";
+						}
+						await assignment.save();
+					}
+				} else if (assignment) {
+					const todayDate = sessionDay;
 					const targetEntry =
 						assignment.dayProgress.find(
 							(d) =>
