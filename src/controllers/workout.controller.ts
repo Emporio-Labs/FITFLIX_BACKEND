@@ -16,6 +16,10 @@ import { visibleExerciseClauses } from "../utils/exercise-visibility";
 import { syncActiveSessionFromAssignment } from "../services/liveSessionSync.service";
 import { completeDayAndShift } from "../utils/workoutProgression";
 import {
+	backfillLockedMessage,
+	isOutsideBackfillWindow,
+} from "../utils/backfill-window";
+import {
 	addExerciseBodySchema,
 	createSessionBodySchema,
 	historyQuerySchema,
@@ -56,6 +60,17 @@ const parseSessionDateQuery = (value: unknown): Date | null | "invalid" => {
 	const parsed = new Date(value);
 	if (Number.isNaN(parsed.getTime())) return "invalid";
 	return normalizeToUtcDate(parsed);
+};
+
+/** Sends 403 and returns true when the caller's back-fill window has closed for this session. */
+const rejectIfLocked = (
+	sessionDate: Date,
+	req: Parameters<RequestHandler>[0],
+	res: Parameters<RequestHandler>[1],
+): boolean => {
+	if (!isOutsideBackfillWindow(sessionDate, req.user?.role)) return false;
+	res.status(403).json({ message: backfillLockedMessage(), code: "WORKOUT_LOCKED" });
+	return true;
 };
 
 const touchSession = async (
@@ -369,6 +384,7 @@ export const createSession: RequestHandler = async (req, res, next) => {
 			res.status(400).json({ message: "Cannot log a workout for a future date" });
 			return;
 		}
+		if (rejectIfLocked(date, req, res)) return;
 
 		const existing = await WorkoutSession.findOne({
 			userId,
@@ -530,6 +546,7 @@ export const updateSession: RequestHandler = async (req, res, next) => {
 			res.status(403).json({ message: "Not authorized" });
 			return;
 		}
+		if (rejectIfLocked(session.date, req, res)) return;
 
 		if (
 			session.status === WorkoutSessionStatus.Completed &&
@@ -715,6 +732,7 @@ export const deleteSession: RequestHandler = async (req, res, next) => {
 			res.status(403).json({ message: "Not authorized" });
 			return;
 		}
+		if (rejectIfLocked(session.date, req, res)) return;
 
 		if (session.status !== WorkoutSessionStatus.Active) {
 			res.status(409).json({ message: "Can only delete active sessions" });
@@ -771,6 +789,7 @@ export const addExerciseToSession: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
+		if (rejectIfLocked(session.date, req, res)) return;
 
 		if (session.status !== WorkoutSessionStatus.Active) {
 			res.status(409).json({ message: "Session is not active" });
@@ -872,6 +891,7 @@ export const updateWorkoutExercise: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
+		if (rejectIfLocked(session.date, req, res)) return;
 
 		if (parsed.data.isCompleted === true) {
 			const exercises = await WorkoutExercise.find({ sessionId: session._id });
@@ -919,6 +939,7 @@ export const deleteWorkoutExercise: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
+		if (rejectIfLocked(session.date, req, res)) return;
 
 		const workoutExercise = await WorkoutExercise.findOne({
 			_id: id,
@@ -964,6 +985,7 @@ export const reorderExercises: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
+		if (rejectIfLocked(session.date, req, res)) return;
 
 		const ops = parsed.data.order.map((exerciseId, index) => ({
 			updateOne: {
@@ -1015,6 +1037,7 @@ export const logSet: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
+		if (rejectIfLocked(session.date, req, res)) return;
 
 		if (session.status !== WorkoutSessionStatus.Active) {
 			res.status(409).json({ message: "Session is not active" });
@@ -1114,6 +1137,7 @@ export const updateSet: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
+		if (rejectIfLocked(session.date, req, res)) return;
 
 		const workoutExercise = await WorkoutExercise.findOne({
 			_id: exerciseId,
@@ -1159,6 +1183,7 @@ export const deleteSet: RequestHandler = async (req, res, next) => {
 			res.status(404).json({ message: "Workout session not found" });
 			return;
 		}
+		if (rejectIfLocked(session.date, req, res)) return;
 
 		const workoutExercise = await WorkoutExercise.findOne({
 			_id: exerciseId,
