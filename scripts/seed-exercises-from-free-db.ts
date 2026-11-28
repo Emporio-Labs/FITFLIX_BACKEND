@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import {
 	ExerciseDifficulty,
 	ExerciseSection,
+	ExerciseType,
 	MuscleGroup,
 } from "../src/models/Enums";
 import Exercise from "../src/models/Exercise";
@@ -69,6 +70,7 @@ interface Mapped {
 	equipment: string;
 	instructions: string;
 	sectionTypes: ExerciseSection[];
+	exerciseType: ExerciseType;
 	imageUrl: string | null;
 	imageUrls: string[];
 	isSystem: true;
@@ -108,6 +110,9 @@ function mapExercise(src: SourceExercise): Mapped | null {
 		equipment,
 		instructions,
 		sectionTypes: [ExerciseSection.Workout],
+		// The source tags treadmill, bike, rower… as category "cardio".
+		exerciseType:
+			src.category === "cardio" ? ExerciseType.Cardio : ExerciseType.Strength,
 		imageUrl: imageUrls[0] ?? null,
 		imageUrls,
 		isSystem: true,

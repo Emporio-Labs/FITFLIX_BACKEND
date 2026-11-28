@@ -129,7 +129,7 @@ export const getUserAssignment: RequestHandler = async (req, res, next) => {
 			_id: { $in: Array.from(exerciseIds).map((id) => new mongoose.Types.ObjectId(id)) },
 		})
 			.select(
-				"_id name muscleGroups difficulty equipment caloriesPerSet imageKeys imageUrl imageUrls",
+				"_id name muscleGroups difficulty equipment caloriesPerSet exerciseType imageKeys imageUrl imageUrls",
 			)
 			.lean();
 
@@ -150,6 +150,7 @@ export const getUserAssignment: RequestHandler = async (req, res, next) => {
 					// lib/data/repository/workout_repository.dart); the schema
 					// stores a `muscleGroups` array, so take the first entry.
 					muscleGroup: info?.muscleGroups?.[0] ?? "FullBody",
+					exerciseType: info?.exerciseType ?? "strength",
 					imageUrl: info?.imageUrl ?? null,
 					imageUrls: info?.imageUrls ?? [],
 					// The referenced Exercise document no longer exists, so its
@@ -659,7 +660,7 @@ async function _respondWithDayDetail(
 	const exerciseIds = userDay.exercises.map((e) => e.exerciseId);
 	const exerciseDocs = await Exercise.find({ _id: { $in: exerciseIds } })
 		.select(
-			"_id name muscleGroups difficulty equipment caloriesPerSet imageKeys imageUrl imageUrls",
+			"_id name muscleGroups difficulty equipment caloriesPerSet exerciseType imageKeys imageUrl imageUrls",
 		)
 		.lean();
 
@@ -680,6 +681,7 @@ async function _respondWithDayDetail(
 			// lib/data/repository/workout_repository.dart); take the first
 			// entry from the schema's `muscleGroups` array.
 			muscleGroup: info?.muscleGroups?.[0] ?? "FullBody",
+			exerciseType: info?.exerciseType ?? "strength",
 			imageUrl: info?.imageUrl ?? null,
 			imageUrls: info?.imageUrls ?? [],
 			section: ex.section,

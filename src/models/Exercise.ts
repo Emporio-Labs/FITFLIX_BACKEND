@@ -1,5 +1,10 @@
 import mongoose from "mongoose";
-import { ExerciseDifficulty, ExerciseSection, MuscleGroup } from "./Enums";
+import {
+	ExerciseDifficulty,
+	ExerciseSection,
+	ExerciseType,
+	MuscleGroup,
+} from "./Enums";
 
 const exerciseSchema = new mongoose.Schema(
 	{
@@ -28,6 +33,16 @@ const exerciseSchema = new mongoose.Schema(
 			type: [String],
 			enum: Object.values(ExerciseSection),
 			default: ["workout"],
+		},
+		// Cardio is logged by time, strength by sets × reps. Every client keys
+		// its target and logging UI off this, so a new cardio exercise is timed
+		// without anyone maintaining a list of names. Rows written before this
+		// field existed read as strength until backfilled
+		// (scripts/backfill-exercise-type.ts).
+		exerciseType: {
+			type: String,
+			enum: Object.values(ExerciseType),
+			default: ExerciseType.Strength,
 		},
 		imageUrl: { type: String, default: null },
 		imageUrls: { type: [String], default: [] },

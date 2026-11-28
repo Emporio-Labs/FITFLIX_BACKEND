@@ -77,6 +77,16 @@ export enum ExerciseDifficulty {
 	Advanced = "Advanced",
 }
 
+/**
+ * How an exercise is performed and logged. Cardio (treadmill, StairMaster,
+ * cycling…) is done for time, so plans prescribe a duration and the member app
+ * runs a timer instead of asking for sets × reps.
+ */
+export enum ExerciseType {
+	Strength = "strength",
+	Cardio = "cardio",
+}
+
 export enum ExerciseSection {
 	Warmup = "warmup",
 	Workout = "workout",
