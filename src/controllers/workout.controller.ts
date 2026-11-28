@@ -124,6 +124,7 @@ const buildSessionWithDetails = async (sessionId: mongoose.Types.ObjectId) => {
 						equipment: exercise.equipment,
 						caloriesPerSet: exercise.caloriesPerSet,
 						sectionTypes: exercise.sectionTypes ?? ["workout"],
+						exerciseType: exercise.exerciseType ?? "strength",
 						// The app caches this nested object into its local
 						// exercise catalog via a FULL-ROW upsert, so every
 						// field omitted here is actively overwritten with null

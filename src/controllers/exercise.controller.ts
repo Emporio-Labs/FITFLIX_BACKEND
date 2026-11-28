@@ -49,6 +49,7 @@ export const listExercises: RequestHandler = async (req, res, next) => {
 			muscleGroup,
 			difficulty,
 			section,
+			exerciseType,
 			equipment,
 			search,
 			isSystem,
@@ -78,6 +79,11 @@ export const listExercises: RequestHandler = async (req, res, next) => {
 		if (difficulty) filter.difficulty = difficulty;
 		// Array-membership match: returns exercises usable in this section.
 		if (section) filter.sectionTypes = section;
+		// Rows from before `exerciseType` existed have no value and count as
+		// strength, so "strength" matches everything that isn't cardio.
+		if (exerciseType === "cardio") filter.exerciseType = "cardio";
+		else if (exerciseType === "strength")
+			filter.exerciseType = { $ne: "cardio" };
 		if (equipment) filter.equipment = { $regex: equipment, $options: "i" };
 		if (search) filter.name = { $regex: search, $options: "i" };
 
@@ -167,6 +173,8 @@ export const createExercise: RequestHandler = async (req, res, next) => {
 			difficulty: parsed.data
 				.difficulty as import("../models/Enums").ExerciseDifficulty,
 			sectionTypes: parsed.data.sectionTypes as any,
+			exerciseType: parsed.data
+				.exerciseType as import("../models/Enums").ExerciseType,
 			isSystem: requester.role === "admin",
 			createdBy: new mongoose.Types.ObjectId(requester.id),
 		});

@@ -2,6 +2,7 @@ import z from "zod";
 import {
 	ExerciseDifficulty,
 	ExerciseSection,
+	ExerciseType,
 	MuscleGroup,
 } from "../models/Enums";
 
@@ -31,6 +32,12 @@ const normalizeExercisePayload = (input: unknown) => {
 		body.muscleGroups = matchEnumList(
 			Object.values(MuscleGroup),
 			body.muscleGroups,
+		);
+	}
+	if (body.exerciseType !== undefined) {
+		body.exerciseType = matchEnum(
+			Object.values(ExerciseType),
+			body.exerciseType,
 		);
 	}
 	if (body.difficulty !== undefined) {
@@ -63,6 +70,13 @@ const normalizeListQuery = (input: unknown) => {
 		query.difficulty,
 	);
 	query.section = matchEnum(Object.values(ExerciseSection), query.section);
+	// Older dashboard builds send a legacy section-style value here
+	// (`exerciseType=Main|Warmup|Stretching`) that was always ignored. Keep
+	// ignoring anything that isn't strength/cardio rather than 400 the picker.
+	const type = matchEnum(Object.values(ExerciseType), query.exerciseType);
+	query.exerciseType = (Object.values(ExerciseType) as unknown[]).includes(type)
+		? type
+		: undefined;
 	return query;
 };
 
@@ -77,6 +91,9 @@ export const listExercisesQuerySchema = z.preprocess(
 			.optional(),
 		section: z
 			.enum(Object.values(ExerciseSection) as [string, ...string[]])
+			.optional(),
+		exerciseType: z
+			.enum(Object.values(ExerciseType) as [string, ...string[]])
 			.optional(),
 		equipment: z.string().optional(),
 		search: z.string().optional(),
@@ -130,6 +147,10 @@ export const createExerciseBodySchema = z.preprocess(
 			.max(3)
 			.optional()
 			.default(["workout"]),
+		exerciseType: z
+			.enum(Object.values(ExerciseType) as [string, ...string[]])
+			.optional()
+			.default(ExerciseType.Strength),
 		imageUrl: z.string().url().optional(),
 	}),
 );
@@ -160,6 +181,9 @@ export const updateExerciseBodySchema = z.preprocess(
 				.array(z.enum(Object.values(ExerciseSection) as [string, ...string[]]))
 				.min(1)
 				.max(3)
+				.optional(),
+			exerciseType: z
+				.enum(Object.values(ExerciseType) as [string, ...string[]])
 				.optional(),
 			imageUrl: z.string().url().optional(),
 		})
